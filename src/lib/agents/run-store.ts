@@ -1523,18 +1523,6 @@ async function executeAgenticStep(
       const lineConflictNote = lineConflict.lines > 0
         ? ` One line, two reads: ${lineConflict.lines.toLocaleString()} live line(s) (${lineConflict.byKind.category.toLocaleString()} under two categories, ${lineConflict.byKind.frequency.toLocaleString()} with two frequencies), ${lineConflict.wouldRetire.toLocaleString()} row(s) would be retired, ${lineConflict.byExempt.undecided.toLocaleString()} undecided, ${lineConflict.byExempt.own_unit.toLocaleString()} unit line(s) kept apart (${lineConflict.live && !lineConflict.dryRun ? `${lineConflict.flagged.toLocaleString()} flagged, ${lineConflict.takenDown.length.toLocaleString()} archived` : "switch off: nothing written"}).${lineConflict.restore.restorable.length > 0 ? ` Unit-read restore: ${lineConflict.restore.restorable.length.toLocaleString()} restorable, ${lineConflict.restore.restored.length.toLocaleString()} restored and as many stale twins retired${lineConflict.ownUnitLive && !lineConflict.dryRun ? "" : " (switch off: counted only)"}.` : ""}`
         : "";
-      // Nov 2 audit: live fees still read from a superseded copy of their page, retired when the current
-      // copy's own live read is the same line (twin) or Knox's current-version read of it drops the line
-      // (stale-copy-check.ts); a report only on a dry run or with its switch off (STALE_COPY_RETIRE_LIVE).
-      const staleCopy = await recheckStaleCopies(tx, {
-        runId: run.id,
-        stepId: step.id,
-        dryRun: run.runKind === "dry_run",
-        institutionId: numericRunParam(params, ["institution_id"]),
-      });
-      const staleCopyNote = staleCopy.checked > 0
-        ? ` Superseded-copy re-check: ${staleCopy.checked.toLocaleString()} live fee(s) on ${staleCopy.documents.toLocaleString()} superseded cop${staleCopy.documents === 1 ? "y" : "ies"}, ${staleCopy.byVerdict.twin.toLocaleString()} twin(s) of a live current-copy fee and ${staleCopy.byVerdict.dropped.toLocaleString()} not on the current copy would retire; ${staleCopy.byVerdict.stated.toLocaleString()} still stated, ${staleCopy.byVerdict.waiting_reread.toLocaleString()} waiting on a Knox v${staleCopy.knoxVersion} read (${staleCopy.live && !staleCopy.dryRun ? `${staleCopy.flagged.toLocaleString()} flagged, ${staleCopy.takenDown.length.toLocaleString()} archived` : staleCopy.dryRun ? "dry run: would retire, nothing written" : "switch off: would retire, nothing written"}).`
-        : "";
       // The whole live table in one read, on request (`non_deposit_full_count: true`), for the dry-run count.
       const nonDepositFull = params.non_deposit_full_count === true || params.non_deposit_full_count === "true"
         ? await countNonDepositFees(tx)
@@ -1555,6 +1543,20 @@ async function executeAgenticStep(
         : "";
       const releaseRepairFullNote = releaseRepairFull
         ? ` All released fees: ${releaseRepairFull.wouldTakeDown.toLocaleString()} of ${releaseRepairFull.checked.toLocaleString()} fail both the text check and the category model (${releaseRepairFull.textOnly.toLocaleString()} text only, ${releaseRepairFull.modelOnly.toLocaleString()} model only).`
+        : "";
+      // Nov 2 audit: live fees still read from a superseded copy of their page, retired when the current
+      // copy's own live read is the same line (twin) or Knox's current-version read of it drops the line
+      // (stale-copy-check.ts); a report only on a dry run or with its switch off (STALE_COPY_RETIRE_LIVE).
+      // Runs after the step's last other takedown, and keeps an old fee live when its kept twin is
+      // rolled back or has a takedown pending, so the two never both come down (review of #2906).
+      const staleCopy = await recheckStaleCopies(tx, {
+        runId: run.id,
+        stepId: step.id,
+        dryRun: run.runKind === "dry_run",
+        institutionId: numericRunParam(params, ["institution_id"]),
+      });
+      const staleCopyNote = staleCopy.checked > 0
+        ? ` Superseded-copy re-check: ${staleCopy.checked.toLocaleString()} live fee(s) on ${staleCopy.documents.toLocaleString()} superseded cop${staleCopy.documents === 1 ? "y" : "ies"}, ${staleCopy.byVerdict.twin.toLocaleString()} twin(s) of a live current-copy fee and ${staleCopy.byVerdict.dropped.toLocaleString()} not on the current copy would retire; ${staleCopy.byVerdict.stated.toLocaleString()} still stated, ${staleCopy.byVerdict.waiting_reread.toLocaleString()} waiting on a Knox v${staleCopy.knoxVersion} read (${staleCopy.live && !staleCopy.dryRun ? `${staleCopy.flagged.toLocaleString()} flagged, ${staleCopy.takenDown.length.toLocaleString()} archived` : staleCopy.dryRun ? "dry run: would retire, nothing written" : "switch off: would retire, nothing written"}).`
         : "";
       const liveFragmentNote = liveFragments.matched > 0
         ? ` Live name re-check: ${liveFragments.matched.toLocaleString()} of ${liveFragments.checked.toLocaleString()} live fee(s) read have a fragment name: ${liveFragments.wouldTakeDown.toLocaleString()} takedown, ${liveFragments.wouldRename.toLocaleString()} rename (${liveFragments.wouldRenameByVia.tail.toLocaleString()} by the fee the line ends on), ${liveFragments.exempt.toLocaleString()} exempt, ${liveFragments.wouldReread.toLocaleString()} kept live to ask Knox to re-read (${liveFragments.live && !liveFragments.dryRun ? `${liveFragments.takenDown.length.toLocaleString()} archived, ${liveFragments.renamed.length.toLocaleString()} renamed, ${liveFragments.rereadRequested.length.toLocaleString()} re-read request(s)` : "switch off: nothing written"}).`

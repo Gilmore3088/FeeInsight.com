@@ -80,6 +80,44 @@ describe("stale copy check", () => {
     expect(judged.reason).toBe(`${STALE_COPY_TWIN_REASON_PREFIX}16570 (#1048 -> #38158)`);
   });
 
+  it("lets one twin stand for one old fee: one retires, the other stays live", () => {
+    // Two live $25 overdraft fees read from the same line of the February copy and one live
+    // current-copy read of that line. Only one of them can be its twin (both match the line, so the
+    // lower fee id); the other is kept live, not retired against the same twin.
+    const judged = judgeStaleCopyDocument({
+      fees: [
+        fee({ fee_published_id: 500, fee_name: "Overdraft charge", amount: 25 }),
+        fee({ fee_published_id: 12449, fee_name: "Overdraft Fee", amount: 25 }),
+      ],
+      twins: [twin({})],
+      rawRows: [],
+      currentText: CSB,
+      olderText: CSB,
+      knoxVersion: 156,
+    });
+    const byId = new Map(judged.map((row) => [row.feePublishedId, row]));
+    expect([...byId.values()].filter((row) => row.verdict === "twin")).toHaveLength(1);
+    expect(byId.get(500)?.verdict).toBe("twin");
+    expect(byId.get(500)?.keptFeePublishedId).toBe(16570);
+    expect(byId.get(12449)?.verdict).toBe("unproven");
+  });
+
+  it("pairs two old fees with two twins one to one", () => {
+    const judged = judgeStaleCopyDocument({
+      fees: [
+        fee({ fee_published_id: 500, fee_name: "Overdraft charge" }),
+        fee({ fee_published_id: 12449, fee_name: "Overdraft Fee" }),
+      ],
+      twins: [twin({}), twin({ fee_published_id: 16571, fee_name: "Overdraft Fee" })],
+      rawRows: [],
+      currentText: CSB,
+      olderText: CSB,
+      knoxVersion: 156,
+    });
+    const kept = judged.filter((row) => row.verdict === "twin").map((row) => row.keptFeePublishedId).sort();
+    expect(kept).toEqual([16570, 16571]);
+  });
+
   it("keeps a stale fee the current copy still prints when no live twin carries it (3416's daily cap)", () => {
     const [judged] = judgeStaleCopyDocument({
       fees: [fee({ fee_published_id: 12347, canonical_fee_key: "od_daily_cap", fee_name: "Overdraft Daily Cap", amount: 125 })],

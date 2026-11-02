@@ -172,7 +172,12 @@ export function judgeStaleCopyDocument(input: StaleCopyDocumentInput): StaleCopy
   const knoxVersion = input.knoxVersion ?? KNOX_RULES_STRATEGY.version;
   const currentText = input.currentText ?? "";
   const olderText = input.olderText ?? "";
-  const judged = input.fees.map((fee) => {
+  type Candidate = { twinId: number; line: string; rank: number };
+  type Traced = ReturnType<typeof trace>;
+  type Prepared =
+    | { done: StaleCopyJudgement }
+    | { done: null; fee: StaleCopyFeeRow; base: StaleCopyJudgement; amount: number; own: Traced; older: Traced; candidates: Candidate[] };
+  const prepared: Prepared[] = input.fees.map((fee): Prepared => {
     const amount = num(fee.amount);
     const base: StaleCopyJudgement = {
       feePublishedId: Number(fee.fee_published_id),
@@ -188,13 +193,14 @@ export function judgeStaleCopyDocument(input: StaleCopyDocumentInput): StaleCopy
       currentLine: null,
       reason: "",
     };
-    if (!currentText.trim()) return { ...base, verdict: "no_text" as const };
-    if (amount == null || !(amount > 0)) return base;
+    if (!currentText.trim()) return { done: { ...base, verdict: "no_text" } };
+    if (amount == null || !(amount > 0)) return { done: base };
     const own = trace(currentText, base.feeName, amount, fee.canonical_fee_key);
     const older = trace(olderText, base.feeName, amount, fee.canonical_fee_key);
-    const lineOf = (result: ReturnType<typeof trace>) => (result.ok ? squash(result.sourceLine) : null);
+    const lineOf = (result: Traced) => (result.ok ? squash(result.sourceLine) : null);
 
-    // Twin: the current copy's own live read of the same line.
+    // Twin candidates: the current copy's own live read of the same line.
+    const candidates: Candidate[] = [];
     for (const twin of input.twins) {
       if (Number(twin.current_document_id) !== base.currentDocumentId) continue;
       if (Number(twin.fee_published_id) === base.feePublishedId) continue;
@@ -210,21 +216,48 @@ export function judgeStaleCopyDocument(input: StaleCopyDocumentInput): StaleCopy
       // from on the older copy ("An overdraft charge of $25.00 per presentment …" read as "Overdraft
       // Fee" in February and "Overdraft charge" in October). A same-price fee on another line
       // ("Checking Dormant Charges" beside "Savings Dormant Charges") is no twin.
-      if (squash(twin.fee_name) !== squash(base.feeName) && lineOf(older) !== twinLine) continue;
-      const kept = Number(twin.fee_published_id);
+      const lineMatch = lineOf(older) === twinLine;
+      if (squash(twin.fee_name) !== squash(base.feeName) && !lineMatch) continue;
+      candidates.push({ twinId: Number(twin.fee_published_id), line: twinTrace.sourceLine.slice(0, 300), rank: lineMatch ? 0 : 1 });
+    }
+    return { done: null, fee, base, amount, own, older, candidates };
+  });
+
+  // One twin stands for one old fee on this copy (review of #2906): two live "Monthly service
+  // charge $10" fees read from the older copy cannot both retire against one current line. Pairs
+  // whose older line is the twin's line go first, then same-name pairs, then the lowest fee id; an
+  // old fee left without a twin of its own stays live (unproven).
+  const pairs = prepared
+    .flatMap((item) => (item.done ? [] : item.candidates.map((candidate) => ({ feeId: item.base.feePublishedId, candidate }))))
+    .sort((a, b) => a.candidate.rank - b.candidate.rank || a.feeId - b.feeId || a.candidate.twinId - b.candidate.twinId);
+  const assigned = new Map<number, Candidate>();
+  const usedTwins = new Set<number>();
+  for (const pair of pairs) {
+    if (assigned.has(pair.feeId) || usedTwins.has(pair.candidate.twinId)) continue;
+    assigned.set(pair.feeId, pair.candidate);
+    usedTwins.add(pair.candidate.twinId);
+  }
+
+  const judged = prepared.map((item): StaleCopyJudgement => {
+    if (item.done) return item.done;
+    const { fee, base, amount, own, older, candidates } = item;
+    const match = assigned.get(base.feePublishedId);
+    if (match) {
       return {
         ...base,
-        verdict: "twin" as const,
-        keptFeePublishedId: kept,
-        currentLine: twinTrace.sourceLine.slice(0, 300),
-        reason: `${STALE_COPY_TWIN_REASON_PREFIX}${kept} (#${base.sourceDocumentId} -> #${base.currentDocumentId})`,
+        verdict: "twin",
+        keptFeePublishedId: match.twinId,
+        currentLine: match.line,
+        reason: `${STALE_COPY_TWIN_REASON_PREFIX}${match.twinId} (#${base.sourceDocumentId} -> #${base.currentDocumentId})`,
       };
     }
-    if (own.ok) return { ...base, verdict: "stated" as const, currentLine: own.sourceLine.slice(0, 300) };
+    // Its twin stands for another old fee on this copy: keep it live rather than guess.
+    if (candidates.length > 0) return base;
+    if (own.ok) return { ...base, verdict: "stated", currentLine: own.sourceLine.slice(0, 300) };
 
     const required = Math.max(knoxVersion, num(fee.fee_read_version) ?? 0);
     const readAt = num(fee.current_read_version);
-    if (readAt == null || readAt < required) return { ...base, verdict: "waiting_reread" as const };
+    if (readAt == null || readAt < required) return { ...base, verdict: "waiting_reread" };
     if (!older.ok) return base;
     const layout = currentCopyVerdict(
       {
@@ -242,17 +275,17 @@ export function judgeStaleCopyDocument(input: StaleCopyDocumentInput): StaleCopy
       currentText,
       olderText,
     );
-    if (layout === "still_stated") return { ...base, verdict: "stated" as const };
+    if (layout === "still_stated") return { ...base, verdict: "stated" };
     if (layout !== "dropped" && layout !== "still_named") return base;
     const ownName = squash(base.feeName);
     const knoxRow = input.rawRows.some((row) =>
       Number(row.current_document_id) === base.currentDocumentId
       && sameAmount(num(row.amount), amount)
       && squash(row.fee_name ?? "") === ownName);
-    if (knoxRow) return { ...base, verdict: "knox_reads_it" as const };
+    if (knoxRow) return { ...base, verdict: "knox_reads_it" };
     return {
       ...base,
-      verdict: "dropped" as const,
+      verdict: "dropped",
       reason: `${STALE_COPY_DROPPED_REASON_PREFIX}${base.currentDocumentId} (Knox v${readAt}; read from #${base.sourceDocumentId})`,
     };
   });
@@ -309,33 +342,52 @@ export function staleCopyFindings(judgements: StaleCopyJudgement[]): StaleCopyFi
 }
 
 /**
- * Read-only: the live flat fees on up to `limit` superseded copies (oldest copy first), each with the
- * newest copy at the end of its `superseded_by_id` chain and the Knox rules versions that read each.
+ * Read-only: the live flat fees on the next `limit` superseded copies after the cursor (oldest copy
+ * first), each with the newest copy at the end of its `superseded_by_id` chain and the Knox rules
+ * versions that read each.
+ *
+ * Driven from `source_documents` (cursor and limit first), not from the live table: a copy is taken
+ * when one live flat fee of its own institution was read from it, probed through the institution's
+ * live-fee index (`published_fee_records_live_institution_idx`), so a step reads about 60 copies'
+ * fees instead of joining every live fee through verified and raw (review of #2906: ~2.6 s a step).
+ * The probe covers every raw source (Knox rows and the February import alike), since
+ * `raw_fee_observations` has no plain index on `source_document_id`.
  */
 export function staleCopyRowsSql(db: SqlTag, options: { institutionId?: number; limit?: number; afterId?: number } = {}) {
   const scoped = options.institutionId != null;
   const limit = Math.max(1, Math.min(options.limit ?? STALE_COPY_DOCUMENT_LIMIT, 5_000));
   return db<StaleCopyFeeRow[]>`
-    WITH RECURSIVE live AS MATERIALIZED (
-      SELECT fp.fee_published_id, fp.lineage_ref AS fee_verified_id, fp.institution_id, fr.source_document_id AS older_document_id,
-             sd.superseded_by_id, fp.canonical_fee_key, fp.fee_name, fp.amount, fr.product_name, fp.fee_audience
-        FROM published_fee_records fp
+    WITH RECURSIVE docs AS MATERIALIZED (
+      SELECT sd.id AS older_document_id, sd.institution_id, sd.superseded_by_id
+        FROM source_documents sd
+       CROSS JOIN LATERAL (
+         SELECT 1 FROM published_fee_records fp
+           JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
+           JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
+          WHERE fp.institution_id = sd.institution_id AND fr.source_document_id = sd.id
+            AND fp.rolled_back_at IS NULL AND fp.quarantined_at IS NULL AND fp.amount_kind = 'flat' AND fp.amount > 0
+            AND NOT EXISTS (SELECT 1 FROM published_fee_corrections corrected WHERE corrected.fee_published_id = fp.fee_published_id AND corrected.status = 'current')
+          LIMIT 1
+       ) has_live
+       WHERE sd.superseded_by_id IS NOT NULL
+         AND sd.superseded_by_id <> sd.id
+         AND sd.id > ${options.afterId ?? 0}::bigint
+         AND (${!scoped} OR sd.institution_id = ${options.institutionId ?? 0})
+       ORDER BY sd.id
+       LIMIT ${limit}::int
+    ), live AS MATERIALIZED (
+      SELECT fp.fee_published_id, fp.lineage_ref AS fee_verified_id, fp.institution_id, d.older_document_id,
+             fp.canonical_fee_key, fp.fee_name, fp.amount, fr.product_name, fp.fee_audience
+        FROM docs d
+        JOIN published_fee_records fp ON fp.institution_id = d.institution_id
         JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
-        JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
-        JOIN source_documents sd ON sd.id = fr.source_document_id
+        JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id AND fr.source_document_id = d.older_document_id
        WHERE fp.rolled_back_at IS NULL
          AND fp.quarantined_at IS NULL
          AND fp.amount_kind = 'flat'
          AND fp.amount > 0
-         AND sd.superseded_by_id IS NOT NULL
-         AND sd.superseded_by_id <> sd.id
          -- notAdminCorrectedSql("fp") (fee-correction-guard), inline for the tagged template.
          AND NOT EXISTS (SELECT 1 FROM published_fee_corrections corrected WHERE corrected.fee_published_id = fp.fee_published_id AND corrected.status = 'current')
-         AND (${!scoped} OR fp.institution_id = ${options.institutionId ?? 0})
-    ), docs AS MATERIALIZED (
-      SELECT DISTINCT older_document_id, superseded_by_id FROM live
-       WHERE older_document_id > ${options.afterId ?? 0}::bigint
-       ORDER BY older_document_id LIMIT ${limit}::int
     ), chain AS (
       -- The newest copy at the end of the page's chain: a copy can itself be superseded.
       SELECT d.older_document_id, d.superseded_by_id AS current_document_id, 1 AS depth FROM docs d
@@ -343,46 +395,64 @@ export function staleCopyRowsSql(db: SqlTag, options: { institutionId?: number; 
       SELECT c.older_document_id, s.superseded_by_id, c.depth + 1
         FROM chain c JOIN source_documents s ON s.id = c.current_document_id
        WHERE s.superseded_by_id IS NOT NULL AND s.superseded_by_id <> s.id AND c.depth < 20
-    ), current_copy AS (
+    ), current_copy AS MATERIALIZED (
       SELECT DISTINCT ON (older_document_id) older_document_id, current_document_id FROM chain ORDER BY older_document_id, depth DESC
-    ), current_text AS (
-      SELECT DISTINCT ON (t.source_document_id) t.source_document_id, t.text_hash
-        FROM agent_source_texts t JOIN current_copy cc ON cc.current_document_id = t.source_document_id
-       WHERE t.status = 'completed' AND t.normalized_text IS NOT NULL
-       ORDER BY t.source_document_id, t.id DESC
+    ), versions AS MATERIALIZED (
+      -- Read versions once per copy, not once per fee.
+      SELECT cc.older_document_id, cc.current_document_id,
+             (SELECT MAX(pa.strategy_version) FROM pipeline_attempts pa
+               WHERE pa.source_document_id = cc.older_document_id AND pa.stage = 'extract' AND pa.strategy = ${KNOX_RULES_STRATEGY.strategy}) AS fee_read_version,
+             (SELECT MAX(pa.strategy_version) FROM pipeline_attempts pa
+               WHERE pa.source_document_id = cc.current_document_id AND pa.stage = 'extract' AND pa.strategy = ${KNOX_RULES_STRATEGY.strategy}
+                 AND pa.input_fingerprint = (
+                   SELECT t.text_hash FROM agent_source_texts t
+                    WHERE t.source_document_id = cc.current_document_id AND t.status = 'completed' AND t.normalized_text IS NOT NULL
+                    ORDER BY t.id DESC LIMIT 1
+                 )) AS current_read_version
+        FROM current_copy cc
     )
-    SELECT live.fee_published_id, live.fee_verified_id, live.institution_id, live.older_document_id, cc.current_document_id,
+    SELECT live.fee_published_id, live.fee_verified_id, live.institution_id, live.older_document_id, v.current_document_id,
            live.canonical_fee_key, live.fee_name, live.amount, live.product_name, live.fee_audience,
-           (SELECT MAX(pa.strategy_version) FROM pipeline_attempts pa
-             WHERE pa.source_document_id = live.older_document_id AND pa.stage = 'extract' AND pa.strategy = ${KNOX_RULES_STRATEGY.strategy}) AS fee_read_version,
-           (SELECT MAX(pa.strategy_version) FROM pipeline_attempts pa
-             WHERE pa.source_document_id = cc.current_document_id AND pa.stage = 'extract' AND pa.strategy = ${KNOX_RULES_STRATEGY.strategy}
-               AND pa.input_fingerprint = ct.text_hash) AS current_read_version
+           v.fee_read_version, v.current_read_version
       FROM live
-      JOIN current_copy cc ON cc.older_document_id = live.older_document_id
-      LEFT JOIN current_text ct ON ct.source_document_id = cc.current_document_id
+      JOIN versions v ON v.older_document_id = live.older_document_id
      ORDER BY live.older_document_id, live.fee_published_id
   `;
 }
 
-/** Read-only: live flat fees read from the given current copies. */
-function currentTwinsSql(db: SqlTag, currentIds: number[]) {
+/** One current copy and the institution whose page it is. */
+export interface StaleCopyCurrentDocument {
+  currentDocumentId: number;
+  institutionId: number;
+}
+
+/**
+ * Read-only: live flat fees read from the given current copies, probed through each copy's
+ * institution's live fees (the live-institution index), not by a scan of raw rows.
+ */
+export function currentTwinsSql(db: SqlTag, copies: StaleCopyCurrentDocument[]) {
   return db<StaleCopyTwinRow[]>`
       SELECT fp.fee_published_id, fr.source_document_id AS current_document_id, fp.canonical_fee_key, fp.fee_name, fp.amount,
              fr.product_name, fp.fee_audience
-        FROM published_fee_records fp
+        FROM unnest(${copies.map((copy) => copy.currentDocumentId)}::bigint[], ${copies.map((copy) => copy.institutionId)}::bigint[])
+             AS c(current_document_id, institution_id)
+        JOIN published_fee_records fp ON fp.institution_id = c.institution_id
         JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
-        JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
+        JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id AND fr.source_document_id = c.current_document_id
        WHERE fp.rolled_back_at IS NULL AND fp.quarantined_at IS NULL AND fp.amount_kind = 'flat'
-         AND fr.source_document_id = ANY(${currentIds}::bigint[])
   `;
 }
 
-/** Read-only: every row Knox read from the given current copies. */
-function currentRawRowsSql(db: SqlTag, currentIds: number[]) {
+/**
+ * Read-only: every row Knox read from the given current copies. `source = 'knox'` lets the read use
+ * Knox's own (source_document_id, ...) index; a current copy is always read by Knox (the February
+ * import wrote rows only on the copies it found then, which have all since been superseded or kept).
+ */
+export function currentRawRowsSql(db: SqlTag, currentIds: number[]) {
   return db<StaleCopyRawRow[]>`
     SELECT source_document_id AS current_document_id, fee_name, amount
-      FROM raw_fee_observations WHERE source_document_id = ANY(${currentIds}::bigint[])
+      FROM raw_fee_observations
+     WHERE source = 'knox' AND source_document_id = ANY(${currentIds}::bigint[])
   `;
 }
 
@@ -432,7 +502,9 @@ export async function recheckStaleCopies(
       if (fees.length === 0) return [];
       const currentIds = [...new Set(fees.map((fee) => Number(fee.current_document_id)))];
       const ids = [...new Set([...currentIds, ...fees.map((fee) => Number(fee.older_document_id))])];
-      const twins = await currentTwinsSql(scope, currentIds);
+      const copies = [...new Map(fees.map((fee) => [Number(fee.current_document_id), Number(fee.institution_id)])).entries()]
+        .map(([currentDocumentId, institutionId]) => ({ currentDocumentId, institutionId }));
+      const twins = await currentTwinsSql(scope, copies);
       const raw = await currentRawRowsSql(scope, currentIds);
       const texts = await scope<{ source_document_id: number | string; normalized_text: string }[]>`
         SELECT DISTINCT ON (source_document_id) source_document_id, normalized_text
@@ -474,7 +546,7 @@ export async function recheckStaleCopies(
     result.waiting = look.waiting;
     result.cleared = look.cleared;
     if (look.confirmed.length > 0) {
-      result.takenDown = await archive(db, options.runId, look.confirmed);
+      result.takenDown = await archiveStaleCopies(db, options.runId, look.confirmed);
       if (result.takenDown.length > 0) await recordTakedownEvent(db, options, look.confirmed, result.takenDown);
     }
   }
@@ -500,7 +572,7 @@ export async function recheckStaleCopies(
  * Archive confirmed fees: rolled back with the reason, the verified row rejected with the flag. Never
  * deleted. A twin retire needs its kept twin still live in the same write, so the line keeps a reading.
  */
-async function archive(db: SqlTag, runId: number, fees: StaleCopyJudgement[]): Promise<number[]> {
+export async function archiveStaleCopies(db: SqlTag, runId: number, fees: StaleCopyJudgement[]): Promise<number[]> {
   try {
     const closed = await inSavepoint(db, async (scope) => {
       const updated = await scope<{ fee_published_id: number | string }[]>`
@@ -515,8 +587,17 @@ async function archive(db: SqlTag, runId: number, fees: StaleCopyJudgement[]): P
            AND fp.amount = v.amount
            AND fp.rolled_back_at IS NULL
            AND NOT EXISTS (SELECT 1 FROM published_fee_corrections corrected WHERE corrected.fee_published_id = fp.fee_published_id AND corrected.status = 'current')
-           AND (v.kept_id = 0 OR EXISTS (
-             SELECT 1 FROM published_fee_records kept WHERE kept.fee_published_id = v.kept_id AND kept.rolled_back_at IS NULL
+           -- A twin retires only while the fee it keeps stays live: not rolled back or quarantined, and
+           -- with no takedown pending from another check's second look, so neither fee comes down twice.
+           AND (v.kept_id = 0 OR (
+             EXISTS (
+               SELECT 1 FROM published_fee_records kept
+                WHERE kept.fee_published_id = v.kept_id AND kept.rolled_back_at IS NULL AND kept.quarantined_at IS NULL
+             )
+             AND NOT EXISTS (
+               SELECT 1 FROM pipeline_feedback pending
+                WHERE pending.fee_published_id = v.kept_id AND pending.kind = 'takedown_pending'
+             )
            ))
         RETURNING fp.fee_published_id
       `;
