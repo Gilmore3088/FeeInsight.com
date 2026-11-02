@@ -165,4 +165,14 @@ export const HOOVIE_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-24",
   },
+  {
+    id: "issue-1906-missing-series-is-a-loader-bug",
+    agent: "hoovie",
+    stage: "registry load",
+    lesson: "A series a run reports missing on every run is a loader bug, not a gap to carry. Open the publisher's live page and read its actual labels before writing a column pattern, and when a release file is too big for one step, look on the same release page for a smaller file of the same data (per-table CSVs, a per-release XML zip) before keeping an old copy.",
+    why: "The national-series step listed DRTSCLNG as missing on every run since Oct 18: its column pattern looked for an \"Other\" sub-heading the SLOOS chart page never uses (the column is \"Consumer loans excluding credit cards and autos\"). The two Z.1 commercial-mortgage series kept serving FRED-era rows because the Z.1 SDMX package is about 592 MB, while the release's CSV zip is about 8 MB and carries both series with values equal to the old rows.",
+    evidence: { issues: [1906], prs: [], files: ["src/lib/regulatory/national-credit.ts", "src/lib/regulatory/fed-board-data.ts"] },
+    appliesTo: "all",
+    since: "2026-11-02",
+  },
 ];

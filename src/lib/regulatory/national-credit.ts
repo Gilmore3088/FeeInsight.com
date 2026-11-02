@@ -8,8 +8,10 @@ import {
   FRB_BASE,
   FRB_CHGDEL_DELINQUENCY_SA_URL,
   FRB_XML_PACKAGES,
+  FRB_Z1_CSV_ZIP_URL,
   parseHtmlGridTables,
   periodStartDate,
+  readZ1CsvSeries,
   scaleSdmxValue,
   sloosChartDataUrl,
   type HtmlColumnMatch,
@@ -26,7 +28,7 @@ import { parseCsvTable } from "./industry-events";
  * - `national-series`: Federal Reserve Board files, each series from its original publisher
  *   (FRED is no longer read; DECISIONS.md "No non-commercial data", 2026-10-18): H.8 deposits and
  *   loans (all, large and small domestically chartered commercial banks) from the H.8 XML
- *   package (Z.1 is not read yet: its package is about 592 MB), bank delinquency rates from the charge-off and
+ *   package, Z.1 commercial mortgages from the Z.1 release's CSV zip, bank delinquency rates from the charge-off and
  *   delinquency rates table, and SLOOS net tightening and demand from the survey's chart-data page
  *   (./fed-board-data). Freddie Mac PMMS and the Philadelphia Fed's large-bank credit card series
  *   were struck on 2026-10-18 (their publishers' terms bar commercial use), and the FDIC national
@@ -98,12 +100,12 @@ export function checkNationalCreditStats(rows: AreaStat[], signedSeries: Readonl
 }
 
 // ---------------------------------------------------------------------------
-// (1) national-series: Federal Reserve Board files (H.8, charge-off and delinquency rates, SLOOS)
+// (1) national-series: Federal Reserve Board files (H.8, Z.1, charge-off and delinquency rates, SLOOS)
 //
-// Not read: the two Z.1 commercial-mortgage series (BOGZ1FL893065505Q, BOGZ1FL763065505Q). The
-// Board's Z.1 SDMX package is about 592 MB (Data Download Program listing, 2026-10-18), which does
-// not fit one registry step; their FRED-era rows keep serving (areaRowServedSql) until a small
-// Board file is wired.
+// The two Z.1 commercial-mortgage series are read from the Z.1 release's CSV zip (about 8 MB), not
+// the Z.1 SDMX package (about 592 MB, too big for one registry step). Checked against the live
+// files on 2026-11-02: table F4_5c_s carries FL893065505.Q and FL763065505.Q, and its 2025Q4 and
+// 2026Q2 values for FL763065505.Q equal the FRED-era rows exactly (2,217,196 and 2,252,202).
 // ---------------------------------------------------------------------------
 
 export type NationalSeriesFrequency = "weekly" | "monthly" | "quarterly";
@@ -111,7 +113,7 @@ export type NationalSeriesFrequency = "weekly" | "monthly" | "quarterly";
 export type NationalSeriesGroup = "h8" | "sloos" | "cre" | "delinquency";
 
 /** Where a series is read: an SDMX release package, or a column of a Board HTML table. */
-export type NationalSeriesPublisher = "frb-h8" | "frb-chgdel" | "frb-sloos";
+export type NationalSeriesPublisher = "frb-h8" | "frb-z1" | "frb-chgdel" | "frb-sloos";
 
 export interface NationalSeriesConfig {
   /** Stable id (the series' FRED id before 2026-10-18), kept in raw_json and the run detail. */
@@ -125,8 +127,10 @@ export interface NationalSeriesConfig {
   /** Can legitimately be negative (net percentages). */
   signed?: boolean;
   publisher: NationalSeriesPublisher;
-  /** The Board's own series name in the SDMX package (H.8). */
+  /** The Board's own series name: in the SDMX package (H.8) or the Z.1 CSV header ("FL763065505.Q"). */
   frbSeries?: string;
+  /** Z.1 only: the CSV table in the Z.1 zip that carries the series ("csv/F4_5c_s.csv"). */
+  z1Table?: string;
   /** The column in the Board's HTML table (charge-off and delinquency rates, SLOOS chart data). */
   column?: HtmlColumnMatch;
 }
@@ -149,6 +153,19 @@ const h8 = (id: string, frbSeries: string, key: string, title: string, group: Na
   frequency: "weekly",
   unit: "billions_dollars",
   publisher: "frb-h8",
+});
+
+/** Z.1 quarterly levels, millions of dollars, from one table of the Z.1 CSV zip. */
+const z1 = (id: string, frbSeries: string, z1Table: string, key: string, title: string): NationalSeriesConfig => ({
+  id,
+  frbSeries,
+  z1Table,
+  key: `natl_z1_${key}`,
+  title,
+  group: "cre",
+  frequency: "quarterly",
+  unit: "millions_dollars",
+  publisher: "frb-z1",
 });
 
 /** SLOOS chart data (quarterly, net percentages). `figure` picks the table, `panel` and `sub` the column. */
@@ -210,7 +227,12 @@ export const NATIONAL_SERIES: NationalSeriesConfig[] = [
   sloos("DEMCC", "credit_card_demand", "Net share of banks reporting stronger credit card demand", CONSUMER_FIGURE, DEMAND, /credit card/i),
   sloos("STDSAUTO", "auto_tightening", "Net share of banks tightening auto loan standards", CONSUMER_FIGURE, TIGHTENING, /\bauto/i),
   sloos("DEMAUTO", "auto_demand", "Net share of banks reporting stronger auto loan demand", CONSUMER_FIGURE, DEMAND, /\bauto/i),
-  sloos("DRTSCLNG", "consumer_other_tightening", "Net share of banks tightening standards on other consumer loans", CONSUMER_FIGURE, TIGHTENING, /\|\s*other\b/i),
+  // The chart-data page labels this column "Consumer loans excluding credit cards and autos" (Board
+  // series SUBLPDCLXS_N.Q, from 2011Q2; earlier quarters are "n.a."). It is never labelled "Other":
+  // the first pattern guessed that label without the live page and never matched (checked 2026-11-02).
+  sloos("DRTSCLNG", "consumer_other_tightening", "Net share of banks tightening standards on other consumer loans", CONSUMER_FIGURE, TIGHTENING, /excluding credit cards and autos/i),
+  z1("BOGZ1FL893065505Q", "FL893065505.Q", "csv/F4_5c_s.csv", "commercial_mortgages_all", "Z.1 all sectors: commercial mortgages, asset level"),
+  z1("BOGZ1FL763065505Q", "FL763065505.Q", "csv/F4_5c_s.csv", "commercial_mortgages_banks", "Z.1 US-chartered depository institutions: commercial mortgages, asset level"),
   sloos("DRTSSP", "subprime_mortgage_tightening", "Net share of banks tightening subprime mortgage standards", MORTGAGE_FIGURE, TIGHTENING, /\|\s*subprime$/i),
   delinquency("DRCRELEXFACBS", "cre_ex_farmland", "Delinquency rate on CRE loans (excluding farmland), all commercial banks", [/real estate/i, /\bcommercial\b/i]),
   delinquency("DRCCLACBS", "credit_cards", "Delinquency rate on credit card loans, all commercial banks", [/consumer/i, /credit cards?/i]),
@@ -223,6 +245,7 @@ export const NATIONAL_SERIES_FIRST_DATE = "2000-01-01";
 /** The page or package each publisher's rows cite as source_url. */
 export function nationalSeriesSourceUrl(publisher: NationalSeriesPublisher, sloosRelease?: string | null): string {
   if (publisher === "frb-h8") return FRB_XML_PACKAGES.h8;
+  if (publisher === "frb-z1") return FRB_Z1_CSV_ZIP_URL;
   if (publisher === "frb-chgdel") return FRB_CHGDEL_DELINQUENCY_SA_URL;
   return sloosRelease ? sloosChartDataUrl(sloosRelease) : `${FRB_BASE}/data/sloos.htm`;
 }
@@ -272,10 +295,10 @@ export interface NationalSeriesParse {
   skipped: Record<string, number>;
 }
 
-/** One series' rows from an SDMX package read (H.8). */
+/** One series' rows from an SDMX package read (H.8) or a Z.1 CSV table read in the same shape. */
 export function nationalRowsFromSdmx(config: NationalSeriesConfig, series: SdmxSeries | undefined, firstDate = NATIONAL_SERIES_FIRST_DATE): NationalSeriesParse {
   const skipped: Record<string, number> = {};
-  if (!series) return { rows: [], problem: `${config.frbSeries} not in the package`, skipped };
+  if (!series) return { rows: [], problem: `${config.frbSeries} not in ${config.z1Table ?? "the package"}`, skipped };
   const url = nationalSeriesSourceUrl(config.publisher);
   const rows: AreaStat[] = [];
   for (const o of series.observations) {
@@ -360,6 +383,25 @@ export async function fetchNationalSeries(
       for (const c of h8Members) parsed.set(c.id, nationalRowsFromSdmx(c, found.get(c.frbSeries as string), firstDate));
     } catch (error) {
       fail(h8Members, problemOf(error));
+    }
+  }
+
+  const z1Members = series.filter((c) => c.publisher === "frb-z1" && c.frbSeries && c.z1Table);
+  if (z1Members.length > 0) {
+    try {
+      const response = await registryFetch(FRB_Z1_CSV_ZIP_URL, { timeoutMs: 120_000, ...options });
+      const bytes = new Uint8Array(await response.arrayBuffer());
+      for (const table of new Set(z1Members.map((c) => c.z1Table as string))) {
+        const members = z1Members.filter((c) => c.z1Table === table);
+        const { found, entries } = readZ1CsvSeries(bytes, table, members.map((c) => c.frbSeries as string));
+        if (!entries.includes(table)) {
+          fail(members, `${table} not in the Z.1 CSV zip (${entries.length} files)`);
+          continue;
+        }
+        for (const c of members) parsed.set(c.id, nationalRowsFromSdmx(c, found.get(c.frbSeries as string), firstDate));
+      }
+    } catch (error) {
+      fail(z1Members, problemOf(error));
     }
   }
 

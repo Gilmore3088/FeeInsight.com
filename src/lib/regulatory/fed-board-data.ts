@@ -34,6 +34,15 @@ export const FRB_XML_PACKAGES = {
   h15: `${FRB_BASE}/releases/h15/data/FRB_h15_xml.zip`,
 } as const;
 
+/**
+ * Z.1 Financial Accounts of the United States: the per-release CSV files, linked from the Z.1
+ * release page. About 8 MB zipped (2026-11-02), against about 592 MB for the full Z.1 SDMX
+ * package, so one registry step can read it. Each CSV is one Z.1 table: a `date` column ("2026:Q2")
+ * and one column per series code ("FL763065505.Q"), values as published (millions of dollars for
+ * the levels read here).
+ */
+export const FRB_Z1_CSV_ZIP_URL = `${FRB_BASE}/releases/z1/current/z1_csv_files.zip`;
+
 /** Charge-off and delinquency rates: delinquency rates, all banks, seasonally adjusted (one HTML table). */
 export const FRB_CHGDEL_DELINQUENCY_SA_URL = `${FRB_BASE}/releases/chargeoff/delallsa.htm`;
 
@@ -233,6 +242,46 @@ export async function fetchSdmxPackage(
 ): Promise<{ found: Map<string, SdmxSeries>; seen: Set<string>; entries: string[] }> {
   const response = await registryFetch(url, { timeoutMs: 300_000, ...options });
   return readSdmxPackage(new Uint8Array(await response.arrayBuffer()), wanted);
+}
+
+// ---------------------------------------------------------------------------
+// Z.1 CSV files (one table per entry of the release's CSV zip)
+// ---------------------------------------------------------------------------
+
+/**
+ * Reads the wanted series columns from one table of the Z.1 CSV zip, in the SDMX series shape
+ * (period as served, value unscaled, no multiplier). A series code repeated in the table (a total
+ * shown twice) is read from its first column. A cell that is not a number is kept as the status
+ * with a null value; nothing is filled in. `entries` lists the zip's files, so a run can say what
+ * the zip carried when the table or a column is gone.
+ */
+export function readZ1CsvSeries(bytes: Uint8Array, entryName: string, wanted: Iterable<string>): { found: Map<string, SdmxSeries>; entries: string[] } {
+  const all = zipEntries(bytes);
+  const found = new Map<string, SdmxSeries>();
+  const entry = all.find((e) => e.name === entryName);
+  if (!entry) return { found, entries: all.map((e) => e.name) };
+  let text = "";
+  readZipEntryText(bytes, entry, (piece) => {
+    text += piece;
+  });
+  const lines = text.split(/\r?\n/).filter((line) => line.trim() !== "");
+  const header = (lines[0] ?? "").split(",").map((h) => h.trim().replace(/^"|"$/g, ""));
+  for (const name of new Set(wanted)) {
+    const index = header.indexOf(name);
+    if (index < 1) continue;
+    const series: SdmxSeries = { name, attributes: { TABLE: entryName }, multiplier: null, observations: [] };
+    for (const line of lines.slice(1)) {
+      const cells = line.split(",");
+      const period = (cells[0] ?? "").trim();
+      if (!period) continue;
+      const cell = (cells[index] ?? "").trim();
+      const value = Number(cell);
+      const isNumber = cell !== "" && Number.isFinite(value);
+      series.observations.push({ period, value: isNumber ? value : null, status: isNumber ? null : cell || "blank" });
+    }
+    found.set(name, series);
+  }
+  return { found, entries: all.map((e) => e.name) };
 }
 
 /** First day of the period an SDMX TIME_PERIOD falls in, as fed_economic_indicators dates it ("2026-09-01"). */
