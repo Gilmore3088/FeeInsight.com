@@ -194,7 +194,7 @@ export const NOT_REPLAYABLE_REASONS: Readonly<Record<string, string>> = {
   SECTION_PATH_LIVE: "the replay can hold it (`switches.sectionPath`), but it changes only the audience Darwin reads, and the golden set has no audience answer, so no golden number can move",
   SOURCE_LINK_DRIFT_LIVE: `repairs a live fee's source link when its document's address drifts; ${ONE_DOCUMENT}`,
   STALE_COPY_RETIRE_LIVE: `retires a live fee read from a superseded copy of its page against the current copy's text and live fees; ${ONE_DOCUMENT}`,
-  STATED_DATE_BACKFILL_LIVE: "writes a fee schedule document's stated date (document metadata, read by Darwin's dated-edition check); the golden set's members are single frozen documents with no other dated editions, so no golden number can move",
+  STATED_DATE_BACKFILL_LIVE: "writes a fee schedule document's stated date (document metadata, read by Darwin's dated-edition check v4); the golden set's members are single frozen documents with no other dated editions, so no golden number can move. Turned on in #2917 after a read-only dry run over all 17,368 stored texts (453 newly dated, 157 changed) and Darwin's re-check (135 lines at 10 banks), each sampled 20/20 against the bank's own documents",
   STATE_BILLS_TRACKER_LIVE: `Magellan's state bills tracker; ${SYSTEM}`,
   STATE_NEWS_TRACKER_LIVE: `Magellan's state regulatory news tracker; ${SYSTEM}`,
   STORAGE_COMPACTION_LIVE: `Hoovie's storage compaction; ${SYSTEM}`,
