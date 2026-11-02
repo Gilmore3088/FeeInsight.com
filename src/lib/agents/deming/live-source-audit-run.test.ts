@@ -108,7 +108,9 @@ describe("live-source chunk verdicts and save (2026-11-02)", () => {
   it("fetches each fee's own address and scores every page that loads", async () => {
     const d = draw(3); lease(d);
     const urls: string[][] = [];
-    const texts = ["Overdraft Fee $35.00 per item", "Overdraft Fee $40.00 per item", "Stop Payment $30.00 per item"];
+    // The third page is a real page without the fee (long enough not to read as a script shell).
+    const terms = Array.from({ length: 6 }, (_, i) => `Section ${i + 1}. Terms and disclosures for personal deposit accounts.`).join("\n");
+    const texts = ["Overdraft Fee $35.00 per item", "Overdraft Fee $40.00 per item", `Stop Payment $30.00 per item\n${terms}`];
     const result = await runLiveAuditChunk({ db: vi.fn() as never, context: ctx, drawId: 1, now: () => 0,
       observe: async (group, options) => { urls.push(options.urls ?? []); const i = d.groups.indexOf(group); return page(options.urls![0], texts[i]); } });
     expect(urls).toEqual(d.groups.map((g) => [d.rows.find((r) => r.id === g.feeIds[0])!.source.url]));
@@ -129,7 +131,15 @@ describe("live-source chunk verdicts and save (2026-11-02)", () => {
     const d = draw(1); lease(d);
     vi.mocked(requestLiveSourceCaptures).mockRejectedValue(new LiveAuditSqlBudgetError());
     const result = await runLiveAuditChunk({ db: vi.fn() as never, context: ctx, drawId: 1, now: () => 0, observe: async (_g, o) => page(o.urls![0], "Overdraft Fee $35.00 per item") });
-    expect(result).toMatchObject({ persisted: true, captureRequestIds: [] });
+    expect(result).toMatchObject({ persisted: true, captureRequestIds: [], captureReason: expect.stringContaining("live_audit_sql_budget_exhausted") });
+  });
+
+  it("keeps a saved chunk and names the error when capture admission hits a statement timeout", async () => {
+    // A statement timeout arrives as a plain PostgresError, not the budget error (found on a real DB).
+    const d = draw(1); lease(d);
+    vi.mocked(requestLiveSourceCaptures).mockRejectedValue(new Error("canceling statement due to statement timeout"));
+    const result = await runLiveAuditChunk({ db: vi.fn() as never, context: ctx, drawId: 1, now: () => 0, observe: async (_g, o) => page(o.urls![0], "Overdraft Fee $40.00 per item") });
+    expect(result).toMatchObject({ persisted: true, captureRequestIds: [], captureReason: "canceling statement due to statement timeout" });
   });
 
   it("names the unsupported fees a re-fetch cannot help (same bytes as the stored copy)", () => {

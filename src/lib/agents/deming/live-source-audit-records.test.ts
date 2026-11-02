@@ -121,6 +121,21 @@ describe("live-source retained/current component arithmetic",()=>{
     expect(validLiveAuditObservation({...base,status:"not_found",reason:"not_on_live_page:x",contentHash:null},draw,now.toISOString())).toBe(false);
     expect(validLiveAuditObservation({...liveAuditUnknown(fee,at,"not_on_live_page:x")},draw,now.toISOString())).toBe(false);
   });
+  it("labels a category-guard refusal apart from a price contradiction, and counts both as mismatches",()=>{
+    const {draw,progress}=fixture(3),fee=draw.rows[0];
+    const base={...progress.observations[0],status:"mismatch" as const};
+    expect(validLiveAuditObservation({...base,reason:"category_guard",dimensions:["category"]},draw,now.toISOString())).toBe(true);
+    // A category-guard refusal is never a price claim, and a price contradiction always carries the amount.
+    expect(validLiveAuditObservation({...base,reason:"category_guard",dimensions:["amount"]},draw,now.toISOString())).toBe(false);
+    expect(validLiveAuditObservation({...base,reason:"positive_current_contradiction",dimensions:["category"]},draw,now.toISOString())).toBe(false);
+    expect(validLiveAuditObservation({...liveAuditUnknown(fee,at,"category_guard")},draw,now.toISOString())).toBe(false);
+    progress.observations[0]={...base,reason:"category_guard",dimensions:["category"]};
+    progress.observations[1]={...progress.observations[1],status:"mismatch",reason:"positive_current_contradiction",dimensions:["amount"]};
+    const summary={...summarizeLiveAudit(1,draw,progress,now),archiveState:"archived" as const};
+    expect(summary).toMatchObject({mismatch:2,byReason:{category_guard:1,positive_current_contradiction:1}});
+    const archive=compactLiveAuditArchive(1,draw,progress,now,summary);
+    expect(validateLiveAuditComponent({summary,archive,archiveEventId:10000})).not.toBeNull();
+  });
 
   it("keeps a receipt valid when an example fee carries a negative amount",()=>{
     const {draw,progress}=fixture(1);draw.rows[0].catalog.amount=-5;

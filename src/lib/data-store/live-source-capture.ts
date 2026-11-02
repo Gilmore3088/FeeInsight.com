@@ -1,6 +1,6 @@
 import { sql } from "./connection";
 import { LIVE_SOURCE_AUDIT as LIMITS,LIVE_SOURCE_AUDIT_SERIES,LIVE_AUDIT_EVENTS as EVENTS,LIVE_AUDIT_STEPS as STEPS,
-  auditHash,boundedAuditJson,positiveId } from "@/lib/agents/deming/live-source-audit";
+  auditHash,boundedAuditJson,liveAuditUrlKey,positiveId,type LiveAuditFee } from "@/lib/agents/deming/live-source-audit";
 import { liveAuditCaptureRequestShape,liveAuditCaptureClaimShape,liveAuditCaptureDispositionShape,
   type LiveAuditCaptureRequest,type LiveAuditCaptureClaim,type LiveAuditCaptureDisposition } from "@/lib/agents/deming/live-source-audit-records";
 import { appendLiveAuditEvent,currentLiveAuditMatches,liveAuditDrawById,liveAuditTransaction,lockLiveAudit,readLiveAuditProgress,
@@ -9,6 +9,16 @@ type DB=typeof sql;
 type Row=Record<string,unknown>;
 const iso=(v:unknown)=>v instanceof Date?v.toISOString():String(v);
 const terminal=(state:string)=>["captured","failed","blocked","stale"].includes(state);
+
+/**
+ * The capture identity: the fee's own stored document address, institution and product, not the
+ * bytes served. A page that serves new bytes each fetch (a timestamp, a session token) would get a
+ * new identity every day if the bytes were in it and walk past the three-a-week cap; keyed by the
+ * address, the cap holds for that document whatever it serves (2026-11-02 review).
+ */
+export function liveCaptureIdentity(fee:Pick<LiveAuditFee,"institutionId"|"source"|"catalog">,requestedUrl:string):string{
+  return auditHash(["capture@2",fee.institutionId,liveAuditUrlKey(fee.source.url)??requestedUrl,fee.catalog.account_product_type]);
+}
 
 export async function readLiveCaptureRequest(db:DB,id:number):Promise<LiveAuditCaptureRequest|null>{
   if(!positiveId(id))return null;
@@ -99,7 +109,7 @@ export async function requestLiveSourceCaptures(db:DB,context:LiveAuditContext,d
       ||observation.reason==="stored_source_superseded"||observation.reason==="identity_changed_during_observation")continue;
     const fee=origin.detail.rows.find(f=>f.id===observation.feeId)!,group=origin.detail.groups.find(g=>g.institutionId===fee.institutionId)!;
     if(observation.contentHash===fee.source.contentHash)continue;
-    const identity=auditHash([fee.institutionId,observation.finalUrl,observation.contentHash,fee.catalog.account_product_type]);
+    const identity=liveCaptureIdentity(fee,observation.requestedUrl);
     if(!candidates.has(identity))candidates.set(identity,{observation,fee,group});
   }
   if(!candidates.size)return [];
@@ -130,7 +140,9 @@ export async function requestLiveSourceCaptures(db:DB,context:LiveAuditContext,d
       if(previous.length){
         const last=liveAuditCaptureRequestShape.parse(previous[0].detail),disposition=dispositions.get(Number(previous[0].id));
         previousRequestId=Number(previous[0].id);
-        if(last.chunkId===chunkId||!disposition||disposition==='invalid'||!terminal(disposition.state)||disposition.state==="captured"
+        // The same bytes once captured need no second copy; changed bytes wait out the cooldown.
+        if(last.chunkId===chunkId||!disposition||disposition==='invalid'||!terminal(disposition.state)
+          ||(disposition.state==="captured"&&last.contentHash===observation.contentHash)
           ||now.getTime()-Date.parse(disposition.at)<LIMITS.captureCooldownMs)continue;
       }
       requests.push({protocol:1,series:LIVE_SOURCE_AUDIT_SERIES,drawId,chunkId:chunkId,feeId:fee.id,feeFingerprint:fee.fingerprint,
@@ -160,7 +172,7 @@ export async function liveCaptureOriginCurrent(db:DB,request:LiveAuditCaptureReq
   const observed=progress.observations.find(o=>o.feeId===request.feeId);
   if(!observed||observed.contentHash!==request.contentHash||observed.textHash!==request.textHash||observed.finalUrl!==request.url
     ||observed.observedAt!==request.observedAt||Date.parse(request.expiresAt)>Date.parse(observed.expiresAt)
-    ||request.identity!==auditHash([fee.institutionId,observed.finalUrl,observed.contentHash,fee.catalog.account_product_type]))return false;
+    ||request.identity!==liveCaptureIdentity(fee,observed.requestedUrl??""))return false;
   return (await currentLiveAuditMatches(db,[fee],[group])).get(fee.id)===true;
 }
 

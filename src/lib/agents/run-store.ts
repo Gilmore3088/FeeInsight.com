@@ -130,7 +130,8 @@ import { findingsDetail as releaseRepairFindingsDetail, releaseRepairDetail, run
 import { AUDIENCE_RELABEL_V5_LIVE, AUDIENCE_RELABEL_VERSION, dryRunFullTotals, runAudienceRelabel, totalsMessage, type AudienceRelabelMode } from "@/lib/agents/darwin/audience-relabel";
 import { runDailyBrief } from "@/lib/agents/daily-brief";
 import { hamiltonHealthDetail } from "@/lib/hamilton/health-check";
-import { runSundayMaintenance, summarizeSundayMaintenance } from "@/lib/agents/deming/sunday-maintenance";
+import { runSundayMaintenance, summarizeSundayMaintenance, sundayMaintenanceFailures } from "@/lib/agents/deming/sunday-maintenance";
+import { recordStepWarning } from "@/lib/agents/hamilton/step-warning";
 import { MONTHLY_REVIEW_VERSION, runMonthlyReview, summarizeMonthlyReview } from "@/lib/agents/deming/monthly-review";
 import { runFeeAlertDispatch, summarizeFeeAlertDispatch } from "@/lib/agents/fee-alerts";
 import { runProDigest, summarizeProDigest } from "@/lib/agents/pro-digest";
@@ -3170,17 +3171,24 @@ async function executeAgenticStep(
     case "deming-sunday-maintenance": {
       // Its own savepoint, and a failure is this step's receipt, not the run's: on Nov 1 it failed on
       // an aborted transaction and cancelled the live-source draw and the three Atlas steps after it.
+      // Each failure (the whole step, a read, the send) still shows as one: a `step.warning` event
+      // and a summary that starts FAILED, so it is never only a server log line.
+      const warn = (what: string, error: unknown) => recordStepWarning(tx, { runId: run.id, stepId: step.id, check: "sunday-maintenance", what: `Sunday maintenance ${what}`, outcome: "failed", error });
       let result: Awaited<ReturnType<typeof runSundayMaintenance>>;
       try {
         result = await inSavepoint(tx, (scope) => runSundayMaintenance({ db: scope, dryRun: run.runKind === "dry_run" }));
       } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        return { status: "completed", summary: `Sunday maintenance email not written: ${message}`.slice(0, 300), detail: { ran: false, reason: message.slice(0, 300), delivery_status: "skipped" } };
+        const message = (await warn("email", error)).slice(0, 300);
+        return { status: "completed", summary: `FAILED: Sunday maintenance email not written: ${message}`.slice(0, 300), detail: { ran: false, failed: true, reason: message, delivery_status: "failed" } };
       }
+      const failures = sundayMaintenanceFailures(result);
+      for (const failure of failures) await warn(failure.what, failure.error);
       return {
         status: "completed",
         summary: summarizeSundayMaintenance(result),
         detail: {
+          failed: failures.length > 0,
+          failures,
           ran: result.ran,
           reason: result.reason,
           delivery_status: result.deliveryStatus,
@@ -3343,16 +3351,18 @@ async function executeAgenticStep(
       const context={runId:run.id,stepId:step.id,stepKey:step.stepKey};
       // A save that runs out of its SQL budget records nothing and moves no cursor, so the next chunk
       // reads the same institutions again; it no longer fails the run and cancels its archive step
-      // (9 of 20 chunk steps on Nov 1-2).
+      // (9 of 20 chunk steps on Nov 1-2). A COMMIT whose outcome is unknown may have saved the chunk,
+      // so it is never reported as "not saved": it fails the step with commit_outcome_unknown.
       let result:Awaited<ReturnType<typeof runLiveAuditChunk>>;
       try{result=await runLiveAuditChunk({db:tx,context,drawId:run.params.drawId});}
       catch(error){
-        if(!(error instanceof LiveAuditSqlBudgetError))throw error;
+        if(!(error instanceof LiveAuditSqlBudgetError)||error.commitOutcome==="unknown")throw error;
         return {status:"completed",summary:`Live-source diagnostic chunk not saved (${error.message}); the next chunk reads the same institutions again.`,detail:{claimed:true,persisted:false,groups:0,reason:error.message}};
       }
       const captures=result.captureRequestIds??[],v=result.verdicts;
       const verdicts=v?`; ${v.supported} match the live page, ${v.mismatch} contradicted, ${v.not_found} not found on it, ${v.unknown} unknown`:"";
-      return {status:"completed",summary:`Live-source diagnostic: ${result.groups} groups attempted; ${result.persisted?"receipt persisted":"no new receipt"}${verdicts}; ${captures.length} exact-document capture requests.`,detail:{...result,captureRequestIds:captures}};
+      const captureNote=result.captureReason?` (capture admission ${result.captureReason})`:"";
+      return {status:"completed",summary:`Live-source diagnostic: ${result.groups} groups attempted; ${result.persisted?"receipt persisted":"no new receipt"}${verdicts}; ${captures.length} exact-document capture requests${captureNote}.`,detail:{...result,captureRequestIds:captures}};
     }
     case "magellan-live-audit-capture": {
       if(run.runKind!=="workflow"||!positiveId(run.params.requestId))throw new Error("Invalid live-source capture request");

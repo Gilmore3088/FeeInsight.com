@@ -1,8 +1,7 @@
 import type { sql } from "@/lib/data-store/connection";
-import { claimLiveAuditChunk,settleLiveAuditChunk,type LiveAuditContext } from "@/lib/data-store/live-source-audit";
+import { claimLiveAuditChunk,readStoredTextChars,settleLiveAuditChunk,type LiveAuditContext } from "@/lib/data-store/live-source-audit";
 import { LIVE_SOURCE_AUDIT as LIMITS,boundedAuditJson,evaluateLiveAuditFee,liveAuditFeeUrls,liveAuditGraphMetadata,liveAuditUnknown,type LiveAuditObservation } from "./live-source-audit";
 import { requestLiveSourceCaptures } from "@/lib/data-store/live-source-capture";
-import { LiveAuditSqlBudgetError } from "@/lib/data-store/live-source-sql";
 import { auditAbortable,observeLiveAuditGroup } from "./live-source-observer";
 export interface LiveAuditChunkResult {
   claimed:boolean;persisted:boolean;groups:number;reason:string|null;captureRequestIds?:number[];
@@ -14,6 +13,8 @@ export interface LiveAuditChunkResult {
    * reads the stored copy with today's rules; this count says whether a further channel is needed.
    */
   unsupportedSameBytes?:number[];
+  /** Why capture admission did not finish after the save (its budget ran out, or its COMMIT outcome is unknown). */
+  captureReason?:string|null;
 }
 
 /** Pure: the fees a re-fetch cannot help, by published id. */
@@ -32,6 +33,12 @@ export async function runLiveAuditChunk(options:{db:typeof sql;context:LiveAudit
   const controller=new AbortController(),timer=setTimeout(()=>controller.abort(new Error("live_audit_work_budget")),workMs);
   const signal=options.signal?AbortSignal.any([controller.signal,options.signal]):controller.signal;
   let next=claim.fromGroup;
+  // The stored copies' text lengths: a live page far thinner than its stored copy is a script shell.
+  let storedChars=new Map<number,number>();
+  try{
+    const ids=draw.groups.slice(claim.fromGroup,claim.throughGroup).flatMap(g=>draw.rows.filter(f=>g.feeIds.includes(f.id)).map(f=>f.source.id));
+    storedChars=await readStoredTextChars(options.db,ids,Date.now()+LIMITS.storedTextMs);
+  }catch{/* The floor alone applies. */}
   const results=new Map<number,{observations:LiveAuditObservation[];graph:Record<string,unknown>|null}>();
   const cut=new Set<number>();
   try{
@@ -45,7 +52,7 @@ export async function runLiveAuditChunk(options:{db:typeof sql;context:LiveAudit
           const graph=await auditAbortable((options.observe??observeLiveAuditGroup)(group,{signal,urls:liveAuditFeeUrls(fees),fetchImpl:options.fetchImpl}),signal);
           const at=new Date().toISOString();
           if(controller.signal.aborted)cut.add(index);
-          results.set(index,{observations:fees.map(f=>evaluateLiveAuditFee(f,group,graph,at)),graph:liveAuditGraphMetadata(graph)});
+          results.set(index,{observations:fees.map(f=>evaluateLiveAuditFee(f,group,graph,at,{chars:storedChars.get(f.source.id)??null})),graph:liveAuditGraphMetadata(graph)});
         }catch{if(controller.signal.aborted)cut.add(index);results.set(index,{observations:fees.map(f=>liveAuditUnknown(f,new Date().toISOString(),"live_observation_failed")),graph:null});}
       }
     }));
@@ -74,10 +81,12 @@ export async function runLiveAuditChunk(options:{db:typeof sql;context:LiveAudit
     // no longer rolls the chunk back with it (it ran inside the save until Nov 2). A fee the live
     // page did not support, served from changed bytes, asks Magellan for a copy of those bytes; the
     // copy then goes through the usual read, extract, verify and publish (the re-fetch/re-read feed).
-    let captureRequestIds:number[]=[];
+    let captureRequestIds:number[]=[],captureReason:string|null=null;
     try{captureRequestIds=await requestLiveSourceCaptures(options.db,options.context,origin.id,{origin},Date.now()+LIMITS.settleMs);}
-    catch(error){if(!(error instanceof LiveAuditSqlBudgetError))throw error;}
-    return {claimed:true,persisted:true,groups:next-claim.fromGroup,reason:null,captureRequestIds,verdicts,
+    // Any failure here (its budget, a statement timeout, which arrives as a plain PostgresError) runs on
+    // its own client and leaves the saved chunk saved; the step's receipt names it instead of failing.
+    catch(error){captureReason=(error instanceof Error?error.message:String(error)).slice(0,200);}
+    return {claimed:true,persisted:true,groups:next-claim.fromGroup,reason:null,captureRequestIds,captureReason,verdicts,
       unsupportedSameBytes:unsupportedSameBytes(observations,draw.rows)};
   }finally{clearTimeout(timer);}
 }

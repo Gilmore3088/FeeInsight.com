@@ -3,8 +3,9 @@
 This is a separate automated diagnostic of the current published dollar-fee catalog. Each sampled
 fee is checked against a fresh copy of the bank page it was read from (since 2026-11-02, see
 `docs/project/findings/2026-11-02-live-audit-scores-nothing.md`). A page that loads gives the fee a
-verdict: supported, mismatch or not found on the page. A fee is unknown only when its page did not
-load or gave no text, and the reason is recorded. The existing stored-copy audit, answer-key
+verdict: supported, mismatch or not found on the page. A fee is unknown when its page did not
+load or gave no text, when the page is a script shell, or when its price's witness is restricted,
+and the reason is recorded. The existing stored-copy audit, answer-key
 v3/reference cohort and James's weekly 50 whole institutions remain separate. No numerical target
 or launch gate is changed. Missing fees, rate fees and population exclusions limit interpretation.
 
@@ -121,12 +122,19 @@ fetch is recorded in the graph's `failed` list with its reason (`live_fetch_enot
 The evaluator (`evaluateLiveAuditFee`) uses the shared match rule, `checkFeeAgainstSource`:
 - `supported` (`own_current_fee_supported`): the page prints the fee at our amount, and the category
   guard accepts the name for our category.
-- `mismatch` (`positive_current_contradiction`): the fee's own row (a line starting with its name)
-  has exactly one price that the shared check traces to this fee, and that price is not ours
-  (`amount`). Or the guard refuses the name for our category (`category`).
+- `mismatch`, two reasons counted apart. `positive_current_contradiction`: the fee's own row (a
+  line starting with its name) has exactly one price that the shared check traces to this fee, and
+  that price is not ours (dimension `amount`). `category_guard`: the page prints our price on the
+  fee's line, but the guard refuses the name for our category (dimension `category` only); this is
+  not a price contradiction.
 - `not_found` (`not_on_live_page:<check reason>`): the page loaded and does not print this fee at
   our amount.
-- `unknown`: the page did not load, answered with a status other than 200, or gave no text.
+- `unknown`: the page did not load, answered with a status other than 200, or gave no text; the
+  price's witness is restricted or its producer scope unproven (`own_applicability_unproven`); or
+  the page is a script shell (`live_text_shell`: a fee it does not print, on text under 200
+  characters or under a quarter of the stored copy's `agent_source_texts.char_count`, read once
+  per chunk). A plain fetch of a page Magellan read with a browser returns such a shell; it is
+  never scored not found and asks for no capture.
 Until 2026-11-02 the evaluator needed a complete homepage graph, a proven consumer heading and the
 fee's own frequency, conditions and basis. All 122 observations on Nov 1-2 came out unknown.
 
@@ -154,7 +162,9 @@ Each episode has at most three attempts/24 hours, ten-/sixty-minute retry backof
 terminal captured/blocked/stale/failed disposition. Authority/identity drift is terminal; transient
 transport/storage failures retry within the cap. After a terminal non-captured episode, only a
 new fresh bound observation after 24-hour cooldown may create a linked later episode; the same
-observation cannot reset it. At most three episodes per identity in rolling seven days, no duplicate
+observation cannot reset it. The identity is the fee's stored document address with its
+institution and product (`liveCaptureIdentity`), not the served bytes, so a page that serves new
+bytes on every fetch cannot get a new identity each day. At most three episodes per identity in rolling seven days, no duplicate
 active episode and no new James queue. Newest malformed/wrong-origin claims or dispositions are
 tombstones. Counts use the same bounded batched provenance validator as consumers.
 

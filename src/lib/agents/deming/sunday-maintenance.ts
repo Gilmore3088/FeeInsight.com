@@ -204,7 +204,10 @@ export interface SundayMaintenanceResult {
   email: SundayEmail | null;
   deliveryStatus: EmailDeliveryStatus | "skipped";
   deliveryReason: string | null;
+  /** Reads that failed: the email shows them as unread, and the step records each as a failure. */
+  unread?: SundayReadFailure[];
 }
+export interface SundayReadFailure { what: string; error: string }
 
 /**
  * One read in its own savepoint. The step runs inside the run-ledger transaction, where a failed
@@ -213,11 +216,12 @@ export interface SundayMaintenanceResult {
  * step, which cancelled the scoreboard's live-source draw after it. A failed read is rolled back
  * alone and shown as unread; the email still goes out with the others.
  */
-async function read<T>(db: SqlTag, what: string, load: (scope: SqlTag) => Promise<T>): Promise<T | null> {
+async function read<T>(db: SqlTag, what: string, load: (scope: SqlTag) => Promise<T>, unread: SundayReadFailure[]): Promise<T | null> {
   try {
     return await inSavepoint(db, load);
   } catch (error) {
     console.error(`Sunday maintenance email: ${what} could not be read`, error);
+    unread.push({ what, error: (error instanceof Error ? error.message : String(error)).slice(0, 300) });
     return null;
   }
 }
@@ -226,15 +230,16 @@ async function read<T>(db: SqlTag, what: string, load: (scope: SqlTag) => Promis
  * The email's reads, one after another. Savepoints on one transaction are a stack, so they cannot
  * run in parallel: a rollback to one would release the others.
  */
-export async function readSundayInputs(db: SqlTag, now: Date): Promise<Omit<SundayEmailInputs, "now">> {
-  const labels = await read(db, "fee-name labels", (scope) => loadLabelQueue(scope));
-  const answerKeyToCheck = await read(db, "answer key", async (scope) => ((await answerKeySchemaReady(scope)) ? banksToCheck(await listAnswerKeyInstitutions(scope)).length : 0));
-  const dataRoom = await read(db, "data room", (scope) => readDataRoomCounts(scope));
-  const goal = await read(db, "scorecard", (scope) => readGoalScorecard(scope, now));
-  const stuck = await read(db, "failure alerts", (scope) => getFailureAlerts(scope));
-  const outcomes = await read(db, "change outcomes", (scope) => readChangeOutcomeReview(scope, now));
-  const monthlyReview = await read(db, "monthly agent review", (scope) => readLatestMonthlyReview(scope));
-  return { labels, answerKeyToCheck, dataRoom, goal, stuck, outcomes, monthlyReview };
+export async function readSundayInputs(db: SqlTag, now: Date): Promise<{ inputs: Omit<SundayEmailInputs, "now">; unread: SundayReadFailure[] }> {
+  const unread: SundayReadFailure[] = [];
+  const labels = await read(db, "fee-name labels", (scope) => loadLabelQueue(scope), unread);
+  const answerKeyToCheck = await read(db, "answer key", async (scope) => ((await answerKeySchemaReady(scope)) ? banksToCheck(await listAnswerKeyInstitutions(scope)).length : 0), unread);
+  const dataRoom = await read(db, "data room", (scope) => readDataRoomCounts(scope), unread);
+  const goal = await read(db, "scorecard", (scope) => readGoalScorecard(scope, now), unread);
+  const stuck = await read(db, "failure alerts", (scope) => getFailureAlerts(scope), unread);
+  const outcomes = await read(db, "change outcomes", (scope) => readChangeOutcomeReview(scope, now), unread);
+  const monthlyReview = await read(db, "monthly agent review", (scope) => readLatestMonthlyReview(scope), unread);
+  return { inputs: { labels, answerKeyToCheck, dataRoom, goal, stuck, outcomes, monthlyReview }, unread };
 }
 
 export async function runSundayMaintenance({
@@ -246,15 +251,16 @@ export async function runSundayMaintenance({
   if (!force && !isSundayUtc(now)) {
     return { ran: false, reason: "Not Sunday (UTC).", email: null, deliveryStatus: "skipped", deliveryReason: null };
   }
-  const email = buildSundayEmail({ ...(await readSundayInputs(db, now)), now });
+  const { inputs, unread } = await readSundayInputs(db, now);
+  const email = buildSundayEmail({ ...inputs, now });
 
-  if (dryRun) return { ran: true, reason: null, email, deliveryStatus: "not_configured", deliveryReason: "dry run" };
+  if (dryRun) return { ran: true, reason: null, email, deliveryStatus: "not_configured", deliveryReason: "dry run", unread };
   if (!sundayEmailLive()) {
-    return { ran: true, reason: null, email, deliveryStatus: "not_configured", deliveryReason: "SUNDAY_EMAIL_LIVE is not true; written to the ledger only." };
+    return { ran: true, reason: null, email, deliveryStatus: "not_configured", deliveryReason: "SUNDAY_EMAIL_LIVE is not true; written to the ledger only.", unread };
   }
   const from = getTransactionalFromAddress();
   if (!from) {
-    return { ran: true, reason: null, email, deliveryStatus: "not_configured", deliveryReason: "TRANSACTIONAL_EMAIL_FROM is not configured." };
+    return { ran: true, reason: null, email, deliveryStatus: "not_configured", deliveryReason: "TRANSACTIONAL_EMAIL_FROM is not configured.", unread };
   }
   const { to, cc } = briefRecipients();
   const text = email.lines.join("\n\n");
@@ -269,13 +275,28 @@ export async function runSundayMaintenance({
     email,
     deliveryStatus: result.status,
     deliveryReason: result.status === "sent" ? null : result.status === "failed" ? result.error : result.reason,
+    unread,
   };
+}
+
+/**
+ * The step's failures, each shown in the run ledger as a `step.warning`: a read that failed and a
+ * send that failed. The step itself completes so the scoreboard steps after it still run (on Nov 1
+ * a failed step cancelled the live-source draw), but a failure is never only a server log line.
+ */
+export function sundayMaintenanceFailures(result: Pick<SundayMaintenanceResult, "unread" | "deliveryStatus" | "deliveryReason">): SundayReadFailure[] {
+  const failures = [...(result.unread ?? [])];
+  if (result.deliveryStatus === "failed") failures.push({ what: "email send", error: result.deliveryReason ?? "send failed" });
+  return failures;
 }
 
 export function summarizeSundayMaintenance(result: SundayMaintenanceResult): string {
   if (!result.ran) return `Skipped the Sunday maintenance email: ${result.reason ?? "not due"}`;
   const minutes = result.email?.minutes ?? 0;
-  return result.deliveryStatus === "sent"
+  const unread = result.unread ?? [];
+  const failed = unread.length ? ` FAILED reads (shown as unread): ${unread.map((f) => f.what).join(", ")}.` : "";
+  if (result.deliveryStatus === "failed") return `FAILED to email the Sunday hour (${minutes} minutes of tasks): ${result.deliveryReason ?? "send failed"}.${failed}`;
+  return (result.deliveryStatus === "sent"
     ? `Deming emailed James the Sunday hour: ${minutes} minutes of tasks.`
-    : `Deming wrote the Sunday hour (${minutes} minutes of tasks) but did not email it: ${result.deliveryReason ?? result.deliveryStatus}.`;
+    : `Deming wrote the Sunday hour (${minutes} minutes of tasks) but did not email it: ${result.deliveryReason ?? result.deliveryStatus}.`) + failed;
 }

@@ -121,7 +121,9 @@ export function compactLiveAuditArchive(drawId:number,draw:LiveAuditDraw,progres
 }
 
 const notFoundReason=(reason:string)=>reason===LIVE_AUDIT_REASONS.notFound||reason.startsWith(`${LIVE_AUDIT_REASONS.notFound}:`);
-const isPageVerdictReason=(reason:string)=>reason===LIVE_AUDIT_REASONS.supported||reason===LIVE_AUDIT_REASONS.mismatch||notFoundReason(reason);
+/** A mismatch is a price contradiction or a category-guard refusal; the two are counted apart. */
+const mismatchReason=(reason:string)=>reason===LIVE_AUDIT_REASONS.mismatch||reason===LIVE_AUDIT_REASONS.categoryGuard;
+const isPageVerdictReason=(reason:string)=>reason===LIVE_AUDIT_REASONS.supported||mismatchReason(reason)||notFoundReason(reason);
 export function validLiveAuditObservation(o:LiveAuditObservation,draw:LiveAuditDraw,createdAt:string):boolean {
   const fee=draw.rows.find((r)=>r.id===o.feeId);const at=Date.parse(o.observedAt),expires=Date.parse(o.expiresAt),created=Date.parse(createdAt);
   if(!fee||fee.fingerprint!==o.fingerprint||at<Date.parse(draw.asOf)||at>Date.parse(draw.deadline)||at>created+1000
@@ -130,7 +132,10 @@ export function validLiveAuditObservation(o:LiveAuditObservation,draw:LiveAuditD
   if(!o.contentHash||!o.textHash||!o.graphHash||!o.requestedUrl||!o.finalUrl)return false;
   if(o.status==="not_found")return o.dimensions.length===0&&notFoundReason(o.reason);
   if(!o.sourceLine)return false;
-  return o.status==="supported"?o.dimensions.length===0&&o.reason===LIVE_AUDIT_REASONS.supported:o.dimensions.length>0&&o.reason===LIVE_AUDIT_REASONS.mismatch;
+  if(o.status==="supported")return o.dimensions.length===0&&o.reason===LIVE_AUDIT_REASONS.supported;
+  // A category-guard refusal carries the category dimension only; a contradiction carries the amount.
+  if(o.reason===LIVE_AUDIT_REASONS.categoryGuard)return o.dimensions.length===1&&o.dimensions[0]==="category";
+  return o.reason===LIVE_AUDIT_REASONS.mismatch&&o.dimensions.includes("amount");
 }
 
 export const liveAuditCaptureRequestShape=z.object({...protocol,chunkId:id,feeId:id,feeFingerprint:hash,institutionId:id,policyFingerprint:hash,
@@ -163,7 +168,7 @@ export function validateLiveAuditComponent(raw:unknown):LiveAuditComponent|null{
     if(s.population!==null&&(!integer(s.population)||s.population<s.selected)||s.attempted<s.supported+s.mismatch+s.notFound
       ||Object.values(s.byReason).reduce((n,v)=>n+v,0)!==s.selected-s.unattempted
       ||Object.values(s.byDimension).some(v=>v>s.mismatch)
-      ||(s.byReason.own_current_fee_supported??0)!==s.supported||(s.byReason.positive_current_contradiction??0)!==s.mismatch
+      ||(s.byReason.own_current_fee_supported??0)!==s.supported||(s.byReason.positive_current_contradiction??0)+(s.byReason.category_guard??0)!==s.mismatch
       ||Object.entries(s.byReason).filter(([reason])=>notFoundReason(reason)).reduce((n,[,v])=>n+v,0)!==s.notFound
       ||(s.capture.pending===0?s.capture.oldestPendingAt!==null:!time.safeParse(s.capture.oldestPendingAt).success))return null;
     if(Date.parse(s.deadline)-Date.parse(s.asOf)!==LIMITS.windowMs||s.day!==s.asOf.slice(0,10)||Date.parse(s.componentAsOf)<Date.parse(s.asOf))return null;
@@ -194,7 +199,7 @@ export function validateLiveAuditComponent(raw:unknown):LiveAuditComponent|null{
           ||o[4]>Math.floor(Date.parse(s.componentAsOf)/1000)||!hash.safeParse(o[5]).success||!integer(o[6])||o[6]>=(1<<LIVE_AUDIT_DIMENSIONS.length))return null;
         const reason=a.reasonCodes[o[3]];
         if(o[2]==="s"){if(reason!=="own_current_fee_supported"||o[6]!==0)return null;supported++;}
-        else if(o[2]==="m"){if(reason!=="positive_current_contradiction"||o[6]===0)return null;mismatch++;}
+        else if(o[2]==="m"){if(!mismatchReason(reason)||o[6]===0)return null;mismatch++;}
         else if(o[2]==="n"){if(!notFoundReason(reason)||o[6]!==0)return null;notFound++;}
         else{if(isPageVerdictReason(reason)||o[6]!==0)return null;unknown++;}
         if(o[2]!=="u"&&o[4]>Math.floor(Date.parse(s.deadline)/1000))return null;
@@ -220,5 +225,5 @@ export function liveAuditBrief(component:LiveAuditComponent|null):string{
   if(!validated)return "Live-source diagnostic: unavailable (no validated current series). Weekly 50-institution launch review remains separate.";
   const s=validated.summary;
   const score=s.support==null?"no score yet":`live score ${(s.support*100).toFixed(1)}% of ${s.supported+s.mismatch+s.notFound} fees whose page loaded`;
-  return `Live-source diagnostic ${s.day} (${s.state}, ${score}): ${s.supported} supported by the bank's live page, ${s.mismatch} contradicted, ${s.notFound} not found on it, ${s.unknown} unknown (page did not load), ${s.unattempted} unattempted of ${s.selected}; ${s.attempted} attempted. ${s.capture.pending} captures pending. Shared source validator; no missing-fee recall or launch certification. Launch measurement remains the weekly 50 whole institutions.`;
+  return `Live-source diagnostic ${s.day} (${s.state}, ${score}): ${s.supported} supported by the bank's live page, ${s.mismatch} contradicted (${s.byReason.category_guard??0} of them by the category guard, not a price), ${s.notFound} not found on it, ${s.unknown} unknown (page did not load, text too thin, or the fee's own terms unproven), ${s.unattempted} unattempted of ${s.selected}; ${s.attempted} attempted. ${s.capture.pending} captures pending. Shared source validator; no missing-fee recall or launch certification. Launch measurement remains the weekly 50 whole institutions.`;
 }

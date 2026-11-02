@@ -26,8 +26,9 @@ runtime judgment when its original document identity cannot be established. See
 fees. Each fee is checked against a fresh copy of the bank page it was read from. The queue-only
 daily route freezes the frame after its existing measurement/snapshot steps. Non-exempt finite tick
 work fetches the pages and gives each fee a verdict with `checkFeeAgainstSource`: supported,
-mismatch, or not found on the page. A fee is unknown only when its page did not load, and the
-reason is recorded. A fee the page did not support, served from changed bytes, asks Magellan to
+mismatch (a price contradiction, or a category-guard refusal counted apart), or not found on the
+page. A fee is unknown when its page did not load, when a plain fetch returned a script shell far
+thinner than the stored copy, or when its price's witness is restricted, and the reason is recorded. A fee the page did not support, served from changed bytes, asks Magellan to
 copy the page so the pipeline reads it again. Late completion is archived into the original dated
 snapshot, and the live score (supported over every fee whose page loaded) is shown in the
 accuracy history by draw. Checker versions are recorded on each verdict, not in the draw's

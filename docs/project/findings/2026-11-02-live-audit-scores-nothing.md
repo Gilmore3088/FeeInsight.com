@@ -43,10 +43,19 @@ live score for 14 days. (Read-only queries of `agent_runs`, `agent_run_steps` an
 - The fee is checked against a fresh copy of the page it was read from (`source.url`), not a page
   found from the homepage. HTML is read with Rosetta's own reader (`extractHtmlDomText`), and no
   links are kept. A page that loads gets a verdict from `checkFeeAgainstSource`: `supported`;
-  `mismatch` (the fee's own row at another single price, or a name the category guard refuses
-  for our category); or `not_found` (the reason carries the check's own). `unknown` is only for a
-  page that did not load or gave no text, and it records why (`live_fetch_enotfound`,
-  `live_http_404`, `live_page_no_text`, `live_timeout_or_cancelled`...).
+  `mismatch`, either the fee's own row at another single price (`positive_current_contradiction`,
+  dimension `amount`) or a name the category guard refuses for our category (`category_guard`,
+  dimension `category` only, counted apart so it is not read as a price contradiction); or
+  `not_found` (the reason carries the check's own). `unknown` records why: a page that did not
+  load or gave no text (`live_fetch_enotfound`, `live_http_404`, `live_page_no_text`,
+  `live_timeout_or_cancelled`...); a price whose witness is restricted or whose producer scope is
+  unproven (`own_applicability_unproven`, kept from before Nov 2); or a script shell
+  (`live_text_shell`).
+- A page Magellan read with a browser comes back from a plain fetch as a near-empty shell. A fee
+  that page does not print is `unknown` (`live_text_shell`), not `not_found`, when its text is
+  under 200 characters or under a quarter of the stored copy's `agent_source_texts.char_count`
+  (stored copies of 1,000+ characters). The stored lengths are read once per chunk, not frozen
+  into the draw. A shell asks for no capture.
 - The live score is supported / (supported + mismatch + not found). It is on the scoreboard
   panel, the goal brief and a new "Live-site score, by draw" table in the accuracy history (one
   row per draw from the daily snapshots' `goal.liveSourceAudit`), apart from the stored-copy weeks.
@@ -59,17 +68,24 @@ live score for 14 days. (Read-only queries of `agent_runs`, `agent_run_steps` an
 - The draw series is now `live-source@2:frame1:page1:report2`. Each verdict carries
   `checker: source<v>:category<v>`, so a bump no longer restarts the day's draw.
 - Feed: a fee the page did not support (mismatch or not found), served from bytes that differ
-  from its stored copy, asks Magellan for a capture. The copy then goes through the usual read,
+  from its stored copy, asks Magellan for a capture. The capture identity is the fee's stored
+  document address (with institution and product), not the bytes served, so a page that serves
+  new bytes on every fetch cannot walk past the three-a-week cap. Capture admission that fails
+  after the save (budget, or a statement timeout, which arrives as a plain `PostgresError`) leaves
+  the chunk saved and names the error in the step's receipt (`captureReason`). A save whose COMMIT
+  outcome is unknown still fails the step, since the chunk may have been saved. The copy then goes through the usual read,
   extract, verify and publish. A fee left unsupported when the page bytes match the stored copy
   cannot be helped by a re-fetch; the step records it in `unsupportedSameBytes`. Nothing here
   takes down or holds a live fee, so no `*_LIVE` switch is added.
 - Sunday maintenance runs its reads one after another, each in its own savepoint. The step runs
-  in a savepoint and records a failure as its own receipt, so it no longer cancels the draw.
+  in a savepoint and completes, so it no longer cancels the draw, but every failure still shows
+  as one: a failed read, a failed send or a failed step each writes a `step.warning` run event,
+  and the summary starts or ends with FAILED.
 
 **Not done / to verify after deploy:** No bank page can be fetched from the build container, so
 the new verdicts have no production count yet. Whether a capture's side copy is read by Rosetta
 the same day has not been seen on prod, because no capture has ever been requested.
 
-**Guard:** `src/lib/agents/deming/live-source-audit.test.ts` (a loaded page yields a supported, mismatch or not-found verdict; unknown only on a failed fetch) and the quality ledger's live-site line, which reads "no score yet" when a draw scores nothing.
+**Guard:** `src/lib/agents/deming/live-source-audit.test.ts` (a loaded page yields a supported, mismatch or not-found verdict; unknown only on a failed fetch, a script shell or an unproven witness), `src/lib/data-store/live-source-audit.db.test.ts` (a real chunk saves its verdicts and then admits one capture; supported, same-byte and unknown fees ask for none; the weekly cap holds when bytes change every day) and the quality ledger's live-site line, which reads "no score yet" when a draw scores nothing.
 
 **Agent lesson:** deming/live-audit-score-what-loaded

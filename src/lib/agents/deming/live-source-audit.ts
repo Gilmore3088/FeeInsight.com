@@ -27,7 +27,7 @@ export const LIVE_SOURCE_AUDIT = {
   // The save had 10 s and 9 of 20 chunk steps ran out of it on Nov 1-2: it re-read and re-hashed
   // the 3.9 MB draw three times and sent every institution's policy. It has 20 s now, taken from
   // the work window, so the step still fits its 90 s.
-  windowMs: 24 * 60 * 60 * 1000, workMs: 60_000, groupStartMs: 35_000, settleMs: 20_000, stepMs: 90_000,
+  windowMs: 24 * 60 * 60 * 1000, workMs: 60_000, groupStartMs: 35_000, settleMs: 20_000, storedTextMs: 5_000, stepMs: 90_000,
   requestMs: 8_000, responseBytes: 8 * 1024 * 1024, textChars: 1_000_000,
   workers: 3, groupsPerChunk: 12, leaseMs: 90_000, examples: 10,
   captureAttempts: 3, captureCooldownMs: 24 * 60 * 60 * 1000, captureEpisodesPerWeek: 3,
@@ -103,8 +103,26 @@ export interface LiveAuditObservation {
   /** `LIVE_SOURCE_AUDIT_CHECKER` when the verdict was made. */
   checker?: string;
 }
-/** The fixed reasons of the three page verdicts; a `not_found` reason carries the check's own after a colon. */
-export const LIVE_AUDIT_REASONS = { supported: "own_current_fee_supported", mismatch: "positive_current_contradiction", notFound: "not_on_live_page" } as const;
+/**
+ * The fixed reasons of the page verdicts; a `not_found` reason carries the check's own after a colon.
+ * A mismatch is either the fee's own row at another price (`mismatch`) or the category guard refusing
+ * the fee's own name for the category we file it under (`categoryGuard`), which is not a price
+ * contradiction and is counted apart. `applicability` and `shell` are unknowns from a page that did
+ * load: the price is printed but its own terms are unproven, or the text is too thin to judge.
+ */
+export const LIVE_AUDIT_REASONS = { supported: "own_current_fee_supported", mismatch: "positive_current_contradiction",
+  categoryGuard: "category_guard", notFound: "not_on_live_page", applicability: "own_applicability_unproven",
+  shell: "live_text_shell" } as const;
+/**
+ * A page Magellan read with a browser comes back from a plain fetch as a near-empty script shell.
+ * Its text is too thin to say a fee is absent: below the floor, or under this share of the stored
+ * text, a fee the page does not print is unknown (`live_text_shell`) and asks for no capture.
+ */
+export const LIVE_TEXT_SHELL = { floorChars: 200, storedShare: 0.25, storedMinChars: 1000 } as const;
+export function liveTextIsShell(liveChars: number, storedChars: number | null | undefined): boolean {
+  if (liveChars < LIVE_TEXT_SHELL.floorChars) return true;
+  return typeof storedChars === "number" && storedChars >= LIVE_TEXT_SHELL.storedMinChars && liveChars < storedChars * LIVE_TEXT_SHELL.storedShare;
+}
 
 export const positiveId = (value: unknown): value is number => typeof value === "number" && Number.isSafeInteger(value) && value > 0;
 export const auditHash = (value: unknown): string => createHash("sha256").update(boundedAuditJson(value, LIVE_SOURCE_AUDIT.drawBytes)).digest("hex");
@@ -245,7 +263,8 @@ export function liveAuditContradiction(text: string, fee: Pick<LiveAuditCatalogR
  * fetched fresh; a page that loads gets a verdict with the shared match rule
  * (`checkFeeAgainstSource`), and only a page that does not load, or gives no text, is unknown.
  */
-export function evaluateLiveAuditFee(fee: LiveAuditFee, _group: LiveAuditGroup, graph: LiveAuditGraph, at: string): LiveAuditObservation {
+export function evaluateLiveAuditFee(fee: LiveAuditFee, _group: LiveAuditGroup, graph: LiveAuditGraph, at: string,
+  stored: { chars?: number | null } = {}): LiveAuditObservation {
   const url = liveAuditUrlKey(fee.source.url);
   if (!url) return liveAuditUnknown(fee, at, "fee_document_url_missing");
   if (!Number.isFinite(fee.catalog.amount) || fee.catalog.amount < 0) return liveAuditUnknown(fee, at, "fee_amount_unreadable");
@@ -264,14 +283,21 @@ export function evaluateLiveAuditFee(fee: LiveAuditFee, _group: LiveAuditGroup, 
   // even where the page prints the price (accuracy is amount and category, CLAUDE.md).
   const wrongCategory = !checkFeeCategory(fee.catalog.canonical_fee_key, fee.catalog.fee_name).ok;
   const check = checkFeeAgainstSource(page.text, fee.catalog.fee_name, fee.catalog.amount, ".", fee.catalog.canonical_fee_key);
-  if (check.ok) return wrongCategory ? verdict("mismatch", LIVE_AUDIT_REASONS.mismatch, ["category"], check.sourceLine)
-    : verdict("supported", LIVE_AUDIT_REASONS.supported, [], check.sourceLine);
+  if (check.ok) {
+    if (wrongCategory) return verdict("mismatch", LIVE_AUDIT_REASONS.categoryGuard, ["category"], check.sourceLine);
+    // A cap-first witness or a row whose producer scope is unproven prices the fee, but does not prove
+    // the price applies to this account: unknown, as before Nov 2, never supported.
+    if (check.eligibilityContext || check.producerScopeUnknown) return liveAuditUnknown(fee, at, LIVE_AUDIT_REASONS.applicability);
+    return verdict("supported", LIVE_AUDIT_REASONS.supported, [], check.sourceLine);
+  }
   const contradiction = liveAuditContradiction(page.text, fee.catalog);
   if (contradiction) return verdict("mismatch", LIVE_AUDIT_REASONS.mismatch, wrongCategory ? ["amount", "category"] : ["amount"], contradiction.line);
   if (check.reason === "category_not_in_text" && wrongCategory) {
     // Our price is on the fee's own line, but the line never names the category we file it under.
     const uncategorized = checkFeeAgainstSource(page.text, fee.catalog.fee_name, fee.catalog.amount, ".", null);
-    if (uncategorized.ok) return verdict("mismatch", LIVE_AUDIT_REASONS.mismatch, ["category"], uncategorized.sourceLine);
+    if (uncategorized.ok) return verdict("mismatch", LIVE_AUDIT_REASONS.categoryGuard, ["category"], uncategorized.sourceLine);
   }
+  // A script shell is not the bank's page: too little text to say the fee is absent.
+  if (liveTextIsShell(compact(page.text).length, stored.chars)) return liveAuditUnknown(fee, at, LIVE_AUDIT_REASONS.shell);
   return verdict("not_found", `${LIVE_AUDIT_REASONS.notFound}:${check.reason}`, [], null);
 }

@@ -20,7 +20,7 @@ vi.mock("@/lib/agents/failure-alerts", () => ({ getFailureAlerts: vi.fn(track("a
 vi.mock("@/lib/agents/deming/change-outcomes", () => ({ readChangeOutcomeReview: vi.fn(track("outcomes", null)), hitRateLine: () => "" }));
 vi.mock("@/lib/agents/deming/monthly-review", () => ({ readLatestMonthlyReview: vi.fn(track("monthly", null)), monthlyReviewSundayLine: () => null }));
 
-import { readSundayInputs } from "./sunday-maintenance";
+import { readSundayInputs, summarizeSundayMaintenance, sundayMaintenanceFailures } from "./sunday-maintenance";
 
 describe("Sunday maintenance reads (Nov 1 aborted transaction)", () => {
   it("runs every read in its own savepoint, one after another, so one failure cannot abort the rest", async () => {
@@ -29,7 +29,7 @@ describe("Sunday maintenance reads (Nov 1 aborted transaction)", () => {
       savepoints.push(`savepoint ${savepoints.length + 1}`);
       return work(db);
     }) };
-    const inputs = await readSundayInputs(db as never, new Date("2026-11-01T13:00:00Z"));
+    const { inputs, unread } = await readSundayInputs(db as never, new Date("2026-11-01T13:00:00Z"));
     expect(db.savepoint).toHaveBeenCalledTimes(7);
     expect(calls.maxActive).toBe(1);
     expect(calls.order).toEqual(["labels", "answer-key", "data-room", "goal", "alerts", "outcomes", "monthly"]);
@@ -37,5 +37,17 @@ describe("Sunday maintenance reads (Nov 1 aborted transaction)", () => {
     expect(inputs.labels).toBeNull();
     expect(inputs.answerKeyToCheck).toBe(0);
     expect(inputs.stuck).toEqual([]);
+    // ...and the failure is recorded, not only logged.
+    expect(unread).toEqual([{ what: "fee-name labels", error: 'relation "label_votes" does not exist' }]);
+  });
+
+  it("shows a failed read and a failed send as failures in the step's receipt", () => {
+    const result = { ran: true, reason: null, email: { subject: "s", minutes: 30, lines: [], rolledOver: [] } as never,
+      deliveryStatus: "failed" as const, deliveryReason: "resend 500", unread: [{ what: "scorecard", error: "boom" }] };
+    expect(sundayMaintenanceFailures(result)).toEqual([{ what: "scorecard", error: "boom" }, { what: "email send", error: "resend 500" }]);
+    expect(summarizeSundayMaintenance(result)).toMatch(/^FAILED to email the Sunday hour .*resend 500\. FAILED reads \(shown as unread\): scorecard\.$/);
+    const clean = { ...result, deliveryStatus: "sent" as const, deliveryReason: null, unread: [] };
+    expect(sundayMaintenanceFailures(clean)).toEqual([]);
+    expect(summarizeSundayMaintenance(clean)).not.toMatch(/FAILED/);
   });
 });

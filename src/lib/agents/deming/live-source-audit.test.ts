@@ -2,7 +2,7 @@
 import { describe, expect, it } from "vitest";
 import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
 import { auditHash, boundedAuditJson, evaluateLiveAuditFee, freezeLiveAuditFee, liveAuditContradiction, liveAuditFeeUrls, liveAuditPolicyFingerprint,
-  makeLiveAuditDraw, LIVE_SOURCE_AUDIT, LIVE_SOURCE_AUDIT_CHECKER, type LiveAuditCatalogRow, type LiveAuditFee, type LiveAuditGraph,
+  makeLiveAuditDraw, liveTextIsShell, LIVE_SOURCE_AUDIT, LIVE_SOURCE_AUDIT_CHECKER, LIVE_TEXT_SHELL, type LiveAuditCatalogRow, type LiveAuditFee, type LiveAuditGraph,
   type LiveAuditGroup, type LiveAuditPage, type LiveAuditPolicy } from "./live-source-audit";
 
 const at = "2026-10-19T12:00:00.000Z";
@@ -26,6 +26,9 @@ export function livePage(url: string, text: string, overrides: Partial<LiveAudit
     contentType: "text/plain", etag: null, lastModified: null, status: 200, effectiveDate: null, text, links: [], ...overrides };
 }
 const schedule = (amount = 35) => `Consumer Fee Schedule\nEffective January 1, 2026\nOverdraft Fee $${amount}.00 per item\nStop Payment $30.00 per item\nWire Transfer $20.00 per item\nPaper Statement $3.00 per month`;
+/** Enough ordinary schedule text that a page without the fee is a real page, not a script shell. */
+const terms = Array.from({ length: 6 }, (_, i) => `Section ${i + 1}. Terms and disclosures for personal deposit accounts.`).join("\n");
+const capSchedule = (heading = "") => `Consumer Fee Schedule\nEffective January 1, 2026\n${heading ? `${heading}\n` : ""}NSF Fee\n• $140 Maximum. $35 per item\nStop Payment Fee\n• $30 per request\nWire Transfer Fee\n• $20 per item`;
 /** The fee's own page as one chunk fetched it (2026-11-02: the fee's document address, not the homepage graph). */
 export function pageGraph(text = schedule(), overrides: Partial<LiveAuditPage> = {}, url = oldUrl): LiveAuditGraph {
   return { entryUrl: url, complete: true, reason: null, candidateUrls: [url], failed: [], pages: [livePage(url, text, overrides)] };
@@ -45,7 +48,7 @@ describe("a verdict against the bank's live copy of the fee's own page", () => {
     });
   });
   it("calls a fee the loaded page does not print not found, with the check's reason", () => {
-    const result = evaluateLiveAuditFee(liveFee(), liveGroup(), pageGraph(schedule().replace(/Overdraft[^\n]*\n/, "")), at);
+    const result = evaluateLiveAuditFee(liveFee(), liveGroup(), pageGraph(`${schedule().replace(/Overdraft[^\n]*\n/, "")}\n${terms}`), at);
     expect(result).toMatchObject({ status: "not_found", dimensions: [], sourceLine: null, contentHash: expect.stringMatching(/^[a-f0-9]{64}$/) });
     expect(result.reason).toMatch(/^not_on_live_page:/);
   });
@@ -69,7 +72,32 @@ describe("a verdict against the bank's live copy of the fee's own page", () => {
   it("calls a priced fee whose name the category guard refuses for our category a category mismatch", () => {
     const fee = liveFee({ fee_name: "Wire Transfer", canonical_fee_key: "overdraft", amount: 20 });
     const result = evaluateLiveAuditFee(fee, liveGroup(fee), pageGraph(), at);
-    expect(result).toMatchObject({ status: "mismatch", reason: "positive_current_contradiction", dimensions: ["category"] });
+    // Labelled apart from a price contradiction: the page prints our price, the guard refuses the name.
+    expect(result).toMatchObject({ status: "mismatch", reason: "category_guard", dimensions: ["category"] });
+  });
+  it("calls a plain-fetch script shell unknown, never not found", () => {
+    const withoutFee = `${schedule().replace(/Overdraft[^\n]*\n/, "")}\n${terms}`;
+    expect(evaluateLiveAuditFee(liveFee(), liveGroup(), pageGraph("Please enable JavaScript to view this site."), at))
+      .toMatchObject({ status: "unknown", reason: "live_text_shell", contentHash: null });
+    // A real-length page far thinner than the copy Magellan stored from a browser read is a shell too.
+    expect(evaluateLiveAuditFee(liveFee(), liveGroup(), pageGraph(withoutFee), at, { chars: 40_000 }))
+      .toMatchObject({ status: "unknown", reason: "live_text_shell" });
+    expect(evaluateLiveAuditFee(liveFee(), liveGroup(), pageGraph(withoutFee), at, { chars: withoutFee.length }).status).toBe("not_found");
+    // A shell that does print the fee still supports it.
+    expect(evaluateLiveAuditFee(liveFee(), liveGroup(), pageGraph("Overdraft Fee $35.00 per item"), at, { chars: 40_000 }).status).toBe("supported");
+    expect(liveTextIsShell(LIVE_TEXT_SHELL.floorChars - 1, null)).toBe(true);
+    expect(liveTextIsShell(LIVE_TEXT_SHELL.floorChars, null)).toBe(false);
+    expect(liveTextIsShell(999, 900)).toBe(false);
+  });
+  it.each([
+    ["Youth Checking (ages 18 and under)", { eligibilityContext: "Youth Checking (ages 18 and under)" }],
+    ["Ages 18 and under", { eligibilityContext: "Ages 18 and under" }],
+    ["Youth Checking (ages 18 and under)\nOther available services", { producerScopeUnknown: true }],
+  ])("keeps a restricted or unproven witness (%s) unknown instead of general-product support", (heading, metadata) => {
+    const fee = liveFee({ fee_name: "NSF Fee", canonical_fee_key: "nsf", amount: 5 });
+    const text = capSchedule(heading).replace("$35 per item", "$5 per item");
+    expect(checkFeeAgainstSource(text, "NSF Fee", 5, ".", "nsf")).toEqual({ ok: true, sourceLine: "NSF Fee | • $140 Maximum. $5 per item", ...metadata });
+    expect(evaluateLiveAuditFee(fee, liveGroup(fee), pageGraph(text), at)).toMatchObject({ status: "unknown", reason: "own_applicability_unproven", dimensions: [] });
   });
   it("keeps the leading maximum of a stacked price from reading as the item price", () => {
     const capped = "Consumer Fee Schedule\nNSF Fee\n• $140 Maximum. $35 per item\nStop Payment Fee\n• $30 per request";

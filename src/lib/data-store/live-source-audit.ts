@@ -244,6 +244,20 @@ const emptyProgress=():LiveAuditProgress=>({valid:true,reason:null,cursor:0,grap
 const badProgress=(reason:string):LiveAuditProgress=>({...emptyProgress(),valid:false,reason});
 
 /** Bound headers/count/aggregate bytes before moving event JSON into application memory. */
+/**
+ * The stored copies' text lengths, by source document, so the chunk can tell a plain-fetch script
+ * shell from the page Magellan read with a browser (`liveTextIsShell`). Read at chunk time, not
+ * frozen into the draw, so the draw and its current-state hash keep their shape. A failed read gives
+ * an empty map and the floor alone applies.
+ */
+export async function readStoredTextChars(db:SqlTag,documentIds:number[],deadline?:number):Promise<Map<number,number>>{
+  const ids=[...new Set(documentIds.filter(positiveId))];if(!ids.length)return new Map();
+  if(ids.length>LIMITS.sample)throw new Error("live_audit_stored_text_inventory");
+  const rows=await liveAuditTransaction(db,tx=>tx<Row[]>`SELECT source_document_id,char_count FROM agent_source_texts
+    WHERE source_document_id=ANY(${ids}::bigint[]) AND char_count>0`,deadline);
+  return new Map(rows.flatMap(r=>{const id=dbId(r.source_document_id),chars=Number(r.char_count);return id&&Number.isSafeInteger(chars)?[[id,chars] as [number,number]]:[];}));
+}
+
 export async function readLiveAuditProgress(db:SqlTag,origin:LiveAuditDrawEvent):Promise<LiveAuditProgress> {
   if(!origin.valid||!origin.detail)return badProgress("draw_unavailable");
   const rows=await db<Row[]>`WITH headers AS MATERIALIZED (
