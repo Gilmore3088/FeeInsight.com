@@ -6,7 +6,7 @@ import { randomBytes,createHash } from "node:crypto";
 import postgres from "postgres";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { JSON_TEXT_PASSTHROUGH, NUMERIC_AS_NUMBER, TEXT_WITHOUT_NUL } from "./connection";
-import { createLiveAuditDraw, currentLiveAuditMatches, latestLiveAuditDraw, claimLiveAuditChunk, settleLiveAuditChunk, readLiveAuditProgress, liveAuditDrawStillCurrent, readStoredTextChars, type LiveAuditContext } from "./live-source-audit";
+import { createLiveAuditDraw, currentLiveAuditMatches, latestLiveAuditDraw, claimLiveAuditChunk, settleLiveAuditChunk, readLiveAuditProgress, liveAuditDrawStillCurrent, readStoredTextChars, readStoredTexts, type LiveAuditContext } from "./live-source-audit";
 import { runLiveAuditChunk } from "@/lib/agents/deming/live-source-audit-run";
 import { readLiveScoreHistory } from "@/lib/agents/deming/accuracy-history";
 import type { LiveAuditGraph, LiveAuditGroup, LiveAuditObservation } from "@/lib/agents/deming/live-source-audit";
@@ -891,6 +891,16 @@ describe.skipIf(!connection)("live audit actual ledger and immutable frame SQL",
     // A page far thinner than the text Magellan stored from the browser read.
     await db`INSERT INTO agent_source_texts(source_document_id,institution_id,char_count) VALUES(10,1,50000)`;
     expect(await readStoredTextChars(appDb()!,[10,10,99])).toEqual(new Map([[10,50000]]));
+    // The stored reading for a same-bytes re-judge: a document's one stored text (unique per document), only with text.
+    expect(await readStoredTexts(appDb()!,[10,10,99])).toEqual(new Map());
+    await db`UPDATE agent_source_texts SET normalized_text='Overdraft $35',source_url='https://fixture.invalid/fees.pdf',source_hash=${"b".repeat(64)} WHERE source_document_id=10`;
+    // A reading whose hash is not the document's own is not a reading of those bytes.
+    expect(await readStoredTexts(appDb()!,[10,10,99])).toEqual(new Map());
+    await db`UPDATE agent_source_texts SET source_hash=${"a".repeat(64)},status='wrong_document' WHERE source_document_id=10`;
+    expect(await readStoredTexts(appDb()!,[10,10,99])).toEqual(new Map());
+    await db`UPDATE agent_source_texts SET status='completed' WHERE source_document_id=10`;
+    expect(await readStoredTexts(appDb()!,[10,10,99])).toEqual(new Map([[10,{text:"Overdraft $35",url:"https://fixture.invalid/fees.pdf"}]]));
+    await db`UPDATE agent_source_texts SET normalized_text=NULL WHERE source_document_id=10`;
     let {origin,result}=await chunk(`Personal Fee Schedule\n${filler}`);
     expect(result.verdicts).toMatchObject({unknown:3,not_found:0});expect(result.captureRequestIds).toEqual([]);
     expect((await readLiveAuditProgress(appDb()!,origin)).observations.map(o=>o.reason)).toEqual(["live_text_shell","live_text_shell","live_text_shell"]);

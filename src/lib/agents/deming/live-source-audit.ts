@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { checkFeeAgainstSource, sourceLines } from "@/lib/custom-report/source-check";
 import { checkFeeCategory, CATEGORY_GUARD_VERSION } from "@/lib/fee-category-guard";
 import { SOURCE_CHECK_STRATEGY } from "@/lib/agents/hamilton/source-check";
+import { namedPriceLine, printsAmount } from "@/lib/fee-evidence";
 
 /** A live-source support diagnostic. Never the weekly whole-institution launch measure. */
 export const LIVE_SOURCE_AUDIT_PROTOCOL = 1;
@@ -19,13 +20,19 @@ export const LIVE_SOURCE_AUDIT_SERIES: string = "live-source@2:frame1:page1:repo
  * the `@2` deploy, so the new audit could not draw until midnight. A new family starts its own count.
  */
 export const LIVE_SOURCE_AUDIT_SERIES_FAMILY: string = LIVE_SOURCE_AUDIT_SERIES.split(":")[0];
+/**
+ * How a page verdict is reached (`evaluateLiveAuditFee`). 2 (2026-11-02): the cited page is fetched,
+ * a balance-band trace (`tiered_fee`) is the bank's price as the publish bar reads it, and a page
+ * serving the stored copy's own bytes is also judged on the stored reading of those bytes.
+ */
+export const LIVE_SOURCE_AUDIT_VERDICT_VERSION = 2;
 /** The checks that judged one verdict, recorded per observation (never part of the draw's identity). */
-export const LIVE_SOURCE_AUDIT_CHECKER = `source${SOURCE_CHECK_STRATEGY.version}:category${CATEGORY_GUARD_VERSION}`;
+export const LIVE_SOURCE_AUDIT_CHECKER = `source${SOURCE_CHECK_STRATEGY.version}:category${CATEGORY_GUARD_VERSION}:verdict${LIVE_SOURCE_AUDIT_VERDICT_VERSION}`;
 export const LIVE_SOURCE_AUDIT = {
   sample: 500, population: 250_000, rowBytes: 8 * 1024, policyBytes: 32 * 1024,
   policiesBytes: 2 * 1024 * 1024, drawBytes: 8 * 1024 * 1024, graphBytes: 32 * 1024,
   graphsBytes: 4 * 1024 * 1024, eventBytes: 512 * 1024, archiveBytes: 128 * 1024,
-  urlBytes: 2048, pages: 6, links: 160, storedDocuments: 256,
+  urlBytes: 2048, pages: 6, links: 160, storedDocuments: 256, storedTexts: 24,
   // A 150 s step never fit: the tick's 270 s budget had 30-149 s left (p50 68 s) when the run's
   // turn came, so 929 deferrals in 12 days and no chunk ever ran (#2061, 2026-11-01 finding).
   // Workers start no new institution after groupStartMs; groups already under way have the rest
@@ -233,9 +240,23 @@ export const liveAuditUrlKey = (value: string | null | undefined): string | null
   try { const url = new URL(value.trim()); if (!/^https?:$/.test(url.protocol)) return null; url.hash = ""; return url.href; } catch { return null; }
 };
 
-/** The page addresses a group's fees came from, in fee order, each once. */
+/**
+ * The page the fee cites: the catalog's `document_url`, the address its text was read from (the
+ * published `source_url`). Until 2026-11-02 the audit fetched the stored document's own address
+ * (`source.url`), which for a browser read (`read.js_fallback`) is the landing page Magellan opened,
+ * not the schedule the reader followed: State Bank of Easton's fax fee was read from
+ * /services-fees-charges/ and the audit fetched /checking-accounts/. On Nov 2, 3,722 of 88,403 live
+ * dollar fees cited a page other than their document's address. The document's address is the
+ * fallback when the catalog row gives none.
+ */
+export function liveAuditFeeUrl(fee: LiveAuditFee): string | null {
+  const cited = fee.catalog.document_url;
+  return liveAuditUrlKey(typeof cited === "string" ? cited : null) ?? liveAuditUrlKey(fee.source.url);
+}
+
+/** The page addresses a group's fees cite, in fee order, each once. */
 export function liveAuditFeeUrls(fees: LiveAuditFee[]): string[] {
-  return [...new Set(fees.flatMap((fee) => { const url = liveAuditUrlKey(fee.source.url); return url ? [url] : []; }))];
+  return [...new Set(fees.flatMap((fee) => { const url = liveAuditFeeUrl(fee); return url ? [url] : []; }))];
 }
 
 const compact = (value: string) => value.replace(/\s+/g, " ").trim();
@@ -261,6 +282,29 @@ export function liveAuditContradiction(text: string, fee: Pick<LiveAuditCatalogR
   return found.length === 1 ? found[0] : null;
 }
 
+/** Lines printing the price that the band-line search tries; a page printing it more often gives no line. */
+const BAND_LINE_CANDIDATES = 12;
+/**
+ * The bank's line for a fee the shared check traces only to a balance band (`tiered_fee`), which
+ * returns no line: the one line that names the fee and prints the price (`namedPriceLine`), else the
+ * one line printing the price that keeps the trace when every other line printing it is removed
+ * (Welch State Bank's "Maintain a minimum balance of $1,500 to avoid a $6.00 monthly service charge"
+ * under its "Tiered Interest Checking" heading). Null when there is no such line or more than one.
+ */
+export function liveAuditBandLine(text: string, fee: Pick<LiveAuditCatalogRow, "fee_name" | "amount" | "canonical_fee_key">): string | null {
+  const named = namedPriceLine(text, fee.fee_name, fee.amount);
+  if (named) return named;
+  const lines = text.split("\n");
+  const priced = lines.flatMap((line, index) => (printsAmount(line, fee.amount) ? [index] : []));
+  if (priced.length === 0 || priced.length > BAND_LINE_CANDIDATES) return null;
+  const witnesses = priced.filter((index) => {
+    const kept = lines.filter((_, other) => other === index || !priced.includes(other)).join("\n");
+    const traced = checkFeeAgainstSource(kept, fee.fee_name, fee.amount, ".", fee.canonical_fee_key);
+    return traced.ok || traced.reason === "tiered_fee";
+  });
+  return witnesses.length === 1 ? compact(lines[witnesses[0]]) : null;
+}
+
 /**
  * The fee against the bank's live copy of its own document (2026-11-02). Until then the evaluator
  * walked the bank's homepage graph and needed a complete graph, a proven consumer heading and its
@@ -270,8 +314,8 @@ export function liveAuditContradiction(text: string, fee: Pick<LiveAuditCatalogR
  * (`checkFeeAgainstSource`), and only a page that does not load, or gives no text, is unknown.
  */
 export function evaluateLiveAuditFee(fee: LiveAuditFee, _group: LiveAuditGroup, graph: LiveAuditGraph, at: string,
-  stored: { chars?: number | null } = {}): LiveAuditObservation {
-  const url = liveAuditUrlKey(fee.source.url);
+  stored: { chars?: number | null; text?: string | null } = {}): LiveAuditObservation {
+  const url = liveAuditFeeUrl(fee);
   if (!url) return liveAuditUnknown(fee, at, "fee_document_url_missing");
   if (!Number.isFinite(fee.catalog.amount) || fee.catalog.amount < 0) return liveAuditUnknown(fee, at, "fee_amount_unreadable");
   const page = graph.pages.find((p) => liveAuditUrlKey(p.requestedUrl) === url);
@@ -288,6 +332,12 @@ export function evaluateLiveAuditFee(fee: LiveAuditFee, _group: LiveAuditGroup, 
   // The category guard reads the fee's own name: a name it refuses for our category is a category miss
   // even where the page prints the price (accuracy is amount and category, CLAUDE.md).
   const wrongCategory = !checkFeeCategory(fee.catalog.canonical_fee_key, fee.catalog.fee_name).ok;
+  // A band price has no traced line; a verdict needs the bank's line, so one with none stays unknown.
+  const bandVerdict = (text: string) => {
+    const line = liveAuditBandLine(text, fee.catalog);
+    if (!line) return liveAuditUnknown(fee, at, "band_line_unproven");
+    return wrongCategory ? verdict("mismatch", LIVE_AUDIT_REASONS.categoryGuard, ["category"], line) : verdict("supported", LIVE_AUDIT_REASONS.supported, [], line);
+  };
   const check = checkFeeAgainstSource(page.text, fee.catalog.fee_name, fee.catalog.amount, ".", fee.catalog.canonical_fee_key);
   if (check.ok) {
     if (wrongCategory) return verdict("mismatch", LIVE_AUDIT_REASONS.categoryGuard, ["category"], check.sourceLine);
@@ -296,12 +346,28 @@ export function evaluateLiveAuditFee(fee: LiveAuditFee, _group: LiveAuditGroup, 
     if (check.eligibilityContext || check.producerScopeUnknown) return liveAuditUnknown(fee, at, LIVE_AUDIT_REASONS.applicability);
     return verdict("supported", LIVE_AUDIT_REASONS.supported, [], check.sourceLine);
   }
+  // A balance-band trace ("...the balance is $49.99 or less* | $15.00/ annually", "Maintain a minimum
+  // balance of $1,500 to avoid a $6.00 monthly service charge") is the bank printing this fee at our
+  // price for its band: Knox's self-check, Darwin and Hamilton's publish re-check all accept it
+  // (`traceLiveFee`). Until Nov 2 the audit called it not found (3 of 11 misses on draw 275762).
+  if (check.reason === "tiered_fee") return bandVerdict(page.text);
   const contradiction = liveAuditContradiction(page.text, fee.catalog);
   if (contradiction) return verdict("mismatch", LIVE_AUDIT_REASONS.mismatch, wrongCategory ? ["amount", "category"] : ["amount"], contradiction.line);
   if (check.reason === "category_not_in_text" && wrongCategory) {
     // Our price is on the fee's own line, but the line never names the category we file it under.
     const uncategorized = checkFeeAgainstSource(page.text, fee.catalog.fee_name, fee.catalog.amount, ".", null);
     if (uncategorized.ok) return verdict("mismatch", LIVE_AUDIT_REASONS.categoryGuard, ["category"], uncategorized.sourceLine);
+  }
+  // The page served the very bytes of the stored copy the fee was read and traced from, so the bank's
+  // document has not changed; only today's plain reader lost the line (TruStone's fee schedule PDF on
+  // Nov 2: same bytes, the stored reading prints "INACTIVE ACCOUNT ** | $10 per month", the plain PDF
+  // text does not). The stored reading of those same bytes is judged with the same rule.
+  if (stored.text && fee.source.contentHash && page.contentHash === fee.source.contentHash) {
+    const own = checkFeeAgainstSource(stored.text, fee.catalog.fee_name, fee.catalog.amount, ".", fee.catalog.canonical_fee_key);
+    if (own.ok && !wrongCategory && !own.eligibilityContext && !own.producerScopeUnknown) {
+      return verdict("supported", LIVE_AUDIT_REASONS.supported, [], own.sourceLine);
+    }
+    if (!own.ok && own.reason === "tiered_fee") return bandVerdict(stored.text);
   }
   // A script shell is not the bank's page: too little text to say the fee is absent.
   if (liveTextIsShell(compact(page.text).length, stored.chars)) return liveAuditUnknown(fee, at, LIVE_AUDIT_REASONS.shell);
