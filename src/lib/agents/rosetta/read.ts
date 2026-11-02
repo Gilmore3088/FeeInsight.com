@@ -2264,9 +2264,12 @@ export async function registerLinkedFeePage(
   // The same page however spelled (`www.`, `%20`, a trailing slash) is stored once, and a page
   // the bank's rejected list names is not stored again (review of #2940).
   const key = samePageKey(input.url);
-  const stored = await db<Array<{ url: string | null }>>`
-    SELECT url FROM institution_additional_sources WHERE institution_id = ${input.institutionId}
+  const stored = await db<Array<{ url: string | null; status: string | null }>>`
+    SELECT url, status FROM institution_additional_sources WHERE institution_id = ${input.institutionId}
   `;
+  const sameStored = stored.filter((row) => row.url != null && samePageKey(row.url) === key);
+  // A stored page that was rejected is never fetched again, so it does not hold the schedule.
+  if (sameStored.some((row) => row.status === "rejected")) return false;
   const rejected = await db<Array<{ url: string | null }>>`
     SELECT entry->>'url' AS url
       FROM institution_source_profiles profile,
@@ -2275,7 +2278,7 @@ export async function registerLinkedFeePage(
   `;
   if (rejected.some((row) => row.url != null && samePageKey(row.url) === key)) return false;
   // Already stored beside the link under some spelling: the page is held, nothing to add.
-  if (stored.some((row) => row.url != null && samePageKey(row.url) === key)) return true;
+  if (sameStored.length > 0) return true;
   await db`
     INSERT INTO institution_additional_sources
       (institution_id, url, document_type, document_role, account_name, found_by_strategy, strategy_version, agent_run_id, reason)
@@ -2325,7 +2328,9 @@ export async function pointFeeLinkAtLinkedPage(
            profile.canonical_source_url,
            profile.locked_by_correction,
            (SELECT array_agg(entry->>'url')
-              FROM jsonb_array_elements(COALESCE(profile.rejected_source_urls, '[]'::jsonb)) entry) AS rejected_urls
+              FROM jsonb_array_elements(COALESCE(profile.rejected_source_urls, '[]'::jsonb)) entry)
+             || COALESCE((SELECT array_agg(extra.url) FROM institution_additional_sources extra
+                           WHERE extra.institution_id = inst.id AND extra.status = 'rejected'), ARRAY[]::text[]) AS rejected_urls
       FROM institution_sources inst
       LEFT JOIN institution_source_profiles profile ON profile.institution_id = inst.id
      WHERE inst.id = ${input.institutionId}
