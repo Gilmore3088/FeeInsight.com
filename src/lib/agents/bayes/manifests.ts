@@ -589,6 +589,7 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   // v24 (#1918): "$15K" or "$1.5M" is a balance, never a price; same fingerprint path.
   // v25 (#1916): a late charge in a safe deposit box section is not a late payment; same fingerprint path.
   // v26 (#2070): a fee whose every row at its price is for a discontinued account is refused; same fingerprint path.
+  // v30 (#2040): NO_CHARGE_SENTENCE_READ_LIVE on, so an NSF $0 traces to a no-charge sentence; same fingerprint path.
   SOURCE_CHECK_STRATEGY: "Its fingerprint carries the version, so each publish step's batch re-checks every institution not yet checked at the new version; nothing to replay.",
   // v3 (#1810): headings over an opening deposit, "Interest Checking" and numbered accounts name a fee.
   // v4 (#1917): a fused breadcrumb or menu is no heading, and a comparison table's header row stops
@@ -661,6 +662,9 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
     // the bump reads nothing new. Nov 1 dry run (read-only, current copies, switch on): 4 texts at 4
     // institutions would read NSF $0 (Wells Fargo 4, 172, 359 and United Bank 67), none held; 4, 359 and
     // 67 have no NSF row, 172 already shows $0. No replay. Floor stays v97.
+    // v155 (#2040, Nov 2): no rule changes. NO_CHARGE_SENTENCE_READ_LIVE turns on (sampled clean on the
+    // v154 dry run above), and the bump reads current copies again so those 4 texts read NSF $0; source
+    // check v30 re-traces live fees with the witness on. No replay. Floor stays v97.
     {
       key: "knox.rules",
       owner: "knox",
