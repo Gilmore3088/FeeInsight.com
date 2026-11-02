@@ -77,6 +77,10 @@ function reader(): SwitchAuditReader & { calls: Record<string, unknown[]> } {
       fee_verified_id: 81, review_status: "verified", verified_key: "balance_inquiry", verified_name: "Balance inquiry", verified_amount: 0.75,
       fee_published_id: null, published_key: null, published_name: null, published_amount: null, live: null,
     }]),
+    liveNonNetworkFees: vi.fn(async () => [
+      { fee_published_id: 90, institution_id: 12, institution_name: "Bank T", source_document_id: 13, fee_name: "Withdrawal (per transaction)", amount: 2, amount_kind: "flat" },
+      { fee_published_id: 91, institution_id: 12, institution_name: "Bank T", source_document_id: null, fee_name: "ATM Fee", amount: 3, amount_kind: "flat" },
+    ]),
     freshAudit: vi.fn(async () => fresh),
   };
 }
@@ -92,7 +96,7 @@ describe("switch dry runs: one pass over every pending count", () => {
     // Two rows came back against a cap of two, so the count says it may be short.
     expect(report.dailyCapLines.rowsRead).toEqual({ read: 2, cap: 2, truncated: true });
     // One document per chunk: texts for 100, then 200, then the dash list document 7.
-    expect(mock.calls.sourceTexts).toEqual([[100], [200], [7], [9], [11], [13]]);
+    expect(mock.calls.sourceTexts).toEqual([[100], [200], [7], [9], [11], [13], [13]]);
     expect(mock.calls.liveFeesAt).toEqual([[3], [4], [4]]);
     // The bound and the offset reach the scan itself; 2 scanned of a bound of 2, so more remain.
     expect(mock.calls.scan).toEqual([[2, 4]]);
@@ -108,7 +112,9 @@ describe("switch dry runs: one pass over every pending count", () => {
     // Section path: nothing on the grandfathered document changes (the switch holds nothing); the business closing fee is relabelled from unknown.
     expect(report.sectionPath.summary).toMatchObject({ documents: 2, documentsChanged: 1, feesRead: 3, relabels: 1, relabelsWritten: 1, relabelsByChange: { "unknown->business": 1 } });
     // Marked ATM heading: the verified $0.75 inquiry under "Non-TBT or Non-Allpoint ATM1:" re-files in.
-    expect(report.footnotedAtmHeading.summary).toMatchObject({ rows: 1, changed: 1, wouldRefileIn: 1, liveWouldRefileIn: 0, liveWouldLeave: 0 });
+    expect(report.footnotedAtmHeading.summary).toMatchObject({ rows: 1, changed: 1, wouldRefileIn: 1, liveWouldRefileIn: 0 });
+    // Every live atm_non_network fee is re-read: the free team does not read the $2 withdrawal as one today; one has no document.
+    expect(report.footnotedAtmHeading.summary.liveNonNetwork).toMatchObject({ fees: 2, documents: 1, noText: 1, wouldLeave: 0, notReadToday: 1 });
     // Fresh audit: 8 scorable - 1 amount - 1 category = 6 of 8.
     expect(report.liveAccuracy).toMatchObject({ amountAndCategory: 6, share: 0.75, right: 5 });
     expect(mock.freshAudit).toHaveBeenCalledWith(10);
@@ -139,7 +145,8 @@ describe("switch dry runs: one pass over every pending count", () => {
     expect(text).toContain("unknown -> business (relabel writes)");
     expect(text).toContain("## 5. FOOTNOTED_ATM_HEADING_LIVE (#1092");
     expect(text).toContain("LIVE RE-FILE: 1 live or verified fees would be re-filed into atm_non_network by Hamilton's fold step (0 of them live).");
-    expect(text).toContain("LIVE TAKEDOWN RISK: 0 live atm_non_network fees");
+    expect(text).toContain("LIVE TAKEDOWN RISK: 0 live atm_non_network fees are read today and not with the switch on");
+    expect(text).toContain("Of 2 live fees on 1 documents: 1 not read by the free team today");
     expect(text).toContain("## 6. Live accuracy");
     // The daily receipt's own figure leads; the derived share follows, labelled.
     const receipt = text.indexOf("Daily receipt's figure (right on amount, category, source, fee line and name): 5 / 8 = 62.50%");

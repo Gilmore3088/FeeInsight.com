@@ -1046,4 +1046,14 @@ export const HAMILTON_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-11-01",
   },
+  {
+    id: "issue-1092-a-footnoted-heading-is-still-a-heading",
+    agent: "hamilton",
+    stage: "publish",
+    lesson: "The top-50 fold places a bare fee by the heading above it, so read the heading the way the schedule prints it. A heading often carries a note mark: a footnote digit (\"Non-TBT or Non-Allpoint ATM1:\", \"ATMs1:\"), a superscript (\"ATM¹:\"), an asterisk or dagger, or a bracketed note (\"ATM (1):\"); a bank's name can carry one too (\"Regions¹ ATM:\", \"MoneyPass® ATM:\"). Another bank is often named in more than one word (\"Non TBT ATM:\", \"Non-Austin Bank ATM:\", \"Other Bank ATM:\", \"Out of Area ATM:\"), so read the words that lead the heading, from its own line only, never the line above. A negation makes it another network (\"Not In Network ATM:\", \"Non In-Network ATM:\", \"Not Our ATM:\"). A code (\"ATM10:\", \"ATM1A:\"), a sentence (\"when you use an ATM*:\") or a word that names no bank (\"Debit Card ATM1:\") is no heading. When a heading cannot be read, the heading above decides, and that is often the opposite section, so a new heading read must never turn a fee main files as non-network into the bank's own: count every live fee it would take out before it turns on.",
+    why: "Texas key 2416's \"Balance inquiry: $0.75\" sits under \"Non-TBT or Non-Allpoint ATM1:\". The fold's ATM heading pattern needed the colon right after the machine word, so it took \"TBT or Allpoint ATM:\" above as the bank's own ATM and gave a real non-network ATM fee no home; Hamilton's fold step, its rules re-check and Darwin's re-read check re-file live fees through the same fold. The first version of the fix read \"Not In Network ATM:\" as the bank's own and let a lead cross into the line above, which would have taken correct live fees down (review of 634ce2e, #2892). The marked heading read is behind FOOTNOTED_ATM_HEADING_LIVE (off).",
+    evidence: { issues: [1092], prs: [2892], files: ["src/lib/fee-fold-atm-heading.ts", "src/lib/fee-fold.ts", "src/lib/agents/hamilton/taxonomy-fold.ts", "src/lib/fee-fold-atm-heading.test.ts", "docs/project/findings/2026-11-01-fold-misses-footnoted-atm-heading.md"] },
+    appliesTo: "all",
+    since: "2026-11-01",
+  },
 ];

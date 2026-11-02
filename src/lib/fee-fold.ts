@@ -86,7 +86,7 @@ const ATM_CUE =
  * bank named in several words ("Non-Austin Bank ATM:") are read too (`fee-fold-atm-heading.ts`).
  */
 export function ownAtmSection(before: string, live: boolean = footnotedAtmHeadingLive()): boolean {
-  return live ? ownAtmSectionMarked(before) : ownAtmSectionMain(before);
+  return live ? ownAtmSectionMarked(before) : ownAtmSectionMain(before.replace(/\n/g, " "));
 }
 /** A person, a phone line or a channel other than an ATM. */
 const ASSISTED_CUE =
@@ -728,12 +728,21 @@ export function isRetiredCategory(key: string | null | undefined): boolean {
   return !!key && RETIRED_CATEGORY_KEYS.has(key);
 }
 
-function plain(text: string): string {
+/**
+ * `plain`, keeping a line break where a run of spaces held one. Every run collapses to one character
+ * either way, so this and `plain` line up character for character: `plain(x)` is `plainLines(x)` with
+ * each "\n" read as " ".
+ */
+function plainLines(text: string): string {
   return text
     .replace(/[‘’ʼ`]/g, "'")
     .replace(/[.…_·•\-–—]{3,}/g, " ")
-    .replace(/\s+/g, " ")
+    .replace(/\s+/g, (run) => (run.includes("\n") ? "\n" : " "))
     .trim();
+}
+
+function plain(text: string): string {
+  return plainLines(text).replace(/\n/g, " ");
 }
 
 /** Characters of schedule text before a fee's line that count as its section. */
@@ -767,7 +776,10 @@ export function foldContext(
       }
     }
   }
-  return body.slice(Math.max(0, at - FOLD_CONTEXT_CHARS), at);
+  const start = Math.max(0, at - FOLD_CONTEXT_CHARS);
+  // With the marked ATM heading read on (#1092), the section keeps its line breaks, so a heading's
+  // words are read from its own line; every other fold rule reads it as one line (`plain`).
+  return footnotedAtmHeadingLive() ? plainLines(text).slice(start, at) : body.slice(start, at);
 }
 
 export interface FoldResult {
@@ -791,10 +803,12 @@ export function foldRetiredCategory(
   if (!retired) return null;
   const name = plain(feeName ?? "");
   const before = context ? plain(context) : null;
+  // The ATM heading read takes the section with its line breaks (`foldContext`); the others read one line.
+  const lined = context ? plainLines(context) : null;
   for (const [index, rule] of retired.rules.entries()) {
     if (rule.name && !rule.name.test(name)) continue;
     if (rule.context && !(before && rule.context.test(before))) continue;
-    if (rule.contextTest && !(before && rule.contextTest(before))) continue;
+    if (rule.contextTest && !(lined && rule.contextTest(lined))) continue;
     return { to: rule.to, rule: `${key}#${index}` };
   }
   return { to: retired.otherwise, rule: `${key}#otherwise` };

@@ -99,4 +99,4 @@ before trusting an exclusion that rests on the rule.
 fold step and rules re-check off and on), `src/lib/agents/knox/answer-key-gate.test.ts` (2416 scored as
 `atm_non_network:75`; floors with the switch on) and
 `src/lib/agents/deming/switch-dry-runs/atm-heading.test.ts`. Agent lesson:
-knox/issue-1092-a-footnoted-heading-is-still-a-heading.
+hamilton/issue-1092-a-footnoted-heading-is-still-a-heading.

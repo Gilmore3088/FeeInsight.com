@@ -148,7 +148,8 @@ function sectionPath(report: SwitchDryRunReport): string[] {
 }
 
 function atmHeading(report: SwitchDryRunReport): string[] {
-  const { rowsRead, summary } = report.footnotedAtmHeading;
+  const { rowsRead, liveFeesRead, summary } = report.footnotedAtmHeading;
+  const live = summary.liveNonNetwork;
   const row = (c: AtmHeadingChange) =>
     `  [${c.tier}] raw ${c.feeRawId}${c.feePublishedId ? ` pub ${c.feePublishedId}` : ""} | ${c.institutionName ?? "?"} (${c.institutionId}) | doc ${c.sourceDocumentId} | ${c.today} ${money(c.amount)} "${clip(c.feeName, 60)}" | ${c.off} -> ${c.on}${c.accepted ? "" : " (guard or amount checks refuse it)"} | above: "${clip(c.context, 120)}"`;
   const lines = [
@@ -158,10 +159,19 @@ function atmHeading(report: SwitchDryRunReport): string[] {
     cap(rowsRead, "balance inquiry rows"),
     `Rows whose filing changes: ${summary.changed} (${counts(summary.byChange)}); ${summary.noText} have no stored text, ${summary.notFound} name a line the text does not print.`,
     `LIVE RE-FILE: ${summary.wouldRefileIn} live or verified fees would be re-filed into atm_non_network by Hamilton's fold step (${summary.liveWouldRefileIn} of them live).`,
-    `LIVE TAKEDOWN RISK: ${summary.liveWouldLeave} live atm_non_network fees the switch files as balance_inquiry (no home); Hamilton's rules re-check would no longer read them.`,
     "A raw-only row changes only what Knox's next read of its document files.",
+    "Takedown count: every live atm_non_network fee, its document's newest text read by today's free team switch off and on, as Hamilton's rules re-check reads it (category and price).",
+    cap(liveFeesRead, "live atm_non_network fees"),
+    `LIVE TAKEDOWN RISK: ${live.wouldLeave} live atm_non_network fees are read today and not with the switch on (switch-on read at that price: ${counts(live.wouldLeaveByOnRead)}); ` +
+      `the rules re-check would take them down after its second look.`,
+    `Of ${live.fees} live fees on ${live.documents} documents: ${live.notReadToday} not read by the free team today (the switch cannot take them down), ` +
+      `${live.notDollar} not dollar fees, ${live.noText} with no stored text.`,
   ];
   if (summary.samples.length) lines.push(`Changes (first ${summary.samples.length}):`, ...summary.samples.map(row));
+  if (live.samples.length) {
+    lines.push(`Would come down (first ${live.samples.length}):`, ...live.samples.map((f) =>
+      `  pub ${f.feePublishedId} | ${f.institutionName ?? "?"} (${f.institutionId}) | doc ${f.sourceDocumentId} | atm_non_network ${money(f.amount)} "${clip(f.feeName, 60)}" | switch on reads: ${f.onAtPrice.join(", ") || "nothing at that price"}`));
+  }
   return lines;
 }
 

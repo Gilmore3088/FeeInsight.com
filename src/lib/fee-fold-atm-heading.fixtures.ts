@@ -328,10 +328,55 @@ const UNCHANGED: readonly AtmHeadingCase[] = [
   },
 ];
 
+const OWN_ABOVE = (...rest: string[]) => lines("ATM Fees", "Regions ATM:", "Balance Inquiry $0.00", ...rest);
+
+/** Review of 634ce2e (#2892): negated headings, a lead on the line above, a generic word, "Non In-Network". */
+const REVIEW: readonly AtmHeadingCase[] = [
+  { name: "review blocker: Not In Network ATM: is another network", text: OWN_ABOVE("Not In Network ATM:", "Balance Inquiry $1.50"), fee: { name: "Balance Inquiry", amount: 1.5 }, to: "atm_non_network", changed: false },
+  { name: "review blocker: NOT IN NETWORK ATM: is another network", text: OWN_ABOVE("NOT IN NETWORK ATM:", "Balance Inquiry $1.50"), fee: { name: "Balance Inquiry", amount: 1.5 }, to: "atm_non_network", changed: false },
+  { name: "review blocker: ATMs not in network ATM: is another network", text: OWN_ABOVE("ATMs not in network ATM:", "Balance Inquiry $1.50"), fee: { name: "Balance Inquiry", amount: 1.5 }, to: "atm_non_network", changed: false },
+  { name: "review blocker: Not In Network ATM1: (marked) is another network", text: OWN_ABOVE("Not In Network ATM1:", "Balance Inquiry $1.50"), fee: { name: "Balance Inquiry", amount: 1.5 }, to: "atm_non_network", changed: true },
+  { name: "review: Non In-Network ATM: is another network", text: OWN_ABOVE("Non In-Network ATM:", "Balance Inquiry $1.50"), fee: { name: "Balance Inquiry", amount: 1.5 }, to: "atm_non_network", changed: true },
+  { name: "review: Non-In-Network ATMs: is another network", text: OWN_ABOVE("Non-In-Network ATMs:", "Balance Inquiry $1.50"), fee: { name: "Balance Inquiry", amount: 1.5 }, to: "atm_non_network", changed: false },
+  { name: "review: Not In-Network ATM*: is another network", text: OWN_ABOVE("Not In-Network ATM*:", "Balance Inquiry $1.50"), fee: { name: "Balance Inquiry", amount: 1.5 }, to: "atm_non_network", changed: true },
+  { name: "review: Not Our ATM: is another network", text: OWN_ABOVE("Not Our ATM:", "Balance Inquiry $1.50"), fee: { name: "Balance Inquiry", amount: 1.5 }, to: "atm_non_network", changed: true },
+  { name: "review: Outside Network ATM: is another network", text: OWN_ABOVE("Outside Network ATM:", "Balance Inquiry $1.50"), fee: { name: "Balance Inquiry", amount: 1.5 }, to: "atm_non_network", changed: false },
+  { name: "review: Out of Network ATM¹: is another network", text: OWN_ABOVE("Out of Network ATM¹:", "Balance Inquiry $1.50"), fee: { name: "Balance Inquiry", amount: 1.5 }, to: "atm_non_network", changed: true },
+  {
+    name: "review note 1: a non-Regions sentence on the line above does not lead Regions ATM:",
+    text: lines("ATM Fees", "Withdrawals at non-Regions ATMs", "Regions ATM:", "Balance Inquiry $1.00"),
+    fee: { name: "Balance Inquiry", amount: 1 },
+    to: null,
+    changed: false,
+  },
+  {
+    name: "review note 1: Other Banks on the line above does not lead Bank ATM:",
+    text: lines("ATM Fees", "Other Banks", "Austin Bank ATM:", "Balance Inquiry $0.00"),
+    fee: { name: "Balance Inquiry", amount: 0 },
+    to: null,
+    changed: false,
+  },
+  {
+    name: "review note 2: Debit Card ATM1: under Non-Regions ATM: stays non-network",
+    text: lines("ATM Fees", "Non-Regions ATM:", "Withdrawal $3.00", "Debit Card ATM1:", "Balance Inquiry $2.00"),
+    fee: { name: "Balance Inquiry", amount: 2 },
+    to: "atm_non_network",
+    changed: false,
+  },
+  {
+    name: "review note 2: Foreign Transaction Fees ATM*: under Non-Regions ATM: stays non-network",
+    text: lines("ATM Fees", "Non-Regions ATM:", "Withdrawal $3.00", "Foreign Transaction Fees ATM*:", "Balance Inquiry $2.00"),
+    fee: { name: "Balance Inquiry", amount: 2 },
+    to: "atm_non_network",
+    changed: false,
+  },
+];
+
 export const ATM_HEADING_CASES: readonly AtmHeadingCase[] = [
   ...MARKED_NON_NETWORK,
   ...PARTNER_NETWORKS,
   ...MARKED_OWN,
   ...NAMED_NON_NETWORK,
   ...UNCHANGED,
+  ...REVIEW,
 ];

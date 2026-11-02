@@ -9,6 +9,7 @@ import type {
   LimitRow,
   LimitTakedownRow,
   LiveFeeRow,
+  LiveNonNetworkFeeRow,
   SwitchAuditReader,
 } from "@/lib/agents/deming/switch-dry-runs/types";
 import { LIMIT_GUARD_MIN_AMOUNT, LIMIT_GUARD_REASON, TRANSACTION_AMOUNT_PG } from "@/lib/agents/hamilton/limit-guard";
@@ -238,8 +239,22 @@ export const ATM_HEADING_ROWS_SQL = `
    ORDER BY fr.fee_raw_id
    LIMIT $1::int`;
 
+/** Every live atm_non_network fee, with its raw read's document (null when it has none). `$1` row cap, `$2` scope. */
+export const LIVE_NON_NETWORK_FEES_SQL = `
+  SELECT fp.fee_published_id, fp.institution_id, inst.institution_name, fr.source_document_id,
+         fp.fee_name, fp.amount, fp.amount_kind
+    FROM published_fee_records fp
+    LEFT JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
+    LEFT JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
+    LEFT JOIN institution_sources inst ON inst.id = fp.institution_id
+   WHERE ${LIVE}
+     AND fp.canonical_fee_key = 'atm_non_network'
+     AND ${scoped("fp.institution_id", 2)}
+   ORDER BY fp.fee_published_id
+   LIMIT $1::int`;
+
 /** Every statement the reader sends itself, for the read-only test. */
-export const SWITCH_AUDIT_STATEMENTS = [DAILY_CAP_ROWS_SQL, DASH_LIST_DOCUMENTS_SQL, LIVE_FEES_AT_SQL, LIMIT_ROWS_SQL, EXCERPT_TAKEDOWNS_SQL, ATM_HEADING_ROWS_SQL];
+export const SWITCH_AUDIT_STATEMENTS = [DAILY_CAP_ROWS_SQL, DASH_LIST_DOCUMENTS_SQL, LIVE_FEES_AT_SQL, LIMIT_ROWS_SQL, EXCERPT_TAKEDOWNS_SQL, ATM_HEADING_ROWS_SQL, LIVE_NON_NETWORK_FEES_SQL];
 
 /**
  * A superset of what `SECTION_PATH_LIVE` (#1092) reads: an audience word. The section path itself
@@ -275,6 +290,7 @@ export function createSwitchAuditReader(db: SqlTag, options: { now?: Date; insti
     limitRows: (limit) => db.unsafe<LimitRow[]>(LIMIT_ROWS_SQL, [limit, LIMIT_GUARD_MIN_AMOUNT, TRANSACTION_AMOUNT_PG, scope]),
     excerptLimitTakedowns: (limit) => db.unsafe<LimitTakedownRow[]>(EXCERPT_TAKEDOWNS_SQL, [limit, EXCERPT_TAKEDOWN_PATTERNS, scope]),
     atmHeadingRows: (limit) => db.unsafe<AtmHeadingRow[]>(ATM_HEADING_ROWS_SQL, [limit, scope]),
+    liveNonNetworkFees: (limit) => db.unsafe<LiveNonNetworkFeeRow[]>(LIVE_NON_NETWORK_FEES_SQL, [limit, scope]),
     freshAudit: (sampleSize) => runFreshAudit({ db, now: options.now, sampleSize }),
   };
 }

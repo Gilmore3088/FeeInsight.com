@@ -84,6 +84,20 @@ describe("live re-file paths follow FOOTNOTED_ATM_HEADING_LIVE", () => {
     expect(on.moves).toEqual([expect.objectContaining({ feeVerifiedId: 5, from: "balance_inquiry", to: "atm_non_network", rule: "balance_inquiry#4" })]);
   });
 
+  it("should_keep_a_live_non_network_fee_under_a_negated_in_network_heading_when_on", () => {
+    // Review of 634ce2e: the switch read "Not In Network ATM:" as the bank's own and dropped the $1.50.
+    for (const heading of ["Not In Network ATM:", "NOT IN NETWORK ATM:", "ATMs not in network ATM:", "Non In-Network ATM:"]) {
+      const text = `ATM Fees\nRegions ATM:\nBalance Inquiry $0.00\n${heading}\nBalance Inquiry $1.50\n`;
+      const on = [...withFootnotedAtmHeading(true, () => reproducibleFees(text))].sort();
+      expect(on, heading).toEqual(["atm_non_network:150", "balance_inquiry:0"]);
+    }
+  });
+
+  it("should_not_lead_a_heading_with_the_line_above_it", () => {
+    const text = "Withdrawals at non-Regions ATMs\nRegions ATM:\nBalance Inquiry $1.00";
+    expect([...withFootnotedAtmHeading(true, () => reproducibleFees(text))]).toEqual([...reproducibleFees(text)]);
+  });
+
   it("should_read_the_inquiry_under_its_retired_key_while_off_and_as_a_non_network_atm_fee_when_on", () => {
     expect(reproducibleFees(texas.text)).toContain("balance_inquiry:75");
     const on = withFootnotedAtmHeading(true, () => reproducibleFees(texas.text));

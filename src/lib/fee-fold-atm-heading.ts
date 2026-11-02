@@ -17,7 +17,10 @@
  * - reads another bank in several words as another bank: "Non TBT ATM:", "Non-Austin Bank ATM:",
  *   "Other Bank ATM:", "Other Banks' ATMs:", "Other Financial Institution ATMs:", "Out of Area ATM:";
  *   a non-customer heading ("Non-Customer Regions ATM:") is not;
- * - reads "In Network ATM:" as the bank's own, as main reads "In-Network ATM:".
+ * - reads "In Network ATM:" as the bank's own, as main reads "In-Network ATM:", and a negated heading
+ *   ("Not In Network ATM:", "Non In-Network ATM:", "Not Our ATM:") as another network;
+ * - reads a heading's leading words from its own line only (`foldContext` keeps the line breaks while
+ *   the switch is on), and skips a marked heading whose word names no bank ("Debit Card ATM1:").
  *
  * Off (the default), the fold reads every heading as main does. The switch is read through
  * `footnotedAtmHeadingLive()`, so the lab, the switch gate and the dry run hold it on or off with
@@ -65,7 +68,18 @@ const BANK_WORD = /^(?:banks?|banks['’]|bank['’]s|institutions?|institutions
 const OUT_LEAD = /\b(?:out[- ]of|outside)\s+$/i;
 /** "In Network ATM:", the bank's own network in two words. */
 const IN_LEAD = /\bin\s+$/i;
-/** Text before the heading's last word read for the words that lead it. */
+/**
+ * A heading led by a negation is never the bank's own: "Not In Network ATM:", "NOT IN NETWORK ATM:",
+ * "ATMs not in network ATM:", "Non In-Network ATM:", "Not In-Network ATM:", "Not Our ATM:",
+ * "Outside Network ATM:", "Out of Network ATM:".
+ */
+const NEGATED_LEAD = /\b(?:not|non|outside|out[- ]of)[\s-]*(?:in[\s-]*)?$/i;
+/**
+ * A capitalised word that names no bank ("Debit Card ATM1:", "Foreign Transaction Fees ATM*:"): under a
+ * note mark it is no heading, so the heading above still decides, as main reads it.
+ */
+const GENERIC_WORD = /^(?:cards?|debit|credit|fees?|charges?|services?|transactions?|withdrawals?|inquir\w*|surcharges?|usage|access|deposits?|accounts?|atms?|machines?|terminals?|locations?|banking|cash)$/i;
+/** Text before the heading's last word read for the words that lead it (never past its own line). */
 const LEAD_CHARS = 48;
 
 /** Main's read: the nearest one-word heading above, own when its word is the bank's. */
@@ -83,10 +97,17 @@ export function ownAtmSectionMarked(before: string): boolean {
     const heading = headings[at];
     const word = heading[1].replace(/^[^\w]+/, "").replace(NAME_MARK, "");
     const marked = heading[2] != null;
-    // A marked "ATM*:" after a sentence's word ("when you use an ATM*:") is no heading.
+    // A marked "ATM*:" after a sentence's word ("when you use an ATM*:") or a word that names no bank
+    // ("Debit Card ATM1:") is no heading.
     if (marked && /^[a-z]/.test(word) && !OTHER_ATM_WORD.test(word) && !OWN_ATM_WORD.test(word)) continue;
-    const lead = before.slice(Math.max(0, (heading.index ?? 0) - LEAD_CHARS), heading.index ?? 0);
+    if (marked && GENERIC_WORD.test(word)) continue;
+    const headingAt = heading.index ?? 0;
+    // The words that lead the heading, from its own line only ("Withdrawals at non-Regions ATMs" on the
+    // line above "Regions ATM:" leads nothing).
+    const lineStart = before.lastIndexOf("\n", headingAt - 1) + 1;
+    const lead = before.slice(Math.max(lineStart, headingAt - LEAD_CHARS), headingAt);
     if (!word) return false;
+    if (NEGATED_LEAD.test(lead)) return false;
     if (/^network$/i.test(word) && IN_LEAD.test(lead)) return true;
     if (OTHER_ATM_WORD.test(word)) return false;
     if (NON_LEAD.test(lead) || OUT_LEAD.test(lead)) return false;
