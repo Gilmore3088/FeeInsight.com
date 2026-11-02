@@ -158,6 +158,12 @@ export interface FeeChangeOptions {
    * effective edition (`reviewedEdition`). Darwin's history check asks for it.
    */
   reviewedEdition?: boolean;
+  /**
+   * Also count a dated whole fee schedule that replaced an undated one in another file as the same
+   * schedule (`sameSchedule`'s `undatedOld`). Only Darwin's history check asks for it; Pulse, alerts
+   * and publish keep the stricter rule until their own PR measures it.
+   */
+  undatedOld?: boolean;
 }
 
 /** Pure: the change the bank made, or why this recorded change is not one. */
@@ -170,11 +176,11 @@ export function judgeFeeChange(row: RecordedChangeRow, options: FeeChangeOptions
   const newEdition = editionStarts(row.new_document_text, undefined, options.reviewedEdition === true);
   if (oldEdition && newEdition && newEdition < oldEdition) return hold("older_edition");
   if (options.holdUndatedEdition && oldEdition && row.new_document_text && !newEdition) return hold("edition_unknown");
-  const change = confirmStatedChange(row);
+  const change = confirmStatedChange(row, options.undatedOld === true);
   return change ? { change, hold: null } : hold("not_confirmed");
 }
 
-function confirmStatedChange(row: RecordedChangeRow): PulseChange | null {
+function confirmStatedChange(row: RecordedChangeRow, undatedOld: boolean): PulseChange | null {
   const oldAmount = row.old_amount == null ? null : Number(row.old_amount);
   const newAmount = row.new_amount == null ? null : Number(row.new_amount);
   if (oldAmount == null || newAmount == null || !Number.isFinite(oldAmount) || !Number.isFinite(newAmount)) return null;
@@ -183,11 +189,12 @@ function confirmStatedChange(row: RecordedChangeRow): PulseChange | null {
   // Same schedule: a price on a different schedule (business against consumer, another
   // product's page) is a second fee line, not a change. A newer dated edition of the same
   // audience's schedule on a moved page is the same schedule (schedule-edition.ts), and so is a
-  // dated whole fee schedule that replaced an undated one (`undatedOld`, MSUFCU's NSF cut, Nov 2).
+  // dated whole fee schedule that replaced an undated one when the caller asks (`undatedOld`,
+  // MSUFCU's NSF cut, Nov 2; Darwin's history check only).
   if (
     row.old_source_url &&
     row.source_url &&
-    !sameSchedule({ oldUrl: row.old_source_url, newUrl: row.source_url, oldText: row.old_document_text, newText: row.new_document_text }, { undatedOld: true })
+    !sameSchedule({ oldUrl: row.old_source_url, newUrl: row.source_url, oldText: row.old_document_text, newText: row.new_document_text }, { undatedOld })
   )
     return null;
   const newStated = checkFeeAgainstSource(row.new_document_text, row.fee_name, newAmount, ".");

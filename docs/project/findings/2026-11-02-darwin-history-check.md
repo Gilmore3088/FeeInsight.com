@@ -186,7 +186,7 @@ wrong, 2 unclear. The wrong classes:
    schedule matches a dated new one in another file when both open with the bank's whole-schedule
    title ("Service Fee Schedule", "Schedule of Service Charges"; not "Student Checking ..." and not
    a web page's menu). The current-copy check and the change pairing do not pass it, so their flags
-   and takedowns are unchanged. The Monthly Pulse and competitor alerts now confirm such a change.
+   and takedowns are unchanged. Only the history check asks for this (`FeeChangeOptions.undatedOld`); the Monthly Pulse, alerts and publish keep the stricter rule until their own PR measures it.
 5. One fee-name source: Knox's raw `fee_name`, in verify (the only name it has for a new fee), the
    live verdict and `historyCohortSql` (v1 compared the published name in SQL and the raw name in
    the verdict; on prod 4,785 of 90,903 live fees differ between the two after normalising, mostly

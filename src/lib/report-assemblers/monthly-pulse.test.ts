@@ -208,7 +208,7 @@ describe("judgeFeeChange: what we knew and when (#1898)", () => {
     expect(judgeFeeChange(row({ old_fee_name: "Express Checking Plus Monthly Fee" })).hold).toBe("not_confirmed");
   });
 
-  it("confirms a cut to No Charge when a dated whole schedule replaced an undated one in another file (MSUFCU, live fee 106085)", () => {
+  it("confirms a cut to No Charge when a dated whole schedule replaced an undated one in another file, when asked (MSUFCU, live fee 106085)", () => {
     const msufcu = row({
       institution_name: "Michigan State University Federal Credit Union",
       fee_key: "nsf",
@@ -224,9 +224,11 @@ describe("judgeFeeChange: what we knew and when (#1898)", () => {
       old_document_id: 20766,
       new_document_id: 24193,
     });
-    expect(judgeFeeChange(msufcu).change).toMatchObject({ old_amount: 30, new_amount: 0, direction: "down" });
+    expect(judgeFeeChange(msufcu, { undatedOld: true }).change).toMatchObject({ old_amount: 30, new_amount: 0, direction: "down" });
+    // Only the history check asks for it: Pulse, alerts and publish keep the stricter rule.
+    expect(judgeFeeChange(msufcu)).toEqual({ change: null, hold: "not_confirmed" });
     // An undated old copy that is one product's disclosure is still another schedule.
-    expect(judgeFeeChange({ ...msufcu, old_document_text: msufcu.old_document_text!.replace("Service Fee Schedule", "Student Checking Disclosure") })).toEqual({ change: null, hold: "not_confirmed" });
+    expect(judgeFeeChange({ ...msufcu, old_document_text: msufcu.old_document_text!.replace("Service Fee Schedule", "Student Checking Disclosure") }, { undatedOld: true })).toEqual({ change: null, hold: "not_confirmed" });
   });
 
   it("dates a schedule by its Reviewed line only when asked (Darwin's history check)", () => {

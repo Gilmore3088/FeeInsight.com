@@ -302,7 +302,7 @@ export function historyVerdict(fee: HistoryFee, priors: readonly HistoryPrior[],
     old_document_text: priorText,
     old_document_id: prior.sourceDocumentId,
     new_document_id: fee.sourceDocumentId,
-  }, { reviewedEdition: true });
+  }, { reviewedEdition: true, undatedOld: true });
   if (judged.change) return { ...base, outcome: "change_confirmed", hold: false };
   if (scope === "same_page") return { ...base, outcome: "jump", hold: true, takedown: false, changeHold: judged.hold };
   return { ...base, outcome: "review", hold: false, takedown: false, changeHold: judged.hold };
