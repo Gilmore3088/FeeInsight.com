@@ -8,6 +8,16 @@ import type { AgentLesson } from "@/lib/agents/learning/lesson-types";
  */
 export const DEMING_LESSONS: AgentLesson[] = [
   {
+    id: "fixed-cohort-before-movement",
+    agent: "deming",
+    stage: "answer-key score",
+    lesson: "A number meant to show whether the pipeline got better must be measured on the same units, by the same rule, every day. Freeze the population by id and by a fingerprint of what it is scored against. Version the scoring rule, and start a new named cohort rather than editing the old one. Report every frozen unit every day: one that cannot be scored that day (its key changed or was removed, or the read failed) is counted as unscored with its reason, never dropped, and one with no output is scored as all missed. A gate on whether the reference is still current is a question about the reference. Report it beside the score; never let it decide who is scored on a given day.",
+    why: "The answer-key score only counted keys that passed that day's live re-check of the bank's site: 1 of 62 institutions on Nov 1, 8 of 62 (213 of 2,276 key fees) on Nov 2, so its moves could not be told apart from cohort changes. Scored as a fixed cohort of all 62 (every key document held byte for byte), Nov 2 gives precision 87.21% (1,364 of 1,564) and recall 66.70% (1,518 of 2,276).",
+    evidence: { issues: [2533], prs: [], files: ["docs/project/findings/2026-11-02-fixed-answer-key-cohort.md", "src/lib/agents/deming/fixed-cohort.ts", "src/lib/agents/deming/fixed-cohort-history.ts"] },
+    appliesTo: ["score-answer-key"],
+    since: "2026-11-02",
+  },
+  {
     id: "live-audit-judge-by-the-publish-rule",
     agent: "deming",
     stage: "live-source audit",

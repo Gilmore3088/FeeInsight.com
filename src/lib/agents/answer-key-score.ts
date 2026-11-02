@@ -12,7 +12,7 @@ import {
 import { getFeeFamily } from "@/lib/fee-taxonomy";
 import { splitLiveCategory } from "@/lib/fee-fold";
 import { readReferenceEligibility } from "@/lib/data-store/answer-key-reference-store";
-import type { ReferenceScoreCohort } from "@/lib/data-store/answer-key-eligibility";
+import type { ReferenceKeySnapshot, ReferenceScoreCohort } from "@/lib/data-store/answer-key-eligibility";
 import { refreshReferenceEligibility } from "./answer-key-eligibility";
 import { knoxStrategyFromFlags } from "./learning/feedback";
 
@@ -273,7 +273,7 @@ export function predictionMatches(expected: ExpectedFee, prediction: PipelineFee
 }
 
 /** Distinct (category, cents) or (category, rate) predictions, so a fee extracted twice counts once. */
-function distinctPredictions(fees: PipelineFee[]): PipelineFee[] {
+export function distinctPredictions(fees: PipelineFee[]): PipelineFee[] {
   const seen = new Map<string, PipelineFee>();
   for (const fee of fees) {
     if (!fee.canonicalKey) continue;
@@ -775,6 +775,8 @@ export interface AnswerKeyScoreRunResult {
   dryRun: boolean;
   reference?: ReferenceScoreCohort;
   referenceChecks?: { attempted: number; persisted: number; failed: number };
+  /** Every confirmed key read today, eligible or not (Deming's fixed cohort scores these); null when the read failed. */
+  referenceKeys?: ReferenceKeySnapshot[] | null;
 }
 
 /**
@@ -822,7 +824,8 @@ export async function runAnswerKeyScore({
   }
   const current = series.find((entry) => entry.scorerVersion === ANSWER_KEY_SCORER_VERSION)!;
   return { schemaReady: true, scoreRunId: current.scoreRunId, score: current.score, series, dryRun, reference,
-    referenceChecks: { attempted: checked.attempted, persisted: checked.persisted, failed: checked.failed } };
+    referenceChecks: { attempted: checked.attempted, persisted: checked.persisted, failed: checked.failed },
+    referenceKeys: checked.snapshot.readError ? null : checked.snapshot.keys.map((decision) => decision.input.key) };
 }
 
 function percent(value: number | null): string {
