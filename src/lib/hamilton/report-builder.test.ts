@@ -112,6 +112,38 @@ describe("report builder document", () => {
   });
 });
 
+describe("a fee compared with a wider group", () => {
+  const WIDER = "Florida banks and credit unions of every size";
+  const widened = { ...data, bars: data.bars.map((b) => (b.band === "above" ? { ...b, comparedWith: WIDER } : b)) };
+  const views = buildReportDocument(widened, presetLayout("committee")).pages.flatMap((p) => p.sections.map((s) => s.view));
+
+  it("names the wider group on its row, in both fee lists", () => {
+    for (const key of ["above", "fees"] as const) {
+      const v = views.find((x) => x.key === key);
+      if (v?.key !== "above" && v?.key !== "fees") throw new Error(`missing ${key}`);
+      const above = v.rows.filter((r) => r.position === "above");
+      expect(above.length).toBeGreaterThan(0);
+      for (const row of above) expect(row.comparedWith).toBe(WIDER);
+      for (const row of v.rows.filter((r) => r.position !== "above")) expect(row.comparedWith).toBeNull();
+    }
+  });
+
+  it("makes room for the line when it paginates", () => {
+    const plain = views.find((x) => x.key === "above")!;
+    const base = buildReportDocument(data, presetLayout("committee")).pages.flatMap((p) => p.sections.map((s) => s.view)).find((x) => x.key === "above")!;
+    expect(sectionHeight(plain)).toBeGreaterThan(sectionHeight(base));
+  });
+
+  it("sorts a $0 median without dividing by it", () => {
+    const zero = { ...data, bars: [...data.bars, { ...data.bars[0], feeCategory: "zero", name: "Zero median fee", current: 5, median: 0, q1: 0, q3: 0, low: 0, high: 5, band: "above" as const }] };
+    const v = buildReportDocument(zero, { ...presetLayout("committee"), audience: "committee" }).pages.flatMap((p) => p.sections.map((s) => s.view)).find((x) => x.key === "above");
+    if (v?.key !== "above") throw new Error("missing above");
+    const names = [...v.rows.map((r) => r.name)];
+    expect(names).toContain("Zero median fee");
+    expect(names.at(-1)).toBe("Zero median fee");
+  });
+});
+
 describe("saved report status", () => {
   it("is edited only when a team note or a changed section is saved", () => {
     expect(savedReportStatus({ report_type: "peer_benchmarking", report_json: {} })).toBe("as_written");

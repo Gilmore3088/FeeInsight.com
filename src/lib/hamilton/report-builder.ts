@@ -206,6 +206,8 @@ export interface BuilderFeeRow {
   plot: { low: number; high: number; q1: number | null; q3: number | null; median: number | null; yours: number | null } | null;
   /** "+$5.50 vs median". */
   gap: string | null;
+  /** The wider group the fee was compared with, when too few in the report's group publish it; null otherwise. */
+  comparedWith: string | null;
 }
 
 export type BuilderSectionView =
@@ -267,6 +269,16 @@ function position(bar: BuilderData["bars"][number]): BuilderPosition {
   return "in_range";
 }
 
+function relativeGap(bar: BuilderData["bars"][number]): number {
+  if (bar.current === null || bar.median === null || bar.median <= 0) return -Infinity;
+  return (bar.current - bar.median) / bar.median;
+}
+
+/** Height of a "Compared with ..." line under a fee name in its 140-point column. */
+export function comparedWithHeight(row: Pick<BuilderFeeRow, "comparedWith">): number {
+  return row.comparedWith ? lines(`Compared with ${row.comparedWith}`, 30) * 10 : 0;
+}
+
 function feeRow(bar: BuilderData["bars"][number]): BuilderFeeRow {
   const pos = position(bar);
   const placed = pos === "above" || pos === "below" || pos === "in_range";
@@ -283,6 +295,7 @@ function feeRow(bar: BuilderData["bars"][number]): BuilderFeeRow {
       ? { low: Math.min(bar.low, bar.current ?? bar.low), high: Math.max(bar.high, bar.current ?? bar.high), q1: placed ? bar.q1 : null, q3: placed ? bar.q3 : null, median: placed ? bar.median : null, yours: bar.current }
       : null,
     gap: gapValue === null ? null : `${gapValue >= 0 ? "+" : "-"}${builderMoney(Math.abs(Math.round(gapValue * 100) / 100))} vs median`,
+    comparedWith: bar.comparedWith ?? null,
   };
 }
 
@@ -339,7 +352,8 @@ function view(key: BuilderSectionKey, data: BuilderData, layout: BuilderLayout, 
     case "above": {
       const rows = data.bars
         .filter((b) => position(b) === "above")
-        .sort((a, b) => ((b.current! - b.median!) / b.median!) - ((a.current! - a.median!) / a.median!))
+        // A median of $0 has no percentage gap; such a fee sorts by its dollar gap after the others.
+        .sort((a, b) => relativeGap(b) - relativeGap(a) || (b.current! - b.median!) - (a.current! - a.median!))
         .map(feeRow);
       return { key, rows: rows.slice(0, limit.above), more: Math.max(0, rows.length - limit.above), empty: rows.length ? null : "No fee sits above the middle half of this peer group." };
     }
@@ -375,9 +389,9 @@ export function sectionHeight(v: BuilderSectionView): number {
         + (v.nextStep ? 20 + lines(v.nextStep.action) * 13 + lines(v.nextStep.rationale, 100) * 12 : 0)
         + (v.unresolvedCount ? 16 : 0);
     case "above":
-      return head + 18 + (v.empty ? 16 : v.rows.length * 26) + (v.more ? 14 : 0) + 14;
+      return head + 18 + (v.empty ? 16 : v.rows.reduce((h, r) => h + 26 + comparedWithHeight(r), 0)) + (v.more ? 14 : 0) + 14;
     case "fees":
-      return head + 20 + v.rows.reduce((h, r) => h + (r.name.length > 26 || r.yours.length > 12 ? 28 : 18), 0) + (v.more ? 14 : 0) + 14;
+      return head + 20 + v.rows.reduce((h, r) => h + (r.name.length > 26 || r.yours.length > 12 ? 28 : 18) + comparedWithHeight(r), 0) + (v.more ? 14 : 0) + 14;
     case "trend":
       return head + (v.empty ? 16 : lines(v.headline) * 14 + 126 + 16);
     case "changes":

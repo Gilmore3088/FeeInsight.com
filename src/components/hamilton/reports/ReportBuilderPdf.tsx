@@ -57,6 +57,16 @@ const s = StyleSheet.create({
 
 const TRACK = 170;
 
+/** The fee's name, and the wider group it was compared with when the report's group was too small for it. */
+function FeeName({ row }: { row: BuilderFeeRow }) {
+  return (
+    <View style={{ width: 140, paddingHorizontal: 2 }}>
+      <Text style={{ fontSize: 8.5, lineHeight: 1.3 }}>{row.name}</Text>
+      {row.comparedWith ? <Text style={{ fontSize: 7.5, lineHeight: 1.3, color: C.textSecondary }}>Compared with {row.comparedWith}</Text> : null}
+    </View>
+  );
+}
+
 function RangePlot({ row }: { row: BuilderFeeRow }) {
   const p = row.plot;
   if (!p) return <Svg width={TRACK} height={12} />;
@@ -138,7 +148,7 @@ function SectionBody({ v }: { v: BuilderSectionView }) {
             <View>
               <Text style={[s.body, s.bold]}>{v.counts.above} of {v.placed} fees compared sit above the peers&apos; middle half</Text>
               <Text style={s.small}>{v.counts.above} above · {v.counts.within} in range · {v.counts.below} below</Text>
-              {v.published > v.placed ? <Text style={s.small}>{v.published - v.placed} more published fees are not placed: too few peers publish them, or several prices are listed.</Text> : null}
+              {v.published > v.placed ? <Text style={s.small}>{v.published - v.placed} more of the fees in this report are not placed: too few peers publish them, or several prices are listed.</Text> : null}
             </View>
           </View>
           <Text style={[s.body, { marginTop: 8 }]}>{v.conclusion}</Text>
@@ -169,7 +179,7 @@ function SectionBody({ v }: { v: BuilderSectionView }) {
         <View>
           {v.empty ? <Text style={s.body}>{v.empty}</Text> : v.rows.map((r) => (
             <View key={r.name} style={s.row}>
-              <Text style={[s.td, { width: 140 }]}>{r.name}</Text>
+              <FeeName row={r} />
               <Text style={[s.td, s.bold, s.num, { width: 50 }]}>{r.yours}</Text>
               <View style={{ width: TRACK + 12, paddingHorizontal: 6 }}><RangePlot row={r} /></View>
               <Text style={[s.td, s.num, { flex: 1, color: K.accent }]}>{r.gap ?? ""}</Text>
@@ -189,7 +199,7 @@ function SectionBody({ v }: { v: BuilderSectionView }) {
           </View>
           {v.rows.map((r) => (
             <View key={r.name} style={s.row}>
-              <Text style={[s.td, { width: 140 }]}>{r.name}</Text>
+              <FeeName row={r} />
               <Text style={[s.td, s.num, s.bold, { width: 64 }]}>{r.yours}</Text>
               <Text style={[s.td, s.num, { width: 52 }]}>{r.median}</Text>
               <Text style={[s.td, s.num, { width: 110 }]}>{r.range}</Text>

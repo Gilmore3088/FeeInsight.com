@@ -69,6 +69,16 @@ function RangePlot({ row }: { row: BuilderFeeRow }) {
   );
 }
 
+/** The fee's name, and the wider group it was compared with when the report's group was too small for it. */
+function FeeName({ row }: { row: BuilderFeeRow }) {
+  return (
+    <span style={{ width: 140 }}>
+      {row.name}
+      {row.comparedWith ? <span className="rb-compared">Compared with {row.comparedWith}</span> : null}
+    </span>
+  );
+}
+
 function Donut({ counts }: { counts: { above: number; within: number; below: number } }) {
   const total = counts.above + counts.within + counts.below;
   const r = 30;
@@ -131,7 +141,7 @@ function SectionPreview({ v }: { v: BuilderSectionView }) {
             <div>
               <p className="rb-body rb-b">{v.counts.above} of {v.placed} fees compared sit above the peers&apos; middle half</p>
               <p className="rb-small">{v.counts.above} above · {v.counts.within} in range · {v.counts.below} below</p>
-              {v.published > v.placed ? <p className="rb-small">{v.published - v.placed} more published fees are not placed: too few peers publish them, or several prices are listed.</p> : null}
+              {v.published > v.placed ? <p className="rb-small">{v.published - v.placed} more of the fees in this report are not placed: too few peers publish them, or several prices are listed.</p> : null}
             </div>
           </div>
           <p className="rb-body" style={{ marginTop: 8 }}>{v.conclusion}</p>
@@ -162,7 +172,7 @@ function SectionPreview({ v }: { v: BuilderSectionView }) {
         <div>
           {v.empty ? <p className="rb-body">{v.empty}</p> : v.rows.map((r) => (
             <div key={r.name} className="rb-row">
-              <span style={{ width: 140 }}>{r.name}</span>
+              <FeeName row={r} />
               <span className="rb-b rb-num" style={{ width: 50 }}>{r.yours}</span>
               <span style={{ width: 182, padding: "0 6px" }}><RangePlot row={r} /></span>
               <span className="rb-num" style={{ flex: 1, color: BRICK }}>{r.gap ?? ""}</span>
@@ -185,7 +195,7 @@ function SectionPreview({ v }: { v: BuilderSectionView }) {
           </div>
           {v.rows.map((r) => (
             <div key={r.name} className="rb-row">
-              <span style={{ width: 140 }}>{r.name}</span>
+              <FeeName row={r} />
               <span className="rb-num rb-b" style={{ width: 64 }}>{r.yours}</span>
               <span className="rb-num" style={{ width: 52 }}>{r.median}</span>
               <span className="rb-num" style={{ width: 110 }}>{r.range}</span>
@@ -295,6 +305,9 @@ export function ReportBuilder({ data, layout, onLayoutChange, peerSetId, savedPe
   const page = doc.pages[Math.min(pageIx, doc.pages.length - 1)];
   const on = new Set(activeSections(layout));
   const unit = doc.pageCount === 1 ? "page" : "pages";
+  // A peer group this user cannot use was not applied (the read fell back to the default), so it is dropped.
+  const usablePeerSetId = peerSetId && savedPeerSets.some((p) => String(p.id) === peerSetId) ? peerSetId : null;
+  const selectValue = usablePeerSetId ?? "";
 
   function set(next: Partial<BuilderLayout>) {
     onLayoutChange({ ...layout, ...next });
@@ -326,7 +339,7 @@ export function ReportBuilder({ data, layout, onLayoutChange, peerSetId, savedPe
     try {
       const slug = doc.title.toLowerCase().replace(/[^a-z0-9]+/g, "-");
       await downloadReportPdf(
-        { type: "report_builder", institutionId: data.institutionId, peerSetId, layout: encodeBuilderLayout(layout) },
+        { type: "report_builder", institutionId: data.institutionId, peerSetId: usablePeerSetId, layout: encodeBuilderLayout(layout) },
         `${slug}-${data.generatedAt.slice(0, 10)}${layout.pageSize === "A4" ? "-a4" : ""}.pdf`,
       );
       setNotice({ head: "PDF ready", text: `${doc.pageCount} ${unit}, ${layout.pageSize === "A4" ? "A4" : "letter size"}, the same pages as the preview.` });
@@ -338,7 +351,7 @@ export function ReportBuilder({ data, layout, onLayoutChange, peerSetId, savedPe
   }
 
   async function share() {
-    const link = `${window.location.origin}${linkFor(peerSetId)}`;
+    const link = `${window.location.origin}${linkFor(usablePeerSetId)}`;
     try {
       await navigator.clipboard.writeText(link);
       setNotice({ head: "Link copied", text: "It opens this report with these sections and settings. Only signed-in Hamilton subscribers can open it." });
@@ -431,11 +444,10 @@ export function ReportBuilder({ data, layout, onLayoutChange, peerSetId, savedPe
             <label htmlFor="rb-peer" className="hd-label">Peer group</label>
             <select
               id="rb-peer"
-              value={peerSetId ?? ""}
+              value={selectValue}
               onChange={(e) => window.location.assign(linkFor(e.target.value || null))}
             >
-              <option value="">{peerSetId ? "Your default peer group" : data.peerGroupLabel}</option>
-              {peerSetId && !savedPeerSets.some((p) => String(p.id) === peerSetId) ? <option value={peerSetId}>{data.peerGroupLabel}</option> : null}
+              <option value="">{selectValue ? "Your default peer group" : data.peerGroupLabel}</option>
               {savedPeerSets.map((p) => <option key={p.id} value={String(p.id)}>{p.name}</option>)}
             </select>
           </div>

@@ -47,6 +47,20 @@ describe("report builder PDF matches its preview", () => {
     }, 30000);
   }
 
+  it("prints the wider group a fee was compared with, on screen and in the PDF", async () => {
+    const WIDER = "Florida banks and credit unions of every size";
+    const widened = { ...data, bars: data.bars.map((b) => (b.band === "above" ? { ...b, comparedWith: WIDER } : b)) };
+    const layout = presetLayout("committee");
+    const doc = buildReportDocument(widened, layout);
+    const buffer = await renderToBuffer(createElement(ReportBuilderPdf, { doc }) as unknown as ReactElement<DocumentProps>);
+    const { text, totalPages } = await extractText(new Uint8Array(buffer), { mergePages: true });
+    expect(totalPages).toBe(doc.pageCount);
+    expect((text as string).replace(/\s+/g, " ")).toContain(`Compared with ${WIDER}`);
+    // The preview shows one page at a time: put the fee rows on page one.
+    const html = renderToStaticMarkup(createElement(ReportBuilder, { data: widened, layout: { ...layout, on: ["above"] }, onLayoutChange: () => undefined, peerSetId: null, savedPeerSets: [] }));
+    expect(html.replace(/<!-- -->/g, "")).toContain(`Compared with ${WIDER}`);
+  }, 30000);
+
   it("draws the same pages on screen", () => {
     const layout = presetLayout("committee");
     const doc = buildReportDocument(data, layout);

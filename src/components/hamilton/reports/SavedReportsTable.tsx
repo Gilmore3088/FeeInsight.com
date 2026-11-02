@@ -71,7 +71,7 @@ export function SavedReportsTable({
           ]}
         />
       ) : null}
-      footnote={reports.length > 0 ? "Saved for 90 days." : undefined}
+      footnote={reports.length > 0 ? "Shown for 90 days." : undefined}
       footnoteDetails={reports.length > 0 ? "Edited means a team note was added or a section was changed after Hamilton wrote it. As written means neither." : undefined}
     >
       {downloadError ? <p role="alert" className="hd-card-note" style={{ color: "var(--fi-brick)" }}>{downloadError}</p> : null}
@@ -86,7 +86,9 @@ export function SavedReportsTable({
             <span role="columnheader">Saved</span>
             <span role="columnheader"><span className="hd-sr">Actions</span></span>
           </div>
-          {shown.length === 0 ? <p className="hd-card-note" style={{ padding: 8 }}>No saved report has this status.</p> : null}
+          {shown.length === 0 ? (
+            <div role="row"><p role="cell" className="hd-card-note" style={{ padding: 8 }}>No saved report has this status.</p></div>
+          ) : null}
           {shown.map(({ report, status }) => (
             <div key={report.id} className="sr-row" role="row">
               <span role="cell" className="min-w-0">
