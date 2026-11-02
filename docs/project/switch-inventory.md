@@ -20,7 +20,7 @@ How the columns are read:
 - **Retire candidate**: the code default is on, or a doc records it on for 14+ days. Under the
   14-day rule (DECISIONS, 2026-11-01) a switch on 14 days with no regression has its flag removed.
 
-Switches: 114 (96 code constants, 1 constant map(s), 17 environment). On by code default: 83. Replayable on the golden set: 34 (2 full, 1 full on shadow cases, 7 partial, 14 sweep, 10 sweep, partial); not replayable with a stated reason: 80. Retire candidates: 86.
+Switches: 115 (97 code constants, 1 constant map(s), 17 environment). On by code default: 83. Replayable on the golden set: 34 (2 full, 1 full on shadow cases, 7 partial, 14 sweep, 10 sweep, partial); not replayable with a stated reason: 81. Retire candidates: 86.
 
 | Name | Kind | Defined in | Code default | On in prod | First seen in src | Golden-set replay | Retire candidate |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -46,6 +46,7 @@ Switches: 114 (96 code constants, 1 constant map(s), 17 environment). On by code
 | DARWIN_ACCOUNT_BENEFIT_ZERO_LIVE | env | `src/lib/agents/darwin/account-benefit-zero-check.ts` | off unless set | unknown (environment variable; not read) | 2026-11-02 f6b1b4468db | no: not wired yet: added by #2894 after this gate was built; its live $0 re-check reads each fee's stored line and the account it belongs to, and no sweep replay for it exists yet | no: prod value unknown |
 | DARWIN_CATEGORY_CHANGE_REJUDGE_LIVE | code_constant | `src/lib/agents/darwin/category-change.ts` | on | on (code constant) | 2026-10-15 21b891796 | no: re-judges verified rows whose category a learning pass changed (`options.learning`); its decision reads the learned category change from the database, which no golden member carries | yes: code default on |
 | DARWIN_CONDITIONAL_ZERO_LAYOUT_LIVE | code_constant | `src/lib/agents/darwin/verify.ts` | on | on (code constant) | 2026-10-25 18cebcf11 | partial | yes: code default on |
+| DARWIN_HISTORY_CHECK_LIVE | code_constant | `src/lib/agents/darwin/history-check.ts` | off | off (code constant) | 2026-11-02 ab2cc67a984 | no: not wired yet: the history check compares a fee waiting for Darwin with the same bank's live published value for that fee (same category, audience and name), a database read; the golden set replays single documents with no published history, so a replay could only pass vacuously | no |
 | DARWIN_LOAN_PAYMENT_EXAMPLE_TAKEDOWN_LIVE | env | `src/lib/agents/darwin/loan-payment-example-check.ts` | off unless set | unknown (environment variable; not read) | 2026-11-01 1b619ae3e19 | sweep | no: prod value unknown |
 | DARWIN_RECHECK_OLDER_LIVE | code_constant | `src/lib/agents/darwin/verified-recheck.ts` | on | on (code constant) | 2026-10-16 c6c158bf7 | no: Darwin's verified re-check of older live rows decides by publication age and earlier verdicts; its decision reads each row's verify history from the database, which no golden member carries | yes: code default on |
 | DARWIN_RECHECK_SECOND_LOOK_LIVE | code_constant | `src/lib/agents/darwin/verified-recheck.ts` | on | on (code constant) | 2026-10-16 c6c158bf7 | no: second looks are due by a first look's timestamp 12 hours earlier; its decision reads the earlier first look from the database, which no golden member carries | yes: code default on |
