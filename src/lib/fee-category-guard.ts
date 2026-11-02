@@ -303,12 +303,22 @@ export function ownLabelOnLine(context: Pick<CategoryGuardContext, "conditions" 
   if (!excerpt || !Number.isFinite(amount)) return null;
   const line = plainQuotes(excerpt).replace(/^["\s]+|["\s]+$/g, "");
   let previousEnd = 0;
+  let label: string | null = null;
   for (const match of line.matchAll(/\$\s?(\d[\d,]*(?:\.\d{1,2})?|\.\d{1,2})(?![\d.])/g)) {
     const start = match.index ?? 0;
-    if (Math.abs(Number(match[1].replace(/,/g, "")) - amount) < 0.005) return line.slice(previousEnd, start);
+    if (Math.abs(Number(match[1].replace(/,/g, "")) - amount) < 0.005) {
+      // The same price twice on one line: which label owns this fee is unknown.
+      if (label != null) return null;
+      label = line.slice(previousEnd, start);
+    }
     previousEnd = start + match[0].length;
   }
-  return null;
+  if (label == null) return null;
+  // A neighbouring row priced without a "$" ("No Charge", "N/C", "Free", a bare "50.00") ends that
+  // row: keep only the words after its price, so its label is never read as this fee's.
+  const priced = [...label.matchAll(/\b(?:no charge|n\/c|free|none)\b|(?<![\d$.,])\d[\d,]*\.\d{2}(?![\d.])/gi)];
+  const last = priced[priced.length - 1];
+  return last ? label.slice((last.index ?? 0) + last[0].length) : label;
 }
 /** v103: the outside-the-U.S. words on a domestic wire's own label in its stored line; null otherwise. Pure. */
 function outsideUsWireOnLine(canonicalFeeKey: string, name: string, context: CategoryGuardContext | undefined): string | null {

@@ -86,4 +86,11 @@ describe("a wire its own words send outside the U.S. (fee 95508)", () => {
     const scope = sourceOwnedWireScope(BANK_ORION, NOT_US_NAME, 50);
     expect(scope).toMatchObject({ kind: "owned", geography: "international", directions: ["outgoing"] });
   });
+
+  it("never reads a neighbouring row's label as the fee's own (review of #2926)", () => {
+    const at = (line: string) => ownLabelOnLine({ conditions: `excerpt=${line}`, amount: 25 });
+    expect(namesWireOutsideUs(at("Outgoing Wire Out of Country | No Charge | Outgoing Wire | $25.00") ?? "")).toBe(false);
+    expect(namesWireOutsideUs(at("Outgoing Wire Out of Country 50.00 Outgoing Wire $25.00") ?? "")).toBe(false);
+    expect(at("Outgoing wire (not processed through a U.S. bank) $25.00 Outgoing wire (processed through a U.S. bank) $25.00")).toBeNull();
+  });
 });
