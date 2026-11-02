@@ -470,7 +470,7 @@ DATABASE_URL=<prod URL> npm run audit:switch-dry-runs -- --json > switch-dry-run
     is read; the output prints the bound and the next `--scan-offset` when it is reached;
   - `--scan-offset N` (default 0): the next batch of dash-list candidates;
   - `--accuracy-sample N` (default 500);
-  - `--institution ID[,ID]` (sections 1 to 7 for those institutions only).
+  - `--institution ID[,ID]` (sections 1 to 8 for those institutions only).
 - **Load.** The run holds one repeatable-read snapshot for its whole length, which holds back vacuum,
   and its cap and limit reads scan whole tables (each statement stops at 10 minutes). Run it
   off-peak, or on a replica if one exists. For a first pass, scope it to a few institutions, for
@@ -559,7 +559,13 @@ DATABASE_URL=<prod URL> npm run audit:switch-dry-runs -- --json > switch-dry-run
      re-check's own function (`findZeroWaiverRows`) on the text Knox read, a chunk of texts at a time:
      the count of live fees the switch would take down (each after its second look), by kind and
      category, and the selected fees with no stored text, which are not judged.
-  8. Live accuracy. Deming's fresh audit is re-run on today's seed (`fresh-audit.ts`). It leads
+  8. `SERVICE_MAINTENANCE_TAKEDOWN_LIVE` (#1092, Knox v165, `service-maintenance-heading.ts`). Every
+     live flat monthly maintenance fee Darwin's service-heading re-check selects with its own SQL
+     (`serviceMaintenanceRowsSql`), judged by the re-check's own function (`findServiceMaintenance`) on the
+     text Knox read where it prints a service's words, a chunk of texts at a time: the count of live fees the
+     switch would take down (each after its second look), $0 and priced, by the services the heading names,
+     and the selected fees with no stored text or no service word, which are not judged.
+  9. Live accuracy. Deming's fresh audit is re-run on today's seed (`fresh-audit.ts`). It leads
      with the daily receipt's own figure (right / scorable), then the amount-and-category-only
      share (`traceLiveFee`, `checkFeeCategory`). This is a stored-copy measure, not a check
      against the bank's current schedule.

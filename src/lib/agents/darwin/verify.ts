@@ -11,6 +11,7 @@ import {
 import { tierPerkZero } from "./tier-perk";
 import { accountBenefitZeroOf } from "@/lib/account-benefit-zero";
 import { zeroWaiverRowRead } from "@/lib/zero-waiver-row";
+import { serviceMaintenanceRead } from "@/lib/service-maintenance-heading";
 import { requireInternationalVerification } from "./international-verification";
 import { matchOriginalRawSource } from "./locked-raw-source";
 import { paidReturnedCandidateProof, PAID_RETURNED_EVENT_FLAG, PAID_RETURNED_ELIGIBILITY_FLAG } from "@/lib/custom-report/paid-returned-events";
@@ -165,6 +166,7 @@ export type DarwinReasonCode =
   | "tier_perk_zero"
   | "account_benefit_zero"
   | "zero_waiver_row"
+  | "service_maintenance_heading"
   | "name_rule"
   | "maintenance_per_item"
   | "history_jump"
@@ -196,6 +198,7 @@ export const DARWIN_REASON_TEXT: Readonly<Record<DarwinReasonCode, string>> = {
   tier_perk_zero: "A $0 from one account tier's own schedule (premium, private banking, BankOn) or named for that account: the tier's perk, not the bank's price",
   account_benefit_zero: "A $0 read from one named account's list of benefits (\"... Checking Account owners are provided the following free services\"): that account's perk, not the bank's price; held for a person",
   zero_waiver_row: "A $0 whose own line is no priced row: a \"No fee for ...\" item of a list of free items, or the balance row that avoids a fee (\"Minimum balance required to avoid a service charge\"); held for a person",
+  service_maintenance_heading: "A monthly maintenance fee whose row sits under a heading that names a service, not an account (\"Consumer Online Banking Services and Mobile Banking Fees\" over \"Monthly Maintenance Fee | No charge\"): the service's own fee, not the checking account's; held for a person",
   name_rule: "The name or line fails a rule Hamilton would take the live fee down for",
   maintenance_per_item: "A monthly maintenance fee whose own line prices it per item (\"$16 each\", \"$1.00 per withdrawal\"): not the account's monthly fee",
   history_jump: "Amount moved sharply from the bank's live value for this fee, and this copy is an earlier edition than the live value's or the same page does not show the change; held for a person to review",
@@ -861,7 +864,7 @@ export function pendingCategoryLesson(canonicalFeeKey: string | null, feeName: s
 
 function decisionFor(code: DarwinReasonCode | null): DarwinDecision {
   if (code == null) return "verified";
-  if (code === "outside_envelope" || code === "peer_outlier" || code === "category_lesson_pending" || code === "conditional_zero" || code === "account_benefit_zero" || code === "zero_waiver_row" || code === "maintenance_per_item" || code === "history_jump" || code === "insert_failed") return "needs_review";
+  if (code === "outside_envelope" || code === "peer_outlier" || code === "category_lesson_pending" || code === "conditional_zero" || code === "account_benefit_zero" || code === "zero_waiver_row" || code === "service_maintenance_heading" || code === "maintenance_per_item" || code === "history_jump" || code === "insert_failed") return "needs_review";
   if (code === "duplicate_in_batch" || code === "duplicate_verified") return "duplicate";
   return "rejected";
 }
@@ -2056,6 +2059,12 @@ export async function runDarwinVerify(
         // check traces it to (`zeroWaiverRowRead`).
         if (!reasonCode && zeroWaiverRowRead({ excerpt: excerptOf(row.conditions), tracedLine, amount: normalizedAmount(row.amount), documentText: sourceText })) {
           reasonCode = "zero_waiver_row";
+        }
+        // #1092 (Knox v165 holds new ones): and a monthly maintenance fee, $0 or priced, whose row sits
+        // under a service's heading, read on Knox's line and the line the shared check traces it to
+        // (`serviceMaintenanceRead`).
+        if (!reasonCode && serviceMaintenanceRead({ excerpt: excerptOf(row.conditions), tracedLine, canonicalFeeKey, documentText: sourceText })) {
+          reasonCode = "service_maintenance_heading";
         }
         if (!reasonCode && canonicalFeeKey && verifiedInBatch.has(batchKey(row, canonicalFeeKey))) {
           reasonCode = "duplicate_in_batch";

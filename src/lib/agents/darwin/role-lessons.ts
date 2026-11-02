@@ -841,6 +841,16 @@ export const DARWIN_LESSONS: AgentLesson[] = [
     since: "2026-11-02",
   },
   {
+    id: "issue-1092-service-maintenance-heading-refused",
+    agent: "darwin",
+    stage: "verify",
+    lesson: "A monthly maintenance fee that traces to its row can still be another product's fee: read the heading the row sits under. Refuse (for a person) a monthly maintenance fee, $0 or priced, whose row's nearest heading names only a service (online, mobile, internet or text banking, bill pay, e-statements, remote deposit, Zelle, treasury) and opens its own section, on both Knox's row and the line the shared check traces the fee to; a name traced to an account's row elsewhere is the account's fee. Refuse rather than match when the heading is in doubt. Reach the ones already live with a re-check behind its own switch, counted with the dry-run audit before it goes on, and never read an admin-corrected fee.",
+    why: "River City Bank's \"Monthly Maintenance Fee | No charge\" under \"Consumer Online Banking Services and Mobile Banking Fees\" (state key 5608) would verify as the account's $0 maintenance fee and say the bank has free checking: the row names no service, so the name rules never see it.",
+    evidence: { issues: [1092], prs: [], files: ["src/lib/agents/darwin/service-maintenance-check.ts", "src/lib/agents/darwin/verify.ts", "src/lib/agents/darwin/service-maintenance-check.test.ts", "docs/project/findings/2026-11-02-service-maintenance-heading.md"] },
+    appliesTo: "all",
+    since: "2026-11-02",
+  },
+  {
     id: "issue-1115-a-hold-goes-back-to-the-page",
     agent: "darwin",
     stage: "verify",

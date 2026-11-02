@@ -718,7 +718,15 @@ import { withProtectionItemReads } from "./protection-item";
 // heading ("Notary Service" / "No charge for notarization of Bank documents.") stays the bank's $0.
 // Darwin's verify refuses it and its live re-check reads what is already live. Reads are unchanged; the
 // shared check is unchanged. The stale-read floor stays at v97.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 163 } as const;
+// v165 (#1092, state key 5608, Nov 2; v164 is #2952's): a monthly maintenance read, $0 or priced, whose row sits under a
+// heading that names a service rather than an account is held as a range for review, never sent to
+// Darwin as the account's fee (`serviceMaintenanceOf` in `@/lib/service-maintenance-heading`, flag
+// `knox_service_maintenance:<services>`): River City's "Consumer Online Banking Services and Mobile
+// Banking Fees" over "Monthly Maintenance Fee | No charge" is the online banking service's fee, not free
+// checking. An account heading, an account's list of features and a heading in doubt are refused, not
+// matched. Darwin's verify refuses it and its live re-check reads what is already live. Reads are
+// unchanged; the shared check is unchanged. The stale-read floor stays at v97.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 165 } as const;
 
 export interface SpecialistRun {
   strategy: string;

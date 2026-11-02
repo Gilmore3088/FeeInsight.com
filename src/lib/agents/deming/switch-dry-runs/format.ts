@@ -225,11 +225,31 @@ function zeroWaiverRow(report: SwitchDryRunReport): string[] {
   return lines;
 }
 
+function serviceMaintenance(report: SwitchDryRunReport): string[] {
+  const { rowsRead, summary } = report.serviceMaintenance;
+  const lines = [
+    "## 8. SERVICE_MAINTENANCE_TAKEDOWN_LIVE (#1092, Knox v165)",
+    "Method: every live flat monthly maintenance fee Darwin's service-heading re-check selects (its own SQL; texts only where they print a service's words), " +
+      "judged by the re-check's own function (findServiceMaintenance) on the text Knox read: Knox's row and the line checkFeeAgainstSource traces the fee to " +
+      "must both sit under a heading that names only services (online, mobile, internet or text banking, bill pay, e-statements, remote deposit, Zelle, treasury). " +
+      "Admin-corrected fees are never selected.",
+    cap(rowsRead, "live monthly maintenance rows"),
+    `LIVE TAKEDOWN: switched on, ${summary.wouldTakeDown} of ${summary.checked} selected live monthly maintenance fees at ${summary.institutions} institutions would come down ` +
+      `(each after its 12-hour second look): ${summary.free} at $0, ${summary.priced} priced; by services: ${counts(summary.byServices)}. ` +
+      `${summary.noText} selected fees have no stored text or a text with no service word and are not judged.`,
+  ];
+  if (summary.samples.length) {
+    lines.push(`Would come down (first ${summary.samples.length}):`,
+      ...summary.samples.map((m) => `  pub ${m.feePublishedId} | inst ${m.institutionId} | ${money(m.amount)} "${clip(m.feeName, 60)}" | heading: "${clip(m.heading, 80)}" | line: "${clip(m.sourceLine)}" | traced: "${clip(m.tracedLine)}"`));
+  }
+  return lines;
+}
+
 function accuracy(report: SwitchDryRunReport): string[] {
   const a = report.liveAccuracy;
-  if (!a.readable) return ["## 8. Live accuracy", "The fresh audit could not read the live fees: accuracy is unknown."];
+  if (!a.readable) return ["## 9. Live accuracy", "The fresh audit could not read the live fees: accuracy is unknown."];
   return [
-    "## 8. Live accuracy (stored source, not the bank's current schedule)",
+    "## 9. Live accuracy (stored source, not the bank's current schedule)",
     `Method: ${a.method}`,
     `Seed ${a.seed}; source check v${a.sourceCheckVersion}; category guard v${a.categoryGuardVersion}.`,
     `Sampled ${a.sampled}; scorable ${a.scorable}; no stored text ${a.noText}.`,
@@ -244,7 +264,7 @@ export function formatSwitchDryRuns(report: SwitchDryRunReport): string {
     `# Switch dry runs (read-only), ${report.generatedAt}`,
     "One read-only snapshot for the whole run: it holds back vacuum while it runs, so run it off-peak (or on a replica).",
     `Samples capped at ${report.options.sampleCap} per list; totals count every row read.` +
-      (report.options.institutionIds ? ` Sections 1-7 limited to institutions ${report.options.institutionIds.join(", ")}.` : ""),
+      (report.options.institutionIds ? ` Sections 1-8 limited to institutions ${report.options.institutionIds.join(", ")}.` : ""),
     "",
     ...dailyCap(report),
     "",
@@ -259,6 +279,8 @@ export function formatSwitchDryRuns(report: SwitchDryRunReport): string {
     ...heldVocabulary(report),
     "",
     ...zeroWaiverRow(report),
+    "",
+    ...serviceMaintenance(report),
     "",
     ...accuracy(report),
     "",

@@ -111,6 +111,9 @@ const SWEEP_PROBES: Record<string, () => SweepProbe> = {
   NO_FEE_SENTENCE_TAKEDOWN_LIVE: () => one([pub("monthly_maintenance", "It’s easy to open. It makes banking more convenient. There are no minimum balance requirements or monthly service fees.", 100, NO_FEES)]),
   ZERO_WAIVER_ROW_TAKEDOWN_LIVE: () => one([pub("cashiers_check", "Cashier's Checks", 0, "No Fee for Cashier's Checks")],
     "Cornerstone Checking:\n\n2 Boxes Personal Checks Free per Year\n\nNo Fee for Cashier's Checks\n\nCornerstone Plus:"),
+  // State key 5608 (River City Bank) as a table read pairs its rows: the online banking service's $0 monthly fee.
+  SERVICE_MAINTENANCE_TAKEDOWN_LIVE: () => one([pub("monthly_maintenance", "Monthly Maintenance Fee", 0, "Monthly Maintenance Fee | No charge")],
+    "Consumer Online Banking Services and Mobile Banking Fees\n\nSet Up Fee | No charge\n\nMonthly Maintenance Fee | No charge"),
   DARWIN_LOAN_PAYMENT_EXAMPLE_TAKEDOWN_LIVE: () => one([pub("other_lending_fee", "Loan Documentation Fee, estimated payment", 147389, "Loan Documentation Fee, estimated payment of $1,473.89")]),
   CANADIAN_DOCUMENT_TAKEDOWN_LIVE: () => one([pub("monthly_maintenance", "Monthly Fee", 400, "Monthly Fee $4.00")], "Chequing account Monthly Fee $4.00 ... Unlimited Interac e‑Transfers with no fees"),
   NON_DEPOSIT_DOCUMENT_TAKEDOWN_LIVE: () => one([pub("appraisal_fee", "Appraisal", 40000, "Appraisal $400")], "Current Rates\nAppraisal $400", "https://www.bankofgreene.com/current-rates/"),

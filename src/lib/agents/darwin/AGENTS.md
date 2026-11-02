@@ -1778,6 +1778,26 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   second look (`darwin.zero_waiver_row`) and is archived with `zero_waiver_row: <kind>, "<line>"`
   (verified row rejected with the `zero_waiver_row` flag; event `darwin.zero_waiver_row_takedown`). Step
   detail `zero_waiver_row_check`. Golden-set replay: the `darwin.zero_waiver_row` sweep.
+- A monthly maintenance fee whose row sits under a service's heading (`service-maintenance-check.ts`,
+  #1092, state key 5608): River City Bank's "Consumer Online Banking Services and Mobile Banking Fees" over
+  "Monthly Maintenance Fee | No charge" is the online banking service's fee; published as the account's
+  monthly maintenance it would say the bank has free checking. The row names no service, so the name rule
+  (`SERVICE_MONTHLY_CHARGE_NAME`, guard v102) cannot see it. Knox v165 holds such a read, $0 or priced, and
+  verify refuses it (`service_maintenance_heading`, needs review), both through
+  `src/lib/service-maintenance-heading.ts`: the nearest heading-shaped line above the row that is not a
+  stacked row's label names only services (online, mobile, internet or text banking, bill pay, e-statements,
+  remote deposit, Zelle, treasury), opens its own section, and no note between names an account; the row's
+  label names no account and every printing passes. Verify and the re-check read both Knox's row and the
+  line `checkFeeAgainstSource` traces the fee to (`sourceLineFor`), so a name the shared check traces to an
+  account's row stays. Held, never re-filed: no category of the 50 holds a service's monthly fee. Each verify
+  step reads every live flat monthly maintenance fee (about 4,100 on Nov 1) and the text Knox read where it
+  prints a service's words (`SERVICE_MAINTENANCE_TEXT_PREFILTER`; admin-corrected fees never). The switch
+  (`SERVICE_MAINTENANCE_TAKEDOWN_LIVE`, code, off) waits for its dry-run count (`npm run
+  audit:switch-dry-runs`, section 8) and a clean sample; on, a match goes through the 12-hour second look
+  (`darwin.service_maintenance_heading`) and is archived with `service_maintenance_heading: <services>,
+  "<heading>"` (verified row rejected with the `service_maintenance_heading` flag; event
+  `darwin.service_maintenance_heading_takedown`). Step detail `service_maintenance_check`. Golden-set
+  replay: the `darwin.service_maintenance_heading` sweep.
 - Card program sections of a general schedule (`card-program-section-check.ts`, #1908, #1905). Navy
   Federal's fees page prints "Prepaid and Gift Cards" / "GO Prepaid Cards" sections after its deposit
   fees, and their "Lost/Stolen Card" $5 and Visa/PLUS ATM $1 rows went live as the account's fees on
@@ -2822,6 +2842,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `BANDED_ZERO_CHECK_VERSION` | `darwin.banded_zero` | v1 | `darwin/banded-zero-check.ts` |
 | `ACCOUNT_BENEFIT_ZERO_CHECK_VERSION` | `darwin.account_benefit_zero` | v1 | `darwin/account-benefit-zero-check.ts` |
 | `ZERO_WAIVER_ROW_CHECK_VERSION` | `darwin.zero_waiver_row` | v1 | `darwin/zero-waiver-row-check.ts` |
+| `SERVICE_MAINTENANCE_CHECK_VERSION` | `darwin.service_maintenance_heading` | v1 | `darwin/service-maintenance-check.ts` |
 | `CARD_PROGRAM_SECTION_CHECK_VERSION` | `darwin.card_program_section` | v1 | `darwin/card-program-section-check.ts` |
 | `LOAN_SECTION_CHECK_VERSION` | `darwin.loan_section` | v1 | `darwin/loan-section-check.ts` |
 | `DOCUMENT_OWNER_STRATEGY` | `verify.document_owner` | v1 | `darwin/document-owner.ts` |

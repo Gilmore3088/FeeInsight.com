@@ -7,6 +7,7 @@ import { addHeldVocabularyDocument, emptyHeldVocabularySummary, replayHeldVocabu
 import { addSectionPathDocument, emptySectionPathSummary, replaySectionPathDocument, type SectionPathSummary } from "./section-path";
 import { addZeroWaiverRows, emptyZeroWaiverRowSummary, type ZeroWaiverRowSummary } from "./zero-waiver-row";
 import { ZERO_WAIVER_ROW_MAX_ROWS, type ZeroWaiverRowLiveRow } from "@/lib/agents/darwin/zero-waiver-row-check";
+import { serviceMaintenanceSection, type ServiceMaintenanceSection } from "./service-maintenance";
 import { bounded, type Bounded, type LiveFeeRow, type SwitchAuditOptions, type SwitchAuditReader } from "./types";
 
 /**
@@ -57,6 +58,7 @@ export interface SwitchDryRunReport {
     summary: HeldVocabularySummary;
   };
   zeroWaiverRow: { switch: "ZERO_WAIVER_ROW_TAKEDOWN_LIVE"; issue: number; rowsRead: Bounded; summary: ZeroWaiverRowSummary };
+  serviceMaintenance: ServiceMaintenanceSection;
   liveAccuracy: LiveAccuracy;
 }
 
@@ -238,6 +240,7 @@ export async function runSwitchDryRuns(reader: SwitchAuditReader, options: Switc
     footnotedAtmHeading: await footnotedAtmHeading(reader, options),
     heldVocabulary: await heldVocabulary(reader, options),
     zeroWaiverRow: await zeroWaiverRow(reader, options),
+    serviceMaintenance: await serviceMaintenanceSection(reader, options),
     liveAccuracy: liveAccuracyFrom(await reader.freshAudit(options.accuracySample)),
   };
 }
