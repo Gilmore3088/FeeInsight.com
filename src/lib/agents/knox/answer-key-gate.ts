@@ -1,6 +1,8 @@
 import { reproducibleFees } from "@/lib/agents/hamilton/rules-recheck";
+import { equivalentCategory } from "@/lib/agents/knox/category-equivalence";
 import { foldedCategory, RETURNED_STATEMENT } from "@/lib/agents/knox/rules";
 import { foldContext, foldRetiredCategory, isRetiredCategory, researchSplitCategory, researchSplitTarget, splitLiveCategory } from "@/lib/fee-fold";
+import { withFootnotedAtmHeading } from "@/lib/fee-fold-atm-heading";
 
 /**
  * Knox's rule-change gate: scores today's free extractor team (plus Darwin's rule checks,
@@ -42,9 +44,9 @@ export interface GateScore {
 
 /**
  * Categories the key files under one name where Knox may use the other. Lines the keys
- * leave "unmapped" that James folded into an existing category (v26) count under it.
+ * leave "unmapped" that James folded into an existing category (v26) count under it. The map,
+ * `EQUIVALENT_CATEGORIES` in `category-equivalence.ts`, is shared with the two-read agreement.
  */
-const EQUIVALENT: Record<string, string> = { minimum_balance: "monthly_maintenance" };
 
 const cents = (amount: number) => Math.round(amount * 100);
 
@@ -67,7 +69,10 @@ function keyCategory(fee: AnswerKeyDocument["fees"][number], text: string): stri
   // A bare price line ("$125.00") is named by the label printed above it, as the fold names a
   // bare fee by the schedule above it (James, Oct 8). Null: the fold gives the fee no home.
   const name = /[a-z]/i.test(line) ? line : `${labelAbove(text, line)} ${line}`.trim();
-  return foldRetiredCategory(fee.key, name, foldContext(text, line))?.to ?? null;
+  // A key names the fee the bank's schedule prints, so it is folded with the ATM heading read that
+  // sees note marks (#1092) whether or not `FOOTNOTED_ATM_HEADING_LIVE` is on: Texas 2416 is a
+  // non-network ATM fee either way. The reads it is scored against follow the switch.
+  return withFootnotedAtmHeading(true, () => foldRetiredCategory(fee.key, name, foldContext(text, line))?.to ?? null);
 }
 
 /**
@@ -86,8 +91,8 @@ function labelAbove(text: string, line: string): string {
  * retired, on a line the fold as it stands gives no home (a free e-statement, a balance inquiry by
  * phone), names a fee Darwin refuses (`retired_category`) and the taxonomy dropped (James, Oct 8:
  * "drop them -- the 248"), so today's pipeline cannot find it. The fold can be wrong: a key it should
- * place (Texas 2416, a non-network ATM inquiry under "Non-TBT or Non-Allpoint ATM1:", #1092) is a
- * fold defect, and leaves this list once the fold is fixed.
+ * place is a fold defect, and leaves this list once the fold is fixed (Texas 2416, a non-network ATM
+ * inquiry under "Non-TBT or Non-Allpoint ATM1:", left it with the marked ATM heading read, #1092).
  */
 export const RETIRED_NO_HOME = "retired_category_no_home";
 
@@ -140,7 +145,7 @@ function keyVerdict(fee: AnswerKeyDocument["fees"][number], text: string): KeyVe
   if (mapped.key === "unmapped" || mapped.amount == null) return { key: null, excluded: null };
   const key = keyCategory(mapped, text);
   if (key == null) return { key: null, excluded: RETIRED_NO_HOME };
-  return { key: `${EQUIVALENT[key] ?? key}:${cents(Number(mapped.amount))}`, excluded: null };
+  return { key: `${equivalentCategory(key)}:${cents(Number(mapped.amount))}`, excluded: null };
 }
 
 /** One read (`category:cents`, from `reproducibleFees`) keyed as the gate compares it. Pure. */
@@ -148,7 +153,7 @@ export function gateReadKey(read: string): { key: string; amount: number; normal
   const split = read.lastIndexOf(":");
   const key = read.slice(0, split);
   const amount = Number(read.slice(split + 1));
-  return { key, amount, normalized: `${EQUIVALENT[key] ?? key}:${amount}` };
+  return { key, amount, normalized: `${equivalentCategory(key)}:${amount}` };
 }
 
 /** Today's free reads of a text, keyed as the gate compares them (`category:cents`). Pure. */

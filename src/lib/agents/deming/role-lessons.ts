@@ -8,6 +8,16 @@ import type { AgentLesson } from "@/lib/agents/learning/lesson-types";
  */
 export const DEMING_LESSONS: AgentLesson[] = [
   {
+    id: "live-audit-score-what-loaded",
+    agent: "deming",
+    stage: "live-source audit",
+    lesson: "Score a live check on what it could read. When the bank's page loads, give the fee a verdict with the shared match rule: match, mismatch, or not found on the page. Call it unknown only when the page did not load, is a script shell too thin to judge (a plain fetch of a page read with a browser), or prices the fee on a restricted witness, and record why. Label a category-guard refusal apart from a price contradiction. Cap re-fetch requests per document address, not per byte hash, or a page that changes bytes every fetch walks past the cap. Check the fee against the page it was read from, not a page you find by walking the site. Keep a checker version out of a long sample's identity, and record the version on each verdict instead, so a deploy does not restart the sample. A save that keeps rereading a large frozen record will run out of its budget, so check identity with a cheap query. Before trusting a measurement, count its verdicts by status: one that is all unknown has measured nothing. When a sample's identity changes, count its daily redraw cap per identity family, or the old version's redraws lock the new one out until midnight.",
+    why: "From Nov 1 to 05:43 UTC on Nov 2 the live audit recorded 122 observations and all 122 came out unknown. Of 120 institution graphs, 47 hit the six-page cap (38 of them before reading any schedule) and 38 dropped their whole graph at the 32 KiB metadata cap; the rest failed the schedule-from-homepage, audience or terms proofs. 9 of 20 chunk steps ran out of their 10 s save budget, because the save re-read and re-hashed the 3.9 MB draw three times and sent every institution's policy. Four version bumps on Nov 1-2 restarted the draw four times, and none of the five draws got past 48 of ~465 institutions. There was no score for 14 days. After the fix deployed on Nov 2, three old-series draws had already used the day's cap of three, so the new audit could not draw until midnight UTC.",
+    evidence: { issues: [2061], prs: [], files: ["docs/project/findings/2026-11-02-live-audit-scores-nothing.md", "src/lib/agents/deming/live-source-audit.ts", "src/lib/agents/deming/live-source-observer.ts", "src/lib/data-store/live-source-audit.ts"] },
+    appliesTo: ["deming-live-source-audit", "deming-live-source-draw", "deming-live-source-archive"],
+    since: "2026-11-02",
+  },
+  {
     id: "issue-2064-charge-a-miss-on-the-keys-own-line",
     agent: "deming",
     stage: "shadow lab",
@@ -296,5 +306,15 @@ export const DEMING_LESSONS: AgentLesson[] = [
     evidence: { issues: [2533], prs: [], files: ["src/lib/data-store/answer-key-eligibility.ts", "src/lib/agents/answer-key-eligibility.ts", "docs/project/findings/2026-11-01-answer-key-exclusions-read-one-by-one.md"] },
     appliesTo: "all",
     since: "2026-11-01",
+  },
+  {
+    id: "golden-set-gates-every-pipeline-change",
+    agent: "deming",
+    stage: "golden-set gate",
+    lesson: "Gate the measure on what the change touches, not on a name the author chose to write. Any PR that changes code the golden-set replay runs is measured against main's committed baseline and fails on any fee main got right and the PR loses; the path filter is the replay's own import closure, computed each run. A database sweep is measured by running its pure decision function over the golden set's publications, so a takedown of a fee the answer key says is right counts as a lost fee. A switch the set cannot replay must say why in the code, and a PR that turns one on must state that reason in its own diff; \"not replayable\" never passes by silence.",
+    why: "The Nov 2 read-only audit found the golden-set gate ran only when a PR's diff named a `*_LIVE` switch: a pipeline logic change with no switch name never met the golden set. Only 10 of 106 switches replayed, none of the database sweeps did, and a not-replayable receipt still let the PR pass (#2886 went green that way).",
+    evidence: { issues: [2533, 2535], prs: [2845, 2886], files: ["src/lib/agents/deming/golden-gate.ts", "src/lib/agents/deming/sweep-replay.ts", "src/lib/agents/deming/switch-replay.ts", "docs/project/findings/2026-11-02-golden-set-gates-only-switch-prs.md"] },
+    appliesTo: "all",
+    since: "2026-11-02",
   },
 ];

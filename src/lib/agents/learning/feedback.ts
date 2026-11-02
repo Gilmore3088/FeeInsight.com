@@ -65,6 +65,9 @@ export type FeedbackStage = (typeof FEEDBACK_STAGES)[number];
  *     source line again, #1499; also written by Deming for each daily-audit bad-name miss,
  *     `deming/audit-misses.ts`, #2055). Knox settles each one per rules version with
  *     knox_reread_resolved (`knox/reread-feedback.ts`, weight 0, #1511)
+ *   Refetch request (Darwin, `darwin/hold-source-reread.ts`): magellan_refetch_requested (weight 0;
+ *     the page a range or peer hold was read from is over 30 days old; Magellan's live-source pass,
+ *     `magellan/live-source-refetch.ts`, fetches it again)
  *   Operator actions (human, `fee-hold.ts`, `fee-corrections.ts`, #978; a hold or correction is filed
  *     against the stage its cause names, `fee-error-cause.ts`, #2057; a wrong document carries
  *     evidence wrong_document_id and wrong_document_url, read by Magellan's stale-link search; no
@@ -302,6 +305,7 @@ export const TAKEDOWN_REASON_CHECKS: Readonly<Record<string, string>> = {
   source_mismatch: "hamilton.hand_takedown",
   // Darwin's re-checks of live fees.
   banded_zero: "darwin.banded_zero",
+  account_benefit_zero: "darwin.account_benefit_zero",
   canadian_document: "darwin.canadian_document",
   card_program_section: "darwin.card_program_section",
   document_owner: "darwin.document_owner",
@@ -320,6 +324,9 @@ export const TAKEDOWN_REASON_CHECKS: Readonly<Record<string, string>> = {
   rate_floor: "darwin.rate_floor",
   no_fee_sentence: "darwin.no_fee_sentence",
   loan_payment_example: "darwin.loan_payment_example",
+  worked_example: "darwin.worked_example",
+  stale_copy_twin: "darwin.stale_copy",
+  stale_copy_dropped: "darwin.stale_copy",
   release_repair: "darwin.release_repair",
   reread_category_twin: "darwin.reread_category",
   loan_payment_nsf_twin: "darwin.loan_payment_nsf_refile",

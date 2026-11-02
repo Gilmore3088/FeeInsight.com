@@ -30,6 +30,7 @@ import {
   FOUND_CODES,
   MIN_LINK_SCORE,
   pageLinks,
+  pageIdentity,
   sameSite,
   urlIdentity,
   type FinderKey,
@@ -61,7 +62,7 @@ import {
   SINGLE_PRODUCT_SQL,
 } from "./link-coverage";
 import { loadDemotedFinders } from "./batch-review";
-import { STATED_DATE_VERSION, statedDateColumnsReady, statedDateLastDaySql, statedDateReplaces, statedDateStaleSql, type FreshnessBasis, type StatedDateReplacement } from "./stated-date";
+import { STATED_DATE_FIRST_VERSION, statedDateColumnsReady, statedDateLastDaySql, statedDateReplaces, statedDateStaleSql, type FreshnessBasis, type StatedDateReplacement } from "./stated-date";
 import { keepRefusedPaidAnswers, type KeepRefusedAnswersResult } from "./refused-answers";
 import { restoreSwappedFeePages, type RestoreFeePagesResult } from "./restore-fee-page";
 import { inSavepoint } from "@/lib/agents/savepoint";
@@ -71,6 +72,12 @@ import { LEADER_RANK, runSecondDocumentFind, type RunSecondDocumentFindResult } 
 import { missedSchedulesPending } from "./missed-schedules";
 import { countAnchors, detectPlatform, looksJavaScriptBuilt, looksLikeBotChallenge } from "./site-signals";
 import { repairIsWorthSaving, repairWebsiteUrl } from "./website-repair";
+import {
+  judgeRedirectWebsite,
+  REDIRECT_WEBSITE_PROOF_LIVE,
+  REDIRECT_WEBSITE_PROOF_VERSION,
+  type RedirectWebsiteJudgement,
+} from "./redirect-website";
 
 type SqlTag = typeof sql;
 type Fetcher = typeof fetch;
@@ -189,7 +196,15 @@ export const SCHEDULE_CONFLICT_KIND = "schedule_conflict";
  * link stays beside it as a companion, so whatever it gave is kept.
  */
 export const BARREN_LINK_KIND = "barren_link";
-export const BARREN_LINK_SEARCH_VERSION = 1;
+/**
+ * v2 (Nov 2 coverage audit): a page that cannot replace the link (no more fee lines than the
+ * link's own text, or the link itself under a print or tracking address) no longer stops the
+ * search (`SearchContext.replaceFeeLines`, `pageIdentity`). 103 of the 350 banks searched at v1
+ * stopped on such a page, 70 of them on their own link's print copy through the known-link
+ * finder, so the other specialists never ran. Those banks are due again; a v1 search that ran to
+ * its end (a miss, or a page that replaced the link) is not repeated.
+ */
+export const BARREN_LINK_SEARCH_VERSION = 2;
 export const BARREN_SETTLE_DAYS = 3;
 /** Discovery slots kept for barren links even when banks without a link fill the step. */
 export const BARREN_RESERVED_SLOTS = 2;
@@ -518,6 +533,11 @@ export interface CandidateDiscoveryResult {
   foundBy: FinderKey | null;
   /** The homepage after redirects, when it moved to another domain. */
   movedTo: string | null;
+  /**
+   * Whose site the redirect landed on (`redirect-website.ts`). `movedTo` replaces the stored
+   * website only when `savesMovedWebsite` says so; absent on results that never fetched a homepage.
+   */
+  movedToProof?: RedirectWebsiteJudgement | null;
   platform: string | null;
   /** sha256 of the homepage HTML: the input fingerprint of this search. */
   homepageHash: string | null;
@@ -742,6 +762,8 @@ async function discoverForInstitution(
     finderOrder?: typeof FINDER_ORDER;
     /** Only guessed paths use homepage-based memory; observed pages can change independently. */
     playbook?: Playbook | null;
+    /** A barren-link search: fee lines on the link's own text, which a page found must exceed. */
+    replaceFeeLines?: number;
   },
 ): Promise<CandidateDiscoveryResult> {
   const startedAt = Date.now();
@@ -752,6 +774,7 @@ async function discoverForInstitution(
   const learningSkippedFinders: FinderKey[] = [];
   let attemptedUrls = 0;
   let movedTo: string | null = null;
+  let movedToProof: RedirectWebsiteJudgement | null = null;
   let platform: string | null = null;
   let homepageHash: string | null = null;
   const resumedFrom = options.resume ?? null;
@@ -773,6 +796,7 @@ async function discoverForInstitution(
     method: DISCOVERY_METHOD,
     attemptedUrls,
     movedTo,
+    movedToProof,
     platform,
     homepageHash,
     homepageBlocked,
@@ -837,8 +861,9 @@ async function discoverForInstitution(
     rejected: options.rejectedUrls?.identities ?? new Set(),
     tried: new Set([urlIdentity(baseUrl.toString())]),
     replacing: (row.upgrade || row.business || row.freshness) && row.fee_schedule_url
-      ? new Set([row.fee_schedule_url, ...(row.freshness_exclude ?? [])].map((url) => urlIdentity(url)))
+      ? new Set([row.fee_schedule_url, ...(row.freshness_exclude ?? [])].map((url) => pageIdentity(url)))
       : undefined,
+    replaceFeeLines: options.replaceFeeLines,
     homepageHtml: "",
     homepageLinks: [],
     platform: null,
@@ -1075,6 +1100,22 @@ async function discoverForInstitution(
   }
 
   const html = await homepage.text();
+  // Whose site the redirect landed on: the landing replaces the stored website only on proof.
+  if (movedTo) {
+    movedToProof = judgeRedirectWebsite({
+      institution: {
+        id: institutionId,
+        institution_name: institutionName,
+        city: row.city ?? null,
+        state_code: stateCode,
+        cert_number: row.cert_number ?? null,
+        name_shared: row.name_shared,
+      },
+      stored: baseUrl,
+      landed: site,
+      html,
+    });
+  }
   if (looksLikeBotChallenge(html)) {
     homepageTrail.verdict = "bot_challenge";
     homepageFailure("blocked_bot");
@@ -1475,6 +1516,8 @@ export async function selectBarrenLinkCandidates(db: SqlTag, limit: number, stat
   if (limit <= 0) return [];
   const normalizedState = normalizeStateCode(stateCode);
   const marker = JSON.stringify({ barren_link_search: BARREN_LINK_SEARCH_VERSION });
+  const v1Marker = JSON.stringify({ barren_link_search: 1 });
+  const stoppedShort = JSON.stringify({ barren_check: { replaces: false } });
   const rows = await db<DiscoveryCandidateRow[]>`
     -- barren-link upgrade search
     SELECT inst.id,
@@ -1525,6 +1568,15 @@ export async function selectBarrenLinkCandidates(db: SqlTag, limit: number, stat
           WHERE pa.institution_id = inst.id
             AND pa.stage = 'discover'
             AND pa.detail @> ${marker}::jsonb
+       )
+       -- A v1 search that ran to its end is not repeated; one that stopped on a page unable to
+       -- replace the link (barren_check.replaces false) is (v2).
+       AND NOT EXISTS (
+         SELECT 1 FROM pipeline_attempts pa
+          WHERE pa.institution_id = inst.id
+            AND pa.stage = 'discover'
+            AND pa.detail @> ${v1Marker}::jsonb
+            AND NOT (pa.detail @> ${stoppedShort}::jsonb)
        )
        AND NOT ${websiteOwnedElsewhereSql(db)}
        AND (${normalizedState}::text IS NULL OR upper(btrim(inst.state_code)) = ${normalizedState})
@@ -1714,7 +1766,7 @@ export async function selectStaleCandidates(
                  AND stated_doc.superseded_by_id IS NULL
                  AND stated_doc.companion_source_id IS NULL
                  AND (stated_doc.id = profile.last_successful_source_document_id OR stated_doc.document_url = inst.fee_schedule_url)
-                 AND stated_doc.stated_date_version = ${STATED_DATE_VERSION}
+                 AND stated_doc.stated_date_version >= ${STATED_DATE_FIRST_VERSION}
                  AND stated_doc.stated_date IS NOT NULL
                ORDER BY ${statedDateLastDaySql(db)} DESC
                LIMIT 1
@@ -2029,6 +2081,23 @@ async function refuseOtherBankLink(db: SqlTag, result: CandidateDiscoveryResult)
   return { ...result, outcome: "retry_after", code: OTHER_BANK_HOST_CODE, url: null, documentType: null, confidence: null, reason };
 }
 
+/**
+ * May the redirect's landing (`movedTo`) replace the stored website? A proven landing always may;
+ * a host that is no institution's own site (social, bot wall, hosting or file host) never does; an
+ * unproven one (the homepage check failed, or a challenge page hid it) only while
+ * `REDIRECT_WEBSITE_PROOF_LIVE` is off (the old behaviour, kept until a prod dry run of that leg is
+ * sampled clean). A result without a proof (built outside a homepage fetch)
+ * keeps the old behaviour.
+ */
+export function savesMovedWebsite(result: Pick<CandidateDiscoveryResult, "movedTo" | "movedToProof">): boolean {
+  if (!result.movedTo) return false;
+  const proof = result.movedToProof;
+  if (!proof) return true;
+  if (proof.proven) return true;
+  if (proof.proof === "unproven") return !REDIRECT_WEBSITE_PROOF_LIVE;
+  return false;
+}
+
 /** Writes a bank's search result: its fee link (or miss), discovery evidence and profile. */
 export async function recordDiscoveryResult(
   db: SqlTag,
@@ -2046,14 +2115,16 @@ export async function recordDiscoveryResult(
   const failureReason = result.outcome === "discovered" ? null : `magellan_${result.outcome}`;
   const failureNote = result.outcome === "discovered" ? null : `${result.code}: ${result.reason}`;
   const repairedWebsite = result.websiteRepair?.save ? result.websiteRepair.repaired : null;
+  const movedWebsite = savesMovedWebsite(result) ? result.movedTo : null;
 
-  // A repaired website is saved only while no person's correction locks the bank's source.
+  // A repaired website is saved only while no person's correction locks the bank's source; a
+  // redirect's landing only when it is proven the institution's own site (`savesMovedWebsite`).
   await db`
     UPDATE institution_sources
        SET fee_schedule_url = COALESCE(${result.url}, fee_schedule_url),
            document_type = COALESCE(${result.documentType}, document_type),
            website_url = COALESCE(
-             ${result.movedTo},
+             ${movedWebsite},
              CASE WHEN ${repairedWebsite}::text IS NOT NULL AND NOT EXISTS (
                SELECT 1 FROM institution_source_profiles held
                 WHERE held.institution_id = ${result.institutionId}
@@ -2208,6 +2279,14 @@ async function recordFinderAttempts(
     website: row.website_url,
     searched_website: result.websiteRepair?.repaired ?? row.website_url,
     moved_to: result.movedTo,
+    ...(result.movedToProof
+      ? {
+          moved_to_proof: result.movedToProof.proof,
+          moved_to_proof_reason: result.movedToProof.reason,
+          moved_to_proof_version: REDIRECT_WEBSITE_PROOF_VERSION,
+          moved_to_saved: savesMovedWebsite(result),
+        }
+      : {}),
     platform: result.platform,
     // Countable: a search that went on past a homepage that blocked bots.
     homepage_blocked: result.homepageBlocked,
@@ -2463,6 +2542,9 @@ export async function runMagellanDiscovery(
     }
     if (row.stale_price) feedbackReads.stalePriceSearches += 1;
     if (row.upgrade_reason === SCHEDULE_CONFLICT_KIND) feedbackReads.scheduleConflictSearches += 1;
+    // A barren-link search knows the old page's fee lines before it starts, so a page that
+    // cannot beat them does not end the search (v2).
+    const barrenOldFeeLines = row.upgrade_reason === BARREN_LINK_KIND ? await currentLinkFeeLines(db, institutionId) : undefined;
     const result = await discoverForInstitution(row, {
       fetchImpl,
       rejectedUrls: rejected.get(institutionId),
@@ -2476,6 +2558,7 @@ export async function runMagellanDiscovery(
       pageClassifier,
       finderOrder: bankOrder,
       playbook: learning ? await loadPlaybook(db, institutionId) : null,
+      replaceFeeLines: barrenOldFeeLines,
     });
     results.push(result);
     if (dryRun) continue;
@@ -2487,7 +2570,7 @@ export async function runMagellanDiscovery(
         result.outcome === "discovered" &&
         result.url &&
         row.fee_schedule_url &&
-        urlIdentity(result.url) !== urlIdentity(row.fee_schedule_url),
+        pageIdentity(result.url) !== pageIdentity(row.fee_schedule_url),
     );
     // A freshness search without a wrong-document finding replaces the link only with a page that
     // states a later date than the old document (or the year the older arm read), or states none
@@ -2517,7 +2600,7 @@ export async function runMagellanDiscovery(
     }
     // A barren link is replaced only by a fee page with more fee lines than the old page.
     if (upgraded && row.upgrade_reason === BARREN_LINK_KIND) {
-      const check = barrenLinkReplaces(result.foundText, result.url, await currentLinkFeeLines(db, institutionId));
+      const check = barrenLinkReplaces(result.foundText, result.url, barrenOldFeeLines ?? (await currentLinkFeeLines(db, institutionId)));
       row.barren_check = check;
       if (!check.replaces) upgraded = false;
     }

@@ -499,10 +499,10 @@ unless named, the reason below); a dry run reports and writes nothing. Sections 
 the detail.
 
 The publish-sweeps split (`hamilton/publish-sweeps.ts`, on since James's 2026-10-31 decision card:
-`PUBLISH_SWEEPS_SPLIT_LIVE`; undo is setting it back to false). Of the step's 52 timed calls, 41 are scoped only by
+`PUBLISH_SWEEPS_SPLIT_LIVE`; undo is setting it back to false). Of the step's 53 timed calls, 41 are scoped only by
 institution or not at all (`MOVED_PUBLISH_SWEEPS`: the 40 the 2026-10-18 proposal named, plus
 `pendingFlags`, #1876), so in a state lane they run over every
-state's live fees. With the switch on, a state lane's `publish` skips those 41 and keeps its 11
+state's live fees. With the switch on, a state lane's `publish` skips those 41 and keeps its 12
 state-scoped and own-row calls (`KEPT_PUBLISH_CALLS`); a `publish-sweeps` step runs the 41 in
 this same order under the same lock, from a `hamilton.publish_sweeps` run queued by the tick
 at most one at a time, at most once an hour (`PUBLISH_SWEEPS_INTERVAL_MINUTES`, #1070: the issue
@@ -750,6 +750,32 @@ own few rows (Oct 17). The step detail records `publish_time_box`, `sweep_ms` (e
     safety restriction stays in v2, so already-decided pairs are not reopened. It repairs no
     prior audience change and creates no replay or backfill; Bayes records that no-replay
     contract in `VERSIONS_WITHOUT_REPLAY.REFRESH_COPY_STRATEGY`.
+    Current-copy re-point (#1200, `current-copy-repoint.ts`, `CURRENT_COPY_REPOINT_STRATEGY`
+    `hamilton.current_copy_repoint` v2, after the publish rows): refresh copy needs the same name,
+    so a live fee publish skipped a current-copy row as "Identical fee already published" against
+    under another name stayed on the superseded copy. This pass takes publish's own skip as the
+    pairing and moves the live fee onto that row in place (`moveLiveFeeInPlace`, the same write),
+    when the row comes from the current copy at the end of the supersession chain, is still the
+    same line by today's identity (category, variant, frequency, audience, product, amount or
+    rate), names the same line (`namesRelated`: one name's significant words all inside the
+    other's; v2 `rowNameMismatch`: the live fee and the row trace to the same printed line of the
+    current copy, and an unrelated row name must print the live name at the price on that line,
+    which names no other line; the live name printed elsewhere on the page is not enough,
+    `name_unrelated` with detail `another_line`, `unrelated` or `ambiguous`), passes
+    today's publish rules, category guard and name hold, was never taken down, and publish's
+    latest decision on it at today's rule version is that identical skip. v2 also requires the
+    current copy to be crawled strictly after the copy the live fee cites
+    (`source_documents.crawled_at`, `copy_not_newer`) and the live fee to pass the shared source
+    check (`checkFeeAgainstSource`, `checkRateAgainstSource` for a rate) on the current copy's
+    stored text (`source_check_failed`, detail the check's reason). Each current copy's text is
+    read once per document, the checks run document by document through one `SourceCheckCache`,
+    and they stop at `PUBLISH_REPOINT_DEADLINE_MS` (190 s into the publish step): the pairs left
+    are counted `not_checked`, never moved or recorded, and a later step checks them. Name, amount, category, id and
+    published date stay; no fee is published or taken down. `PUBLISH_REPOINT_CURRENT_COPY_LIVE`
+    false is a shadow run: a `hamilton.current_copy_repoint` event with the count, no change.
+    Nov 2 dry run (read-only): 454 live fees. v2 re-measure (read-only, Nov 2): 513 of 536 pairs
+    pass the date rule; 41 of 67 of those drawn at random pass every rule (about 315), and 38 of
+    the first 40 kept were clean against the stored text.
 22. Current-copy check (`current-copy.ts`): a fee the current copy no longer states, on its
     second look (confirmations off while `CURRENT_COPY_CONFIRM_LIVE` is false),
     `not_on_current_copy:#<current document id>`.
@@ -1373,6 +1399,11 @@ the flag is 12 hours old, while `TAXONOMY_FOLD_ARCHIVE_NO_HOME` is on. James tur
 after seeing the list of 248 (Oct 8, "drop them"); with it off they would stay live and be
 counted as `noHomeHeld`. `refileCategory` applies the same rules to new reads, so Knox can
 keep hinting the retired keys. Publish skips a fee still under a retired key.
+A bare balance inquiry is placed by the nearest ATM heading above it (`ownAtmSection`). With
+`FOOTNOTED_ATM_HEADING_LIVE` on (off by default; #1092, `src/lib/fee-fold-atm-heading.ts`) that read
+also sees a heading with a note mark ("Non-TBT or Non-Allpoint ATM1:") and another bank named in
+several words ("Non-Austin Bank ATM:"), so this step, the rules re-check and Darwin's re-read check
+re-file such fees; its live count is section 5 of `npm run audit:switch-dry-runs`.
 
 The same step applies the live splits (`SPLIT_CATEGORIES`): fees in a live category whose name
 belongs to another type move there, under the same guard and range test. Fold v17 (`FOLD_RULES_VERSION`, 16 until the switch is on; James, Oct 15,
@@ -1582,6 +1613,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `NEWER_COPY_STRATEGY` | `hamilton.newer_copy_check` | v1 | `hamilton/newer-copy-retire.ts` |
 | `HAMILTON_PUBLISH_STRATEGY` | `publish.rules` | v3 | `hamilton/publish.ts` |
 | `REFRESH_COPY_STRATEGY` | `hamilton.refresh_copy` | v2 | `hamilton/refresh-copy.ts` |
+| `CURRENT_COPY_REPOINT_STRATEGY` | `hamilton.current_copy_repoint` | v2 | `hamilton/current-copy-repoint.ts` |
 | `RULES_RECHECK_STRATEGY` | `hamilton.rules_recheck` | v4 | `hamilton/rules-recheck.ts` |
 | `SAME_LINE_DUPLICATE_RESTORE_VERSION` | `hamilton.same_line_duplicate` | v2 | `hamilton/same-line-duplicates.ts` |
 | `SOURCE_CHECK_STRATEGY` | `hamilton.source_check` | v30 | `hamilton/source-check.ts` |

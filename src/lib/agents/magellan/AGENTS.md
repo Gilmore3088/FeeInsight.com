@@ -231,6 +231,13 @@ and `detail.method_version`).
   the link only when it passes the fee-page check and lists more fee lines than the old page's
   latest text (`barrenLinkReplaces`, recorded as `detail.barren_check`); the old link stays as a
   companion. 828 banks qualified on prod at the first read (Oct 27).
+  v2 (Nov 2 coverage audit): the search knows the old page's fee lines before it starts, and a page
+  with no more fee lines (logged `not_more_fee_lines`) is followed for its links but does not end
+  the search. Every re-search (upgrade, business, freshness, barren) compares the link it replaces
+  by `pageIdentity`, which drops print, AMP and tracking parameters, so the link's print copy
+  (`?print=1&output=amp`, `?hsLang=en`) is never accepted as a new page. v2 re-selects only banks
+  whose v1 search stopped on a page that could not replace the link (`barren_check.replaces`
+  false): 112 of 398 at v1, 70 of them on their own print copy through the known-link finder.
 - Upgrade search (`UPGRADE_SEARCH_VERSION`): banks whose fee
   link is a product page are searched once per version for the real schedule
   (`detail.upgrade_search`). A find replaces the link and keeps the old page as a
@@ -309,7 +316,19 @@ and `detail.method_version`).
   Family CU's `/files/sunrisefamilycu/...` became four other CUs' schedule). A found link in a
   vendor folder named for another institution's website is refused like a link on its host
   (`otherInstitutionAtHost`).
-- A redirect to a new domain searches the new site and updates `website_url`.
+- A redirect to a new domain searches the new site. The landing replaces `website_url` only on
+  proof that it is the institution's own site (`redirect-website.ts`, `REDIRECT_WEBSITE_PROOF_VERSION`
+  v1; Nov 2 pipeline wiring audit, gap 8). First, a host that is no institution's own site (social,
+  bot wall, `THIRD_PARTY_HOST_PATTERN`, or a subdomain of a hosting provider, site builder or file
+  store such as `*.wpengine.com`, `*.windows.net`, `*.amazonaws.com`, matched on anchored suffixes
+  only) is never saved, even under the stored website's own domain. Then the proofs: same
+  registrable domain as the stored website, a host that spells the institution's distinctive name
+  (not when another institution has the same name), or a landed homepage that names the institution
+  and its city or charter number (`checkHomepage`). A bot challenge page proves nothing either way.
+  Any other landing, a challenge page included, is `unproven`: saved as before while
+  `REDIRECT_WEBSITE_PROOF_LIVE` is off (the default until that leg's prod dry count is sampled
+  clean), kept out of `website_url` when it is on. Every judgement is on the discover
+  attempts (`detail.moved_to_proof`, `moved_to_proof_reason`, `moved_to_saved`).
 - Website repair (`website-repair.ts`, a pure function): before the search, obvious typos in
   `website_url` are fixed: a missing dot after `www` ("wwwbank.com") or before the ending
   ("www.bankcom"), scheme typos ("http//"), uppercase, spaces, trailing punctuation and
@@ -612,6 +631,31 @@ step with nothing to date reads no catalog. The pass and the search both
 wait for the columns (migration `20270110000077`, `statedDateColumnsReady`): until then the pass
 reads and writes nothing (`schema_ready: false`) and the search leaves out its stated-date arm.
 
+### The v2 reader and its backfill (`readStatedDateV2`, `STATED_DATE_BACKFILL_LIVE`)
+
+On Nov 2 only 6,592 of 41,293 documents had a stated date; 3,537 of the 6,597 current copies behind
+live fees had none. v2 reads, besides v1's rules: "effective" misspelt or broken ("Efective",
+"Eff ective"); an effective month and year ("Effective July, 2024", "Effective 11/2026"); past the
+first 8,000 characters (to `STATED_DATE_DEEP_CHARS`, 60,000), an effective or printed date on a line
+that names the whole schedule or opens with "Fees" (not a line naming one fee, whose date is that
+fee's change) and no privacy policy, agreement, rate, loan or promotion, or on a short stamp line
+("Rev. 06/2021"); footer and form stamps beside a footer mark ("M619 01.2026 ©DCU", "03/01/2025
+Member FDIC", "Federally Insured by NCUA | 07/2025"), never on or by a copyright line; a lone date
+heading the first 400 characters beside the schedule's name and no news words ("Approved February
+22, 2022"; two lone dates there are a list and count for nothing) or in the schedule's title; "revised as of", "reviewed", "rev" without its period; and
+"as of <date>" ending a sentence about the fees. It refuses dates more than
+`STATED_DATE_FUTURE_DAYS` (60) ahead. A stated date feeds Darwin's dated-edition takeover (live),
+so v2 writes nothing until `STATED_DATE_BACKFILL_LIVE` is on. Off, the pass writes v1 as before,
+counts the new documents v2 would date differently (`v2_would_differ`) and reads up to
+`STATED_DATE_BACKFILL_SHADOW_PER_STEP` (100) v1 current copies with v2 as a dry run on one discover
+step in `STATED_DATE_BACKFILL_SHADOW_EVERY` (6), read by primary key from a point in the id range
+that moves each time (`shadowStart`; about 60 ms on prod, not a scan of every document) (`backfill`: newly dated, changed, unchanged, lost, live fees on those touched, and up
+to 20 samples of the held date against v2's with its words). On, `STATED_DATE_VERSION` becomes
+`STATED_DATE_READER_VERSION` (2), so the pass's own selector re-reads every v1 document, live-fee
+documents first, 200 a step: the backfill; `backfill` then counts the v1 rows it rewrote. Darwin,
+the freshness search and Hamilton's coverage line read any version from `STATED_DATE_FIRST_VERSION`,
+so a document not yet re-read keeps its v1 date.
+
 ## Pages live fees come from (`live-source-refetch.ts`)
 
 The plain fetch asks for one address per bank and judges the bank due by its own last crawl; it
@@ -634,6 +678,33 @@ row (`LIVE_SOURCE_RETRY_DAYS`), never given up. A person's locked correction, an
 and manual review are skipped. `LIVE_SOURCE_REFETCH_LIVE` is on: it fetches only pages live fees
 already come from, as the plain fetch re-fetches every bank's main page monthly. The `fetch`
 step's `live_sources` detail counts pages selected, tried, stored, matched and failed.
+
+Version 2 (2 Nov 2026): an answer counts only when it came from the page's own address. A redirect
+elsewhere stores its copy under the final address, so the cited document never moved, and the
+"ok" waited 30 days to land the same way again (63 documents, 657 live fees on Nov 2). It is now
+`moved`: a failed try on the same growing wait. After `LIVE_SOURCE_UNREACHABLE_TRIES` (3) failed
+tries in a row the page is listed in `live_sources.unreachable` (with where it landed) and the
+step summary, so the bank's current page is found again; its live fees are not touched. The
+bank's remembered address is re-checked here too once the plain fetch has had an answer since that page's
+newest copy and stored none under it (the address itself now redirects). The goal scorecard's
+`goal.source_documents_checked_30d` shows the share of documents behind live fees checked within
+30 days.
+
+Held fees' pages (Pipeline wiring audit gap 2, Nov 2): Darwin's hold source re-read
+(`darwin/hold-source-reread.ts`) asks for a fresh copy of the page a range or peer hold was read
+from when its current copy is over 30 days old, with one `pipeline_feedback` row of kind
+`magellan_refetch_requested` per document (reported by Darwin, weight 0, upserted on each request).
+A request made or renewed in the last `LIVE_SOURCE_REFETCH_DAYS` puts its page in this pass's queue
+on the same terms (stale, past its retry wait, not a companion page or the plain fetch's own
+address), ordered after every page live fees cite; the attempt detail and note carry `held_fees`.
+Nothing is requested while Darwin's `HOLD_SOURCE_REREAD_LIVE` is off, so the queue is unchanged.
+
+Refetch requests (gap 10, Nov 2): with `KNOX_REREAD_BACKLOG_LIVE` on (`knox/reread-backlog.ts`,
+off), a page whose cited current document nothing has checked in `KNOX_REREAD_REFETCH_DAYS` (90)
+is also selected when it is the plain fetch's own address or another copy of the page is newer,
+since neither moved that document's check date, and such pages sort by that check date. The retry
+waits still apply. On 2 Nov (read-only), 92 current documents behind live fees were unchecked 90+
+days; the requests add 23 pages (506 live fees) the pass skips today, 22 of them past their wait.
 
 ## Paid fetch for refused links (`blocked-fetch.ts`)
 
@@ -784,8 +855,9 @@ fails a PR that changes one of these constants without updating its line here (#
 | `COMPANION_FETCH_STRATEGY` | `fetch.companion` | v1 | `magellan/companion-fetch.ts` |
 | `DISCOVERY_METHOD_VERSION` | — | v7 | `magellan/discovery.ts` |
 | `WEBSITE_REPAIR_STRATEGY` | `discover.website_repair` | v1 | `magellan/discovery.ts` |
+| `REDIRECT_WEBSITE_PROOF_VERSION` | — | v1 | `magellan/redirect-website.ts` |
 | `UPGRADE_SEARCH_VERSION` | — | v3 | `magellan/discovery.ts` |
-| `BARREN_LINK_SEARCH_VERSION` | — | v1 | `magellan/discovery.ts` |
+| `BARREN_LINK_SEARCH_VERSION` | — | v2 | `magellan/discovery.ts` |
 | `BUSINESS_SEARCH_VERSION` | — | v1 | `magellan/discovery.ts` |
 | `FRESHNESS_SEARCH_VERSION` | — | v2 | `magellan/discovery.ts` |
 | `MAGELLAN_FETCH_STRATEGY` | `fetch.http` | v2 | `magellan/fetch.ts` |
@@ -793,8 +865,10 @@ fails a PR that changes one of these constants without updating its line here (#
 | `OPERATOR_SCHEDULE_STRATEGY` | `discover.operator_schedule` | v1 | `magellan/operator-schedules.ts` |
 | `PAGE_CLASSIFIER_VERSION` | — | v2 | `magellan/page-classifier.ts` |
 | `SAVED_LINK_FETCH_STRATEGY` | `fetch.saved_link` | v2 | `magellan/saved-link-fetch.ts` |
-| `LIVE_SOURCE_REFETCH_STRATEGY` | `fetch.live_source` | v1 | `magellan/live-source-refetch.ts` |
-| `STATED_DATE_VERSION` | — | v1 | `magellan/stated-date.ts` |
+| `LIVE_SOURCE_REFETCH_STRATEGY` | `fetch.live_source` | v2 | `magellan/live-source-refetch.ts` |
+| `STATED_DATE_VERSION` | — | v1 (v2 once `STATED_DATE_BACKFILL_LIVE` is on) | `magellan/stated-date.ts` |
+| `STATED_DATE_READER_VERSION` | — | v2 | `magellan/stated-date.ts` |
+| `STATED_DATE_FIRST_VERSION` | — | v1 | `magellan/stated-date.ts` |
 | `PAID_FIND_STRATEGY` | `discover.paid_web_search` | v2 (top-10 first) | `magellan/paid-find.ts` |
 | `PAID_PICK_STRATEGY` | `discover.paid_pick` | v1 | `magellan/paid-find.ts` |
 | `KEEP_REFUSED_ANSWER_STRATEGY` | `discover.keep_refused_answer` | v1 | `magellan/refused-answers.ts` |
@@ -808,6 +882,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `FED_INDICATORS_PARSER_VERSION` | — | v2 (each indicator from BLS, BEA or the Fed Board, not FRED; 2026-10-18) | `magellan/registry/fed.ts` (registry-fred) |
 | `ECONOMY_PARSER_VERSION` | — | v1 | `magellan/registry/economy.ts` (13 economy sources; remittances, branch tracts and BEA have their own) |
 | `BEA_PARSER_VERSION` | — | v3 | `magellan/registry/economy.ts` (BEA only: SAINC1 for states, CAINC1 for county/MSA; published-year metadata; NoteRef suppressions remain null; MSA code 101 retains supported values with explicit partial receipts and per-request source URLs; v2 added envelope diagnostics) |
+| `FDIC_PAGES_PARSER_VERSION` | — | v2 | `magellan/registry/economy.ts` (fdic-national-rates and fdic-household-survey only: v2 reads the www.fdic.gov monthly rate cap pages and table G.2 of the survey appendix PDF instead of a configured CSV, #1867; partitions skipped under v1 are due again) |
 | `BRANCH_TRACT_PARSER_VERSION` | — | v2 (valid coordinate pairs only; invalid input counted, never swapped) | `magellan/registry/economy.ts` (branch-census-tracts) |
 | `REMITTANCE_PARSER_VERSION` | — | v2 (reads the RPW xlsx workbook found on the World Bank data page, no env var needed; `WORLD_BANK_RPW_CSV_URL` is an optional override; refuses a file over 50 MB as `rpw_file_too_large`) | `magellan/registry/economy.ts` (world-bank-remittance-prices) |
 | `ALLTHEPLACES_PARSER_VERSION` | — | v1 | `magellan/registry/alltheplaces.ts` |

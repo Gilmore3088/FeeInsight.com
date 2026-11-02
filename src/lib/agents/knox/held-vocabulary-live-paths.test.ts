@@ -12,7 +12,7 @@ import { classifyFeeText } from "./rules";
 import { runFreeSpecialists } from "./specialists";
 
 /**
- * `HELD_VOCABULARY_RELABEL_LIVE` (v157, off): each of the five paths that change a fee already live
+ * `HELD_VOCABULARY_RELABEL_LIVE` (v161, off): each of the five paths that change a fee already live
  * reads as main does while it is off, and would use the vocabulary only once it is switched on.
  */
 const SKIP_TEXT = ["Loan Services", "Year round skip-a-loan-payment $20.00 request"].join("\n");

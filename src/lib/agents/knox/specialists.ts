@@ -663,8 +663,36 @@ import { withProtectionItemReads } from "./protection-item";
 // ("$5.00/statement or document copy", "(per statement/document)") names none (`specialUnitAfterPrice` in
 // fee-unit.ts). A free count of the same unit keeps it ("$2.00/Page, First 2 pages free" is per page).
 // The shared check is unchanged. The stale-read floor stays at v97.
-// v157 (#1092; v156 is #2881's): names Knox held as unclassified, or did not read, that the taxonomy
-// and DECISIONS already place (`V157_HELD_NAME_VOCABULARY` in held-name-vocabulary.ts, tried after
+// v157 (#1397): a $0 that is an
+// item in one named account's list of benefits ("PremiumSpend Checking Account owners are provided the
+// following free services: ..., free incoming domestic wire transfers", "As long as you have an active
+// Relationship Rewards Checking account, the following fee waivers will be offered: ...; No fee for
+// incoming wires", an account's feature list) is held as a range for review, never sent to Darwin as a
+// free fee (`accountBenefitZeroOf` in `@/lib/account-benefit-zero`, flag `knox_account_benefit_zero`).
+// That account's perk is not the bank's price. Darwin's verify refuses it and its live re-check reads
+// what is already live. The stale-read floor stays at v97.
+// v158 (Nov 2, prod sample fee 95508): a wire its own words send outside the U.S. without saying
+// "international" ("Outgoing wire transfer fee (if transfer will not be initially processed through a
+// U.S. bank) | $50.00", Bank Orion 1399; "Out of USA", "Non U.S.") is read as the international wire
+// (`wireOutsideUsWords` in fee-fold.ts, shared with category guard v103, which re-files what is live).
+// The affirmative "(if transfer will be initially processed through a U.S. bank)" stays domestic. The
+// shared check is unchanged. The stale-read floor stays at v97.
+// v159 (Nov 2, prod sample fee 16734): a non-network ATM label that opens with the bank's own all-capitals
+// abbreviation and "ATM" ("Cash withdrawals | UNFCU ATM fees in Nairobi" $2.00, United Nations FCU) is the
+// bank's own machine, not another network's, and is not filed as atm_non_network (`ownInstitutionAtm` in
+// `@/lib/custom-report/own-institution-atm`, shared with the category guard v104). "At Wells Fargo ATMs"
+// was already read so; a label with no "at" was not. A network or card word, a label that says the machine
+// is someone else's, or a label or line that says the bank's ATM is free stays. The shared check is
+// unchanged. The stale-read floor stays at v97.
+// v160 (Nov 2, prod sample fee 89920): a figure inside a worked example that no fee word owns is never a
+// charge (`inWorkedExample`, `examplePriceNotAFee` in rules.ts; drop reason `worked_example`). Community
+// Choice CU (7751) explains overdraft protection with "The following example illustrates ...:" / "Assume
+// your ... balance ... is $10. ... we may elect to transfer the $10 in your designated linked account";
+// the $10 went live as an overdraft transfer fee. An example that quotes the bank's own price ("charged an
+// overdraft fee of $25") keeps it, and a leader or table row ends the example. Drop-only; Darwin's live
+// re-check is `darwin/worked-example-check.ts`. The shared check is unchanged. The stale-read floor stays at v97.
+// v161 (#1092; v157-v160 are #2894, #2926, #2927 and #2928's): names Knox held as unclassified, or did not read, that the taxonomy
+// and DECISIONS already place (`V161_HELD_NAME_VOCABULARY` in held-name-vocabulary.ts, tried after
 // every other name rule): a skipped loan payment (other lending), a loan's re-amortization, a
 // payoff's processing, a foreign check's acceptance
 // (collection item), an immigration letter, proof of funds and a mortgage's verification, a
@@ -672,7 +700,7 @@ import { withProtectionItemReads } from "./protection-item";
 // section structure, #2872). Admit-only: over every frozen text no
 // read main makes changes. The paths that correct live fees read without it while
 // `HELD_VOCABULARY_RELABEL_LIVE` is off. The stale-read floor stays at v97.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 157 } as const;
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 161 } as const;
 
 export interface SpecialistRun {
   strategy: string;

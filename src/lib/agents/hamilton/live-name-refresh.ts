@@ -327,7 +327,7 @@ function baseOf(row: LiveNameRefreshRow) {
 }
 
 /**
- * Pure: one live fee and one candidate re-read. A rename of a live fee: v157's held-name vocabulary
+ * Pure: one live fee and one candidate re-read. A rename of a live fee: v161's held-name vocabulary
  * names it (`publishedFeeName`, `publishNameHold`) only with `HELD_VOCABULARY_RELABEL_LIVE` on.
  */
 export function judgeLiveNameRefresh(row: LiveNameRefreshRow): LiveNameRefreshVerdict {

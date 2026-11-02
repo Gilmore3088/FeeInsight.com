@@ -9,6 +9,7 @@ import {
   VerificationAudienceDeferred, type VerificationAudienceAdmission,
 } from "./verification-audience";
 import { tierPerkZero } from "./tier-perk";
+import { accountBenefitZeroOf } from "@/lib/account-benefit-zero";
 import { requireInternationalVerification } from "./international-verification";
 import { matchOriginalRawSource } from "./locked-raw-source";
 import { paidReturnedCandidateProof, PAID_RETURNED_EVENT_FLAG, PAID_RETURNED_ELIGIBILITY_FLAG } from "@/lib/custom-report/paid-returned-events";
@@ -66,6 +67,19 @@ import {
   nameEnvelopeLabel,
 } from "./envelopes";
 import { darwinEnvelopeFor, loadLearnedEnvelopes, type LearnedEnvelope } from "./learned-envelopes";
+import { HOLD_SOURCE_REREAD_LIVE, holdRereadRecheckSql } from "./hold-source-reread-switch";
+import {
+  DARWIN_HISTORY_CHECK_LIVE,
+  HISTORY_RULE_VERSION,
+  historyCandidate,
+  historyDetail,
+  historyVerdict,
+  loadLivePriors,
+  priorsFor,
+  type HistoryOutcome,
+  type HistoryVerdict,
+  type PriorCandidateRow,
+} from "./history-check";
 import {
   DARWIN_PEER_GRADED_VERSIONS,
   DARWIN_PEER_STRATEGY,
@@ -148,8 +162,10 @@ export type DarwinReasonCode =
   | "retired_category"
   | "conditional_zero"
   | "tier_perk_zero"
+  | "account_benefit_zero"
   | "name_rule"
   | "maintenance_per_item"
+  | "history_jump"
   | "insert_failed";
 
 /**
@@ -176,8 +192,10 @@ export const DARWIN_REASON_TEXT: Readonly<Record<DarwinReasonCode, string>> = {
   retired_category: "Category retired by the top-50 fold and the name has no home in a live one; Hamilton never publishes it",
   conditional_zero: "A $0 fee whose own schedule line prices it ($0 if a condition is met, else a charge); the charge is the fee",
   tier_perk_zero: "A $0 from one account tier's own schedule (premium, private banking, BankOn) or named for that account: the tier's perk, not the bank's price",
+  account_benefit_zero: "A $0 read from one named account's list of benefits (\"... Checking Account owners are provided the following free services\"): that account's perk, not the bank's price; held for a person",
   name_rule: "The name or line fails a rule Hamilton would take the live fee down for",
   maintenance_per_item: "A monthly maintenance fee whose own line prices it per item (\"$16 each\", \"$1.00 per withdrawal\"): not the account's monthly fee",
+  history_jump: "Amount moved sharply from the bank's live value for this fee, and this copy is an earlier edition than the live value's or the same page does not show the change; held for a person to review",
   insert_failed: "The database refused the verified row; held for review so the rest of the batch still runs",
 };
 
@@ -840,7 +858,7 @@ export function pendingCategoryLesson(canonicalFeeKey: string | null, feeName: s
 
 function decisionFor(code: DarwinReasonCode | null): DarwinDecision {
   if (code == null) return "verified";
-  if (code === "outside_envelope" || code === "peer_outlier" || code === "category_lesson_pending" || code === "conditional_zero" || code === "maintenance_per_item" || code === "insert_failed") return "needs_review";
+  if (code === "outside_envelope" || code === "peer_outlier" || code === "category_lesson_pending" || code === "conditional_zero" || code === "account_benefit_zero" || code === "maintenance_per_item" || code === "history_jump" || code === "insert_failed") return "needs_review";
   if (code === "duplicate_in_batch" || code === "duplicate_verified") return "duplicate";
   return "rejected";
 }
@@ -885,6 +903,8 @@ export interface DarwinVerificationResult {
   secondSource?: SecondSourceResult | null;
   /** Layer 2 learned category check, in shadow: recorded, never decides. Null without a model. */
   categoryModel?: CategoryOpinion | null;
+  /** Gap 9: the history read failed for this row (also `detail.history_error`); decided without it. */
+  historyError?: string;
 }
 
 export interface RunDarwinVerifyOptions {
@@ -936,7 +956,26 @@ export interface RunDarwinVerifyResult {
   categoryModelDisputes: number;
   /** Judgements written to `pipeline_feedback`; null when skipped (dry run, no store yet, or a write error). */
   feedbackWritten: number | null;
+  /** Gap 9: each fee against the bank's live value for it (`history-check.ts`); holds only while live. */
+  historyCheck?: HistoryCheckSummary;
   results: DarwinVerificationResult[];
+}
+
+export interface HistoryCheckSummary {
+  /** `DARWIN_HISTORY_CHECK_LIVE` as this step read it. */
+  live: boolean;
+  /** Fees the rules accepted that were compared with the bank's live values. */
+  compared: number;
+  /** Of those, by verdict. */
+  outcomes: Partial<Record<HistoryOutcome, number>>;
+  /** Older editions and same-page jumps (v2): held while live, only counted while off. */
+  wouldHold: number;
+  /** Jumps held as `history_jump` this step (0 while the switch is off). */
+  held: number;
+  /** The live priors could not be read; no fee was compared or held. */
+  error?: string;
+  /** Rows whose history read failed (`detail.history_error`); each was decided without it. */
+  errors?: number;
 }
 
 /** The attempt-log fingerprint for one raw row. */
@@ -1280,7 +1319,11 @@ function sqlLiteral(value: string): string {
  *
  * The constants are inlined so callers using either query form can embed it.
  */
-export function darwinStandingDecisionSql(currentCopy = true, escheatHoldsLive: boolean = ESCHEAT_HOLD_REREAD_LIVE): string {
+export function darwinStandingDecisionSql(
+  currentCopy = true,
+  escheatHoldsLive: boolean = ESCHEAT_HOLD_REREAD_LIVE,
+  holdRereadLive: boolean = HOLD_SOURCE_REREAD_LIVE,
+): string {
   const envelopes = `${sqlLiteral(JSON.stringify(CATEGORY_AMOUNT_ENVELOPES))}::jsonb`;
   // A row held as an in-batch duplicate under an older key is re-checked once when it sits
   // on the bank's current copy and nothing on that same document is verified as the same fee
@@ -1329,6 +1372,11 @@ export function darwinStandingDecisionSql(currentCopy = true, escheatHoldsLive: 
   //   on; an older hold is re-decided only when its own run's peer attempt was a graded version
   //   (DARWIN_PEER_GRADED_VERSIONS: v3 and v4, Oct 10 on) and held it, so the ungraded v1/v2 holds
   //   of Oct 5–10 stay held.
+  // - with `HOLD_SOURCE_REREAD_LIVE` on (Pipeline wiring audit gap 2, Nov 2), a range or peer hold
+  //   whose bank's current copy Darwin's hold re-read read back at the same amount after the hold
+  //   (`hold-source-reread.ts`, outcome `confirmed`) is judged once more under today's rules.
+  // - a history hold (`history_jump`, Gap 9) under an older history rule version, or any history hold
+  //   once `DARWIN_HISTORY_CHECK_LIVE` is off again, so the roll-back releases them.
   return `EXISTS (
            SELECT 1
              FROM pipeline_attempts pa
@@ -1373,7 +1421,13 @@ export function darwinStandingDecisionSql(currentCopy = true, escheatHoldsLive: 
                 AND fr.fee_name ~* '\\mlate\\M'
                 AND (pa.detail->>'amount')::numeric BETWEEN ${BOX_LATE_FEE_ENVELOPE.min} AND ${BOX_LATE_FEE_ENVELOPE.max}
               )
+              AND NOT (
+                pa.detail->>'reason_code' = 'history_jump'
+                AND (NOT ${DARWIN_HISTORY_CHECK_LIVE}
+                     OR COALESCE((pa.detail->>'history_rule_version')::int, 0) < ${HISTORY_RULE_VERSION})
+              )
 ${escheatRecheck}
+${holdRereadRecheckSql(holdRereadLive)}
 ${duplicateRecheck}
          )`;
 }
@@ -1938,6 +1992,19 @@ export async function runDarwinVerify(
     canonicalHintFrom,
   );
 
+  // Gap 9: the bank's live values, the priors each accepted fee is compared with. Read in its own
+  // savepoint, so a failed read leaves the step running with the check reported unavailable.
+  const historyLive = DARWIN_HISTORY_CHECK_LIVE;
+  const historySummary: HistoryCheckSummary = { live: historyLive, compared: 0, outcomes: {}, wouldHold: 0, held: 0 };
+  let historyCandidates: PriorCandidateRow[] | null = [];
+  if (rows.length > 0) {
+    historyCandidates = await inSavepoint(db, (scope) => loadLivePriors(scope, rows.map((row) => Number(row.institution_id))))
+      .catch((error: unknown) => {
+        historySummary.error = error instanceof Error ? error.message : String(error);
+        return null;
+      });
+  }
+
   const deferrals: Array<{ feeRawId: number; reason: string }> = [];
   let deferredRawFees = 0;
   for (const knoxRow of rows) {
@@ -1976,6 +2043,11 @@ export async function runDarwinVerify(
         if (!reasonCode && maintenancePerItem(canonicalFeeKey, row.fee_name, normalizedAmount(row.amount), sourceLine)) reasonCode = "maintenance_per_item";
         // #1397: a $0 a premium or private-banking schedule grants is that tier's perk, not the bank's price.
         if (!reasonCode && tierPerkZero(normalizedAmount(row.amount), row.fee_name, row.source_url, sourceText, canonicalFeeKey)) reasonCode = "tier_perk_zero";
+        // #1397: and a $0 that is one item in one named account's list of benefits (Knox v157 holds new ones).
+        if (!reasonCode && normalizedAmount(row.amount) === 0
+          && accountBenefitZeroOf({ line: excerptOf(row.conditions) ?? sourceLine, documentText: sourceText, feeName: row.fee_name })) {
+          reasonCode = "account_benefit_zero";
+        }
         if (!reasonCode && canonicalFeeKey && verifiedInBatch.has(batchKey(row, canonicalFeeKey))) {
           reasonCode = "duplicate_in_batch";
         }
@@ -2021,6 +2093,49 @@ export async function runDarwinVerify(
           if (holdsForPeerReview(peer, canonicalFeeKey)) reasonCode = "peer_outlier";
         }
 
+        // Gap 9: a fee every rule accepts is compared with the bank's live value for it. While the
+        // switch is on, an older edition or a same-page move the copy does not show is held for review
+        // (v2); a move against the same schedule on another page is only reported.
+        let history: HistoryVerdict | null = null;
+        let historyError: string | null = null;
+        if (!reasonCode && canonicalFeeKey && base.amount != null && !isPercentFee(row) && historyCandidates) {
+          const fee = {
+            feeName: row.fee_name,
+            amount: base.amount,
+            frequency: row.frequency,
+            sourceDocumentId: row.source_document_id == null ? null : Number(row.source_document_id),
+            sourceUrl: row.document_url ?? row.source_url,
+            text: sourceText,
+          };
+          // Its own savepoint: a failed prior-text read or a throw in the rule is recorded on this row
+          // (`history_error`) and the row is decided without it, never failing the verify step.
+          try {
+            history = await inSavepoint(scope, async (historyScope) => {
+              const priors = priorsFor({ institutionId: base.institutionId, canonicalFeeKey, feeAudience: row.fee_audience, productName: row.product_name }, historyCandidates ?? []);
+              const candidate = historyCandidate(fee, priors);
+              const priorIds = candidate.outcome === "needs_support"
+                ? candidate.priors.flatMap((prior) => (prior.sourceDocumentId == null ? [] : [prior.sourceDocumentId]))
+                : [];
+              const priorTexts = priorIds.length > 0 ? await loadSourceTexts(historyScope, [...new Set(priorIds)]) : new Map<number, string>();
+              return historyVerdict(fee, priors, priorTexts);
+            });
+          } catch (error) {
+            historyError = error instanceof Error ? error.message.slice(0, 200) : String(error).slice(0, 200);
+            historySummary.errors = (historySummary.errors ?? 0) + 1;
+          }
+          if (history && history.outcome !== "no_prior") {
+            historySummary.compared += 1;
+            historySummary.outcomes[history.outcome] = (historySummary.outcomes[history.outcome] ?? 0) + 1;
+          }
+          if (history?.hold) {
+            historySummary.wouldHold += 1;
+            if (historyLive) {
+              reasonCode = "history_jump";
+              historySummary.held += 1;
+            }
+          }
+        }
+
         let result: DarwinVerificationResult;
         if (reasonCode || !canonicalFeeKey) {
           const code = reasonCode ?? "missing_canonical";
@@ -2033,7 +2148,9 @@ export async function runDarwinVerify(
               ? `${DARWIN_REASON_TEXT[code]}: ${peerOutlierReason(peer, base.amount)}`
               : code === "name_rule" && postCheck?.rule
                 ? `${DARWIN_REASON_TEXT[code]}: ${postCheck.rule} (${RULE_WHY[postCheck.rule as keyof typeof RULE_WHY]})`
-                : verificationReasonText(row, code),
+                : code === "history_jump" && history?.prior && base.amount != null
+                  ? `${DARWIN_REASON_TEXT[code]}: $${base.amount.toFixed(2)} against the live $${history.prior.amount.toFixed(2)} (published fee #${history.prior.feePublishedId})`
+                  : verificationReasonText(row, code),
             feeVerifiedId: null,
             peerCheck: peer,
             secondSource,
@@ -2071,6 +2188,7 @@ export async function runDarwinVerify(
             secondSource,
           };
         }
+        if (historyError) result.historyError = historyError;
         result.categoryModel = categoryModel && canonicalFeeKey
           ? categoryOpinion(categoryModel, row.fee_name, canonicalFeeKey)
           : null;
@@ -2111,6 +2229,10 @@ export async function runDarwinVerify(
                 : undefined,
               name_rule: postCheck?.rule,
               source_line: postCheck && sourceLine ? sourceLine.slice(0, 300) : undefined,
+              // Gap 9: the history verdict, recorded whether or not the switch holds on it.
+              history_rule_version: HISTORY_RULE_VERSION,
+              history: history && history.outcome !== "no_prior" ? historyDetail(history, historyLive) : undefined,
+              history_error: historyError ?? undefined,
               // Plan step 6: the line behind a verified fee, kept instead of discarded.
               source_trace: result.status === "verified" && tracedLine
                 ? verifiedSourceTrace(row, rowSourceTexts, tracedLine, admission, sourceTextRecords) ?? undefined
@@ -2202,6 +2324,7 @@ export async function runDarwinVerify(
     secondSourceDisagreements: results.filter((result) => result.secondSource?.verdict === "disagrees").length,
     categoryModelDisputes: results.filter((result) => result.categoryModel?.disputed).length,
     feedbackWritten,
+    historyCheck: historySummary,
     results,
   };
 }

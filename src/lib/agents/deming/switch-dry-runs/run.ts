@@ -1,3 +1,4 @@
+import { addAtmHeadingRows, emptyAtmHeadingSummary, replayLiveNonNetwork, type AtmHeadingSummary } from "./atm-heading";
 import { addDailyCapVerdicts, emptyDailyCapSummary, finishDailyCapSummary, judgeDailyCaps, type CapLines, type DailyCapSummary } from "./daily-cap";
 import { addDashDocument, DASH_LIST_NOT_REPLAYED, emptyDashListSummary, replayDashDocument, type DashListSummary } from "./dash-list";
 import { summarizeExcerptAtPublish, type ExcerptAtPublishSummary } from "./excerpt-at-publish";
@@ -44,6 +45,7 @@ export interface SwitchDryRunReport {
     documentsMatched: number;
     summary: SectionPathSummary;
   };
+  footnotedAtmHeading: { switch: "FOOTNOTED_ATM_HEADING_LIVE"; issue: number; rowsRead: Bounded; liveFeesRead: Bounded; summary: AtmHeadingSummary };
   heldVocabulary: {
     switch: "HELD_VOCABULARY_RELABEL_LIVE";
     issue: number;
@@ -161,6 +163,36 @@ async function heldVocabulary(reader: SwitchAuditReader, options: SwitchAuditOpt
   };
 }
 
+async function footnotedAtmHeading(reader: SwitchAuditReader, options: SwitchAuditOptions) {
+  const rows = await reader.atmHeadingRows(options.rowCap);
+  const summary = emptyAtmHeadingSummary();
+  const withDocument = rows.filter((row) => row.source_document_id != null);
+  addAtmHeadingRows(summary, rows.filter((row) => row.source_document_id == null), new Map(), options.sampleCap);
+  for (const documentIds of chunks(ids(withDocument.map((row) => row.source_document_id)), options.chunkSize)) {
+    const texts = await reader.sourceTexts(documentIds);
+    const wanted = new Set(documentIds);
+    addAtmHeadingRows(summary, withDocument.filter((row) => wanted.has(Number(row.source_document_id))), texts, options.sampleCap);
+  }
+  const live = await reader.liveNonNetworkFees(options.rowCap);
+  const byDocument = new Map<number | null, typeof live>();
+  for (const fee of live) {
+    const key = fee.source_document_id == null ? null : Number(fee.source_document_id);
+    byDocument.set(key, [...(byDocument.get(key) ?? []), fee]);
+  }
+  replayLiveNonNetwork(summary.liveNonNetwork, null, byDocument.get(null) ?? [], [], options.sampleCap);
+  for (const documentIds of chunks(ids([...byDocument.keys()]), options.chunkSize)) {
+    const texts = await reader.documentTexts(documentIds);
+    for (const id of documentIds) replayLiveNonNetwork(summary.liveNonNetwork, id, byDocument.get(id) ?? [], texts.get(id) ?? [], options.sampleCap);
+  }
+  return {
+    switch: "FOOTNOTED_ATM_HEADING_LIVE" as const,
+    issue: 1092,
+    rowsRead: bounded(rows.length, options.rowCap),
+    liveFeesRead: bounded(live.length, options.rowCap),
+    summary,
+  };
+}
+
 async function excerptAtPublish(reader: SwitchAuditReader, options: SwitchAuditOptions) {
   const live = await reader.limitRows(options.rowCap);
   const takedowns = await reader.excerptLimitTakedowns(options.rowCap);
@@ -181,6 +213,7 @@ export async function runSwitchDryRuns(reader: SwitchAuditReader, options: Switc
     dashListRows: await dashListRows(reader, options),
     excerptAtPublish: await excerptAtPublish(reader, options),
     sectionPath: await sectionPath(reader, options),
+    footnotedAtmHeading: await footnotedAtmHeading(reader, options),
     heldVocabulary: await heldVocabulary(reader, options),
     liveAccuracy: liveAccuracyFrom(await reader.freshAudit(options.accuracySample)),
   };

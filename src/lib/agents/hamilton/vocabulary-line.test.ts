@@ -6,11 +6,11 @@ import { vocabularyOnlyName } from "@/lib/agents/knox/held-vocabulary-read";
 import { liveFeeOnLine, PUBLISH_VOCABULARY_LINE_REFUSE_REASON_PREFIX, sameLineExcerptSql, selectLiveFeeOnLine } from "./same-line-read";
 
 /**
- * v157 (#1092, review of #2888): a read only Knox's held-name vocabulary names never publishes onto a
+ * v161 (#1092, review of #2888): a read only Knox's held-name vocabulary names never publishes onto a
  * printed line a live fee already holds, in any category, so the vocabulary only admits.
  */
 function dbReturning(rows: unknown[] | Error) {
-  const unsafe = vi.fn((_query: string, _params: unknown[]) => (rows instanceof Error ? Promise.reject(rows) : Promise.resolve(rows)));
+  const unsafe = vi.fn<(query: string, params: unknown[]) => Promise<unknown[]>>(() => (rows instanceof Error ? Promise.reject(rows) : Promise.resolve(rows)));
   return { db: Object.assign(vi.fn(), { unsafe }) as unknown as Parameters<typeof selectLiveFeeOnLine>[0], unsafe };
 }
 

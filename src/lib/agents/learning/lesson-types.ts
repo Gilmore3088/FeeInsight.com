@@ -27,4 +27,11 @@ export interface AgentLesson {
   appliesTo: readonly string[] | "all";
   /** The date the lesson was learned (the issue's close or the fix's merge), YYYY-MM-DD. */
   since: string;
+  /**
+   * Gap 11 (Nov 2): the lesson's machine-checkable part, when it has one: the id of a rule the agent's
+   * free (deterministic) path runs on every read, e.g. Knox's `FREE_PATH_RULES` in
+   * `knox/free-path-lessons.ts`. A free path cannot read prose, so a lesson without one is prose only:
+   * it rides the paid model prompt, and a free step never records it as applied.
+   */
+  freePathRule?: string;
 }

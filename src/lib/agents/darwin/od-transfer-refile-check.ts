@@ -128,7 +128,7 @@ export function odTransferVerdict(row: OdTransferRow): OdTransferVerdict | null 
   const line = storedLine(row.source_line);
   const name = (row.fee_name ?? "").trim();
   if (amount == null || !line || !name) return null;
-  // v157's held-name vocabulary re-files a live fee only with `HELD_VOCABULARY_RELABEL_LIVE` on.
+  // v161's held-name vocabulary re-files a live fee only with `HELD_VOCABULARY_RELABEL_LIVE` on.
   const result = forLiveRelabel(() => runFreeSpecialists(line));
   const reads = [
     ...result.candidates.map((read) => ({ name: read.feeName, amount: read.amount, hint: read.canonicalHint })),

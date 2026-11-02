@@ -2,8 +2,9 @@ import { describe, expect, it, vi } from "vitest";
 
 import { RPW_DATA_PAGE_URL } from "@/lib/regulatory/economy";
 import { RPW_DATA_PAGE_HTML, RPW_NEW_SHEET, RPW_NOTES_SHEET, RPW_OLD_SHEET, rpwWorkbook } from "@/lib/regulatory/rpw-fixtures";
+import { FDIC_PREVIOUS_RATES_PAGE, FDIC_RATE_PAGE } from "@/lib/regulatory/fdic-pages-fixtures";
 
-import { ECONOMY_DEFINITIONS, ECONOMY_SOURCES, economyPartitions, REMITTANCE_PARSER_VERSION, runRegistryEconomy } from "./economy";
+import { ECONOMY_DEFINITIONS, ECONOMY_SOURCES, economyParserVersion, economyPartitions, REMITTANCE_PARSER_VERSION, runRegistryEconomy } from "./economy";
 import type { RegistryDb } from "./partitions";
 
 function createDb(urbanRural: Array<Record<string, unknown>> = []) {
@@ -70,10 +71,51 @@ describe("keys, tokens and configured URLs", () => {
     expect(partitionDetail(statements).detail.reason).toMatch(/^No CENSUS_API_KEY set/);
   });
 
-  it("skips the FDIC rates feed when no URL is configured", async () => {
+  it("reads the FDIC rate cap pages when no CSV URL is configured", async () => {
+    const { db, statements } = createDb();
+    const fetchImpl = (async (url: string) =>
+      new Response(url.endsWith("previous-rates") ? FDIC_PREVIOUS_RATES_PAGE : FDIC_RATE_PAGE)) as unknown as typeof fetch;
+    const r = await runRegistryEconomy({ source: ECONOMY_SOURCES.fdicRates, partitionKey: "current", dryRun: true, db, env: {}, fetchOptions: { fetchImpl, backoffMs: 0 } });
+    // Every fixture page is the October 2026 table, so one month of 11 products x 5 columns.
+    expect(r).toMatchObject({ rows: 55, writtenRows: 0, dryRun: true });
+    expect(statements).toHaveLength(0);
+  });
+
+  it("stores each FDIC rate month with the URL of its own monthly page", async () => {
+    const { db, statements } = createDb();
+    const september = FDIC_RATE_PAGE.replace("October 19, 2026", "September 21, 2026");
+    const fetchImpl = (async (url: string) => {
+      if (url.endsWith("previous-rates")) return new Response(FDIC_PREVIOUS_RATES_PAGE);
+      if (url.endsWith("september-2026")) return new Response(september);
+      if (url.endsWith("june-2026") || url.endsWith("august-2026")) return new Response("gone", { status: 404 });
+      return new Response(FDIC_RATE_PAGE);
+    }) as unknown as typeof fetch;
+    await runRegistryEconomy({ source: ECONOMY_SOURCES.fdicRates, partitionKey: "current", db, env: {}, fetchOptions: { fetchImpl, backoffMs: 0 } });
+    const urlByPeriod = new Map<string, unknown>();
+    for (const s of statements.filter((x) => x.text.includes("INSERT INTO area_statistics"))) {
+      const payload = JSON.parse(s.values.find((v) => typeof v === "string" && v.startsWith("[")) as string) as Array<{ period: string }>;
+      const url = s.values.find((v) => typeof v === "string" && v.startsWith("https://"));
+      for (const row of payload) urlByPeriod.set(row.period, url);
+    }
+    expect(Object.fromEntries(urlByPeriod)).toEqual({
+      "2026-10": "https://www.fdic.gov/national-rates-and-rate-caps",
+      "2026-09": "https://www.fdic.gov/national-rates-and-rate-caps/national-rates-and-rate-caps-september-2026",
+    });
+  });
+
+  it("reads the FDIC survey appendix tables when no CSV URL is configured", async () => {
     const { db } = createDb();
-    const r = await runRegistryEconomy({ source: ECONOMY_SOURCES.fdicRates, partitionKey: "current", db, env: {} });
-    expect(r.emptyReason).toMatch(/FDIC_NATIONAL_RATES_CSV_URL/);
+    const r = await runRegistryEconomy({ source: ECONOMY_SOURCES.fdicSurvey, partitionKey: "2021", db, env: {}, fetchOptions: { fetchImpl: respond("no", 404), backoffMs: 0 } });
+    expect(r.emptyReason).toMatch(/No 2021 appendix tables/);
+  });
+
+  it("records the FDIC page loaders under parser version 2, so partitions skipped under version 1 are due again", async () => {
+    expect(economyParserVersion(ECONOMY_SOURCES.fdicRates)).toBe(2);
+    expect(economyParserVersion(ECONOMY_SOURCES.fdicSurvey)).toBe(2);
+    expect(economyParserVersion(ECONOMY_SOURCES.qcew)).toBe(1);
+    const { db, statements } = createDb();
+    await runRegistryEconomy({ source: ECONOMY_SOURCES.fdicSurvey, partitionKey: "2021", db, env: {}, fetchOptions: { fetchImpl: respond("no", 404), backoffMs: 0 } });
+    expect(partitionDetail(statements).detail.parser_version).toBe(2);
   });
 });
 

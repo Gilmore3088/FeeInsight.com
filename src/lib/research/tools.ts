@@ -1,5 +1,4 @@
 import { tool } from "ai";
-import { readerFeeConditions } from "@/lib/fee-conditions";
 import { z } from "zod";
 import {
   getFeeCategorySummaries,
@@ -17,11 +16,12 @@ import {
   getInstitutionPeerRanking,
   getInstitutionRevenueTrend,
 } from "@/lib/data-store/call-reports";
-import { getInstitutionFeeScheduleEvidence } from "@/lib/data-store/institution";
+import { NO_PUBLISHED_FEES_NOTE, publishedCatalogFees, publishedFeeStatus } from "@/lib/hamilton/published-fees";
+import { getFeeSourceCitations } from "@/lib/data-store/source-line-traces";
 import { getDisplayName, getFeeFamily, getFeeTier } from "@/lib/fee-taxonomy";
-import { getFeePublicationStatusLabel } from "@/lib/institution-quality";
 import { countedInstitutionCount } from "@/lib/data-store/fee-stats";
-import { financialMeasureDefinition, financialSourceForCharter } from "@/lib/data-store/financial-peer-contract";
+import { financialMeasureDefinition, financialSourceForCharter, restatedInDollars } from "@/lib/data-store/financial-peer-contract";
+import { callReportDollars, callReportRowInDollars } from "@/lib/hamilton/call-report-dollars";
 
 /**
  * Public tools — wrap the same logic as /api/v1/ routes but call DB directly
@@ -190,7 +190,7 @@ export const searchInstitutions = tool({
 
 export const getInstitution = tool({
   description:
-    "Returns a single institution's full profile: identity, public fee publication status, verified fees, provisional fees, financials, source-consistent revenue trend, same-regulator and same-charter financial peer ranking with its dated definition and sample counts, and quality signals. When: institution-specific queries, 'what does Bank X charge?', profiling a named institution, URL-seeded institution analysis. Combine with: searchIndex(charter:bank, district:N) to benchmark verified rows against peer group, queryNationalData(complaints) if the institution is in a region with elevated complaint rates.",
+    "Returns a single institution's full profile: identity, public fee publication status, its published (verified) fees, financials, source-consistent revenue trend (call-report money in whole dollars, converted from the filings' thousands), same-regulator and same-charter financial peer ranking with its dated definition and sample counts. A fee row with source_location names where it is printed in our stored copy of the bank's fee schedule (for example page 2, line 4 of our stored copy of the bank's fee schedule; the page only when it is settled); cite that place, in those words, only when the row carries it. When: institution-specific queries, 'what does Bank X charge?', profiling a named institution, URL-seeded institution analysis. Combine with: searchIndex(charter:bank, district:N) to benchmark verified rows against peer group, queryNationalData(complaints) if the institution is in a region with elevated complaint rates. When fee_note is present the institution has no published fees: say so and quote no fee amount for it.",
   inputSchema: z.object({
     id: z.number().describe("Institution ID"),
   }),
@@ -199,65 +199,39 @@ export const getInstitution = tool({
     if (!inst) return { error: "Institution not found", id };
 
     const financialSource = financialSourceForCharter(inst.charter_type);
-    const [feesRaw, financials, revenueTrend, peerRanking, evidence] = await Promise.all([
+    const [catalogFees, financials, revenueTrend, peerRanking] = await Promise.all([
       getFeesByInstitution(id),
       getFinancialsByInstitution(id).catch(() => []),
       financialSource ? getInstitutionRevenueTrend(id, undefined, financialSource).catch(() => []) : [],
       financialSource ? getInstitutionPeerRanking(id).catch(() => null) : null,
-      getInstitutionFeeScheduleEvidence(id).catch(() => null),
     ]);
-    const fees = feesRaw.filter((f) => f.review_status !== "rejected");
-    const mapFee = (f: (typeof fees)[number]) => ({
+    // Only published fees reach the model (wiring audit, Nov 2): a row of published_fee_catalog
+    // that reads approved, which is every live catalog row and exactly what the institution page
+    // shows. Fees read from a schedule but not yet verified or published are never given to it,
+    // not even labelled; a bank with none gets fee_note instead of numbers.
+    const published = publishedCatalogFees(catalogFees);
+    // Where each published row is printed in our stored copy of the bank's fee schedule; a row
+    // not found has none, and a citation then names no line.
+    const citations = await getFeeSourceCitations(published.map((f) => f.id));
+    const publishedFees = published.map((f) => ({
         fee_name: f.fee_name,
         fee_category: f.fee_category ?? null,
         display_name: getDisplayName(f.fee_category ?? f.fee_name),
         amount: f.amount,
         frequency: f.frequency,
         conditions: f.conditions,
-        status: f.review_status === "approved" ? "verified" : "provisional",
+        status: "verified",
         extraction_confidence: f.extraction_confidence,
         source_url: f.source_url ?? null,
         // The catalog row and its stored schedule, so a sentence of the answer can be tied to them (#981).
         record_id: f.id,
         source_document_id: f.source_document_id ?? null,
-    });
-    const verifiedFees = fees.filter((f) => f.review_status === "approved").map(mapFee);
-    const catalogProvisionalFees = fees.filter((f) => f.review_status !== "approved").map(mapFee);
-    const pipelineProvisionalFees =
-      catalogProvisionalFees.length === 0 && evidence
-        ? [
-            ...evidence.verified_fee_preview
-              .filter((f) => f.review_status !== "rejected")
-              .map((f) => ({
-                fee_name: f.fee_name,
-                fee_category: f.canonical_fee_key,
-                display_name: getDisplayName(f.canonical_fee_key),
-                amount: f.amount,
-                frequency: f.frequency,
-                conditions: null,
-                status: "provisional",
-                extraction_confidence: f.extraction_confidence,
-                source_url: f.source_url,
-                pipeline_stage: "verified_unpublished",
-              })),
-            ...evidence.raw_fee_preview.map((f) => ({
-              fee_name: f.fee_name,
-              fee_category: null,
-              display_name: getDisplayName(f.fee_name),
-              amount: f.amount,
-              frequency: f.frequency,
-              conditions: readerFeeConditions(f.conditions),
-              status: "provisional",
-              extraction_confidence: f.extraction_confidence,
-              source_url: f.source_url,
-              pipeline_stage: "raw_unverified",
-            })),
-          ]
-        : [];
-    const provisionalFees = [...catalogProvisionalFees, ...pipelineProvisionalFees];
+        ...(citations.has(f.id) ? { source_location: citations.get(f.id) } : {}),
+    }));
+    // Call-report money is stored in thousands; the writer and the answer gate read it in whole
+    // dollars, converted once by the shared helper (call-report-dollars.ts, #1077).
     const sameScaleFinancials = financials.filter((record) => financialSource && record.source === financialSource)
-      .map((record) => ({ ...record, field_units: { fee_income_ratio: "fraction" } }));
-    const status = inst.fee_publication_status ?? "unavailable";
+      .map((record) => ({ ...callReportRowInDollars(record), field_units: { fee_income_ratio: "fraction" } }));
 
     return {
       identity: {
@@ -266,59 +240,49 @@ export const getInstitution = tool({
         state: inst.state_code,
         city: inst.city,
         charter_type: inst.charter_type,
-        asset_size: inst.asset_size,
+        asset_size: callReportDollars(inst.asset_size),
+        field_units: { asset_size: "USD" },
         asset_tier: inst.asset_size_tier,
         fed_district: inst.fed_district,
         website_url: inst.website_url,
         fee_schedule_url: inst.fee_schedule_url,
       },
+      // Built from published fees alone: the registry's status, readiness and summary count fees
+      // still under review, so they stay out of the model's read (wiring audit, 2026-11-02).
       public_fee_status: {
-        status,
-        label: getFeePublicationStatusLabel(status),
-        insight_readiness: inst.insight_readiness ?? "source_needed",
-        confidence_summary: inst.confidence_summary ?? null,
-        source_needed_reason: inst.source_needed_reason ?? null,
-        verified_fee_count: inst.published_fee_count ?? verifiedFees.length,
-        provisional_fee_count: inst.provisional_fee_count ?? provisionalFees.length,
-        total_visible_fee_count: fees.length,
-        latest_source_status: inst.latest_source_status ?? null,
-        latest_extracted_fee_count: inst.latest_extracted_fee_count ?? null,
-        latest_source_collected_at: inst.latest_source_collected_at ?? null,
+        ...publishedFeeStatus(publishedFees.length),
+        total_visible_fee_count: publishedFees.length,
       },
       fees: {
-        verified: verifiedFees,
-        provisional: provisionalFees,
+        verified: publishedFees,
       },
+      ...(publishedFees.length === 0 ? { fee_note: NO_PUBLISHED_FEES_NOTE } : {}),
       // getFinancialsByInstitution reads fdic and ncua rows only (see data-store/financial-sources.ts).
       financials: {
-        units: "dollar amounts in thousands; fee_income_ratio is a fraction (0.068 = 6.8%)",
-        definition: financialSource ? { ...financialMeasureDefinition(financialSource), period_basis: financialSource === "ncua" ? "year_to_date" : "standalone_quarter" } : null,
+        units: "whole dollar amounts; fee_income_ratio is a fraction (0.068 = 6.8%)",
+        definition: financialSource ? restatedInDollars({ ...financialMeasureDefinition(financialSource), period_basis: financialSource === "ncua" ? "year_to_date" : "standalone_quarter" }) : null,
         latest: sameScaleFinancials[0] ?? null,
         records: sameScaleFinancials.slice(0, 8),
       },
       // Numeric evidence inherits units and source from its containing row, not a sibling definition.
       revenue_trend: revenueTrend.map((quarter) => ({
-        ...quarter,
+        ...callReportRowInDollars(quarter, ["service_charge_income"]),
         source: financialSource,
-        units: "thousands of dollars",
+        units: "USD",
         field_units: { fee_income_ratio: "fraction", yoy_change_pct: "percent" },
       })),
-      revenue_trend_definition: financialSource ? {
+      revenue_trend_definition: financialSource ? restatedInDollars({
         ...financialMeasureDefinition(financialSource),
         ratio_definition: financialSource === "ncua" ? "Year-to-date broad fee income divided by year-to-date total revenue" : "Quarterly deposit-account service charges divided by quarterly total revenue",
         ratio_period_basis: financialSource === "ncua" ? "year_to_date" : "standalone_quarter",
-      } : null,
+      }) : null,
       peer_ranking: peerRanking?.comparison?.source === financialSource && peerRanking.comparison.charter_type === inst.charter_type ? {
-        ...peerRanking,
+        ...callReportRowInDollars(peerRanking, ["sc_income", "peer_median_sc"]),
+        ...(peerRanking.comparison ? { comparison: restatedInDollars(peerRanking.comparison) } : {}),
         source: financialSource,
-        units: "thousands of dollars",
+        units: "USD",
         field_units: { fee_income_ratio: "fraction", peer_median_fee_ratio: "fraction" },
       } : null,
-      quality: {
-        label: inst.quality_label ?? null,
-        status: inst.quality_status ?? null,
-        signals: inst.quality_signals ?? [],
-      },
     };
   },
 });

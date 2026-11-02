@@ -35,6 +35,15 @@ async function latestDate(sql: Sql, sqls: Variant, source?: FinancialSource): Pr
   return dateText(rows[0]?.latest_date);
 }
 
+/**
+ * The newest call-report filing date with positive income for one regulator, the date the revenue
+ * readers default to. Hamilton's fee-share screens read their quarter here (#2028).
+ */
+export async function getLatestFinancialReportDate(source: FinancialSource): Promise<string | null> {
+  const sql = getSql();
+  return latestDate(sql, await variant(sql), source);
+}
+
 export interface RevenueSnapshot {
   quarter: string;
   total_service_charges: number;

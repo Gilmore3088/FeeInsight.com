@@ -2,7 +2,7 @@ import { withHeldNameVocabulary } from "@/lib/agents/knox/held-name-vocabulary";
 import { classifyFeeText } from "@/lib/agents/knox/rules";
 
 /**
- * v157: a name only the held-name vocabulary files: main's rules name no category for it, today's
+ * v161: a name only the held-name vocabulary files: main's rules name no category for it, today's
  * do. Hamilton's publish refuses such a read where a live fee already holds its printed line in any
  * category (`selectLiveFeeOnLine`), so the vocabulary only admits. Pure.
  */

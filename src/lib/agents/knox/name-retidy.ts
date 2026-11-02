@@ -503,7 +503,7 @@ export function withoutWaiverAdvice(name: string): string | null {
 // One rules read per document text in a step: a page often holds several advice names.
 const readCache = new Map<string, ReturnType<typeof runFreeSpecialists>["candidates"]>();
 function specialistCandidates(text: string) {
-  // v157: a read with the held-name vocabulary and one without it are different reads.
+  // v161: a read with the held-name vocabulary and one without it are different reads.
   const key = `${heldNameVocabularyOn() ? "v" : "-"}${text}`;
   let candidates = readCache.get(key);
   if (!candidates) {
@@ -1562,7 +1562,7 @@ export function publishCutName(fee: Pick<RetidyFeeRow, "fee_name" | "raw_fee_nam
 }
 
 /**
- * The live re-tidy's plan: a rename of live fees, so v157's held-name vocabulary names cells here only
+ * The live re-tidy's plan: a rename of live fees, so v161's held-name vocabulary names cells here only
  * with `HELD_VOCABULARY_RELABEL_LIVE` on (`live`, for tests). Pure.
  */
 export function planLiveRetidy(
@@ -2149,7 +2149,7 @@ export async function retidyLiveFeeNames(
         logged.get(Number(fee.fee_published_id))?.newName === fee.fee_name ||
         publishCutName(fee) != null,
     );
-    // A live rename: v157's held-name vocabulary names cells here only with `HELD_VOCABULARY_RELABEL_LIVE` on.
+    // A live rename: v161's held-name vocabulary names cells here only with `HELD_VOCABULARY_RELABEL_LIVE` on.
     const plan = planLiveRetidy(messy, texts.filter((text) => Number(text.institution_id) === institutionId), fees, logged);
     result.messyFees += messy.length;
     result.renames.push(...plan.renames);

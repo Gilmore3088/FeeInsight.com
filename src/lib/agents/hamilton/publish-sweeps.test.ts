@@ -247,10 +247,10 @@ describe("which steps run the moved sweeps", () => {
     }
   });
 
-  it("moves the 40 named sweeps plus pendingFlags (#1876) and keeps the 11 calls, together the publish step's 52 timed calls", () => {
+  it("moves the 40 named sweeps plus pendingFlags (#1876) and keeps the 12 calls (#1200 adds currentCopyRepoint), together the publish step's 53 timed calls", () => {
     expect(MOVED_PUBLISH_SWEEPS).toHaveLength(41);
     expect(new Set(MOVED_PUBLISH_SWEEPS).size).toBe(41);
-    expect(KEPT_PUBLISH_CALLS).toHaveLength(11);
+    expect(KEPT_PUBLISH_CALLS).toHaveLength(12);
     expect(MOVED_PUBLISH_SWEEPS.filter((key) => (KEPT_PUBLISH_CALLS as readonly string[]).includes(key))).toEqual([]);
     const root = join(__dirname, "..");
     const sweepsSource = readFileSync(join(__dirname, "publish-sweeps.ts"), "utf8");

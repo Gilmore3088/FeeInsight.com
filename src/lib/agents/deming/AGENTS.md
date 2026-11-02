@@ -22,12 +22,18 @@ runtime judgment when its original document identity cannot be established. See
 
 ## Live-source diagnostic (#2061)
 
-`live-source-audit.ts` adds a separate, versioned diagnostic of an immutable daily sample against
-fresh official-path evidence. The queue-only daily route freezes the frame after its existing
-measurement/snapshot steps. Non-exempt finite tick work observes, records unknowns and positive
-contradictions, consumes exact-document Magellan side-copy requests, and archives late completion
-into the original dated snapshot. It changes no answer key or fee and cannot certify missing-fee
-recall or launch accuracy. See [LIVE-SOURCE-AUDIT.md](LIVE-SOURCE-AUDIT.md). James's weekly 50 whole
+`live-source-audit.ts` adds a separate diagnostic of an immutable daily sample of 500 live dollar
+fees. Each fee is checked against a fresh copy of the bank page it was read from. The queue-only
+daily route freezes the frame after its existing measurement/snapshot steps. Non-exempt finite tick
+work fetches the pages and gives each fee a verdict with `checkFeeAgainstSource`: supported,
+mismatch (a price contradiction, or a category-guard refusal counted apart), or not found on the
+page. A fee is unknown when its page did not load, when a plain fetch returned a script shell far
+thinner than the stored copy, or when its price's witness is restricted, and the reason is recorded. A fee the page did not support, served from changed bytes, asks Magellan to
+copy the page so the pipeline reads it again. Late completion is archived into the original dated
+snapshot, and the live score (supported over every fee whose page loaded) is shown in the
+accuracy history by draw. Checker versions are recorded on each verdict, not in the draw's
+identity, so a deploy does not restart the draw (2026-11-02). The diagnostic changes no answer key
+or fee and cannot certify missing-fee recall or launch accuracy. See [LIVE-SOURCE-AUDIT.md](LIVE-SOURCE-AUDIT.md). James's weekly 50 whole
 institutions remains the only human launch workflow.
 
 ## What it owns
@@ -464,7 +470,7 @@ DATABASE_URL=<prod URL> npm run audit:switch-dry-runs -- --json > switch-dry-run
     is read; the output prints the bound and the next `--scan-offset` when it is reached;
   - `--scan-offset N` (default 0): the next batch of dash-list candidates;
   - `--accuracy-sample N` (default 500);
-  - `--institution ID[,ID]` (sections 1 to 5 for those institutions only).
+  - `--institution ID[,ID]` (sections 1 to 6 for those institutions only).
 - **Load.** The run holds one repeatable-read snapshot for its whole length, which holds back vacuum,
   and its cap and limit reads scan whole tables (each statement stops at 10 minutes). Run it
   off-peak, or on a replica if one exists. For a first pass, scope it to a few institutions, for
@@ -526,7 +532,19 @@ DATABASE_URL=<prod URL> npm run audit:switch-dry-runs -- --json > switch-dry-run
      changes, by published audience and new decision, and how many the audience relabel would write
      (from `unknown`; from `both` only for a title source, which `section_path` is not yet). The
      switch holds nothing, so there is no takedown count.
-  5. `HELD_VOCABULARY_RELABEL_LIVE` (#1092, Knox v157, `held-vocabulary.ts`). The same candidate scan,
+  5. `FOOTNOTED_ATM_HEADING_LIVE` (#1092, `fee-fold-atm-heading.ts`). Every balance inquiry (Knox's
+     hint, or a verified or published balance_inquiry) is re-filed against its own document's newest
+     text with the switch off and on, as Darwin's verify, Hamilton's rules re-check and Hamilton's
+     fold step file it (`refileCategory` with `foldContext`, read in each mode). It counts the live and
+     verified fees the fold step would re-file into atm_non_network (only those the guard and Darwin's
+     amount checks accept). A raw-only row changes only what Knox's next read files. The takedown count
+     reads every live atm_non_network fee Hamilton's rules re-check reads (`fr.source = 'knox'`, not
+     `knox_paid_extraction`, `amount_kind = 'flat'`), whatever Knox hinted. Each is judged on the text
+     its `text_hash` names (else the newest), switch off and on, by the re-check's own pairing and
+     verdict (`claimDocumentLines`, `liveRowVerdict` in `hamilton/rules-recheck.ts`). A fee that fails
+     only with the switch on would come down after the second look; one the second look keeps
+     (disputed) and one that fails today are counted apart.
+  6. `HELD_VOCABULARY_RELABEL_LIVE` (#1092, Knox v161, `held-vocabulary.ts`). The same candidate scan,
      kept to documents whose newest text prints a word the held-name vocabulary reads
      (`HELD_VOCABULARY_PG`). Each text is read by today's free team with the vocabulary off and on;
      the vocabulary only adds reads. A live dollar fee of the document with an added read at its price
@@ -536,12 +554,48 @@ DATABASE_URL=<prod URL> npm run audit:switch-dry-runs -- --json > switch-dry-run
      price no live fee of the document has are counted apart: they publish through Darwin whatever
      the switch says. The shadow-lab experiment `held-name-vocabulary-off` reads every stage as
      those paths read while the switch is off.
-  6. Live accuracy. Deming's fresh audit is re-run on today's seed (`fresh-audit.ts`). It leads
+  7. Live accuracy. Deming's fresh audit is re-run on today's seed (`fresh-audit.ts`). It leads
      with the daily receipt's own figure (right / scorable), then the amount-and-category-only
      share (`traceLiveFee`, `checkFeeCategory`). This is a stored-copy measure, not a check
      against the bank's current schedule.
 - A new switch that waits on a production count adds its counter here in the same PR
   (deming/issue-1092-a-switch-ships-its-dry-run-count).
+
+## Golden-set gate (#2533, #2535; Nov 2)
+
+Two CI halves run in one step of unit shard 1 (`.github/workflows/test.yml`), with no database and
+no model call:
+
+- **Pipeline gate** (`golden-gate.ts`, `golden-gate.test.ts`). A PR that changes a file the replay
+  imports (the static import closure of `golden-gate.ts`, computed each run), anything under
+  `src/lib/agents/`, `src/lib/custom-report/source-check.ts`, or a golden-set fixture is measured on
+  the golden set at the PR head's code values, twice: as published, and after every replayed
+  database sweep at its code value. It fails on any number worse than main's committed baseline
+  (`__fixtures__/golden-gate-baseline.json`, read from the merge base), with tolerance zero: no
+  expected fee main finds lost, no member publishing or letting through more known-wrong fees, no
+  rate falling. No switch name is needed. A PR that moves a number commits the regenerated baseline
+  (`GOLDEN_GATE_WRITE=1 npx vitest run src/lib/agents/deming/golden-gate.test.ts`); the diff shows
+  each member that moved. Every other PR skips the measure in seconds.
+- **Switch receipts** (`switch-gate.test.ts`). Each `*_LIVE` switch a PR's changed lines name
+  replays off then on. Read switches toggle in the replayed read (`SWITCH_REPLAYS`); database
+  sweeps (Darwin takedowns and re-files) run their decision function over the golden set's own
+  publications (`sweep-replay.ts`), so a sweep that would take down or re-file a fee the answer key
+  says is right fails. A switch with no replay states why in `NOT_REPLAYABLE_REASONS`
+  (`switch-replay.ts`); the inventory fails a switch with neither, and the gate fails a PR that
+  turns a switch on (code constant flipped or added `true`) with no replay unless the same PR adds
+  or rewords that switch's reason line.
+- **Main drift check.** On a push to main that changes a gated file, main's code is measured
+  against main's own committed baseline (`GOLDEN_GATE_MAIN=1`), so two PRs that each passed on an
+  older main and together moved the numbers fail on the merge commit that caused it; the message
+  gives the regenerate command.
+- Every receipt names the members it could not measure offline (the answer-key banks with no
+  stored reference text) instead of skipping them silently.
+- The diff check sees only switches turned on in code. A switch turned on through a Vercel
+  environment variable never appears in a PR diff, so no receipt runs for it; run
+  `SWITCH_GATE_SWITCHES=<name>` by hand before setting one.
+- A new switch ships with a replay (an override parameter on the read path, or a sweep entry whose
+  probe in `switch-gate.test.ts` shows the sweep acting differently with it on) or a stated reason
+  (deming/golden-set-gates-every-pipeline-change).
 
 ## Boundaries
 

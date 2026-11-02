@@ -15,7 +15,9 @@ import {
   type RawFeeRow,
 } from "@/lib/agents/darwin/verify";
 import { tierPerkZero } from "@/lib/agents/darwin/tier-perk";
+import { accountBenefitZeroOf } from "@/lib/account-benefit-zero";
 import { foldContext } from "@/lib/fee-fold";
+import { withFootnotedAtmHeading } from "@/lib/fee-fold-atm-heading";
 import { isProductPage } from "@/lib/agents/hamilton/product-page";
 import { ZERO_FEE_RAW_FLAG, ZERO_FEE_VERIFIED_FLAG } from "@/lib/agents/darwin/envelopes";
 import {
@@ -60,7 +62,7 @@ export interface SwitchOverrides {
   /** `SECTION_PATH_LIVE` (#1092): every stage runs under `withSectionPath`. */
   sectionPath?: boolean;
   /**
-   * v157's held-name vocabulary (#1092): every stage runs under `withHeldNameVocabulary`. Off is how the
+   * v161's held-name vocabulary (#1092): every stage runs under `withHeldNameVocabulary`. Off is how the
    * paths that correct live fees read while `HELD_VOCABULARY_RELABEL_LIVE` is off.
    */
   heldNameVocabulary?: boolean;
@@ -68,6 +70,8 @@ export interface SwitchOverrides {
   withoutDiscontinuedTables?: boolean;
   /** `NO_CHARGE_SENTENCE_READ_LIVE`: Knox's free read and Darwin's source trace. */
   noChargeSentences?: boolean;
+  /** `FOOTNOTED_ATM_HEADING_LIVE` (#1092): every stage runs under `withFootnotedAtmHeading`, the module flag the fold's ATM heading read consults. */
+  footnotedAtmHeading?: boolean;
   /** `DARWIN_CONDITIONAL_ZERO_LAYOUT_LIVE`: Darwin's post-source conditional-$0 check. */
   conditionalZeroLayout?: boolean;
   /** Category guard switches: the replay's re-file of Knox's hint and Hamilton's publish guard. */
@@ -106,9 +110,16 @@ export const EXPERIMENTS: Readonly<Record<string, ExperimentConfig>> = {
   "held-name-vocabulary-off": {
     id: "held-name-vocabulary-off",
     description:
-      "Every stage reads without Knox v157's held-name vocabulary, as main read and as the live-correction paths read while `HELD_VOCABULARY_RELABEL_LIVE` is off (Knox's re-read of Darwin's requests, Darwin's re-read category and re-file checks, the live name re-tidy). Current minus experimental is what the vocabulary adds to new reads; the relabel paths themselves are a database sweep the lab cannot replay (switch dry-run audit, section 5).",
+      "Every stage reads without Knox v161's held-name vocabulary, as main read and as the live-correction paths read while `HELD_VOCABULARY_RELABEL_LIVE` is off (Knox's re-read of Darwin's requests, Darwin's re-read category and re-file checks, the live name re-tidy, Hamilton's live name refresh). Current minus experimental is what the vocabulary adds to new reads; the relabel paths themselves are a database sweep the lab cannot replay (switch dry-run audit, section 6).",
     excerptAtPublish: false,
     switches: { heldNameVocabulary: false },
+  },
+  "footnoted-atm-heading": {
+    id: "footnoted-atm-heading",
+    description:
+      "The retired-category fold reads an ATM heading with a note mark (\"Non-TBT or Non-Allpoint ATM1:\") and another bank named in several words (\"Non-Austin Bank ATM:\") (`FOOTNOTED_ATM_HEADING_LIVE` switched on), wherever a read is re-filed with its schedule section.",
+    excerptAtPublish: false,
+    switches: { footnotedAtmHeading: true },
   },
   "daily-cap-lines": {
     id: "daily-cap-lines",
@@ -209,6 +220,7 @@ function verifyFee(fee: StageFee, text: string, dailyCapLines = false, switches:
   const post = postSourceCheck(key, name, amount, line, text, layout);
   if (post) return { ok: false, reason: post.rule ? `${post.code}:${post.rule}` : post.code };
   if (tierPerkZero(amount, name, REPLAY_URL, text, key)) return { ok: false, reason: "tier_perk_zero" };
+  if (amount === 0 && accountBenefitZeroOf({ line: fee.excerpt ?? line, documentText: text, feeName: name })) return { ok: false, reason: "account_benefit_zero" };
   // Darwin settles the frequency it verifies from Knox's own excerpt (insertCurrentVerifiedFee).
   return { ok: true, fee: { ...fee, frequency: verifiedFrequency(fee.excerpt, amount, fee.frequency ?? null, key) } };
 }
@@ -265,10 +277,13 @@ function buildVariant(config: ExperimentConfig): PipelineVariant {
   // `SECTION_PATH_LIVE` (#1092) is a module flag the audience read consults.
   const sectionPath = switches.sectionPath;
   const underHeld = <T>(read: () => T): T => (held == null ? read() : withHeldNameRules(held, read));
+  // `FOOTNOTED_ATM_HEADING_LIVE` (#1092) is a module flag the fold's ATM heading read consults.
+  const atmHeading = switches.footnotedAtmHeading;
   const underPath = <T>(read: () => T): T => (sectionPath == null ? underHeld(read) : withSectionPath(sectionPath, () => underHeld(read)));
-  // v157's held-name vocabulary is a module flag every name read consults.
+  const underAtm = <T>(read: () => T): T => (atmHeading == null ? underPath(read) : withFootnotedAtmHeading(atmHeading, () => underPath(read)));
+  // v161's held-name vocabulary is a module flag every name read consults.
   const vocabulary = switches.heldNameVocabulary;
-  const under = <T>(read: () => T): T => (vocabulary == null ? underPath(read) : withHeldNameVocabulary(vocabulary, () => underPath(read)));
+  const under = <T>(read: () => T): T => (vocabulary == null ? underAtm(read) : withHeldNameVocabulary(vocabulary, () => underAtm(read)));
   return {
     id: config.id,
     description: config.description,
