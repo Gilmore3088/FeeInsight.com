@@ -63,7 +63,13 @@ Rosetta owns source text normalization.
   stacked label/next-line bullet-price lists as columns: each band needs repeated own
   pairs, sufficient width and a gutter. Mixed label/amount table rows, monetary or waiver
   gutter crossings and nested cell columns refuse that detector and retain the earlier
-  baseline reading. A PDF text an older layout read across its
+  baseline reading. Layout 6 (Mountain Star FCU fee 159428, Nov 2) reads fee tables set side by
+  side (a tri-fold brochure's panels) one table at a time: the page is cut at its gutters, a strip
+  that is mostly amounts stays with the table on its left, and the page splits only when two or
+  more blocks are fee tables and any non-table block sits at the page's edge. An amount centred
+  beside a label that wraps onto two lines joins that label, and an item crossing a table's edge
+  is its own line; the read attempt records the pages and any such priced crossings
+  (`detail.pdf_table_columns`). One table with several price columns keeps the row reading. A PDF text an older layout read across its
   columns (`INTERLEAVED_PROSE_CELLS` prose cell breaks or more) is read once more. Word files (.docx) are unzipped and read the same way (`read.docx_text`,
   `docx.ts`): a paragraph per line, a tab as a cell break, a table row per line. A
   legacy binary .doc stays `unsupported_format`. Knox pairs fees and amounts per line,
@@ -156,7 +162,11 @@ Rosetta owns source text normalization.
   Bayes's `rosetta.read` manifest counts queued and done. A changed text gets a new hash, so
   Knox re-extracts it and Darwin re-checks its fees. The paid pass is not replayed (a paid call).
   On 25 Oct 375 current copies at 374 banks were due, with 5,526 live fees (277 legacy texts,
-  67 JavaScript-fallback, 31 OCR).
+  67 JavaScript-fallback, 31 OCR). With `PDF_CELL_REPLAY_LIVE` on (off for now), a current
+  `read.pdf_layout` text holding a cell break (" | ") with no layout read of its bytes at
+  `PDF_LAYOUT_REPLAY_VERSION` (6) is due too (receipt key `pdf_layout_version`): 3,226 texts with
+  30,735 live fees on Nov 2. It turns on once the layout recheck's v6 receipts lose no supported
+  live fee.
 - Scoped layout 5 repairs (#2219) keep the global reader 3 and prose-layout 4 replay floors
   settled (`PDF_PROSE_REREAD_VERSION`). `PDF_STACKED_REPAIR_VERSION` v1 makes only current
   completed PDF-layout texts with at least three crossed bullet-price cells and three
@@ -493,7 +503,8 @@ fails a PR that changes one of these constants without updating its line here (#
 | `ROSETTA_JS_FALLBACK_VERSION` | — | v3 | `rosetta/reader-versions.ts` |
 | `ROSETTA_OCR_VERSION` | — | v3 | `rosetta/reader-versions.ts` |
 | `ROSETTA_PAID_READ_VERSION` | — | v2 | `rosetta/paid-read.ts` |
-| `PDF_LAYOUT_VERSION` | — | v5 | `rosetta/reader-versions.ts` |
+| `PDF_LAYOUT_VERSION` | — | v6 | `rosetta/reader-versions.ts` |
+| `PDF_LAYOUT_REPLAY_VERSION` | `read.pdf_layout` reader replay | v6 | `rosetta/reader-versions.ts` |
 | `PDF_PROSE_REREAD_VERSION` | — | v4 | `rosetta/reader-versions.ts` |
 | `PDF_STACKED_REPAIR_VERSION` | `read.pdf_layout` scoped check | v1 | `rosetta/reader-versions.ts` |
 | `PDF_READER_AGREEMENT_VERSION` | `read.pdf_reader_agreement` record-only receipt | v1 | `rosetta/reader-versions.ts` |

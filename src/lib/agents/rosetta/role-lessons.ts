@@ -7,6 +7,16 @@ import type { AgentLesson } from "@/lib/agents/learning/lesson-types";
  */
 export const ROSETTA_LESSONS: AgentLesson[] = [
   {
+    id: "fee-159428-cells-stay-in-their-table",
+    agent: "rosetta",
+    stage: "read",
+    lesson: "When a PDF page sets fee tables side by side, read each table on its own: cut the page at its gutters, keep an amount column with the table on its left, and never write a cell from one table on a line with a cell from another because they share a baseline. An amount printed midway beside a label that wraps onto two lines is that label's. An item that runs across a table's edge goes on its own line, paired with nothing.",
+    why: "Mountain Star FCU's tri-fold brochure (text 36365) was read across the page, so the General Fees row 'Money market / excess check $5.00' shared a line with 'Fax Service' from the next panel's list of free services; Knox published 'Fax Service $5' (fee 159428) for a service the bank lists as free. On Nov 2, 3,226 current pdf_layout texts with a cell break carried 30,735 live fees.",
+    evidence: { issues: [1092], prs: [], files: ["docs/project/findings/2026-11-02-pdf-side-by-side-tables-share-a-baseline.md", "src/lib/agents/rosetta/pdf-layout.ts"] },
+    appliesTo: ["read"],
+    since: "2026-11-02",
+  },
+  {
     id: "issue-1094-amount-on-the-next-line",
     agent: "rosetta",
     stage: "document kind",

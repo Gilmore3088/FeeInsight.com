@@ -232,6 +232,8 @@ export interface ReadResult {
   stackedGeometry?: StackedGeometryReceipt;
   /** The stored PDF reading's fee pairs against the PDF's drawing order; recorded, never acted on (#2219). */
   readerAgreement?: PdfReaderAgreement;
+  /** Layout v6: pages read as side-by-side fee tables, and ambiguous crossing lines; recorded only. */
+  tableColumns?: { pages: number[]; ambiguousLines: number };
   witnessRetention?: WitnessRetention;
   repairSettlement?: { accepted: boolean; reason: string; artifactId?: number; textHash?: string };
   /**
@@ -1009,6 +1011,9 @@ async function readCandidate(
       // Like the geometry proof, the receipt only describes the text it was computed on.
       if (extracted.readerAgreement?.textHash === textSha256(extracted.text)) {
         base.readerAgreement = { ...extracted.readerAgreement, textHash: textSha256(normalizedText) };
+      }
+      if (extracted.tableColumns?.textHash === textSha256(extracted.text) && extracted.tableColumns.pages.length > 0) {
+        base.tableColumns = { pages: extracted.tableColumns.pages, ambiguousLines: extracted.tableColumns.ambiguousLines };
       }
       return finishRead(normalizedText, "pdf_text", tableRowsFromText(pageTexts, "pdf_layout"));
     }
@@ -2685,6 +2690,7 @@ async function settleReadInScope(
         pdf_stacked_acceptance: repairProof && !keepEarlierText ? (repairProof.lossless ? "lossless_geometry" : "ordinary_survival") : undefined,
         // Only for text this read stores: a kept earlier text was not the one compared.
         pdf_reader_agreement: result.reader === PRIMARY_READERS.pdf && !keepEarlierText ? result.readerAgreement : undefined,
+        pdf_table_columns: result.reader === PRIMARY_READERS.pdf && !keepEarlierText ? result.tableColumns : undefined,
         reread: result.reread,
         escalation: result.escalation ?? null,
         page_check: result.pageCheck,

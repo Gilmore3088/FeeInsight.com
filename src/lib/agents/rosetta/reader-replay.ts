@@ -38,7 +38,7 @@
  */
 import type { sql } from "@/lib/data-store/connection";
 import { DOCX_STRATEGY } from "./docx";
-import { ROSETTA_JS_FALLBACK_VERSION, ROSETTA_OCR_VERSION, ROSETTA_READ_VERSION } from "./reader-versions";
+import { PDF_LAYOUT_REPLAY_VERSION, ROSETTA_JS_FALLBACK_VERSION, ROSETTA_OCR_VERSION, ROSETTA_READ_VERSION } from "./reader-versions";
 
 type SqlTag = typeof sql;
 
@@ -58,6 +58,20 @@ export const READER_REPLAY_OWN_VERSIONS: ReadonlyArray<{ reader: string; version
 ];
 
 /**
+ * Layout v6 cell ownership (Mountain Star FCU fee 159428, Nov 2): a `read.pdf_layout` text that
+ * holds a cell break (" | ") and has no layout read of its bytes at PDF_LAYOUT_REPLAY_VERSION is
+ * replayed once. Off until the record-only layout recheck (layout-recheck.ts, which samples every
+ * live-fee text below the current layout) shows the new reading loses no supported live fee: on
+ * Nov 2, 3,226 current pdf_layout texts held a cell break, carrying 30,735 live fees.
+ */
+export const PDF_CELL_REPLAY_LIVE = false;
+export const READER_REPLAY_PDF_LAYOUT = {
+  reader: "read.pdf_layout",
+  version: PDF_LAYOUT_REPLAY_VERSION,
+  receiptKey: "pdf_layout_version",
+} as const;
+
+/**
  * SQL: true when the stored text `alias` came from an older version of its reader and has not
  * been replayed at the current version. `notSettled` is the read step's "no settled read of these
  * bytes at the current primary reader version" test for the same alias.
@@ -66,6 +80,7 @@ export function readerReplayDueSql(
   alias: string,
   params: { readers: string; version: string; event: string },
   notSettled: string,
+  pdfCellReplay: boolean = PDF_CELL_REPLAY_LIVE,
 ): string {
   const notReplayed = (key: string, version: string) => `NOT EXISTS (
                   SELECT 1 FROM agent_run_events replayed
@@ -87,6 +102,22 @@ export function readerReplayDueSql(
                   )
                   AND ${notReplayed(receiptKey, String(Number(version)))}
                 )`).join("\n                OR ");
+  const layout = READER_REPLAY_PDF_LAYOUT;
+  // A pdf_layout read records its layout version in detail.pdf_layout (read.ts); none means v1.
+  const layoutReplay = pdfCellReplay ? `
+                OR (
+                  ${alias}.reader = '${layout.reader}'
+                  AND position(' | ' in ${alias}.normalized_text) > 0
+                  AND NOT EXISTS (
+                    SELECT 1 FROM pipeline_attempts layout_read
+                     WHERE layout_read.stage = 'read'
+                       AND layout_read.strategy = '${layout.reader}'
+                       AND layout_read.institution_id = ${alias}.institution_id
+                       AND layout_read.input_fingerprint = ${alias}.source_hash
+                       AND COALESCE((layout_read.detail->>'pdf_layout')::int, 1) >= ${Number(layout.version)}
+                  )
+                  AND ${notReplayed(layout.receiptKey, String(Number(layout.version)))}
+                )` : "";
   return `(
                 ${alias}.status = 'completed'
                 AND ((
@@ -94,7 +125,7 @@ export function readerReplayDueSql(
                   AND ${notSettled}
                   AND ${notReplayed("reader_version", params.version)}
                 )
-                OR ${ownReaders})
+                OR ${ownReaders}${layoutReplay})
               )`;
 }
 
@@ -136,6 +167,7 @@ export async function recordReaderReplay(
     reader_version: ROSETTA_READ_VERSION,
     ocr_version: ROSETTA_OCR_VERSION,
     js_fallback_version: ROSETTA_JS_FALLBACK_VERSION,
+    pdf_layout_version: PDF_LAYOUT_REPLAY_VERSION,
     from_reader: row.reader_replay_reader ?? null,
     from_reader_version: row.reader_replay_from_version == null ? null : Number(row.reader_replay_from_version),
     institution_id: Number(row.institution_id),
