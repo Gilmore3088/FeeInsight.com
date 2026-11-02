@@ -404,8 +404,18 @@ function positive(values: Iterable<RegExpMatchArray>): boolean {
 }
 
 /** A contents entry's leader and page number: dots, middle dots, underscores or the reader's U+FFFD run, then a bare page number. */
-const CONTENTS_ENTRY = /(?:[.\u2026\u00b7_\uFFFD][ \t]?){4,}[ \t]*(\d{1,3})[ \t]*$/;
+const CONTENTS_ENTRY = /((?:[.\u2026\u00b7_\uFFFD][ \t]?){4,})[ \t]*(\d{1,3})[ \t]*$/;
 const CONTENTS_RUN = 4;
+/**
+ * Without a "Contents" heading just above it, a run counts only when it looks like a real contents page:
+ * at least 8 entries, every leader at least 20 characters long, and a first page number of 10 or less.
+ * A fee schedule that prints bare prices after short leaders ("Returned Item (NSF) ........ 35") stays
+ * prices (#2873 review).
+ */
+const CONTENTS_HEADING = /^\s*(?:table\s+of\s+)?contents\s*:?\s*$/i;
+const CONTENTS_UNHEADED_RUN = 8;
+const CONTENTS_UNHEADED_LEADER = 20;
+const CONTENTS_UNHEADED_FIRST_PAGE = 10;
 
 /**
  * v154 (#2040): the lines that are a table of contents' entries: four or more non-empty lines in a row,
@@ -419,13 +429,24 @@ const CONTENTS_RUN = 4;
  */
 function contentsEntries(lines: readonly string[]): Set<number> {
   const entries = new Set<number>();
-  let run: Array<{ index: number; page: number }> = [];
+  let run: Array<{ index: number; page: number; leader: number }> = [];
+  const headed = (index: number) => {
+    let seen = 0;
+    for (let at = index - 1; at >= 0 && seen < 3; at -= 1) {
+      if (!lines[at].trim()) continue;
+      if (CONTENTS_HEADING.test(lines[at])) return true;
+      seen += 1;
+    }
+    return false;
+  };
   const close = () => {
     const pages = run.map((entry) => entry.page);
     const rising = pages.every((page, at) => at === 0 || page >= pages[at - 1]);
     // A schedule's rows name their fees; a contents run's titles mostly do not.
     const feeTitles = run.filter((entry) => FEE_WORD.test(lines[entry.index])).length;
-    if (run.length >= CONTENTS_RUN && rising && new Set(pages).size >= 3 && feeTitles * 2 < run.length) {
+    const contentsPage = run.length > 0 && (headed(run[0].index) || (run.length >= CONTENTS_UNHEADED_RUN
+      && run.every((entry) => entry.leader >= CONTENTS_UNHEADED_LEADER) && pages[0] <= CONTENTS_UNHEADED_FIRST_PAGE));
+    if (run.length >= CONTENTS_RUN && rising && new Set(pages).size >= 3 && feeTitles * 2 < run.length && contentsPage) {
       run.forEach((entry) => entries.add(entry.index));
     }
     run = [];
@@ -433,7 +454,7 @@ function contentsEntries(lines: readonly string[]): Set<number> {
   lines.forEach((line, index) => {
     if (!line.trim()) return;
     const entry = line.includes("$") ? null : CONTENTS_ENTRY.exec(line);
-    if (entry) run.push({ index, page: Number(entry[1]) });
+    if (entry) run.push({ index, page: Number(entry[2]), leader: entry[1].replace(/[ \t]/g, "").length });
     else close();
   });
   close();
@@ -551,20 +572,21 @@ function agreesNoFee(text: string): boolean {
 }
 
 /**
- * v154 (#2040): two clauses of the standard deposit agreement name an NSF fee that is not the bank's
- * price, so they no longer refuse the page:
+ * v154 (#2040): four clauses of the standard deposit agreement name an NSF fee that is not the bank's
+ * price, so they no longer refuse the page (the first two here, the last two below):
  * - the recoverable-loss clause for an unauthorized withdrawal: "The losses you may attempt to recover
  *   under this procedure may include the amount that was withdrawn from your Account and fees that were
  *   charged as a result of the withdrawal (for example, non-sufficient funds fees)." (Monet Bank, doc
  *   15387; United Bank, doc 24430). The whole sentence stands aside: it lists what the customer may
- *   recover, whoever charged it;
+ *   recover, whoever charged it. Only the clause and its parenthesis are taken out, so "...; we also charge
+ *   an NSF fee for each returned item" still refuses (#2873 review);
  * - a merchant's charge for a check returned to it: "electronic returned check charge(s)", "to
  *   electronically pay a returned check charge", "You may authorize a merchant or other payee to
  *   initiate an electronic funds transfer to collect a charge in the event a check is returned for
  *   insufficient funds." Only those words are taken out; whatever else the sentence says is still read,
  *   so "... electronic returned check charges, and our NSF fee is $35." still refuses.
  */
-const RECOVERABLE_LOSS_CLAUSE = /\bfees?\s+that\s+(?:were|was|are)\s+charged\s+as\s+a\s+result\s+of\s+the\s+(?:unauthorized\s+)?withdrawal\b/i;
+const RECOVERABLE_LOSS_CLAUSE = /\bfees?\s+that\s+(?:were|was|are)\s+charged\s+as\s+a\s+result\s+of\s+the\s+(?:unauthorized\s+)?withdrawal\b(?:\s*\([^)]{0,120}\))?/gi;
 const MERCHANT_RETURNED_CHECK_CHARGE = /\belectronic(?:ally)?\s+(?:pay\s+(?:a\s+|any\s+)?)?returned\s+check\s+charges?\b/gi;
 /**
  * - the liability disclaimer: "We will not be liable to you for dishonoring checks, drafts, or other
@@ -580,8 +602,8 @@ const LIABILITY_DISCLAIMER = /\b(?:will|shall)\s+not\s+be\s+(?:liable|responsibl
 const LIABILITY_FEES_LOSSES = /\b(?:any\s+)?fees?,\s+losses?,?\s+(?:or|and)\s+damages?\s+(?:that\s+)?you\s+(?:may\s+)?incur\b/gi;
 const POSTING_ORDER = /\bposting\s+order\b|\border\s+in\s+which\s+(?:we\s+)?(?:post|pay|process)\b/i;
 const OVERDRAFT_FEES = /\boverdraft\s+fees?\b(?!\s*(?:\/|or\s+(?:nsf|non|insufficient|returned)))/gi;
-const MERCHANT_OR_PAYEE = /\b(?:merchant|payee)s?\b/i;
-const MERCHANT_COLLECTS_A_CHARGE = /\bcollect\s+a\s+charge\s+in\s+the\s+event\s+(?:a|the|your)\s+check\s+is\s+returned\s+for\s+insufficient\s+funds\b/gi;
+/** The merchant or payee must be the one that collects, in the same clause (#2873 review). */
+const MERCHANT_COLLECTS_A_CHARGE = /\b(?:merchant|payee)s?\b[^.;]{0,200}?\bcollect\s+a\s+charge\s+in\s+the\s+event\s+(?:a|the|your)\s+check\s+is\s+returned\s+for\s+insufficient\s+funds\b/gi;
 
 /**
  * True when a sentence names the NSF family (`namesNsfFamily`) and carries a fee or charge word
@@ -600,9 +622,9 @@ const MERCHANT_COLLECTS_A_CHARGE = /\bcollect\s+a\s+charge\s+in\s+the\s+event\s+
  */
 export function mentionsNsfFee(sentence: string): boolean {
   if (!namesNsfFamily(sentence) || !FEE_OR_CHARGE_WORD.test(sentence)) return false;
-  if (RECOVERABLE_LOSS_CLAUSE.test(sentence)) return false;
-  const withoutBoilerplate = sentence.replace(MERCHANT_RETURNED_CHECK_CHARGE, " ")
-    .replace(MERCHANT_COLLECTS_A_CHARGE, (match) => (MERCHANT_OR_PAYEE.test(sentence) ? " " : match))
+  const withoutBoilerplate = sentence.replace(RECOVERABLE_LOSS_CLAUSE, " ")
+    .replace(MERCHANT_RETURNED_CHECK_CHARGE, " ")
+    .replace(MERCHANT_COLLECTS_A_CHARGE, " ")
     .replace(LIABILITY_FEES_LOSSES, (match) => (LIABILITY_DISCLAIMER.test(sentence) ? " " : match))
     .replace(OVERDRAFT_FEES, (match) => (POSTING_ORDER.test(sentence) ? " " : match));
   if (!namesNsfFamily(withoutBoilerplate) || !FEE_OR_CHARGE_WORD.test(withoutBoilerplate)) return false;

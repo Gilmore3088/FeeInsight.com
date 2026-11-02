@@ -45,6 +45,12 @@ Fee — A fee charged ..."), Monet (309, a foreign item's collection fees; alrea
 Coast (678, posting and merchant re-presentment sentences), Montecito (570, a redeposited item's handling
 fee) and HSBC (26, Premier scope; already $0 live, 28130).
 
+**Fails closed (review of #2873):** a run of leader rows counts as contents only under a "Contents"
+heading, or when it has 8 or more entries with leaders of 20 characters or more starting at page 10 or
+lower, so a schedule printing "Returned Item (NSF) ........ 35" stays a price. The recoverable-loss
+clause and the merchant's collection charge take out only their own words, so an NSF charge in the same
+sentence still refuses.
+
 **Conflicts with a live charged NSF (not taken down here):** Montecito Bank & Trust (570): its agreement
 (doc 30191) says "We do not currently charge a fee for NSF items returned." while its schedule (doc 18511)
 is live with "Returned Item Fee (Check & ACH)" $10 (76520) and "Returned Item Fee (Business Accounts

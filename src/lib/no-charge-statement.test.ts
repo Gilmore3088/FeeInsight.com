@@ -452,6 +452,23 @@ describe("v154 (#2040): boilerplate and contents lines no longer refuse the page
     expect(documentPricesNsf(["Copy ........ 2", "Research ........ 5", "Photocopy ........ 10", "NSF Fee ........ $35.00"])).toBe(true);
     // A rising run whose titles name their fees is a schedule, not contents.
     expect(documentPricesNsf(["Copy Fee ........ 2", "Research Fee ........ 25", "NSF Fee ........ 35", "Wire Fee ........ 40"])).toBe(true);
+    // Review of #2873: a schedule of bare prices after short leaders, rising, with few fee words.
+    const schedule = ["Account Research ........ 20", "Stop Payment ........ 30", "Returned Item (NSF) ........ 35", "Overdraft Item ........ 35", "Wire Transfer ........ 40"];
+    expect(documentPricesNsf(schedule)).toBe(true);
+    expect(documentPricesNsf(schedule.map((line) => line.replace("Returned Item (NSF)", "NSF")))).toBe(true);
+    expect(readNoChargeNsf([S, "", ...schedule].join("\n")).statements).toEqual([]);
+  });
+
+  it("a short run under a Contents heading is contents", () => {
+    expect(documentPricesNsf(["Table of Contents", "Deposits ........ 2", "Overdraft and NSF Fees ........ 5", "Statements ........ 7", "Disputes ........ 9"])).toBe(false);
+  });
+
+  it.each([
+    "The losses may include fees that were charged as a result of the withdrawal (for example, NSF fees); we also charge an NSF fee for each returned item.",
+    "The losses may include fees that were charged as a result of the withdrawal (for example, NSF fees), and we will charge you an NSF fee for each item returned.",
+    "We may collect a charge in the event a check is returned for insufficient funds; merchants are not involved.",
+  ])("a set-aside clause never clears the bank's own NSF charge beside it: %s", (sentence) => {
+    expect(readNoChargeNsf([S, "", sentence].join("\n")).statements).toEqual([]);
   });
 
   it("an amount of $1,000 or more is no NSF price (Grand Bank's exception holds, doc 24812)", () => {
