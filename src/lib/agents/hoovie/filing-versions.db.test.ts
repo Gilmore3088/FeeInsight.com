@@ -94,7 +94,7 @@ describe.skipIf(!url)("registry filing versions", () => {
 
   describe("after the migration", () => {
     beforeAll(async () => {
-      await db.begin((tx) => tx.unsafe(migration("20270110000083_registry_filing_versions.sql")));
+      await db.begin((tx) => tx.unsafe(migration("20270110000084_registry_filing_versions.sql")));
       resetFilingVersionsReady(scope());
     });
 
