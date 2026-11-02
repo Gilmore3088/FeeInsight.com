@@ -72,10 +72,35 @@ type SqlTag = typeof sql;
  * on the run ledger (the `darwin.stale_copy` event's `next_after_id`, 0 once a pass reaches the end),
  * so every copy is read again on the next pass and a first look meets its second. An
  * institution-scoped run reads that institution's copies and leaves the cursor alone.
+ *
+ * Dropped line (v3, `STALE_COPY_DROPPED_LINE_LIVE`, off). Live-site audit draw 275762 flagged fee 103684
+ * at Olympia Federal (institution 1020): "Tax Registration" $81, read on Oct 9 from copy 23786 of
+ * olyfed.com/rates/. The Nov 2 copy (41830) replaced the HELOC third-party fee list with one total, and
+ * six live fees from that list stayed live. Two gates kept the `dropped` verdict from ever firing:
+ * - It waits on a Knox read of the current text at today's rules version. The rules move almost daily
+ *   (v156 to v163 on Nov 2) and Knox re-reads a current copy once per version from a backlog: on Nov 2,
+ *   25 of 2,186 superseded copies with live fees had a current copy read at v163 and 1,424 one read at
+ *   v97 or later. With the switch on, Knox's read (only ever a veto: a row of the fee's name at its
+ *   amount keeps it live) counts from Knox's stale-read floor (`STALE_COPY_SETTLED_READ_FLOOR`, the
+ *   version every current copy is read at once) and never below the fee's own read version.
+ * - The current copy must carry at least half of the older copy's judged live fees. A bank that drops a
+ *   whole block leaves too few (Olympia: 2 of 8). With the switch on, the same address whose current
+ *   text still prints `STALE_COPY_SAME_TEXT_SHARE` of the older copy's lines is the same page too.
+ * Guards on every drop, switch on or off, from the Nov 2 read-only dry run (10 would-be drops were still
+ * on the page): the fee's name and price must not both still appear on the current copy
+ * (`named_and_priced`: a layout that moved the price, an HTML entity, a glued name), no live fee read
+ * from the current copy may share its category and amount (`restated`), and both copies must come from
+ * the same address (`not_same_page`). Admin-corrected fees are never read.
  */
 export const STALE_COPY_CHECK = "darwin.stale_copy";
-export const STALE_COPY_CHECK_VERSION = 2;
+export const STALE_COPY_CHECK_VERSION = 3;
 export const STALE_COPY_RETIRE_LIVE = true;
+/** Off: a `dropped` verdict needs a current-version Knox read and the fee-count same-schedule test (see the module note). */
+export const STALE_COPY_DROPPED_LINE_LIVE = false;
+/** Knox's stale-read floor (`KNOX_STALE_READ_BELOW_VERSION` in `knox/extract.ts`; a test keeps them equal). */
+export const STALE_COPY_SETTLED_READ_FLOOR = 97;
+/** With the switch on, the share of the older copy's lines a same-address current copy must still print to be the same page. */
+export const STALE_COPY_SAME_TEXT_SHARE = 0.6;
 export const STALE_COPY_FLAG = "stale_copy";
 export const STALE_COPY_TWIN_REASON_PREFIX = "stale_copy_twin: kept #";
 export const STALE_COPY_DROPPED_REASON_PREFIX = "stale_copy_dropped: not on current copy #";
@@ -89,12 +114,15 @@ export type StaleCopyVerdict =
   | "stated"
   | "waiting_reread"
   | "knox_reads_it"
+  | "named_and_priced"
+  | "restated"
+  | "not_same_page"
   | "unproven"
   | "not_same_schedule"
   | "no_text";
 
 export const STALE_COPY_VERDICTS: readonly StaleCopyVerdict[] = [
-  "twin", "dropped", "stated", "waiting_reread", "knox_reads_it", "unproven", "not_same_schedule", "no_text",
+  "twin", "dropped", "stated", "waiting_reread", "knox_reads_it", "restated", "named_and_priced", "not_same_page", "unproven", "not_same_schedule", "no_text",
 ];
 
 /** One live fee read from a superseded copy, with its bank's current copy of the page. */
@@ -113,6 +141,36 @@ export interface StaleCopyFeeRow {
   fee_read_version: number | string | null;
   /** Highest Knox rules version that read the current copy's stored text (its text hash). */
   current_read_version: number | string | null;
+  /** The address each copy was fetched from; a fee is judged dropped only between copies of one address. */
+  older_url: string | null;
+  current_url: string | null;
+}
+
+/**
+ * One page: the same address once scheme, "www.", a trailing slash, query and fragment are set aside.
+ * A copy chain can link a schedule that moved ("/virtualDocuments/Checking-Pricing-Schedule.pdf" to
+ * "/-/media/pdfs/pricing-schedules/Checking-Pricing-Schedule.pdf", Regions, Nov 2 dry run); the
+ * moved copy may be another edition or audience, so its silence proves no drop.
+ */
+export function samePageUrl(olderUrl: string | null, currentUrl: string | null): boolean {
+  const page = (url: string | null) =>
+    (url ?? "").trim().toLowerCase().replace(/^[a-z]+:\/\//, "").replace(/^www\./, "").replace(/[?#].*$/, "").replace(/\/+$/, "");
+  const older = page(olderUrl);
+  return older !== "" && older === page(currentUrl);
+}
+
+/** A stored line shorter than this (squashed) is too common to say two copies are one page. */
+const OVERLAP_MIN_LINE = 12;
+
+/** The share of the older copy's distinct lines (squashed, at least `OVERLAP_MIN_LINE` long) the current copy still prints. */
+export function pageTextOverlap(olderText: string, currentText: string): number {
+  const linesOf = (text: string) => new Set(text.split(/\r?\n/).map((line) => squash(line)).filter((line) => line.length >= OVERLAP_MIN_LINE));
+  const older = linesOf(olderText);
+  if (older.size === 0) return 0;
+  const current = linesOf(currentText);
+  let kept = 0;
+  for (const line of older) if (current.has(line)) kept += 1;
+  return kept / older.size;
 }
 
 /** A live fee read from the current copy. */
@@ -141,6 +199,13 @@ export interface StaleCopyDocumentInput {
   olderText: string | null;
   /** The rules version a current-copy read must reach before Knox's silence counts; defaults to Knox's current one. */
   knoxVersion?: number;
+  /** With the settled read on, a current-copy read at or above Knox's stale-read floor counts (defaults to the switch). */
+  droppedLine?: boolean;
+}
+
+/** The Knox rules version a read of the current copy must reach before Knox's silence on a fee counts. */
+export function requiredCurrentReadVersion(feeReadVersion: number | null, knoxVersion: number, droppedLine: boolean): number {
+  return Math.max(droppedLine ? STALE_COPY_SETTLED_READ_FLOOR : knoxVersion, feeReadVersion ?? 0);
 }
 
 export interface StaleCopyJudgement {
@@ -200,6 +265,51 @@ function ownRowElsewhere(lines: string[], name: string, amount: number, key: str
 const PRICE_TEXT = /\$\s?(\d[\d,]*(?:\.\d+)?|\.\d+)|(?<![\d.,$])(\d[\d,]*\.\d{2})(?![\d%])/g;
 export const printsAmount = (text: string, amount: number) =>
   [...text.matchAll(PRICE_TEXT)].some((match) => sameAmount(Number((match[1] ?? match[2]).replace(/,/g, "")), amount));
+const NAME_ENTITIES: Record<string, string> = { amp: "&", nbsp: " ", quot: '"', apos: "'", "#39": "'", "#x27": "'" };
+/** A stored name glued to a neighbour's words still counts when this share of it runs unbroken on the page. */
+const NAME_RUN_SHARE = 0.6;
+const NAME_RUN_MIN = 16;
+
+/**
+ * The ways a page may still print the fee's name: whole (HTML entities decoded), its head before a
+ * bracket or comma ("Check Cashing (Non-Customers)"), and each part of a slash-joined name ("Paid
+ * Overdraft Item/Returned Item Fee").
+ */
+function nameForms(name: string): string[] {
+  const decoded = name.replace(/&(amp|nbsp|quot|apos|#39|#x27);/gi, (_, code: string) => NAME_ENTITIES[code.toLowerCase()] ?? " ");
+  const forms = [decoded, decoded.split(/[(,]/)[0], ...decoded.split("/")].map((form) => squash(form)).filter((form) => form.length >= 6);
+  return [...new Set(forms)];
+}
+
+/** A run of at least `NAME_RUN_SHARE` of the squashed name (and `NAME_RUN_MIN` characters) appears in the squashed page. */
+function longRunOf(squashedText: string, name: string): boolean {
+  const needle = squash(name);
+  const run = Math.max(NAME_RUN_MIN, Math.ceil(needle.length * NAME_RUN_SHARE));
+  if (needle.length < run) return false;
+  for (let start = 0; start + run <= needle.length; start++) {
+    if (squashedText.includes(needle.slice(start, start + run))) return true;
+  }
+  return false;
+}
+
+/**
+ * A dropped line is proven only when the current copy no longer prints the fee's name or no longer
+ * prints its price anywhere. The shared matcher misses a fee the current copy still carries when its
+ * layout moved the price away from the name: a two-column PDF that put "$10.00 per hour /" on the row
+ * above "Account Reconciliation fee", a PDF that interleaved one table with another ("ACCOUNT
+ * RESEARCH (1 hour minimum)" then "31-day | $1,000 | ... | $20 per hour"), a table flattened column by
+ * column ("Monthly fee" far above its "$25"); and a stored name it cannot find: one with an HTML
+ * entity the newer copy decodes ("Levy &amp; Garnishment"), or glued to its neighbour's words
+ * ("processing Fee varies IRA transfer fee to another financial institution"). Nov 2 dry run of the
+ * dropped line: 9 would-be drops were still printed this way. Such a fee stays live
+ * (`named_and_priced`); this check only ever keeps a fee live.
+ */
+export function stillNamedAndPriced(text: string, name: string, amount: number): boolean {
+  if (!printsAmount(text, amount)) return false;
+  const page = squash(text.replace(/&(amp|nbsp|quot|apos|#39|#x27);/gi, (_, code: string) => NAME_ENTITIES[code.toLowerCase()] ?? " "));
+  return nameForms(name).some((form) => page.includes(form)) || longRunOf(page, name);
+}
+
 /** A price cell on its own line under a row's name ("$3.00", "$5.00 / month", "3.00"). */
 const PRICE_LINE = /^[\s*†‡|(–-]*(?:\$\s?[\d.]|\d[\d,]*\.\d{2}(?![\d%]))/;
 
@@ -273,6 +383,7 @@ function otherCell(twinSourceLine: string, staleName: string, twinName: string):
  */
 export function judgeStaleCopyDocument(input: StaleCopyDocumentInput): StaleCopyJudgement[] {
   const knoxVersion = input.knoxVersion ?? KNOX_RULES_STRATEGY.version;
+  const droppedLine = input.droppedLine ?? STALE_COPY_DROPPED_LINE_LIVE;
   const currentText = input.currentText ?? "";
   const olderText = input.olderText ?? "";
   let lines: string[] | null = null;
@@ -367,7 +478,7 @@ export function judgeStaleCopyDocument(input: StaleCopyDocumentInput): StaleCopy
     if (candidates.length > 0) return base;
     if (own.ok) return { ...base, verdict: "stated", currentLine: own.sourceLine.slice(0, 300) };
 
-    const required = Math.max(knoxVersion, num(fee.fee_read_version) ?? 0);
+    const required = requiredCurrentReadVersion(num(fee.fee_read_version), knoxVersion, droppedLine);
     const readAt = num(fee.current_read_version);
     if (readAt == null || readAt < required) return { ...base, verdict: "waiting_reread" };
     if (!older.ok) return base;
@@ -395,6 +506,18 @@ export function judgeStaleCopyDocument(input: StaleCopyDocumentInput): StaleCopy
       && sameAmount(num(row.amount), amount)
       && squash(row.fee_name ?? "") === ownName);
     if (knoxRow) return { ...base, verdict: "knox_reads_it" };
+    // A live fee read from the current copy in the same category at the same amount may be this fee
+    // under the page's new name ("$10 monthly fee if your daily balance falls below $500" became "$10 plus
+    // tax maintenance fee if …", institution 3575, Nov 2 dry run). Hamilton's current-copy check skips
+    // the same pair (`restated_row`); here it stays live too.
+    const restated = input.twins.some((twin) =>
+      Number(twin.current_document_id) === base.currentDocumentId
+      && Number(twin.fee_published_id) !== base.feePublishedId
+      && (twin.canonical_fee_key ?? "") === (fee.canonical_fee_key ?? "")
+      && sameAmount(num(twin.amount), amount));
+    if (restated) return { ...base, verdict: "restated" };
+    if (stillNamedAndPriced(currentText, base.feeName, amount)) return { ...base, verdict: "named_and_priced" };
+    if (!samePageUrl(fee.older_url, fee.current_url)) return { ...base, verdict: "not_same_page" };
     return {
       ...base,
       verdict: "dropped",
@@ -405,7 +528,14 @@ export function judgeStaleCopyDocument(input: StaleCopyDocumentInput): StaleCopy
   // Same schedule: the current copy must carry enough of the older copy's fees for its silence to count.
   const proven = judged.filter((fee) => fee.verdict === "twin" || fee.verdict === "stated" || fee.verdict === "dropped");
   const carried = proven.filter((fee) => fee.verdict !== "dropped").length;
-  const recognized = carried >= NEWER_COPY_MIN_SHARED_FEES && carried >= proven.length * NEWER_COPY_MIN_SHARED_SHARE;
+  const byFees = carried >= NEWER_COPY_MIN_SHARED_FEES && carried >= proven.length * NEWER_COPY_MIN_SHARED_SHARE;
+  // With the switch on, the same address whose text mostly carries over is the same page too: a bank that
+  // drops a whole block of fees (Olympia Federal's eight HELOC third-party lines) leaves too few live
+  // fees carried for the count above, though the rest of the page is unchanged.
+  const first = input.fees[0];
+  const byText = droppedLine && first != null && samePageUrl(first.older_url, first.current_url)
+    && pageTextOverlap(olderText, currentText) >= STALE_COPY_SAME_TEXT_SHARE;
+  const recognized = byFees || byText;
   return recognized ? judged : judged.map((fee) => (fee.verdict === "dropped" ? { ...fee, verdict: "not_same_schedule" as const, reason: "" } : fee));
 }
 
@@ -424,6 +554,8 @@ export interface StaleCopyResult extends StaleCopyFindings {
   dryRun: boolean;
   scoped: boolean;
   knoxVersion: number;
+  /** `STALE_COPY_DROPPED_LINE_LIVE` as this step read it. */
+  droppedLine: boolean;
   afterId: number;
   /** The next step's cursor: the last copy read on a full batch, or 0 once a pass reaches the end. */
   nextAfterId: number;
@@ -525,9 +657,12 @@ export function staleCopyRowsSql(db: SqlTag, options: { institutionId?: number; 
     )
     SELECT live.fee_published_id, live.fee_verified_id, live.institution_id, live.older_document_id, v.current_document_id,
            live.canonical_fee_key, live.fee_name, live.amount, live.product_name, live.fee_audience,
-           v.fee_read_version, v.current_read_version
+           v.fee_read_version, v.current_read_version,
+           older_doc.document_url AS older_url, current_doc.document_url AS current_url
       FROM live
       JOIN versions v ON v.older_document_id = live.older_document_id
+      LEFT JOIN source_documents older_doc ON older_doc.id = v.older_document_id
+      LEFT JOIN source_documents current_doc ON current_doc.id = v.current_document_id
      ORDER BY live.older_document_id, live.fee_published_id
   `;
 }
@@ -600,15 +735,16 @@ async function readCursor(db: SqlTag): Promise<number> {
  */
 export async function recheckStaleCopies(
   db: SqlTag,
-  options: { runId: number; stepId?: number | null; dryRun: boolean; institutionId?: number; live?: boolean; limit?: number; now?: Date; knoxVersion?: number },
+  options: { runId: number; stepId?: number | null; dryRun: boolean; institutionId?: number; live?: boolean; limit?: number; now?: Date; knoxVersion?: number; droppedLine?: boolean },
 ): Promise<StaleCopyResult> {
   const live = options.live ?? STALE_COPY_RETIRE_LIVE;
+  const droppedLine = options.droppedLine ?? STALE_COPY_DROPPED_LINE_LIVE;
   const knoxVersion = options.knoxVersion ?? KNOX_RULES_STRATEGY.version;
   const scoped = options.institutionId != null;
   const afterId = scoped ? 0 : await readCursor(db);
   const limit = Math.max(1, Math.min(options.limit ?? STALE_COPY_DOCUMENT_LIMIT, 5_000));
   const result: StaleCopyResult = {
-    live, dryRun: options.dryRun, scoped, knoxVersion, afterId, nextAfterId: afterId,
+    live, dryRun: options.dryRun, scoped, knoxVersion, droppedLine, afterId, nextAfterId: afterId,
     documents: 0, checked: 0, byVerdict: emptyVerdicts(), matched: 0, institutions: 0, samples: [],
     flagged: 0, waiting: 0, cleared: 0, takenDown: [],
   };
@@ -648,6 +784,7 @@ export async function recheckStaleCopies(
           currentText: text.get(currentId) ?? null,
           olderText: text.get(Number(docFees[0].older_document_id)) ?? null,
           knoxVersion,
+          droppedLine,
         });
       });
     });
@@ -678,7 +815,7 @@ export async function recheckStaleCopies(
         INSERT INTO agent_run_events (agent_run_id, step_id, event_type, status, message, detail)
         VALUES (
           ${options.runId}, ${options.stepId ?? null}, ${STALE_COPY_CHECK}, 'completed',
-          ${`Read ${result.checked} live fee(s) on ${result.documents} superseded cop${result.documents === 1 ? "y" : "ies"}: ${result.byVerdict.twin} twin(s) of a live current-copy fee, ${result.byVerdict.dropped} not on the current copy, ${result.byVerdict.stated} still stated, ${result.byVerdict.waiting_reread} waiting on a Knox v${knoxVersion} read; ${live ? `${result.flagged} flagged, ${result.takenDown.length} archived` : "switch off, would retire, nothing written"}`},
+          ${`Read ${result.checked} live fee(s) on ${result.documents} superseded cop${result.documents === 1 ? "y" : "ies"}: ${result.byVerdict.twin} twin(s) of a live current-copy fee, ${result.byVerdict.dropped} not on the current copy, ${result.byVerdict.stated} still stated, ${result.byVerdict.waiting_reread} waiting on a Knox v${droppedLine ? `${STALE_COPY_SETTLED_READ_FLOOR}+` : knoxVersion} read; ${live ? `${result.flagged} flagged, ${result.takenDown.length} archived` : "switch off, would retire, nothing written"}`},
           ${JSON.stringify(staleCopyDetail(result))}::jsonb
         )
       `);
@@ -793,6 +930,7 @@ export function staleCopyDetail(result: StaleCopyResult) {
     dry_run: result.dryRun,
     scoped: result.scoped,
     knox_version: result.knoxVersion,
+    dropped_line: result.droppedLine,
     after_id: result.afterId,
     next_after_id: result.scoped ? null : result.nextAfterId,
     documents: result.documents,
