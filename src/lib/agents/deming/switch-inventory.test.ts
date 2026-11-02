@@ -58,8 +58,8 @@ describe("switch inventory", () => {
 
   it("classifies a constant, an environment switch and a name that is not a switch", () => {
     const entries = new Map(scanSwitches(root).map((entry) => [entry.name, entry]));
-    expect(entries.get("DAILY_CAP_LINES_LIVE")).toMatchObject({ kind: "code_constant", codeDefault: "off", replay: "partial" });
-    expect(entries.get("DASH_LIST_ROWS_LIVE")).toMatchObject({ kind: "code_constant", codeDefault: "off", replay: "full" });
+    expect(entries.get("DAILY_CAP_LINES_LIVE")).toMatchObject({ kind: "code_constant", codeDefault: "on", replay: "partial" });
+    expect(entries.get("DASH_LIST_ROWS_LIVE")).toMatchObject({ kind: "code_constant", codeDefault: "on", replay: "full" });
     expect(entries.get("KNOX_HELD_NAME_RULES_LIVE")?.replay).toBe("full on shadow cases");
     expect(entries.get("KNOX_DISCONTINUED_TABLES_LIVE")).toMatchObject({ kind: "env", prod: expect.stringMatching(/^unknown/), replay: "full" });
     expect(entries.get("FEDERAL_BILLS_TRACKER_LIVE")?.retireCandidate).toMatch(/^yes: documented on since 2026-10-09/);

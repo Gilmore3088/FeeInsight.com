@@ -12,16 +12,16 @@ or the PR that turns it on fails.
 - Only 10 of 106 switches could be replayed (2 full, 1 full on shadow cases, 7 partial). Every
   Darwin database sweep was "not replayable".
 - A not-replayable switch counted as a pass in the receipt (#2886 turned one on that way).
-- The audit put recall at 75.4% and precision at 95.5%. The committed baseline on this branch's
-  code measures recall 74.86% (1322/1766), precision 95.46% (1366/1431) and known-wrong refused
+- The audit put recall at 75.4% and precision at 95.5%. The committed baseline, on main as of
+  #2890, measures recall 75.37% (1331/1766), precision 95.49% (1375/1440) and known-wrong refused
   88.50% (254/287), on 377 of 381 members (the 4 answer-key banks are not loaded offline).
 
 **Cause:** the gate was built as a switch receipt, not as a regression gate. It had no baseline to
 compare against, so it could only measure a switch off against on. Sweeps were left out because
 they read the database, although each one's decision is a pure function of a fee row and its text.
-A second, smaller cause: `currentVariant` pins `dailyCapLines: false` for shadow-lab comparisons,
-so it is not the pipeline as shipped. The gate measures `headVariant` (every switch at its code
-value) instead.
+The shadow lab's `currentVariant` is a comparison arm that has carried pins (until #2885 it read
+daily caps with `dailyCapLines` off while the code had it on), so the gate measures its own
+`headVariant`: every switch at its code value, no pins.
 
 **Fix:**
 - `src/lib/agents/deming/golden-gate.ts` measures the head at two stages, as published and after

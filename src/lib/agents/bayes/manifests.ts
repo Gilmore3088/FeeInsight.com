@@ -408,7 +408,7 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   LOAN_PAYMENT_NSF_REFILE_CHECK_VERSION: "First version: each verify step reads every live NSF fee whose name prices a bounced loan, mortgage or lease payment (no cursor, 2 rows on Oct 31); its switch is off, so it only reports; nothing older to replay.",
   PROTECTION_ITEM_REFILE_CHECK_VERSION: "First version: each verify step re-reads the stored page of every live overdraft-protection transfer fee named only \"Overdraft Protection\" (92 rows on Nov 1, 5 would re-file); its switch is off, so it only reports; nothing older to replay.",
   // v1 (#2248): live flat fees whose own line proves a page, document, image or statement unit.
-  OWN_UNIT_CHECK_VERSION: "First version: its cursor re-reads every live flat per-event fee whose stored line names a unit (2,000 a verify step); its switch is off, so it only reports; nothing older to replay. #1905 (Nov 1) adds live fees with no frequency whose own line names a part of an hour (a fraction glyph included), written only with OWN_UNIT_BLANK_PART_HOUR_LIVE (off): dry run 34 re-files at 30 institutions (9 at 8 written with ½ or ¼). The version stays 1: nothing was ever written, and the cursor reads every candidate again each pass.",
+  OWN_UNIT_CHECK_VERSION: "First version: its cursor re-reads every live flat per-event fee whose stored line names a unit (2,000 a verify step); its switch is off, so it only reports; nothing older to replay. #1905 (Nov 1) adds live fees with no frequency whose own line names a part of an hour (a fraction glyph included), written only with OWN_UNIT_BLANK_PART_HOUR_LIVE (off): dry run 34 re-files at 30 institutions (9 at 8 written with ½ or ¼). The version stays 1: nothing was ever written, and the cursor reads every candidate again each pass. v2 (Nov 2): the shared unit reader (Knox v156) reads no unit from a free allowance's period or from one price that names two units; nothing had been written under v1 (switch off), so there is nothing older to replay: 3 of the 758 per-event re-files drop out (98831, 65324, 134768).",
   // v1 (inst 608): a live monthly or minimum balance fee filed under an account above a numbered heading.
   ACCOUNT_OWNER_CHECK_VERSION: "First version: its cursor re-reads every live Knox monthly maintenance or minimum balance fee with a stored account (1,000 a verify step); its switch is off, so it only reports; nothing older to replay.",
   // v1 (Oct 30): live monthly maintenance fees stored per item.
@@ -433,9 +433,9 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   LATE_CHARGE_BOUND_CHECK_VERSION: "First version: each verify step reads every live late_payment fee whose name is a late charge's cap or floor (no cursor) and takes it down after the second look; nothing older to replay.",
   // v1 (#1615): a percentage charge's floor read as a flat fee. On (RATE_FLOOR_TAKEDOWN_LIVE) since James's yes, Oct 26.
   RATE_FLOOR_CHECK_VERSION: "First version: each verify step reads every live flat fee whose stored line carries greater-of wording and a percentage (no cursor, 58 rows on Oct 25); its switch is on (Oct 26), so matches come down after the second look; nothing older to replay.",
-  // v1 (#1912): a live international wire fee whose own line states no direction, or another one. Off
-  // (INTERNATIONAL_DIRECTION_TAKEDOWN_LIVE) until James approves the dry-run count.
-  INTERNATIONAL_DIRECTION_CHECK_VERSION: "Each verify step reads the next batch of live international wire fees after a cursor on the run ledger, so every pass reads every live fee again; nothing older to replay. Its switch is off, so it only reports. v2 (2026-11-02) keeps an undirected international wire filed outgoing when its document lists incoming wires apart or names no direction: 65 of 2,458 match (420 at v1).",
+  // v1 (#1912): a live international wire fee whose own line states no direction, or another one. On
+  // (INTERNATIONAL_DIRECTION_TAKEDOWN_LIVE) since v3 sampled clean, 2026-11-02.
+  INTERNATIONAL_DIRECTION_CHECK_VERSION: "Each verify step reads the next batch of live international wire fees after a cursor on the run ledger, so every pass reads every live fee again; nothing older to replay. v2 (2026-11-02) keeps an undirected international wire filed outgoing when its document lists incoming wires apart or names no direction: 65 of 2,458 match (420 at v1). v3 (2026-11-02) keeps it unless the document prices an incoming international wire at its price: 7 match, all right in the sample, so the switch is on. v4 (2026-11-02, #2890) reads an incoming price only from a wire line, its first price, and counts an equal one only beside an outgoing international price that differs: 6 match (152355 kept). The cursor re-reads every live fee; nothing older to replay.",
   // v1 (#1908, #1905): fees printed in a prepaid, payroll, gift or travel card section of a general
   // schedule. A full verify step re-reads every live document whose text names a card program, at most hourly.
   CARD_PROGRAM_SECTION_CHECK_VERSION: "First version: a verify step re-reads every live fee on a document whose text names a card program (no cursor, at most hourly); nothing older to replay.",
@@ -669,6 +669,10 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
     // v155 (#2040, Nov 2): no rule changes. NO_CHARGE_SENTENCE_READ_LIVE turns on (sampled clean on the
     // v154 dry run above), and the bump reads current copies again so those 4 texts read NSF $0; source
     // check v30 re-traces live fees with the witness on. No replay. Floor stays v97.
+    // v156 (#2248, Nov 2): a free allowance's period ("(per statement; 2 free per statement cycle)") and one
+    // price naming two units ("$5.00/statement or document copy") name no unit. New reads only. Nov 2 replay
+    // (read-only): 3 of 758 live per-event fees Darwin's own-unit re-check would re-file drop out
+    // (98831, 65324, 134768); they stay per item. No replay. Floor stays v97.
     {
       key: "knox.rules",
       owner: "knox",

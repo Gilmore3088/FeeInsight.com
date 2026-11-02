@@ -1046,4 +1046,14 @@ export const HAMILTON_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-11-01",
   },
+  {
+    id: "issue-2525-withdrawn-guidance-is-not-current",
+    agent: "hamilton",
+    stage: "analysis",
+    lesson: "Every rule Hamilton cites carries its status: binding law, current guidance, withdrawn (withdrawn, rescinded or disapproved) or best practice. Only binding law and current guidance are what a bank must follow today. A withdrawn item is history: name it with its status, the date it changed and any replacement, in the past tense, and never as a current requirement, a supervisory expectation or enforcement authority. Withdrawal of guidance does not repeal federal laws against unfair, deceptive or abusive practices and never makes a fee lawful, so never call a fee legal or illegal, or predict enforcement, because guidance was withdrawn. Keep FDIC and CFPB apart: FDIC guidance covered FDIC-supervised institutions. When a rule's current status cannot be established, say so rather than state it as in force. A best practice never says the laws beneath it do not apply, and wherever a list is capped, rules in force come first so history never pushes a binding rule out.",
+    why: "Issue #2525: the reviewed rule list in regulatory-context.ts stated FDIC FIL-40-2022 (rescinded June 16, 2023 and replaced by FIL-32-2023, itself rescinded effective April 10, 2026) and CFPB Circular 2022-06 (withdrawn May 12, 2025) in the present tense with no status, so Ask lines, the monthly briefing, the report's regulatory exhibit and the report writer's payload presented them as current rules.",
+    evidence: { issues: [2525, 975], prs: [], files: ["src/lib/hamilton/regulatory-context.ts", "src/lib/hamilton/workspace/regulators.ts", "src/lib/hamilton/workspace/research.ts", "src/lib/hamilton/monthly-briefing.ts"] },
+    appliesTo: "all",
+    since: "2026-11-01",
+  },
 ];

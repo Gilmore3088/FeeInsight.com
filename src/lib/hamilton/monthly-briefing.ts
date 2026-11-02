@@ -25,6 +25,7 @@ import {
 import type { HamiltonPeerIndexSource } from "./peer-index";
 import type { ReportSummaryResponse } from "./types";
 import { MIN_PEERS_FOR_POSITION } from "./workspace/scenario";
+import { inForceFirst, isRuleNotInForce, isWithdrawnRule } from "./workspace/regulators";
 import type { EconomicBackdrop, Fact } from "./workspace/types";
 
 export const MONTHLY_BRIEFING_REPORT_TYPE = "monthly_briefing";
@@ -403,11 +404,19 @@ function market(input: MonthlyBriefingInput): MarketFacts {
 }
 
 function regulation(input: MonthlyBriefingInput): Built {
-  const facts = input.regulation.slice(0, MAX_REGULATION_ROWS);
+  // In force first (#2525), so withdrawn history never pushes a rule or Wire item past the cap.
+  const facts = inForceFirst(input.regulation).slice(0, MAX_REGULATION_ROWS);
   if (facts.length === 0) return { draft: [], rows: [], gaps: ["No rules, bills or regulator records were found for this institution this month."] };
   const name = input.institution.name;
+  const history = facts.filter(isWithdrawnRule).length;
+  // Only items in force bear on the bank: best practice and withdrawn history are listed, not counted.
+  const bearing = facts.filter((f) => !isRuleNotInForce(f)).length;
+  const lead = bearing === 0
+    ? `No sourced item in force was found for ${name} this month`
+    : `${bearing === 1 ? "One sourced item bears" : `${capital(countWord(bearing))} sourced items bear`} on ${name} this month`;
+  const past = history === 0 ? "" : `, and ${countWord(history)} withdrawn ${history === 1 ? "item is" : "items are"} shown as history`;
   return {
-    draft: [`${facts.length === 1 ? "One sourced item bears" : `${capital(countWord(facts.length))} sourced items bear`} on ${name} this month, each listed below with its source and date. Rules are those that apply to overdraft fees.`],
+    draft: [`${lead}${past}. Each is listed below with its source and date. Rules are those about overdraft fees.`],
     rows: facts.map((f) => ({
       label: plain(f.text),
       value: null,
