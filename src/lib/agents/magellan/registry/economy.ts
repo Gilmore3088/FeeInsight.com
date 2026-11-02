@@ -1,5 +1,6 @@
 import { sql } from "@/lib/data-store/connection";
 import { CensusKeyError } from "@/lib/regulatory/census-acs";
+import { fetchFdicNationalRates, fetchFdicSurveyAppendix } from "@/lib/regulatory/fdic-pages";
 import type { GeocodeInput } from "@/lib/regulatory/census-geocoder";
 import { validCoordinates } from "@/lib/regulatory/coordinates";
 import {
@@ -1028,9 +1029,10 @@ export async function runRegistryEconomy(options: RegistryEconomyOptions): Promi
       return runAreaSource(db, options, await fetchFhfaHpi(fo), { label: "FHFA house price index", refreshHours: HOURS.month, emptyRetryHours: HOURS.week });
     case ECONOMY_SOURCES.fdicSurvey: {
       const year = yearOf(options, 2009);
+      // A CSV override (FDIC_HOUSEHOLD_SURVEY_CSV_URL) wins; otherwise table G.2 of the appendix PDF (#1867).
       const url = env[FDIC_SURVEY_URL_ENV];
-      if (!url?.trim()) return skipFor(db, options, "FDIC household survey", `No ${FDIC_SURVEY_URL_ENV} set; no machine-readable download for the survey's state and metro tables is confirmed`, HOURS.week);
-      return runAreaSource(db, options, await fetchFdicSurvey(year, url, fo), { label: "FDIC household survey", refreshHours: HOURS.year, emptyRetryHours: HOURS.month });
+      const fetched = url?.trim() ? await fetchFdicSurvey(year, url, fo) : await fetchFdicSurveyAppendix(year, fo);
+      return runAreaSource(db, options, fetched, { label: "FDIC household survey", refreshHours: HOURS.year, emptyRetryHours: HOURS.month });
     }
     case ECONOMY_SOURCES.shed: {
       const year = yearOf(options, SHED_FIRST_YEAR);
@@ -1041,9 +1043,11 @@ export async function runRegistryEconomy(options: RegistryEconomyOptions): Promi
     case ECONOMY_SOURCES.fdicRates: {
       const envName = FDIC_NATIONAL_RATES_URL_ENV;
       const label = "FDIC national rates and rate caps";
+      // A CSV override (FDIC_NATIONAL_RATES_CSV_URL) wins; otherwise the monthly rate cap pages (#1867).
       const url = env[envName];
-      if (!url?.trim()) return skipFor(db, options, label, `No ${envName} set; no confirmed plain-file download for this source`, HOURS.week);
-      const fetched = await fetchConfiguredCsv(envName, url, (csv) => parseNationalWideCsv(csv, { prefix: "fdic_national_rate", unit: "percent (APY)" }), fo);
+      const fetched = url?.trim()
+        ? await fetchConfiguredCsv(envName, url, (csv) => parseNationalWideCsv(csv, { prefix: "fdic_national_rate", unit: "percent (APY)" }), fo)
+        : await fetchFdicNationalRates(fo);
       return runAreaSource(db, options, fetched, { label, refreshHours: HOURS.week, emptyRetryHours: HOURS.week });
     }
     case ECONOMY_SOURCES.remittances:

@@ -185,4 +185,14 @@ export const HOOVIE_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-11-02",
   },
+  {
+    id: "issue-1867-published-tables-not-a-csv-url",
+    agent: "hoovie",
+    stage: "registry load",
+    lesson: "When a publisher has no CSV or API for a statistic, read the page or PDF where it publishes the number (an HTML table under a dated heading, an appendix table) and check the parser against the live page, rather than leaving the loader waiting on a configured file URL nobody can supply. Read the publisher's own figures; never rebuild a published rate from microdata.",
+    why: "fdic-national-rates and fdic-household-survey skipped every run since Oct 17 with \"No FDIC_NATIONAL_RATES_CSV_URL set\" and \"No FDIC_HOUSEHOLD_SURVEY_CSV_URL set\": no such files exist. The FDIC publishes the rate caps as one HTML table per month (29 months, June 2024 to October 2026, on Nov 2) and the state unbanked and underbanked rates only in table G.2 of the 2023 survey's appendix tables PDF; the downloads page offers household-level microdata only.",
+    evidence: { issues: [1867], prs: [], files: ["src/lib/regulatory/fdic-pages.ts", "src/lib/agents/magellan/registry/economy.ts"] },
+    appliesTo: "all",
+    since: "2026-11-02",
+  },
 ];

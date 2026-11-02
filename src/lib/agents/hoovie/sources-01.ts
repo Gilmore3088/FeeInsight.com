@@ -176,14 +176,15 @@ export const HOOVIE_SOURCES_01: HoovieSourceContract[] = [
     tables: ["area_statistics"],
   },
   {
-    // magellan/registry/economy.ts (fdicSurvey; biennial, odd years), regulatory/economy.ts (FDIC_HOUSEHOLD_SURVEY_CSV_URL)
+    // magellan/registry/economy.ts (fdicSurvey; biennial, odd years), regulatory/fdic-pages.ts (table G.2 of the
+    // www.fdic.gov appendix tables PDF; FDIC_HOUSEHOLD_SURVEY_CSV_URL overrides). Metro table G.3 has no CBSA codes, not read.
     source: "fdic-household-survey",
     loader: "economy",
     publisher: "Federal Deposit Insurance Corporation (FDIC)",
     licence: { status: "public-domain" },
     connection: "bulk-file",
     cadence: "irregular",
-    grain: ["national", "state", "metro"],
+    grain: ["national", "state"],
     linkKeys: ["state", "cbsa"],
     tables: ["area_statistics"],
   },
@@ -212,12 +213,13 @@ export const HOOVIE_SOURCES_01: HoovieSourceContract[] = [
     tables: ["area_statistics"],
   },
   {
-    // magellan/registry/economy.ts (fdicRates), regulatory/economy.ts (FDIC_NATIONAL_RATES_CSV_URL)
+    // magellan/registry/economy.ts (fdicRates), regulatory/fdic-pages.ts (www.fdic.gov monthly rate cap pages;
+    // FDIC_NATIONAL_RATES_CSV_URL overrides)
     source: "fdic-national-rates",
     loader: "economy",
     publisher: "Federal Deposit Insurance Corporation (FDIC)",
     licence: { status: "public-domain" },
-    connection: "bulk-file",
+    connection: "web-pages",
     cadence: "irregular",
     grain: ["national"],
     linkKeys: [],
