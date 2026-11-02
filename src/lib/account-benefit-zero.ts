@@ -38,7 +38,9 @@
  * figure, an "unlimited" or "available" feature). Any other piece ends the walk and the $0 stays: a
  * heading ("Wire Transfers", "Wires", "Miscellaneous", "Fee Schedule", "Other Items"), a priced row
  * with or without a $ ("Stop Payment 30.00", "Wire out 25,00", "Stop payment USD 30"), or a bare label
- * ("Incoming domestic wire" over "No charge"). A "Features" heading over the account's terms may sit
+ * ("Incoming domestic wire" over "No charge"). A priced piece is an entry only as a term or a perk, and
+ * a Title Case entry ending in services, fees, charges or transactions is a heading ("Optional
+ * Services", "Waived Fees"). A "Features" heading over the account's terms may sit
  * under a few short lines about whom the account is for; the account's name above them is the lead.
  * The walk reaches `ACCOUNT_BENEFIT_WALK_CHARS` (450) before the item, the window Darwin's re-check reads.
  * Also: "Here is what you get." after an account is opened counts as a lead.
@@ -101,18 +103,27 @@ const SERVICE_BANKING = /\b(?:Online|Mobile|Digital|Internet|Telephone|Phone|Hom
 /** "Benefits of Premier Advantage", "all of the benefits of Basic Checking": the package's name. */
 const BENEFITS_OF = /\bbenefits? of\s+((?:[A-Z][\w'’&+-]*\s*){1,4})/;
 const ACCOUNT_WAIVERS = /\bthe following\s+(?:free\s+)?(?:fee waivers|waivers|benefits|perks|services|features|privileges|discounts)\b|\bbenefits? of\s+[A-Z]|\bhere(?:'s| is) what you get\b|\b(?:features\s*(?:&|and)\s*benefits|free services|perks|account benefits)\s*:/i;
-const ACCOUNT_TERMS = /\b(?:opening deposit|minimum (?:deposit )?to open|no minimum balance|minimum balance requirement|no (?:monthly )?minimum balance required|no monthly (?:(?:maintenance|service) )?(?:fee|charge)|monthly (?:maintenance|service) (?:fee|charge)|unlimited check writing|no per item charges?|earns? (?:dividends|interest))\b/i;
+const ACCOUNT_TERMS = /\b(?:opening deposit|minimum (?:deposit )?to open|no minimum balance|minimum balance requirement|no (?:monthly )?minimum balance required|no monthly (?:(?:maintenance|service) )?(?:fees?|charges?)|monthly (?:maintenance|service) (?:fees?|charges?)|unlimited check writing|no per item charges?|earns? (?:dividends|interest))\b/i;
 /** A perk with a dollar figure is no price: "$4.00 off each check order", "$15 discount on safe deposit boxes". */
 const PERK_AMOUNT = /\b(?:off|discount(?:ed)?|rebates?|refunds?|cash back|bonus)\b/i;
 /**
- * A list entry that is itself a free item: its free word near the front ("Free debit card", "optional
- * free paper statements", "one (1) complimentary financial review"), never last ("Incoming Wires FREE"
- * is a priced row), or an entry that says what the account does not charge ("No coin/currency charges",
+ * A list entry that is itself a free item: its free word first, or after a count or "optional" only
+ * ("Free debit card", "optional free paper statements", "one (1) complimentary financial review"); a
+ * free word after a noun is a schedule row ("Notary service free to members", "Incoming Wires FREE"); or an entry that says what the account does not charge ("No coin/currency charges",
  * "No service charges for this account", "No fee for prepaid gift card").
  */
-const FREE_ENTRY = /^(?:[-*•·▪◦●]\s*)?(?:(?:\S+\s+){0,3}(?:free|complimentary)\s+\S|no\s+\S+.*\b(?:fees?|charges?|cost)\b|no (?:fee|charge|cost)\b)/i;
+const FREE_ENTRY = /^(?:[-*•·▪◦●]\s*)?(?:(?:(?:optional|one|two|three|four|five|\(\d+\)|\d+|and)\s+){0,3}(?:free|complimentary)\s+\S|no\s+\S+.*\b(?:fees?|charges?|cost)\b|no (?:fee|charge|cost)\b)/i;
 /** What else an account's own list holds: unlimited use, an option, a waiver, a perk that is available. */
 const FEATURE_ENTRY = /^(?:unlimited|optional|waived|reduced|discounted)\b|\bavailable\s*$|\b(?:image[ds]?|truncated|paper|monthly|quarterly)\s+(?:or\s+\w+\s+)?statements?\b|^(?:\S+\s+){2,}insurance$/i;
+/**
+ * A heading that reads as an entry: Title Case or all caps, ending in services, fees, charges or
+ * transactions with nothing after ("Optional Services", "Waived Fees", "Unlimited Transactions", "No
+ * Charge Services", "Free & Discounted Services", "Free Services"). An entry in sentence case ("No
+ * coin/currency charges", "Unlimited transactions") is the account's.
+ */
+const ENTRY_HEADING_END = /\b(?:services|fees|charges|transactions)\s*:?$/i;
+/** A line under "Features" that names the bank's schedule: a fee word, a wire, a payment. */
+const SCHEDULE_WORD = /\b(?:fees?|charges?|services?|wires?|transfers?|payments?|schedule|rates?)\b/i;
 /** An account's own heading over its list ("Features", "Key Features", "Product Features:"). */
 const FEATURES_HEADING = /^(?:(?:key|account|product|checking|savings|special)\s+)?features\s*:?$/i;
 /** A price, with or without a $ ("$30", "30.00", "25,00", "USD 30", "n/c", "Stop Payment 30"). */
@@ -187,7 +198,24 @@ function itemOf(line: string, feeName: string): string | null {
 function listEntry(piece: string): boolean {
   if (ACCOUNT_TERMS.test(piece)) return true;
   if (PERK_AMOUNT.test(piece) && /\$\s?\d|\d%/.test(piece)) return true;
+  // A priced row is the bank's schedule, whatever its first word ("Paper statements $3.00",
+  // "Optional overdraft transfer $5.00").
+  if (PRICED.test(piece)) return false;
+  if (titleOrCaps(piece) && ENTRY_HEADING_END.test(piece)) return false;
   return FREE_ENTRY.test(piece) || FEATURE_ENTRY.test(piece);
+}
+
+/** Every word of three or more letters capitalised (or the whole piece in capitals): a heading's case. */
+function titleOrCaps(piece: string): boolean {
+  const words = piece.replace(/[:*†‡]+$/, "").match(/[A-Za-z][A-Za-z'’/-]*/g) ?? [];
+  const long = words.filter((word) => word.length >= 3 && !/^(?:and|the|for|of|with)$/i.test(word));
+  return long.length > 0 && long.every((word) => /^[A-Z]/.test(word));
+}
+
+/** A line between an account's name and its "Features" heading: short, no heading, no price, no fee word. */
+function introLine(piece: string): boolean {
+  return piece.length <= 80 && !PRICED.test(piece) && !SCHEDULE_WORD.test(piece) && !WHOLE_BANK.test(piece)
+    && !(titleOrCaps(piece) && !accountIn(piece));
 }
 
 function escapeRegExp(text: string): string {
@@ -252,9 +280,11 @@ function benefitAt(text: string, at: number, item: string): AccountBenefitZero |
       if (!terms) return null;
       for (let j = i - 1; j >= Math.max(0, i - FEATURES_LOOKBACK); j -= 1) {
         const above = pieces[j];
-        if (PRICED.test(above) || WHOLE_BANK.test(above)) return null;
         const named = accountIn(above);
-        if (named) return { kind: "feature_list", account: named, evidence: evidenceFrom(pieces.slice(j), item) };
+        if (named && !SCHEDULE_WORD.test(above)) return { kind: "feature_list", account: named, evidence: evidenceFrom(pieces.slice(j), item) };
+        // Anything but a short line about whom the account is for ("A great fit if:", "Anyone 50 and
+        // older") ends the look-back: a heading ("Wire Transfers", "Other Services") or a row.
+        if (!introLine(above)) return null;
       }
       return null;
     }

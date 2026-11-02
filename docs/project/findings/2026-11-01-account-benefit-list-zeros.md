@@ -83,6 +83,16 @@ Wallet, Debit Card Alerts, ..., Home Banking, ...": entries the whitelist does n
 rate / If you have a Share Draft (checking) account, ..."). The Knox sample of 25 is unchanged: the
 same 5 holds.
 
+**Third review of #2894 (Nov 2):** entries that look like the account's could still be the bank's
+schedule: a heading in Title Case or capitals ending in services, fees, charges or transactions
+("Optional Services", "Waived Fees", "Unlimited Transactions", "Free Services" without a colon), a
+priced row that opens like an entry ("Paper statements $3.00", "Optional overdraft transfer $5.00"),
+a free word after a noun ("Notary service free to members"), and a "Features" look-back that crossed
+a heading ("Wire Transfers", "Other Services"). Each now ends the walk: a priced piece is an entry only
+as an account term or a perk, a free entry's free word comes first or after a count or "optional", and
+the look-back passes only short lines with no price, fee word or heading. Same method, same live
+windows: 12 at 4 institutions and the Knox sample's 5 holds, both unchanged.
+
 **Still open:** a benefits table cut into cells (institution 2341, live 163079, "No Fee for Stop
 Payment" in an account comparison table, while the schedule charges $35 for a stop payment order), a
 list whose lead names no account by name ("PERKS." in an account agreement, "Classic 50" with no

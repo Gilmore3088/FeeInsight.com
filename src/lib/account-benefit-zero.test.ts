@@ -155,6 +155,34 @@ describe("accountBenefitZeroOf (#1397)", () => {
     })).toBeNull();
   });
 
+  it("never takes a heading, a priced row or a schedule line for an entry (third review of #2894)", () => {
+    const doc = (...lines: string[]) => lines.join("\n");
+    const basic = (middle: string) => doc("Basic Checking", "$25 opening deposit", middle, "Free incoming wires", "Outgoing wire $25");
+    // Headings that read as entries.
+    for (const heading of ["Optional Services", "Discounted Services", "Waived Fees", "Unlimited Transactions", "No Charge Services",
+      "Free & Discounted Services", "Free Services"]) {
+      expect(accountBenefitZeroOf({ line: "Free incoming wires", documentText: basic(heading) }), heading).toBeNull();
+    }
+    // Priced rows, and a free word after a noun.
+    for (const row of ["Paper statements $3.00", "Paper statement fee $3", "Optional overdraft transfer $5.00", "Notary service free to members"]) {
+      expect(accountBenefitZeroOf({ line: "Free incoming wires", documentText: basic(row) }), row).toBeNull();
+    }
+    // The "Features" look-back stops at the bank's schedule.
+    expect(accountBenefitZeroOf({
+      line: "Free incoming wires",
+      documentText: doc("Basic Checking", "Wire Transfers", "Outgoing wire", "Features", "$25 opening deposit", "Free incoming wires"),
+    })).toBeNull();
+    expect(accountBenefitZeroOf({
+      line: "Free incoming wires",
+      documentText: doc("Health Savings Account", "Other Services", "Features", "Earns interest", "Free incoming wires"),
+    })).toBeNull();
+    // An entry in sentence case is still the account's.
+    expect(accountBenefitZeroOf({
+      line: "No charge for money orders",
+      documentText: doc("Senior Checking 62+", "No minimum balance required", "Unlimited transactions", "No service charges for this account", "No charge for money orders"),
+    })).toMatchObject({ kind: "feature_list", account: "Senior Checking" });
+  });
+
   it("walks past a perk with a dollar figure: a discount is no price", () => {
     // A current Knox read (raw 1280858, prod read-only, 2026-11-02): one account's feature list.
     const banclub = [
