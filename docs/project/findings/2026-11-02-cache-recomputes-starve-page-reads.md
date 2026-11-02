@@ -3,7 +3,7 @@
 **Lesson:** A server's connection pool is shared by every read a render makes. A read that can
 take tens of seconds (a catalog-wide recompute) must not be able to hold all of it, or a burst
 turns into errors on reads that take milliseconds. Cap the slow class below the pool size, so the
-fast reads always have a connection.
+fast reads keep two connections free from catalog-wide recomputes.
 
 **What happened:** Institution pages had a median of 2.4-3.2 s from 15:05 to 16:10 UTC on Nov 2.
 Then, from 16:10 to 16:20, the 5-minute median rose to 20 s, p95 rose to 57 s, and 2 requests

@@ -140,7 +140,9 @@ export interface PublicReadOptions {
   /**
    * The read scans the whole catalog (or another table-wide set) and takes seconds to tens of
    * seconds under load: its recompute waits for a lane (recompute-lanes.ts), so these reads can
-   * never take every connection a server has. Leave unset for per-institution reads.
+   * never take every connection a server has. Leave unset for per-institution reads. A marked read
+   * runs one query at a time and must not call another cached read: Next's own per-request
+   * de-duplication would hand it a recompute still queued for a lane, which promotion cannot reach.
    */
   catalogWide?: boolean;
 }

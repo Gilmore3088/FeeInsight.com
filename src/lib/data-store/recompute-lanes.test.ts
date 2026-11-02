@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { LaneWaitExceeded, createLanes, recomputeLaneCount } from "./recompute-lanes";
 
@@ -103,5 +104,30 @@ describe("createLanes", () => {
     run.promote();
     expect(await run.result).toBe("laned");
     expect(lanes.busy).toBe(0);
+  });
+
+  it("runs a waiting recompute in the context of the call that queued it, not the one that freed the lane", async () => {
+    const lanes = createLanes(1);
+    const request = new AsyncLocalStorage<string>();
+    const holder = deferred();
+    const held = request.run("request-A", () => lanes.run(() => holder.promise));
+    const queued = request.run("request-B", () => lanes.run(async () => request.getStore()));
+    await flush();
+    holder.resolve();
+    await held;
+    expect(await queued).toBe("request-B");
+  });
+
+  it("keeps the lane count right when a waiting recompute throws before returning a promise", async () => {
+    const lanes = createLanes(1);
+    const holder = deferred();
+    const held = lanes.run(() => holder.promise);
+    const broken = lanes.run((() => { throw new Error("sync"); }) as () => Promise<void>);
+    await flush();
+    holder.resolve();
+    await expect(held).resolves.toBeUndefined();
+    await expect(broken).rejects.toThrow("sync");
+    expect(lanes.busy).toBe(0);
+    await expect(lanes.run(async () => "next")).resolves.toBe("next");
   });
 });

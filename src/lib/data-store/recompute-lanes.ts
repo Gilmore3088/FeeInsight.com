@@ -85,11 +85,19 @@ export function createLanes(count: number, waitMaxMs: number = LANE_WAIT_MAX_MS)
     // that holds a lane needs the result and promotes it, or the wait cap drops it.
     let settled = false;
     let promote: () => void = () => {};
+    // A waiter is started from another call's release, so it would otherwise run in that call's
+    // request context (Next's stores included); run it in the context of the call that queued it.
+    const inCallerContext = AsyncLocalStorage.snapshot();
     const result = new Promise<T>((resolve, reject) => {
       const runWith = (laned: boolean) => {
-        insideStore.run(true, work).then(resolve, reject).finally(() => {
-          if (laned) release();
-        });
+        // Started on a later tick, so a work that throws synchronously rejects this result
+        // instead of throwing into the releasing call's cleanup.
+        Promise.resolve()
+          .then(() => inCallerContext(() => insideStore.run(true, work)))
+          .then(resolve, reject)
+          .finally(() => {
+            if (laned) release();
+          });
       };
       const leaveQueue = () => {
         const at = queue.indexOf(granted);
