@@ -40,9 +40,11 @@ stays a literal so `reader-versions.ts` keeps no imports (Bayes's manifests read
 - **When the switch flips with the bump to v2:** every current completed `read.html_dom` and
   `read.js_fallback` text becomes due in the replay lane once, 4 a read step, sharing the lane with
   the other replays. The lost-text rule holds: the new text replaces the old only when it lists at
-  least as many fees. A copy not in the vault is fetched again from its link. Exposure: 4,311
-  current `html_dom` texts on Nov 2 (`2026-11-02-html-table-rows-inside-a-wrapper.md`); the
-  `js_fallback` count is not known here. At 4 a step, the 4,311 alone take about 1,078 steps. The
+  least as many fees. A copy not in the vault is fetched again from its link. Exposure: at least
+  4,311 current `html_dom` texts, the ones with `table_rows` on Nov 2
+  (`2026-11-02-html-table-rows-inside-a-wrapper.md`). HTML texts without table rows are not in that
+  count, and the `js_fallback` count is not known here. At 4 a step, those 4,311 alone take about
+  1,078 steps, a lower bound. The
   switch dry-run audit (#2951 prerequisite 4) counts the exact exposure before the flip.
 
 **Lesson:** give each reader a version that covers only what it reads, and record it on every read,
