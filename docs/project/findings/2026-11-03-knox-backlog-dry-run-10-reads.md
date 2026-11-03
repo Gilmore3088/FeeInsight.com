@@ -46,7 +46,10 @@ live fee would have been lost (#162230). rb9's two wrong reads stayed fixed.
   Counting Over 50 Rolls", "Access to over 30,000 ATMs", "Visit one of over 30 branches") or an account's name
   ("55 Year Old"); a title naming an account, a loan, a branch, an ATM, months or rolls is no section; "Student" and
   "Kids" are left out ("Student Checking", "Kids Club" title accounts over general rows); and a footnote or a line
-  that runs on ("* Customers 22 years old or younger are") is no heading.
+  that runs on ("* Customers 22 years old or younger are") is no heading. Review at 6729ca4: the section ends at the
+  next table's header row with no price ("General Services | Fee", "| Service | Amount |") and at a heading that says
+  free or waived without naming an audience ("Free Services", "Fees Waived for All Members"); a waiver note that
+  names the audience ("Fees waived for youth members") stays a note on the section's rows.
 - rules.ts: od_protection_transfer accepts the run-together "overdrafttransfer"; `channelListHeading` stops `readUnderHeading` from
   taking a channel list as the heading.
 - rate-bound.ts `rateBoundOf` v2: a bound joined to its figure by "or" ("2% minimum or $2"); percent.ts reads the
@@ -57,14 +60,18 @@ live fee would have been lost (#162230). rb9's two wrong reads stayed fixed.
   "Waived"; never another perk's label such as "Free eStatements"), to print a free price, and never one offered
   against a price ("$0 or $4.95"). Review of #2977: an unconditional waiver prints the free price ("Waived Annual
   IRA Fee", "Waived Non-QCBT ATM Transactions", "ATM fees waived"); a waiver on a condition ("... waived when
-  minimum account balance requirement is met", "waived with direct deposit") does not. A no-charge NSF sentence the
+  minimum account balance requirement is met", "waived with direct deposit") does not, nor does one scoped by for,
+  on, in, first, only or except ("Waived for seniors", "Waived on e-Statement accounts", "Waived first year",
+  "Waived Monthly Fee - Premier members only", "Waived except for business accounts"; review of #2977 at 6729ca4). A no-charge NSF sentence the
   NSF reader already judged keeps its $0.
 - lineup.ts: a marketing sentence (eight words or more, ending in a period) no longer ends the account lookback; a
   label with control characters is no account title. layout.ts: "This account contains a ..." opening is dropped.
 - Darwin's section misread re-check v3 (`darwin/section-misread-check.ts`, switch `SECTION_MISREAD_TAKEDOWN_LIVE`
   off) adds `zero_not_printed`, judged on the stored line and the text Knox read by `zeroPrintedForRead`, and
   (review of #2977) `audience_section_untagged`: a live fee with no product under an audience section heading
-  (`audienceSectionHeading` on the text Knox read) whose name the bank prices otherwise with no product.
+  (`audienceSectionHeading` on the text Knox read) whose name the bank prices otherwise with no product, only in a
+  category that takes no account as its product (as Knox), counting a stored line that no single line of the text
+  holds as unjudged (`audience_unplaced`).
 - Source check v31 (`hamilton/source-check.ts`) re-checks every institution with `rateBoundOf` v2.
 
 **Live fees (read-only, Nov 3, prod `rmhwbbjjctzfaqjyhomu`, SELECT only):**
@@ -76,10 +83,12 @@ live fee would have been lost (#162230). rb9's two wrong reads stayed fixed.
   matches 1 live fee (141225). Before the review of #2977 it matched 2: 140028 was flagged, and 134219 survived only
   because the "Free ..." perk label above it counted as a price cell.
 - Untagged audience rows: 1,858 live fees have no product while their bank prices the same name otherwise with no
-  product, on 777 texts that could name an audience. Judged by `audienceSectionHeading` on the 2,500 characters
-  above each stored line (lines the stored excerpt does not appear in as one line cannot match), 3 sit under an
-  audience heading: Midwest Members FCU's 137448 "Copy of a Check", 137449 "Copy of a Statement" and 137483 "Fax
-  Service", all $0 under "Senior Perks (60 & Over)". `audience_section_untagged` matches those 3.
+  product, on 777 texts that could name an audience; 1,171 of them (481 texts) are in a non-account category, which
+  the rule now keeps to. Judged by `audienceSectionHeading` on the 2,500 characters above each stored line, 3 sit
+  under an audience heading: Midwest Members FCU's 137448 "Copy of a Check", 137449 "Copy of a Statement" and
+  137483 "Fax Service", all $0 under "Senior Perks (60 & Over)". `audience_section_untagged` matches those 3; the
+  tighter walk of the review at 6729ca4 keeps all 3. About 217 of the 1,171 stored lines are not printed exactly
+  once in their text (a literal SQL match: 132 absent, 85 repeated); the step reports them as `audience_unplaced`.
 - So the Darwin re-check reports 19 live fees (v2's 15, 1 `zero_not_printed`, 3 `audience_section_untagged`),
   switch off.
 - Rate bound joined by "or": 5 texts print the shape; no live flat fee is priced at such a bound, on its stored line

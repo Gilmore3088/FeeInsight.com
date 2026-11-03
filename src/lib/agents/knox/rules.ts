@@ -1560,7 +1560,9 @@ const ZERO_WORDS = /\$\s?0(?:\.0{1,2})?(?![\d.,]*[1-9])|\b(?:free|none|no[-\s]?c
 const WAIVED_CELL = /(?:^|\|)\s*waived\s*(?:\||$)/i;
 const WAIVED_OPENS = /^\W*(?:\d{1,2}\s+)?waived\s+[a-z]/i;
 const WAIVED_CLOSES = /\bwaived\s*[.!]?\s*$/i;
-const WAIVER_CONDITION = /\b(?:when|if|unless|provided|with|after|until|once|while|by|upon|as\s+long\s+as|for\s+the\s+first)\b/i;
+// Review of #2977: "for", "on", "in", "first", "only" and "except" scope a waiver too ("Waived for seniors", "Waived on
+// e-Statement accounts", "Waived in the first 12 months", "Waived Monthly Fee - Premier members only").
+const WAIVER_CONDITION = /\b(?:when|if|unless|provided|with|after|until|once|while|by|upon|for|on|in|first|only|except|as\s+long\s+as)\b/i;
 function unconditionalWaiver(text: string): boolean {
   if (WAIVED_CELL.test(text)) return true;
   if (!WAIVED_OPENS.test(text) && !WAIVED_CLOSES.test(text)) return false;

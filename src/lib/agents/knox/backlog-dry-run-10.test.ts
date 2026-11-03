@@ -174,3 +174,31 @@ describe("Knox v179: doubtful reads", () => {
     expect(tidyFeeName("This account contains a monthly service charge")).toBe("Monthly service charge");
   });
 });
+
+describe("Knox v179: review of #2977 at 6729ca4", () => {
+  it("keeps a waiver scoped by for, on, in, first, only or except conditional", () => {
+    for (const line of [
+      "Waived for seniors",
+      "Waived for members 65 and older",
+      "Waived on e-Statement accounts",
+      "Waived first year",
+      "Waived in the first 12 months",
+      "Waived Monthly Fee - Premier members only",
+      "Waived except for business accounts",
+    ]) expect(zeroPrintedOnLine(line)).toBe(false);
+    // "Non" and "IRA" hold no condition word.
+    expect(zeroPrintedOnLine("Waived Non-QCBT ATM Transactions")).toBe(true);
+    expect(zeroPrintedOnLine("Waived Annual IRA Fee")).toBe(true);
+  });
+
+  it("ends an audience section at the next table's header row or a free or waived heading", () => {
+    for (const next of ["General Services | Fee", "| Service | Amount |", "Free Services", "Fees Waived for All Members"]) {
+      const text = ["Senior Perks (60 & Over)", "Copy of a Check | FREE", next, "Stop Payment | $30"].join("\n");
+      expect(audienceSectionHeading(text, "Stop Payment | $30")).toBeNull();
+      expect(audienceSectionHeading(text, "Copy of a Check | FREE")).toBe("Senior Perks (60 & Over)");
+    }
+    // A waiver note naming the audience stays a note on the section's rows.
+    const noted = ["Youth (Ages 13 and under)", "Fees waived for youth members", "Stop Payment | $10"].join("\n");
+    expect(audienceSectionHeading(noted, "Stop Payment | $10")).toBe("Youth (Ages 13 and under)");
+  });
+});

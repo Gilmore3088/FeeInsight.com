@@ -1938,12 +1938,16 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   fees waived"); one on a condition ("... waived when minimum account balance requirement is met") does not. A cut
   or missing stored line, or a gone text, is not judged. `audience_section_untagged`: a live fee with no product
   whose stored line sits under an audience section heading (`audienceSectionHeading`, Knox's own function, on the
-  text Knox read), while the bank has a live fee of the same name with no product at another price. Dry run Nov 3
+  text Knox read), while the bank has a live fee of the same name with no product at another price, only in a
+  category that takes no account as its product (as Knox); a stored line no single line of the text holds is
+  counted as unjudged (`audience_unplaced`). Dry run Nov 3
   (prod, read-only, review of #2977): of 3,381 live $0s with a stored line, 3 stored lines print no free price
   (36427 and 36428 sit under a bare "$0" cell and stay; 141225 matches), and 134219 and 140028 print an
-  unconditional waiver and stay, so `zero_not_printed` matches 1. Of 1,858 untagged fees whose bank prices their
-  name otherwise, on 777 texts that could name an audience, 3 sit under an audience heading: Midwest Members FCU's
-  137448, 137449 and 137483 under "Senior Perks (60 & Over)". The check reports 19 live fees, switch off.
+  unconditional waiver and stay, so `zero_not_printed` matches 1 (a waiver scoped by for, on, in, first, only or
+  except stays conditional). Of 1,171 untagged non-account fees whose bank prices their name otherwise, on 481 texts
+  that could name an audience, 3 sit under an audience heading: Midwest Members FCU's 137448, 137449 and 137483
+  under "Senior Perks (60 & Over)"; about 217 stored lines are not printed once in their text (by a literal SQL
+  match: 132 absent, 85 repeated) and go unjudged. The check reports 19 live fees, switch off.
 - A monthly maintenance fee whose row sits under a service's heading (`service-maintenance-check.ts`,
   #1092, state key 5608): River City Bank's "Consumer Online Banking Services and Mobile Banking Fees" over
   "Monthly Maintenance Fee | No charge" is the online banking service's fee; published as the account's

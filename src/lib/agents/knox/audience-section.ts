@@ -35,9 +35,14 @@ const AUDIENCE_SECTION = new RegExp(
  */
 const NOT_A_SECTION =
   /\b(?:checking|savings|accounts?|club|certificates?|CDs?|IRAs?|money\s+market|loans?|cards?|branch(?:es)?|ATMs?|months?|rolls?|wires?|transfers?|days?)\b/i;
-/** A row of the section: a cell, a price, or a free word. */
-const SECTION_ROW = /[|$]|\b(?:free|none|no\s+charge|n\/c)\b/i;
-const NOTE = /^\W*[(*†‡]|\b(?:exempt(?:ed|ion)?|not\s+applicable|no\s+(?:fee|charge)s?|waived?|excepts?|except(?:ed|ion)?|excluded?)\b/i;
+/** A row's value: a price, a figure, or a free word in its own cell or at the line's end ("Copy of a Check | FREE"). */
+const PRICE_OR_FIGURE = /[$\d]/;
+const VALUE_CELL = /(?:^|\|)\s*(?:free|none|no\s+charge|n\/c|waived|included)\s*(?:\||$)/i;
+const VALUE_AT_END = /\b(?:free|none|no\s+charge|n\/c)\s*$/i;
+/** A note on the rows ("(Youth Accounts exempt from fee)", "No fee for senior citizens (62+)"): no section of its own. */
+const NOTE = /^\W*[(*†‡]|\b(?:exempt(?:ed|ion)?|not\s+applicable|no\s+(?:fee|charge)s?|excepts?|except(?:ed|ion)?|excluded?)\b/i;
+/** A waiver or free note that names an audience ("Fees waived for seniors 65+") is a note on the rows, not a title. */
+const FREE_OR_WAIVED = /\b(?:free|waived?)\b/i;
 /** A sentence, or a sentence's first line that runs on ("Customers 22 years old or younger are"). */
 const SENTENCE = /[.!?;:]\s*$|[.!?;]\s+[A-Z]/;
 const RUNS_ON = /\b(?:are|is|will|may|must|can|the|a|an|of|or|and|to)\s*$/i;
@@ -45,6 +50,13 @@ const MAX_WALK = 25;
 const MAX_TITLE_WORDS = 8;
 
 const squash = (line: string) => line.replace(/\s+/g, " ").trim();
+
+/** How many lines of `text` hold the row's own line `excerpt`: the heading is read only when exactly one does. */
+export function audienceRowLineCount(text: string, excerpt: string): number {
+  const own = squash(excerpt ?? "");
+  if (own.length < 6) return 0;
+  return text.split(/\n+/).map(squash).filter((line) => line.includes(own)).length;
+}
 
 /** The audience section heading over the row whose own line is `excerpt`, or null. Shared with Darwin's live re-check. */
 export function audienceSectionHeading(text: string, excerpt: string): string | null {
@@ -55,9 +67,19 @@ export function audienceSectionHeading(text: string, excerpt: string): string | 
   if (found.length !== 1) return null;
   for (let index = found[0] - 1; index >= Math.max(0, found[0] - MAX_WALK); index -= 1) {
     const line = lines[index];
-    // A row, or a note on the rows ("(Youth Accounts exempt from fee)", "No fee for senior citizens (62+)", "(Not
-    // applicable if Under 18 or Over 65)"): an exemption is no section of its own.
-    if (SECTION_ROW.test(line) || NOTE.test(line)) continue;
+    // A table's header row ("General Services | Fee", "| Service | Amount |"), with no price or value of its own,
+    // starts another table: the section ends (review of #2977).
+    if (line.includes("|")) {
+      if (PRICE_OR_FIGURE.test(line) || VALUE_CELL.test(line)) continue;
+      return null;
+    }
+    // A row priced in the line ("Fax Service $1", "Copy of a Check FREE").
+    if (line.includes("$") || VALUE_AT_END.test(line)) continue;
+    // A note on the rows ("(Youth Accounts exempt from fee)", "No fee for senior citizens (62+)", "(Not applicable if
+    // Under 18 or Over 65)", "Fees waived for seniors 65+"): an exemption is no section of its own. A heading that
+    // says free or waived without an audience ("Free Services", "Fees Waived for All Members") is a title and ends
+    // the walk below.
+    if (NOTE.test(line) || (FREE_OR_WAIVED.test(line) && AUDIENCE_SECTION.test(line))) continue;
     if (SENTENCE.test(line) || RUNS_ON.test(line) || line.split(" ").length > MAX_TITLE_WORDS) return null;
     return AUDIENCE_SECTION.test(line) && !NOT_A_SECTION.test(line) ? line : null;
   }
