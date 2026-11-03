@@ -59,6 +59,10 @@ import { withWireChannelClause } from "./wire-channel-clause";
 import { readDashListsAsRows } from "./dash-list-rows";
 import { withProtectionItemReads } from "./protection-item";
 import { freeListItemRead } from "@/lib/free-list-item";
+import { withoutColumnLabelEchoes } from "./column-label-echo";
+import { withThresholdFigures } from "./threshold-name";
+import { dividendThresholdSentence } from "@/lib/dividend-threshold";
+import { onlineServiceMonthlyFee } from "@/lib/service-monthly-charge";
 
 /**
  * Knox's free extraction team, run over one whole document. Pure.
@@ -780,7 +784,24 @@ import { freeListItemRead } from "@/lib/free-list-item";
 // cell of the name's own line and the free word is on the list's heading. Darwin's verify refuses it and its
 // live re-check (`darwin.free_list_item`, FREE_LIST_ITEM_TAKEDOWN_LIVE off) reads what is already live. Drop
 // only. The shared check is unchanged. The stale-read floor stays at v97.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 169 } as const;
+// v170 (Knox re-read backlog dry run 3, Nov 2; four wrong reads of 40 stored texts, each against the bank's
+// own line). (1) A heading cell the page repeats inside each row's cells ("Returned Check (Service / Item) |
+// $10 (Fee) | Per item (Terms/Conditions)" under "Category | Service / Item | Fee | Terms/Conditions",
+// River Town FCU 6757) is stripped before any reader sees the line (`withoutColumnLabelEchoes`): the label
+// kept the plain returned check NSF beside the page's $25 NSF, and "Statement Copy (Service / Item)" filed as
+// check_image. (2) The balance a rate disclosure says earns no dividend ("If your average daily balance is
+// below $100.00 ($5.00 for accounts held by those under 18 years of age), no dividends are earned",
+// Peninsula Community FCU 4447) is no fee (`dividendThresholdSentence`, dropped reason `dividend_threshold`).
+// (3) A monthly service fee printed in a section of online, electronic or digital services ("Online Fees" /
+// "Cinfed Connection Monthly Service Fee | FREE", Cinfed FCU 6561) is that service's charge, not monthly
+// maintenance (`onlineServiceMonthlyFee`, dropped reason `online_service_monthly`). (4) A figure a comparison
+// word ties to the name outside parentheses ("Cashier's Check more than $1,000 (MCB customers only)",
+// Morton Community Bank 273) is put back into the name after every reader (`withThresholdFigures`, a rename
+// only, kept where Darwin's checks still pass), so the shared check finds the row.
+// Darwin's verify refuses (2) and (3), and its live re-check (`darwin.not_account_fee_line`,
+// NOT_ACCOUNT_FEE_LINE_TAKEDOWN_LIVE off) reports the live ones (Nov 2 dry run: 73916 and 152003 of 493
+// candidates). The shared check is unchanged. The stale-read floor stays at v97.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 170 } as const;
 
 export interface SpecialistRun {
   strategy: string;
@@ -1101,7 +1122,9 @@ function readFreeText(sourceText: string, discontinuedRows: DiscontinuedTableFla
   // v106: "$03" is a $0 price with its footnote glued on (`withGluedFootnotePrices`, #1946).
   // v116: a card program section's price rows are no specialist's to read (`withoutCardProgramSections`).
   // v128 (#1912): a line whose only price is two different prices glued together reads nothing (`withoutGluedPricePairs`).
-  const checkText = withSidewaysBoxTable(withBoxSizeCellsSplit(withoutBusinessOnlyFees(joinLabeledFeeCardText(withGluedFootnotePrices(withoutCardProgramSections(withoutGluedPricePairs(sourceText)))))));
+  // v170 (backlog dry run 3): a heading cell the page repeats in each row's cells ("Returned Check (Service /
+  // Item) | $10 (Fee)") is no part of the fee's name or price (`withoutColumnLabelEchoes`).
+  const checkText = withSidewaysBoxTable(withBoxSizeCellsSplit(withoutBusinessOnlyFees(joinLabeledFeeCardText(withGluedFootnotePrices(withoutCardProgramSections(withoutGluedPricePairs(withoutColumnLabelEchoes(sourceText))))))));
   // v115 (#1905): an ATM network table's rows are read only by their non-network column
   // (`withNetworkColumnFees`); no other reader sees them, so none takes another column's price.
   const text = withoutNetworkTableRows(withTierColumnRows(checkText));
@@ -1327,6 +1350,13 @@ function readFreeText(sourceText: string, discontinuedRows: DiscontinuedTableFla
       if (namesAWorkedExample(candidate.feeName)) continue;
       // v32: the figure after "is at least" or "Fee on (the)" is a balance or a transaction.
       if (readsAMeasuredAmount(text, candidate.feeName, candidate.amount)) continue;
+      // v170 (backlog dry run 3, Peninsula Community FCU doc 41842): the balance a rate disclosure says earns
+      // no dividend ("If your average daily balance is below $100.00 ($5.00 for accounts held by those
+      // under 18 years of age), no dividends are earned") is no fee (`dividendThresholdSentence`).
+      if (dividendThresholdSentence(candidate.excerpt, candidate.amount)) {
+        countDropped("dividend_threshold");
+        continue;
+      }
       // v169 (#1092, Mountain Star FCU text 36365): a name the page lists as free ("Other Free Services:
       // ... Check Writing, Balance Inquiries," / "Money market | Fax Service" / "$5.00") never takes a price the self-check found on another line (`freeListItemRead`, on
       // the line the shared check traced). The read is held untraced, as one that does not trace.
@@ -1555,6 +1585,30 @@ function readFreeText(sourceText: string, discontinuedRows: DiscontinuedTableFla
     if (!duplicate) rates.push(rate);
     return false;
   });
+  // v170 (backlog dry run 3, Cinfed FCU doc 41914): a monthly service fee in a section of online,
+  // electronic or digital services ("Online Fees" / ... / "Cinfed Connection Monthly Service Fee | FREE") is
+  // that service's charge, not the account's monthly maintenance (`onlineServiceMonthlyFee`); no type of the
+  // 50 holds it, so it is not read, as "Online Banking Monthly Service Fee | FREE" beside it is not.
+  const onlineService = (row: { canonicalHint?: string | null; feeName: string; excerpt?: string | null }) =>
+    row.canonicalHint === "monthly_maintenance" && onlineServiceMonthlyFee(row.feeName, row.excerpt, checkText) !== null;
+  for (let at = candidates.length - 1; at >= 0; at--) {
+    if (!onlineService(candidates[at])) continue;
+    candidates.splice(at, 1);
+    countDropped("online_service_monthly");
+  }
+  for (let at = stillHeld.length - 1; at >= 0; at--) {
+    if (!onlineService(stillHeld[at])) continue;
+    stillHeld.splice(at, 1);
+    countDropped("online_service_monthly");
+  }
+  // v170 (backlog dry run 3, Morton Community Bank doc 40112): a read's name keeps the dollar threshold its
+  // own line ties to it ("Cashier's Check more than $1,000 (MCB customers only)"), a rename only, so the
+  // name is the page's words and the shared check finds the row (`withThresholdFigures`).
+  for (let at = 0; at < candidates.length; at++) {
+    const read = candidates[at];
+    const renamed = withThresholdFigures(read.feeName, read.excerpt, read.amount);
+    if (renamed !== read.feeName && passesDarwinChecks(read.canonicalHint, renamed, read.amount)) candidates[at] = { ...read, feeName: renamed };
+  }
   const unitHolds = stillHeld.map(row => row.shape === "zero" && row.canonicalHint && row.amount != null
     ? withOwnFeeUnit({ ...row, amount: row.amount, canonicalHint: row.canonicalHint }, sourceText) : row);
   // v147: an allowance read's unit was settled on its rebuilt row above, and checked against Darwin's.

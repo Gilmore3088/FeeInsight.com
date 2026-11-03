@@ -440,6 +440,7 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   BANDED_ZERO_CHECK_VERSION: "First version: each verify step re-reads every live $0 overdraft, NSF and continuous overdraft fee (about 140 rows, no cursor); its switch is on (Oct 26), so matches come down after the second look; nothing older to replay.",
   // v1 (#1397): a live $0 that is an item in one named account's list of benefits (Knox rules v157 holds new ones).
   ACCOUNT_BENEFIT_ZERO_CHECK_VERSION: "First version: each verify step re-reads every live $0 fee whose stored line is a free item (no cursor, 142 rows on Nov 1); its switch (DARWIN_ACCOUNT_BENEFIT_ZERO_LIVE) is off, so it only reports; nothing older to replay.",
+  NOT_ACCOUNT_FEE_LINE_CHECK_VERSION: "First version: each verify step re-reads every live flat fee whose Knox line says no dividend or interest is earned, and every live monthly maintenance fee on a text that prints an online services section title (no cursor; 493 rows on Nov 2, 2 matches, live 73916 and 152003); its switch (NOT_ACCOUNT_FEE_LINE_TAKEDOWN_LIVE) is off, so it only reports; nothing older to replay.",
   FREE_LIST_ITEM_CHECK_VERSION: "First version: each verify step re-reads every live flat priced fee whose Knox line joins a name line to a price line on a text that prints a free services list heading (no cursor; 39 rows on Nov 2, 1 match, live 159428); its switch (FREE_LIST_ITEM_TAKEDOWN_LIVE) is off, so it only reports; nothing older to replay.",
   ZERO_WAIVER_ROW_CHECK_VERSION: "First version: each verify step re-reads every live flat $0 fee whose stored line opens with a no-fee phrase or says \"to avoid / to waive\" (no cursor; not yet counted on prod); its switch (ZERO_WAIVER_ROW_TAKEDOWN_LIVE) is off, so it only reports; nothing older to replay. v2 (Nov 2, Knox v168): also reads a $0 whose free word is advice in a \"Ways to Avoid\" section (avoid_fee_advice); read-only on prod, 2 live fees match (89909, 105000 at Financial Health FCU), reported only while the switch is off.",
   // v2 (#1673): the same-line restore follows the older line's replacement before bringing a copy back.
@@ -738,6 +739,14 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
     // cite, the one read lost is Mountain Star's "Fax Service" $5 (text 36365); none added or changed.
     // Darwin's live re-check (`darwin.free_list_item`, FREE_LIST_ITEM_TAKEDOWN_LIVE off) reports the live
     // one (159428). No replay. Floor stays v97.
+    // v170 (third re-read backlog dry run, Nov 2): a heading a responsive table repeats in each cell is
+    // stripped before any reader (`withoutColumnLabelEchoes`); a rate disclosure's no-dividend balance
+    // (`dividendThresholdSentence`) and a monthly fee under an online services section title
+    // (`onlineServiceMonthlyFee`) are dropped; a threshold a comparison word ties to the name is put back
+    // into it (`withThresholdFigures`, rename only). On the 40 rb3 texts (v169 vs v170) the four wrong reads
+    // are gone and no right read is lost; on 60 fresh random texts (main vs head) 5 reads are renamed only.
+    // Darwin's live re-check (`darwin.not_account_fee_line`, NOT_ACCOUNT_FEE_LINE_TAKEDOWN_LIVE off) reports
+    // the live ones (73916, 152003). No replay. Floor stays v97.
     {
       key: "knox.rules",
       owner: "knox",

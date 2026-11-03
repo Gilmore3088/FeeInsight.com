@@ -1364,4 +1364,14 @@ export const KNOX_LESSONS: AgentLesson[] = [
     appliesTo: ["extract"],
     since: "2026-11-02",
   },
+  {
+    id: "backlog-dry-run-3-2026-11-02-label-dividend-online-threshold",
+    agent: "knox",
+    stage: "extract",
+    lesson: "Read a row as the bank prints it for a reader, not as the page's markup leaves it. A label a responsive table repeats in each cell for phones (\"Returned Check (Service / Item) | $10 (Fee)\" under \"Category | Service / Item | Fee\") is the column heading, not part of the name: strip it when it equals a heading cell above and a cell after the name carries one too, and keep a name's own note that happens to match a column. A rate disclosure's balance threshold (\"If your average daily balance is below $100.00 ($5.00 for accounts held by those under 18 years of age), no dividends are earned\") is no fee: a sentence that says nothing is earned below an amount and names no charge prices nothing. A monthly service fee in a section titled for online, electronic or digital services is that service's charge, however the bank brands it, never an account's monthly maintenance; find the section past rows and column words, and only on a line the page prints once. A dollar threshold a comparison word ties to the name (\"Cashier's Check more than $1,000\", \"Money Orders $1,000 or less\") stays in the name, so the name is the page's words and the shared check finds the row.",
+    why: "The third dry run for KNOX_REREAD_BACKLOG_LIVE (40 random backlog texts, Nov 2, Knox v169) found four wrong rows: River Town FCU's \"Returned Check (Service / Item)\" $10 as NSF and \"Statement Copy (Service / Item)\" $2 as check_image; Peninsula Community FCU's dividend sentence as a $5 minimum balance fee (live 73916 the same way); Cinfed FCU's \"Cinfed Connection Monthly Service Fee | FREE\" under \"Online Fees\" as $0 monthly maintenance; and Morton Community Bank's threshold figures dropped from two names so the rows did not trace. Knox v170 reads none of them wrong on the same 40 texts and loses no right read; on 60 fresh random texts it only renames 5 reads to keep their thresholds, each now tracing; the answer-key gates do not move.",
+    evidence: { issues: [1026], prs: [], files: ["src/lib/agents/knox/column-label-echo.ts", "src/lib/dividend-threshold.ts", "src/lib/service-monthly-charge.ts", "src/lib/agents/knox/threshold-name.ts", "src/lib/agents/knox/specialists.ts", "src/lib/agents/knox/backlog-dry-run-3.test.ts", "docs/project/findings/2026-11-02-knox-backlog-dry-run-3-misfiles.md"] },
+    appliesTo: ["extract"],
+    since: "2026-11-02",
+  },
 ];

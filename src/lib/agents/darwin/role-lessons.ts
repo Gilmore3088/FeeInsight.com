@@ -920,4 +920,14 @@ export const DARWIN_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-11-02",
   },
+  {
+    id: "backlog-dry-run-3-2026-11-02-tiered-trace-not-proof",
+    agent: "darwin",
+    stage: "verify",
+    lesson: "A tiered trace is not proof the line charges the fee. When the shared check answers tiered_fee, verify counts the fee as stated but has no traced line, so the later checks see only Knox's excerpt: read that excerpt for what the amount is. A sentence that says no dividend or interest is earned below the amount and names no charge is a balance threshold; a monthly service fee whose line sits under an online, electronic or digital services section title is the service's charge, not monthly maintenance. Refuse both, and re-check the live ones with the same shared rules behind an off switch before any takedown.",
+    why: "Peninsula Community FCU's $5 minimum balance fee (published 73916) passed verify: checkFeeAgainstSource answered tiered_fee on the dividend sentence, statedInOwnSource accepts tiered_fee, and with no source line no other check read the sentence. Dry run Nov 2 (prod, read-only): of 493 live candidates the module's query selected, 2 match, 73916 (dividend threshold) and 152003 (University of Virginia Community CU's \"Monthly fee | No charge\" under \"Personal Online Banking Fees\"); the takedown waits behind NOT_ACCOUNT_FEE_LINE_TAKEDOWN_LIVE (off).",
+    evidence: { issues: [1026], prs: [], files: ["src/lib/dividend-threshold.ts", "src/lib/service-monthly-charge.ts", "src/lib/agents/darwin/verify.ts", "src/lib/agents/darwin/not-account-fee-line-check.ts", "src/lib/agents/darwin/not-account-fee-line-check.test.ts", "docs/project/findings/2026-11-02-knox-backlog-dry-run-3-misfiles.md"] },
+    appliesTo: "all",
+    since: "2026-11-02",
+  },
 ];
