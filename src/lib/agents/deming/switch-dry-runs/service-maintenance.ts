@@ -4,6 +4,7 @@ import {
   type ServiceMaintenanceLiveRow,
   type ServiceMaintenanceMatch,
 } from "@/lib/agents/darwin/service-maintenance-check";
+import { onlineServiceMonthlyFee } from "@/lib/service-monthly-charge";
 import { bounded, type Bounded, type SwitchAuditOptions, type SwitchAuditReader } from "./types";
 
 /**
@@ -23,8 +24,17 @@ export interface ServiceMaintenanceSummary {
   unconfirmed: number;
   /** Live rows past the audit's row cap: left unjudged (review of #2953). */
   unjudged: number;
-  /** Fees the switch would take down (each after its 12-hour second look). */
+  /**
+   * Fees only this switch would take down (each after its 12-hour second look): matches main's
+   * online-services rule does not also match.
+   */
   wouldTakeDown: number;
+  /**
+   * Matches that #2963's `onlineServiceMonthlyFee` also matches on the same text (Knox's line or the traced
+   * line, as verify reads it), so `darwin.not_account_fee_line` (NOT_ACCOUNT_FEE_LINE_TAKEDOWN_LIVE) already
+   * covers them: reported, not counted as this switch's takedowns.
+   */
+  alsoNotAccountFeeLine: number;
   institutions: number;
   /** Of those, $0 fees and priced fees. */
   free: number;
@@ -42,7 +52,7 @@ export interface ServiceMaintenanceSection {
 }
 
 export function emptyServiceMaintenanceSummary(): ServiceMaintenanceSummary {
-  return { checked: 0, noText: 0, unconfirmed: 0, unjudged: 0, wouldTakeDown: 0, institutions: 0, free: 0, priced: 0, byServices: {}, samples: [] };
+  return { checked: 0, noText: 0, unconfirmed: 0, unjudged: 0, wouldTakeDown: 0, alsoNotAccountFeeLine: 0, institutions: 0, free: 0, priced: 0, byServices: {}, samples: [] };
 }
 
 /** Adds one chunk of rows, judged on their texts, to the summary. Institutions are counted at the end. */
@@ -57,10 +67,18 @@ export function addServiceMaintenanceRows(
   summary.checked += found.checked;
   summary.noText += found.noText;
   summary.unconfirmed += found.unconfirmed;
-  summary.wouldTakeDown += found.matched;
-  summary.free += found.free;
-  summary.priced += found.priced;
+  const artifactOf = new Map(rows.map((row) => [Number(row.fee_published_id), row.artifact_id == null ? null : Number(row.artifact_id)]));
   for (const fee of found.matches) {
+    const artifact = artifactOf.get(fee.feePublishedId);
+    const text = artifact == null ? undefined : texts.get(artifact);
+    // Main's online-services rule on the same text, as Darwin's verify reads it: Knox's line or the traced line.
+    if (text && [fee.sourceLine, fee.tracedLine].some((line) => onlineServiceMonthlyFee(fee.feeName, line, text) !== null)) {
+      summary.alsoNotAccountFeeLine += 1;
+      continue;
+    }
+    summary.wouldTakeDown += 1;
+    if (fee.amount === 0) summary.free += 1;
+    else summary.priced += 1;
     institutions.add(fee.institutionId);
     const key = fee.services.join("+");
     summary.byServices[key] = (summary.byServices[key] ?? 0) + 1;

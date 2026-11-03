@@ -179,7 +179,7 @@ describe("switch dry runs: one pass over every pending count", () => {
     expect(report.zeroWaiverRow.summary.samples.map((m) => m.feePublishedId)).toEqual([64331]);
     // Service-heading monthly maintenance: the online banking row would come down, the account's row stays.
     expect(report.serviceMaintenance.summary).toMatchObject({
-      checked: 2, noText: 1, unconfirmed: 0, unjudged: 1, wouldTakeDown: 1, institutions: 1, free: 1, priced: 0, byServices: { "online_banking+mobile_banking": 1 },
+      checked: 2, noText: 1, unconfirmed: 0, unjudged: 1, wouldTakeDown: 1, alsoNotAccountFeeLine: 0, institutions: 1, free: 1, priced: 0, byServices: { "online_banking+mobile_banking": 1 },
     });
     expect(report.serviceMaintenance.summary.samples.map((m) => m.feePublishedId)).toEqual([5608]);
     // Fresh audit: 8 scorable - 1 amount - 1 category = 6 of 8.

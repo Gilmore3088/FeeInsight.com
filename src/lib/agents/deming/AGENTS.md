@@ -581,7 +581,7 @@ DATABASE_URL=<prod URL> npm run audit:switch-dry-runs -- --json > switch-dry-run
      switch would take down (each after its second look), $0 and priced, by the services the heading names,
      and the selected fees with no stored text or no service word, which are not judged; a fee the shared
      check traces to no line is counted unconfirmed and never taken down, and the rows past `--row-cap`
-     (read a page at a time by fee id) are counted unjudged.
+     (read a page at a time by fee id) are counted unjudged. A match main's `onlineServiceMonthlyFee` (#2963) also matches is covered by `NOT_ACCOUNT_FEE_LINE_TAKEDOWN_LIVE` and reported apart, not as this switch's takedown.
   10. Live accuracy. Deming's fresh audit is re-run on today's seed (`fresh-audit.ts`). It leads
      with the daily receipt's own figure (right / scorable), then the amount-and-category-only
      share (`traceLiveFee`, `checkFeeCategory`). This is a stored-copy measure, not a check
