@@ -7,6 +7,7 @@
  *   ROSETTA_OCR_VERSION          ocr.ts
  *   ROSETTA_JS_FALLBACK_VERSION  js-fallback.ts
  *   HTML_READ_VERSION            html-dom.ts and html-row-pairing.ts (read.html_dom, read.js_fallback)
+ *   PDF_READ_VERSION             pdf-layout.ts and pdf-text-direction.ts (read.pdf_layout), for replay
  *   ROSETTA_TABLE_ROWS_VERSION   table-rows.ts
  *   PDF_READER_AGREEMENT_VERSION pdf-reader-agreement.ts
  *   GLYPH_REPAIR_VERSION         glyph-repair.ts
@@ -49,6 +50,25 @@ export const HTML_READ_BASE_VERSION: number = 1;
 export const HTML_READ_VERSION: number = 1;
 /** Readers whose text HTML_READ_VERSION versions. Equal to read.ts's HTML reader and JS_FALLBACK_STRATEGY. */
 export const HTML_READ_READERS: readonly string[] = ["read.html_dom", "read.js_fallback"];
+/**
+ * The PDF reader's replay version (#1092), the PDF twin of HTML_READ_VERSION: every read attempt
+ * whose reader is one of PDF_READ_READERS records it as `detail.pdf_read`; an attempt without it
+ * (every read before Nov 3) counts as PDF_READ_BASE_VERSION. PDF_LAYOUT_VERSION still records which
+ * layout rules wrote a text; it replays only texts with a cell break (PDF_CELL_REPLAY_LIVE), so a
+ * change that can alter any PDF text needs this version instead.
+ *
+ * Above its base, reader replay (reader-replay.ts) reads once more every current completed text a
+ * PDF reader wrote with no read of its bytes at this version, and no other reader's text. At its
+ * base the replay selection is exactly what it was before this version existed.
+ *
+ * v2 is `PDF_TEXT_DIRECTION_LIVE` (pdf-text-direction.ts): flipping that switch must move this to 2
+ * in the same PR (reader-replay.test.ts fails otherwise), so turning sideways pages upright re-reads
+ * PDFs and no HTML page. Kept as a literal so this module stays free of imports.
+ */
+export const PDF_READ_BASE_VERSION: number = 1;
+export const PDF_READ_VERSION: number = 1;
+/** Readers whose text PDF_READ_VERSION versions: read.ts's PDF reader. */
+export const PDF_READ_READERS: readonly string[] = ["read.pdf_layout"];
 /**
  * v2 (#1912): HTML table rows keep each cell's grid column (`columns`, `line`; table-rows.ts).
  * Nothing selects a stored text by this version, so the bump re-reads nothing: a page's new

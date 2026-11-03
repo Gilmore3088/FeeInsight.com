@@ -23,7 +23,8 @@ import {
 } from "./read";
 import { ROSETTA_OCR_VERSION } from "./ocr";
 import { ROSETTA_TABLE_ROWS_VERSION } from "./table-rows";
-import { HTML_READ_VERSION } from "./reader-versions";
+import { HTML_READ_VERSION, PDF_READ_VERSION } from "./reader-versions";
+import { textSha256 } from "./pdf-repair-survival";
 import { DROPPED_LIGATURE_DUE_PATTERN, DROPPED_LIGATURE_READER, GLYPH_REPAIR_DUE_PATTERN, GLYPH_REPAIR_VERSION } from "./glyph-repair";
 import { isLikelyScannedPdf } from "../learning/format";
 import { DOCUMENT_KIND_VERSION } from "../learning/document-kind";
@@ -720,6 +721,31 @@ describe("Rosetta agentic read", () => {
         "Schedule of Fees\nOverdraft fee $35\nStop payment fee $30", "text/plain");
       expect(plain).toMatchObject({ reader: "read.plain_text" });
       expect(plain).not.toHaveProperty("html_read");
+    });
+
+    it("records the PDF reader version and the sideways pages on a PDF read, and neither on an HTML read", async () => {
+      const pdfText = `Schedule of Fees\n\n${"Overdraft fee $35 per item. ".repeat(10).trim()}`;
+      const pdfCandidate = { ...htmlCandidate, document_url: "https://testbank.example/schedule-of-fees.pdf" };
+      const readPdf = async (receiptText: string) => {
+        const db = learningDb([pdfCandidate]);
+        const pdfTextExtractor = vi.fn().mockResolvedValueOnce({
+          totalPages: 1, text: pdfText,
+          textDirection: { pages: [1], turnedUpright: false, textHash: textSha256(receiptText) },
+        });
+        const fetchImpl = vi.fn().mockResolvedValueOnce(response(new Uint8Array([37, 80, 68, 70]), "application/pdf"));
+        await runRosettaRead({ runId: 320, db: asReadDb(db), fetchImpl, pdfTextExtractor });
+        return JSON.parse(String(attemptValues(db)[0].find((value) => typeof value === "string" && value.startsWith("{"))));
+      };
+      const pdf = await readPdf(pdfText);
+      expect(pdf).toMatchObject({ reader: "read.pdf_layout", pdf_read: PDF_READ_VERSION, pdf_text_direction: { pages: [1], turnedUpright: false } });
+      // A receipt for another text describes nothing this read stored.
+      expect(await readPdf("another text")).not.toHaveProperty("pdf_text_direction");
+      const db = learningDb([htmlCandidate]);
+      await runRosettaRead({ runId: 321, db: asReadDb(db),
+        fetchImpl: vi.fn().mockResolvedValueOnce(response("<main><h1>Schedule of Fees</h1><p>Overdraft fee $35</p></main>", "text/html")) });
+      const html = JSON.parse(String(attemptValues(db)[0].find((value) => typeof value === "string" && value.startsWith("{"))));
+      expect(html).not.toHaveProperty("pdf_read");
+      expect(html).not.toHaveProperty("pdf_text_direction");
     });
 
     it("binds every candidate-SQL placeholder to a parameter of the type it is used as", async () => {
