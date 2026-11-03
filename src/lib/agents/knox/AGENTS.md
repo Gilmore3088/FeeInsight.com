@@ -2723,6 +2723,22 @@ holds. Darwin's verify refuses the same reads (`service_maintenance_heading`) an
 is live (`SERVICE_MAINTENANCE_TAKEDOWN_LIVE`, off). The shared check is unchanged. The stale-read floor stays at
 v97.
 
+v180 (eleventh Knox re-read backlog dry run, Nov 3; 40 backlog texts at v179, 4 wrong and 9 doubtful of 67 changed
+rows, each against the bank's own line): (1) "Additional withdrawals (per withdrawal over 3 per month)" is the excess
+withdrawal charge (the rules' excess withdrawal pattern; not when the line names an ATM, a network or foreign use),
+so Advancial FCU's money market column's $10 is read by its own cell, never as the ATM column's "In-person" fee. (2)
+Each priced cell of an account table's monthly fee row is its own column's value under the row's label: the header
+walk (`custom-report/account-table.ts`) goes on above a one-cell caption printed inside the table ("Visa® Debit
+Cards", "Free E-Statements"); no other specialist files a price the account-table specialist reads from a column
+under another fee, or puts the row's label on a cell that states another fee (`accountRowRivalRead`); and a monthly
+fee priced "per paper statement" is the paper statement charge (`families.ts`). Community First National Bank's
+"Monthly Service Fees | None | $5 per paper statement ... | $6 if $300 minimum ... | $10 ..." is $6 and $10 monthly
+fees for their columns and one $5 paper statement. (3) A free row whose condition opens the next line ("Bill Payer
+..... Free" over "when opting for E-Statements") beside a priced read of the same fee is no $0
+(`conditionalFreeRow`): The People's FCU. A free Zelle line files under bill_pay ("Bill Pay & Zelle"), as the top-50
+fold has filed zelle_fee since Oct 8; unchanged. Harnesses rb to rb11 (v179 vs v180): live fees not reproduced 408
+to 408; no right read lost. The stale-read floor stays at v97.
+
 v179 (tenth Knox re-read backlog dry run, Nov 3; 40 backlog texts at v178, 4 wrong and 8 doubtful of 124 changed
 rows, each against the bank's own line): (1) A row under a section heading that names an audience by age or stage
 of life ("Senior Perks (60 & Over)", "Youth Accounts", "Members 65+") takes the heading as its product
@@ -3498,7 +3514,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v3 | `knox/paid-extract.ts` |
 | `KNOX_PAID_FIND_MISS_VERSION` | — | v1 | `knox/paid-find-misses.ts` |
 | `TWO_READ_AGREEMENT_STRATEGY` | `knox.two_read_agreement` | v2 | `knox/two-read-agreement.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v179 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v180 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v13 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v2 | `knox/takedown-lessons.ts` |

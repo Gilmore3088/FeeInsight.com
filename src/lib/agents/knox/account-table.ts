@@ -1,4 +1,4 @@
-import { accountTableCells } from "@/lib/custom-report/account-table";
+import { accountRowCellsPricing, accountTableCells, type AccountTableCell } from "@/lib/custom-report/account-table";
 import { detectFrequency, type ExtractionRulesResult } from "@/lib/agents/knox/rules";
 import { passesDarwinChecks } from "@/lib/agents/knox/layout";
 
@@ -39,4 +39,40 @@ export function extractAccountTableCandidates(text: string): ExtractionRulesResu
     });
   }
   return result;
+}
+
+/** The category an account table's monthly fee row states. */
+const ACCOUNT_ROW_CATEGORY = "monthly_maintenance";
+
+/**
+ * v180 (backlog dry run 11): another specialist's read of an account table's monthly fee row that this
+ * specialist reads by column. Pure. Each priced cell is its own column's value under the row's label, so:
+ * - a monthly fee read (the row label's category) is dropped when this specialist reads a column at its
+ *   price (the same fee under a name without its account), or when every cell printing its price states
+ *   another fee: the row's label put on the wrong cell ("Monthly Service Fees" $5 from "$5 per paper
+ *   statement if not enrolled ...", Community First National Bank);
+ * - a read of another fee is dropped only when every cell printing its price is a column's monthly fee, so
+ *   its own cell can only be that column's ("$6 if $300 minimum balance ... is not maintained" filed as a
+ *   paper statement, named by the cell before it). When a cell that states another fee prints the price too
+ *   ("$5 per paper statement ..." beside a "$5" column, review of #2978), that cell is the read's own and
+ *   the read stays.
+ */
+export function accountRowRivalRead(
+  read: { amount: number | null; canonicalHint: string | null; excerpt: string; strategy?: string },
+  cells: readonly AccountTableCell[],
+): boolean {
+  if (read.amount == null || read.strategy === KNOX_ACCOUNT_TABLE_STRATEGY.strategy) return false;
+  const probe = read.excerpt.replace(/\s+/g, " ").trim().slice(0, 40);
+  if (probe.length < 12) return false;
+  const rowCells = cells.filter((cell) => cell.row.startsWith(probe));
+  if (rowCells.length === 0) return false;
+  const cents = Math.round(read.amount * 100);
+  if (cents === 0) return false;
+  const sameCents = (fee: number | null) => fee != null && Math.round(fee * 100) === cents;
+  const columnAtPrice = rowCells.some((cell) => sameCents(cell.amount));
+  const pricing = accountRowCellsPricing(rowCells[0].row, read.amount);
+  if (read.canonicalHint === ACCOUNT_ROW_CATEGORY) {
+    return columnAtPrice || (pricing.length > 0 && pricing.every((fee) => !sameCents(fee)));
+  }
+  return columnAtPrice && pricing.length > 0 && pricing.every(sameCents);
 }

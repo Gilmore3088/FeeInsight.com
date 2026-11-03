@@ -281,6 +281,8 @@ export function priceWindows(text: string): PriceWindow[] {
 }
 
 const TIER_UNIT = "(?:items?|withdrawals?|presentments?|occurrences?|overdrafts?|nsfs?|times?|transactions?)";
+/** Words right after a price that charge it per paper statement. */
+const PER_PAPER_STATEMENT_AFTER = /^\s*(?:per|each|\/|a)\s+(?:paper|printed|mailed)\s+statements?\b/i;
 const TIER_LABEL = new RegExp(
   `^(?:(?:\\d+(?:st|nd|rd|th)|first|second|third|fourth|fifth|each additional|additional|subsequent)\\b.{0,20}\\b${TIER_UNIT}\\b|` +
     `(?:\\d+\\s*(?:-|–|to)\\s*\\d+|\\d+\\+|over \\d+|after \\d+)\\s+${TIER_UNIT}\\b).{0,30}$`,
@@ -466,6 +468,10 @@ export function runFamilyExpert(expert: FamilyExpert, windows: PriceWindow[]): E
     // v177 (backlog dry run 8, Honor FCU): a name that is only a waiver column's advice ("Use Online BillPay,
     // HonorPay or Account-To-Account Transfers | $50.00 per month") names no fee (`waiverAdviceName`).
     if (waiverAdviceName(match.feeName)) return;
+    // v180 (backlog dry run 11): a monthly fee priced "per paper statement" ("To avoid a Monthly Service Fee of
+    // $5 per paper statement, you must enroll for eStatements", Community First National Bank) is the paper
+    // statement charge, which the rules pass reads by those words; it is no monthly maintenance fee.
+    if (match.hint === "monthly_maintenance" && PER_PAPER_STATEMENT_AFTER.test(window.after)) return;
     // v143: a row whose own words name the transfer ("Overdraft Transfer from Rediline Overdraft Loan
     // $5/advance") is the transfer, though the tail that names it ("Rediline Overdraft Loan") says loan.
     if (match.hint === "overdraft" && cleaned && cleaned !== match.feeName && classifyFor(expert, cleaned) === "od_protection_transfer") {
