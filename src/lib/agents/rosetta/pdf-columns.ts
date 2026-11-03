@@ -173,6 +173,70 @@ function extendsTableRows(items: PositionedItem[], middle: number): boolean {
   return rowStartShare(items, middle) >= MIN_ROW_START_SHARE;
 }
 
+/** A right side has its own line spacing when this share of its lines face no left line. */
+const MIN_OWN_BASELINE_SHARE = 0.6;
+/** Facing pages: the gutter within this share of the text width from the centre... */
+const FACING_CENTRE_SHARE = 0.1;
+/** ...and each side spans this share of the region's height. */
+const FACING_HEIGHT_SHARE = 0.7;
+/** Page furniture is looked for among this many lines at each end of a side. */
+const FURNITURE_LINES = 3;
+/** A printed page number: "22", "Page 4", "- 7 -". */
+const PAGE_NUMBER = /^(?:page\s+)?[-–]?\s*\d{1,3}\s*[-–]?$/i;
+/** A self-contained table: this share of a side's lines are its own label | price rows. */
+const MIN_OWN_ROW_SHARE = 0.6;
+
+const ownRow = (line: SideLine) =>
+  LEADER.test(line.text) || (line.cells.length > 1 && line.cells.slice(1).some((cell) => VALUE_START.test(cell)));
+
+function halfPitchOf(lines: SideLine[], fallback: number): number {
+  const gaps = lines.slice(1).map((line, index) => lines[index].y - line.y).filter((gap) => gap > 0);
+  return (gaps.length ? median(gaps) : fallback) / 2;
+}
+
+/** Lines of `side` that face no line of `other` within half `other`'s line pitch. */
+function unfacedShare(side: SideLine[], other: SideLine[], fallback: number): number {
+  const half = halfPitchOf(other, fallback);
+  const unfaced = side.filter((line) => !other.some((o) => Math.abs(o.y - line.y) <= half)).length;
+  return side.length ? unfaced / side.length : 0;
+}
+
+export interface Independence {
+  /** (a) Share of the right side's lines that face no left line: their own line spacing. */
+  ownBaselines: number;
+  /** (b) Facing pages: a gutter near the centre, both halves the region's height, each with its own furniture. */
+  facingPages: boolean;
+  /** (c) Two self-contained tables: each side's lines mostly its own label | price rows. */
+  twoTables: boolean;
+}
+
+/** Positive evidence that the sides at `middle` are independent (fourth review of #2965). */
+export function independence(items: PositionedItem[], middle: number, left: number, right: number): Independence {
+  const fallback = Math.max(...items.map((item) => item.size));
+  const leftSide = sideLines(items.filter((item) => item.end <= middle));
+  const rightSide = sideLines(items.filter((item) => item.x >= middle));
+  const ownBaselines = unfacedShare(rightSide, leftSide, fallback);
+  const ys = items.map((item) => item.y);
+  const height = Math.max(...ys) - Math.min(...ys);
+  const span = (side: SideLine[]) => (side.length ? side[0].y - side[side.length - 1].y : 0);
+  // Furniture: among a side's first and last few lines (a running head, a page number) one faces nothing across.
+  // A page number of its own at the foot of each half counts as furniture even when the two
+  // printed pages share one baseline grid (a booklet spread, "22 | 23").
+  const furniture = (side: SideLine[], other: SideLine[]) =>
+    [...side.slice(0, FURNITURE_LINES), ...side.slice(-FURNITURE_LINES)].some((line) => unfacedShare([line], other, fallback) === 1)
+    || side.slice(-FURNITURE_LINES).some((line) => PAGE_NUMBER.test(line.text));
+  const facingPages = Math.abs(middle - (left + right) / 2) <= (right - left) * FACING_CENTRE_SHARE
+    && height > 0 && [leftSide, rightSide].every((side) => span(side) >= height * FACING_HEIGHT_SHARE)
+    && furniture(leftSide, rightSide) && furniture(rightSide, leftSide);
+  const tableSide = (side: SideLine[]) => side.length > 0 && side.filter(ownRow).length >= side.length * MIN_OWN_ROW_SHARE;
+  return { ownBaselines, facingPages, twoTables: tableSide(leftSide) && tableSide(rightSide) };
+}
+
+function independentSides(items: PositionedItem[], middle: number, left: number, right: number): boolean {
+  const evidence = independence(items, middle, left, right);
+  return evidence.ownBaselines >= MIN_OWN_BASELINE_SHARE || evidence.facingPages || evidence.twoTables;
+}
+
 /** True when the page may be split into two independent sides at `middle`. */
 function independentSplit(items: PositionedItem[], middle: number, left: number, right: number): boolean {
   const crossing = items.filter((item) => item.x < middle && item.end > middle);
@@ -194,6 +258,8 @@ function independentSplit(items: PositionedItem[], middle: number, left: number,
     return false;
   }
   if (rowCrossesGutter(items, middle) || extendsTableRows(items, middle)) return false;
+  // Positive evidence that the sides are independent; anything else keeps main's row reading.
+  if (!independentSides(items, middle, left, right)) return false;
   return sides.every(sideStandsAlone);
 }
 

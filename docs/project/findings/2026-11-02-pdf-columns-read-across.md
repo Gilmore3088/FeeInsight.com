@@ -26,81 +26,68 @@ source-bytes re-read (`2026-11-02-lab-replays-source-bytes.md`) 32 R4 keys were 
   the page (Seacoast: 10 footnote lines against a 7-line allowance).
 
 **The rule** (`src/lib/agents/rosetta/pdf-columns.ts`, behind `PDF_COLUMN_READING_LIVE`, off). It
-runs only when no earlier detector fires. A gutter splits the page only when:
-- no row reaches across it: no shared baseline whose right side opens at its own edge with a price,
-  or is nothing but price cells ("$1 $1 $1 $1", "3 Free → $5"); none whose left side is a bare
-  price facing a label; no label running into the gutter with its price just past it;
-- the right side is not one more column of a table on the left (three reviews of #2965). Both
-  sides' lines are grouped into blocks: a left line starting in lower case or "(" goes on with the
-  left block above (a wrapped label); a right line goes on with the right block above when it starts
-  that way or when the left line it faces does not start a left block. A right line faces the left
-  line nearest its baseline within half the line pitch, so notes set 4.5-6 pt below their rows still
-  face them. A left block is a priced row when one of its lines ends in an amount ("$30.00",
-  "$ | 3.00", a bare "30.00", Free, No charge, N/A, Varies, with at most a unit after it), in its own
-  cell or not: dot-leader rows and "Label $30" rows count. A right block starts on a row when it
-  faces a priced row's first line and is not a fee row of its own (a cell row with a price, a
-  dot-leader line). When 42% or more of the right blocks start on rows, the split is refused.
-  - Row alignment alone could not separate them: the real splits share 36% to 100% of their
-    baselines (texas:841's facing pages 90-100%). A line-count share (round two) let a wrapped
-    description column through; exact-baseline, cell-only priced rows (round three) let notes beside
-    dot-leader, single-space and partly "$"-less rows through.
-  - Block-start share on the 27 splits of the 18 replay PDFs: 0.00 on 12; 0.07; 0.08 on 2; 0.13;
-    0.14; 0.15; 0.16 on 3; 0.19; 0.25; 0.29; 0.32; 0.33; at most 0.34. The reviews' fee-table
-    shapes score 0.50 (sections headed by unpriced rows; a four-column table) to 1.00. The threshold
-    is 0.42, midway between 0.34 and 0.50; `pdf-columns.test.ts` pins both 0.50 shapes as refused
-    and a 0.33 page as split.
-  - Cost: fee lines beside fee lines on shared baselines, neither cut into cells ("Label $30" beside
-    "Rush delivery $50"), read like a table's notes and keep their rows; so does prose set beside a
-    fee table, whatever its leading. None of the 19 replay gains has that shape;
-- each side stands on its own: running prose (median line 25 characters or more, few cells), or at
-  least 3 lines that hold their own label and price;
-- each side is a fifth of the text width or more and holds 5 lines or more; text is upright.
+runs only when no earlier detector fires. Five review rounds of #2965 each found a fee table whose
+notes, descriptions or second prices split off as a "column", so the rule now requires positive
+evidence that the two sides are independent and keeps main's reading otherwise. A gutter splits a
+page, or a region between spanning titles and footnotes, only when all of these hold:
+- **No row reaches across it:** no shared baseline whose right side opens at its own edge with a
+  price or is nothing but price cells; no bare price facing a label; no label running into the
+  gutter with its price just past it.
+- **Each side stands on its own:** running prose, or at least 3 lines with their own label and
+  price; a fifth of the text width or more; 5 lines or more; upright text.
+- **The right side is not one more column of a left table** (an extra refusal). Both sides are
+  grouped into blocks (a lower-case or "(" line goes on with the block above; a right line facing a
+  left continuation goes on too), a right line faces the nearest left line within half a pitch, and
+  a left block is a priced row when a line ends in an amount, in a cell or not. When 42% or more of
+  the right blocks start on priced rows without being fee rows of their own, the split is refused.
+  On the 27 splits that rule alone allowed, the share is 0.00 on 12 and at most 0.34; the reviews'
+  fee-table shapes score 0.50 to 1.00.
+- **And one piece of positive evidence:**
+  - (a) own baselines: 60% or more of the right side's lines face no left line within half its pitch;
+  - (b) facing pages: the gutter within 10% of the text width from the centre, both halves 70% of
+    the height or more, and each half with its own furniture (one of its first or last 3 lines faces
+    nothing across, or a printed page number among its last 3);
+  - (c) two self-contained tables: 60% or more of each side's lines are its own label | price rows
+    (a cell row with a price, or a dot-leader line).
+
+Measured on the 27 splits the earlier rule allowed:
+- (a) never reaches 0.6 (highest 0.48, San Francisco FCU).
+- 20 pass (b) or (c), and 7 are now refused: state:3148, state:6730, state:8036, state:8240,
+  texas:2429 p. 20, texas:2451 pp. 9 and 10.
+- Every reviewer fee-table case (zz-adv to zz-adv5, 52 of 53) keeps its rows. The one that splits
+  (`rightGapCells`) is two real tables side by side and publishes the same fee either way.
 
 Left to right, a passing gutter is kept only when the column it closes stands on its own, so a
-strip of bullet glyphs joins its column (U.S. Century). When no gutter runs the whole page, the
-page is cut into regions at lines holding one item half the text width wide (a title, a footnote),
-and each region is tried alone; spanning lines are read whole.
+strip of bullet glyphs joins its column (U.S. Century). Spanning lines are read whole.
 
-**Tests:** 60 near-miss tests on synthetic positioned runs (`pdf-columns.test.ts`): two fee lists,
-offset baselines, two side-by-side tables, prose beside a table both ways, account terms, full-width
-title, heading mid-page, spanning footnotes, title plus footnotes, bullet strip, booklet spread,
-landscape tables, three lists, headings and wrapped labels inside a column, box-size rows; and kept
-row by row: label|price tables, word prices, priced terms, two price columns, a five-column tier
-table, service|description|fee, price-first, right-aligned prices, a table under a heading, wide
-labels, one crossing row, a bare price facing its label, a label running into the gutter, tier
-prices set in from the edge, a narrow sidebar (prose or prices), a column of footnote marks,
-two-column footnotes under a table, a rotated page, a wide landscape table, too few runs, short
-columns, labels beside descriptions, a mixed page whose table rows cross, a mixed page split only
-below its heading, pages the earlier detectors already read, and from the review: a Service | Fee |
-Notes table, a notes column of long lines, a Member | Non-member table whose second price opens with
-words, table rows beside single-cell fee lines (which read like notes, so they stay rows), a
-description column wrapped onto three lines, near-equal mixed-case notes, all-lower-case notes, and
-prose on a table's own baselines, and from the third review: notes beside dot-leader rows, beside
-"Label $30" rows, beside a price column with "$" on some rows, descriptions beside labels that wrap
-onto unpriced lines, and notes set 4.5 and 6 pt below their rows. Switch tests: off by default, the
-default read is the switch-off read (3 tests). `shadow-lab/pdf-column-reading-inert.test.ts` reads all 18
-replay PDFs with the switch off and at its default and checks each text's sha256 against main
-d5771aa66's (`__fixtures__/source-bytes/pdf-text-main-sha256.json`).
+**Tests:** 63 near-miss tests on synthetic positioned runs (`pdf-columns.test.ts`, plus 3 for the
+switch). Every repro from the five reviews is a test, and each failed before its fix. The split
+tests carry their evidence (each half's page number, or label | price cells on both sides); prose
+beside a fee table with no evidence keeps its rows. `shadow-lab/pdf-column-reading-inert.test.ts`
+reads all 18 replay PDFs with the switch off and at its default and checks each text's sha256
+against main's (`__fixtures__/source-bytes/pdf-text-main-sha256.json`).
 
 **Measured** with shadow-lab experiment `pdf-column-reading` (`source-replay.test.ts`, 38 reproduced
-documents, same keys, today's pipeline on both sides; main 53c80d54e merged, layout v6 and Knox v170):
+documents, same keys, today's pipeline on both sides, main merged):
 
 | Measure | Switch off | Switch on |
 |---|---|---|
-| Re-read recall | 898 / 1,187 (75.7%) | 917 / 1,187 (77.3%) |
+| Re-read recall | 898 / 1,187 (75.7%) | 907 / 1,187 (76.4%) |
 | Keys lost | | 0 |
-| R4 keys still missed | 32 | 26 |
-| Published fees not in the answer key | 29 | 31 |
+| R4 keys still missed | 32 | 28 |
+| Published fees not in the answer key | 29 | 32 |
 
-- **Keys gained (19):**
-  - R4 (6): state:7114 stop_payment:3000, state:8036 cashiers_check:0, state:8085
-    safe_deposit_box:12500, texas:2429 notary_fee:0, texas:841 check_image:100, texas:841
-    wire_domestic_outgoing:2500.
-  - Others (13): state:1338 ach_origination:30; state:3148 cashiers_check:500; state:6730
-    wire_domestic_outgoing:2000, wire_intl_outgoing:3000; state:8085 wire_domestic_incoming:1500,
-    wire_domestic_outgoing:1700; state:8240 wire_domestic_incoming:2000, wire_domestic_outgoing:2000,
-    wire_intl_incoming:2000, wire_intl_outgoing:6000; texas:2451 overdraft:500; texas:841
-    document_reproduction:200, document_reproduction:500.
+- **Keys gained (9):**
+  - R4 (4): state:7114 stop_payment:3000, state:8085 safe_deposit_box:12500, texas:841
+    check_image:100, texas:841 wire_domestic_outgoing:2500.
+  - Others (5): state:1338 ach_origination:30; state:8085 wire_domestic_incoming:1500,
+    wire_domestic_outgoing:1700; texas:841 document_reproduction:200, document_reproduction:500.
+- **Given up by requiring evidence (10 of the earlier 19 gains):**
+  - R4: state:8036 cashiers_check:0 and texas:2429 notary_fee:0.
+  - Others: state:3148 cashiers_check:500; state:6730 wire_domestic_outgoing:2000 and
+    wire_intl_outgoing:3000; state:8240 wire_domestic_incoming:2000, wire_domestic_outgoing:2000,
+    wire_intl_incoming:2000 and wire_intl_outgoing:6000; texas:2451 overdraft:500.
+  - Summit's wrong gift-card "inactivity" $7.95 is no longer removed: its page is not split.
 - **Publications outside the key, each checked by hand against the document's text:**
   - Added, right: U.S. Century "Charge Back Check (loan payment) | $25.00" (other_lending_fee $25),
     listed under Funds/Transaction Related on page 4.
@@ -108,20 +95,12 @@ documents, same keys, today's pipeline on both sides; main 53c80d54e merged, lay
     (collection_item $20).
   - Added, right: Seacoast "Excessive transactions / Savings Account (per transaction) | $ 3.00"
     (excess_withdrawal $3).
-  - Removed, was wrong: Summit FCU's "Inactivity fee after 12 consecutive months of inactivity
-    $7.95" was published as the account's dormant_account $7.95. It sits under "Visa® Gift Cards";
-    read in its column it is no longer published.
-- **The 26 R4 keys still missed:**
+- **The 28 R4 keys still missed:**
   - 10 are wrapped table cells, not columns: a price cell on two lines with its label centred
-    between them ("$10.00 if account closed / Account Closure / within 90 days"), 9 on Texhillco and
-    Seacoast's "Cashier's Check with Expedited Shipping / $ 45.00". Layout v6 (#2948,
-    `tableCellLines`) pairs that shape inside its own side-by-side table bands only; reading these
-    column bands with it is the next step.
-  - 16 already read on one line in today's re-read or after the split, and are missed downstream
-    (Knox or Darwin): state:10193 x2 (a maintenance fee stated in a sentence), state:1338 (its
-    description is on the next line), state:3148, state:3981, state:6730, state:7114
-    atm_non_network:25 (a wrapped label), state:8240 card_replacement (a gift card fee), texas:2451
-    x3, texas:841 x5.
+    between them, 9 on Texhillco and 1 on Seacoast. Layout v6 (#2948, `tableCellLines`) pairs
+    that shape inside its own table bands only.
+  - 2 are on pages now refused for want of evidence (San Francisco FCU, Texhillco).
+  - 16 already read on one line and are missed downstream, by Knox or Darwin.
 - **The frozen-text lab, the ratchet, the quality gates and the golden gate do not move**: they
   replay text that has already been read.
 
@@ -134,9 +113,10 @@ documents, same keys, today's pipeline on both sides; main 53c80d54e merged, lay
 3. James runs the switch dry-run audit, section 10 (current PDF layout and free OCR documents and
    the live fees on them, as exposure; the audit cannot re-read bytes).
 
-**Lesson:** a fee table is also two columns, so split a page only on positive evidence that no row
-reaches across the gutter and that each side carries its own fees or prose, and look for the gutter
-within each region between spanning lines.
+**Lesson:** a fee table is also two columns, and its notes, descriptions and second prices take
+endless shapes, so refusing them one shape at a time never ends. Split a page only on positive
+evidence that the sides are independent (facing pages with their own furniture, two self-contained
+tables, their own line spacing), and keep main's reading otherwise.
 
 **Guard:** `src/lib/agents/rosetta/pdf-columns.test.ts`,
 `src/lib/agents/deming/shadow-lab/pdf-column-reading-inert.test.ts`,
