@@ -1551,28 +1551,41 @@ const ZERO_OR_PRICE = /\$\s?0(?:\.00)?\s*(?:or|\/)\s*\$\s?(?:\d*[1-9]\d*(?:\.\d{
 
 /** v179: the line itself prints a free price, and offers no price against it (see `ZERO_OR_PRICE`). */
 const ZERO_WORDS = /\$\s?0(?:\.0{1,2})?(?![\d.,]*[1-9])|\b(?:free|none|no[-\s]?charge|n\/c|no\s+(?:[a-z]+\s+){0,3}?(?:fees?|costs?|charges?)|without\s+(?:a\s+|any\s+)?(?:[a-z]+\s+){0,3}?(?:fees?|charges?)|(?:do|does|will)\s+not\s+(?:[a-z]+ly\s+)?(?:charge|assess)|not\s+be\s+(?:assessed|charged)|eliminated|complimentary|included|unlimited|0\.00)\b/i;
+/**
+ * An unconditional waiver printed as the fee's price: a line that opens "Waived <fee>" ("Waived Annual IRA Fee",
+ * "Waived Non-QCBT ATM Transactions" on a card's perk list) or closes "<fee> waived" ("ATM fees waived"), or a cell
+ * that says only "Waived" ("Check Cashing Fee - Members | Waived"). A waiver on a condition ("Monthly maintenance fee
+ * waived when minimum account balance requirement is met.", "Waived with direct deposit") prints no free price.
+ */
+const WAIVED_CELL = /(?:^|\|)\s*waived\s*(?:\||$)/i;
+const WAIVED_OPENS = /^\W*(?:\d{1,2}\s+)?waived\s+[a-z]/i;
+const WAIVED_CLOSES = /\bwaived\s*[.!]?\s*$/i;
+const WAIVER_CONDITION = /\b(?:when|if|unless|provided|with|after|until|once|while|by|upon|as\s+long\s+as|for\s+the\s+first)\b/i;
+function unconditionalWaiver(text: string): boolean {
+  if (WAIVED_CELL.test(text)) return true;
+  if (!WAIVED_OPENS.test(text) && !WAIVED_CLOSES.test(text)) return false;
+  return !WAIVER_CONDITION.test(text);
+}
 export function zeroPrintedOnLine(line: string | null | undefined): boolean {
   const text = line ?? "";
-  // A cell that says only "Waived" ("Check Cashing Fee - Members | Waived") prints the free price; a sentence
-  // that waives the fee on a condition does not.
-  return (ZERO_WORDS.test(text) || /(?:^|\|)\s*waived\s*(?:\||$)/i.test(text)) && !ZERO_OR_PRICE.test(text);
+  return (ZERO_WORDS.test(text) || unconditionalWaiver(text)) && !ZERO_OR_PRICE.test(text);
 }
 /**
  * v179: the free price printed for a read, on its own line or as the bare price cell right above it. A stacked page
  * prints each cell on its own line ("Overdraft Protection transfers or advances" / "$0" / "per transfer/advance from
- * your eligible linked savings account ..."), and the read's line is then the unit under the price.
+ * your eligible linked savings account ..."), and the read's line is then the unit under the price. The cell above
+ * must be a price and nothing else ("$0", "Free", "None", "N/C", "No charge", "Waived"): another perk's label above
+ * ("Free Statement Copies", "Free eStatements") prints no price for this read.
  */
 const squashLine = (line: string) => line.replace(/\s+/g, " ").trim();
-const MAX_PRICE_CELL_WORDS = 3;
+const PRICE_ONLY_ZERO_CELL = /^\W*(?:\$\s?0(?:\.0{1,2})?|free|none|n\/c|no[-\s]?charge|waived)\W*$/i;
 export function zeroPrintedForRead(excerpt: string | null | undefined, text: string | null | undefined): boolean {
   if (zeroPrintedOnLine(excerpt)) return true;
   const own = squashLine(excerpt ?? "");
   if (!text || own.length < 6) return false;
   const lines = text.split(/\n+/).map(squashLine).filter(Boolean);
   const at = lines.findIndex((line) => line.includes(own));
-  if (at < 1) return false;
-  const prior = lines[at - 1];
-  return prior.split(" ").length <= MAX_PRICE_CELL_WORDS && zeroPrintedOnLine(prior);
+  return at >= 1 && PRICE_ONLY_ZERO_CELL.test(lines[at - 1]);
 }
 
 export function channelListHeading(heading: string): boolean {
