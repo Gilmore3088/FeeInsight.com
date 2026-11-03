@@ -1,0 +1,57 @@
+import { it } from "vitest";
+import { layoutPageResult, type PdfTextItem } from "@/lib/agents/rosetta/pdf-layout";
+import { currentVariant as v } from "@/lib/agents/deming/shadow-lab/variants";
+const S = 8;
+function publish(text: string) {
+  const ex = v.extract(text); const live: any[] = [];
+  for (const f of ex.passed) { const ver = v.verify(f, text); if (!ver.ok) continue; const d = v.publishGate(ver.fee, text, live); if (d.publish) live.push(ver.fee); }
+  return live.map((f) => `${f.canonicalFeeKey}:${f.amountCents} (${f.feeName})`).sort();
+}
+const ROWS: [string, string, string][] = [
+  ["Overdraft fee (per item)", "$30.00", "Daily maximum $150"], ["Returned item (NSF)", "$30.00", "Daily maximum $150"],
+  ["Outgoing domestic wire", "$25.00", "International wire $45"], ["Incoming wire", "$10.00", "International incoming $15"],
+  ["Stop payment", "$25.00", "Online request $15"], ["Account research", "$25.00", "Minimum charge $10"],
+  ["Cashier's check", "$8.00", "Members only"], ["Money order", "$3.00", "Limit 5 per day"],
+  ["Statement copy", "$5.00", "Online statements free"], ["Debit card replacement", "$10.00", "Rush delivery $50"],
+  ["Dormant account", "$5.00", "After 12 months"], ["Account closing", "$25.00", "Within 90 days"],
+  ["Garnishment / levy", "$100.00", "Per order"], ["Coin counting", "$3.00", "Non-members 5% of total"],
+  ["Safe deposit box 3x5", "$30.00", "Late payment $10"], ["Check printing", "Varies", "Depends on style"],
+];
+// a: notes with two own fee rows (gap inside)
+const run = (str: string, x: number, y: number, size = S): PdfTextItem => ({ str, transform: [size, 0, 0, size, x, y], width: str.length * size / 2, height: size });
+let PITCH = 12;
+const Y = (r: number) => 700 - r * PITCH;
+const cases: Record<string, () => PdfTextItem[]> = {};
+const notesTable = (price: (p: string, r: number) => string, note: (n: string, r: number) => string = (n) => n, header = false, ns = S, nx = 270) => () => [
+  ...(header ? [run("Service", 40, Y(-1)), run("Fee", 180, Y(-1)), run("Notes", nx, Y(-1), ns)] : []),
+  ...ROWS.flatMap(([l, p, n], r) => [run(l, 40, Y(r)), run(price(p, r), 180, Y(r)), run(note(n, r), nx, Y(r), ns)])];
+cases.perItemPaid = notesTable((p) => `${p} per item paid`);
+cases.slashMonth = notesTable((p) => `${p}/month`);
+cases.footDigit = notesTable((p, r) => `${p} ${r % 3 + 1}`);
+cases.parenEach = notesTable((p) => `${p} (each)`);
+cases.maxParen = notesTable((p) => `${p} (max 4/day)`);
+cases.percent = notesTable((p, r) => r % 2 ? `${r}%` : p);
+cases.perHourMin = notesTable((p) => `${p} per hour, 1 hr min`);
+cases.parenNotesHeader = notesTable((p) => p, (n) => `(${n})`, true);
+cases.parenNotes = notesTable((p) => p, (n) => `(${n})`);
+cases.lowerNotesHeader = notesTable((p) => p, (n) => n.toLowerCase(), true);
+cases.smallNotes7pt = notesTable((p) => p, (n) => n, false, 6);
+cases.priceWordLabel = () => ROWS.flatMap(([l, p, n], r) => [run(`Free Checking ${l}`, 40, Y(r)), run(p, 180, Y(r)), run(n, 270, Y(r))]);
+cases.rateDecimalLeft = () => ROWS.flatMap(([l, , n], r) => [run(`${l} rate 2.50`, 40, Y(r)), run(n, 270, Y(r))]);
+cases.parenLeftRows = () => ROWS.flatMap(([l, p, n], r) => [run(r % 2 ? `(${l})` : l, 40, Y(r)), run(p, 180, Y(r)), run(n, 270, Y(r))]);
+const tight = (f: () => PdfTextItem[]) => () => { PITCH = 9; try { return f(); } finally { PITCH = 12; } };
+cases.tight9 = tight(notesTable((p) => p));
+cases.tight9offset = tight(() => ROWS.flatMap(([l, p, n], r) => [run(l, 40, Y(r)), run(p, 180, Y(r)), run(n, 270, Y(r) - 4.6)]));
+cases.mixedFont = () => ROWS.flatMap(([l, p, n], r) => [run(l, 40, Y(r), 10), run(p, 200, Y(r), 10), run(n, 290, Y(r) + 1.5, 6)]);
+it("adv5", () => {
+  for (const [name, f] of Object.entries(cases)) {
+    const items = f();
+    const a = layoutPageResult(items, { columnReading: true }).text, b = layoutPageResult(items, { columnReading: false }).text;
+    console.log(`=== ${name}: ${a === b ? "UNCHANGED" : "SPLIT"}`);
+    if (a === b) continue;
+    console.log(a.split("\n").slice(0, 3).join("\n"), "\n...");
+    const pa = publish(a), pb = publish(b);
+    console.log("ON only:", pa.filter((x) => !pb.includes(x)));
+    console.log("OFF only:", pb.filter((x) => !pa.includes(x)));
+  }
+});

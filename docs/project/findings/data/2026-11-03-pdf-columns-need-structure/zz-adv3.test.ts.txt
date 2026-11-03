@@ -1,0 +1,80 @@
+import { it } from "vitest";
+import { layoutPageResult, type PdfTextItem } from "@/lib/agents/rosetta/pdf-layout";
+import { currentVariant as v } from "@/lib/agents/deming/shadow-lab/variants";
+const S = 8;
+const run = (str: string, x: number, y: number): PdfTextItem => ({ str, transform: [S, 0, 0, S, x, y], width: str.length * 4, height: S });
+const Y = (r: number) => 700 - r * 12;
+function publish(text: string) {
+  const ex = v.extract(text); const live: any[] = [];
+  for (const f of ex.passed) { const ver = v.verify(f, text); if (!ver.ok) continue; const d = v.publishGate(ver.fee, text, live); if (d.publish) live.push(ver.fee); }
+  return live.map((f) => `${f.canonicalFeeKey}:${f.amountCents} (${f.feeName})`).sort();
+}
+const ROWS: [string, string, string][] = [
+  ["Overdraft fee (per item)", "$30.00", "Daily maximum $150"], ["Returned item (NSF)", "$30.00", "Daily maximum $150"],
+  ["Outgoing domestic wire", "$25.00", "International wire $45"], ["Incoming wire", "$10.00", "International incoming $15"],
+  ["Stop payment", "$25.00", "Online request $15"], ["Account research", "$25.00", "Minimum charge $10"],
+  ["Cashier's check", "$8.00", "Members only"], ["Money order", "$3.00", "Limit 5 per day"],
+  ["Statement copy", "$5.00", "Online statements free"], ["Debit card replacement", "$10.00", "Rush delivery $50"],
+  ["Dormant account", "$5.00", "After 12 months"], ["Account closing", "$25.00", "Within 90 days"],
+  ["Garnishment / levy", "$100.00", "Per order"], ["Coin counting", "$3.00", "Non-members 5% of total"],
+  ["Safe deposit box 3x5", "$30.00", "Late payment $10"], ["Check printing", "Varies", "Depends on style"],
+];
+const tbl = (r: number, l: string, p: string) => [run(l, 40, Y(r)), run(p, 180, Y(r))];
+const cases: Record<string, PdfTextItem[]> = {};
+// a: notes with two own fee rows (gap inside)
+cases.notesTwoOwnRows = ROWS.flatMap(([l, p, n], r) => [...tbl(r, l, p), ...(r === 9 ? [run("Rush delivery", 270, Y(r)), run("$50", 360, Y(r))] : r === 2 ? [run("International", 270, Y(r)), run("$45", 360, Y(r))] : [run(n, 270, Y(r))])]);
+// a2: half the notes are own fee rows
+cases.notesHalfOwnRows = ROWS.flatMap(([l, p, n], r) => { const m = /^(.*?) (\$[\d.]+)$/.exec(n); return [...tbl(r, l, p), ...(m && r % 2 === 0 ? [run(m[1], 270, Y(r)), run(m[2], 380, Y(r))] : [run(n, 270, Y(r))])]; });
+// a3: every note with amount is "label | $x" (4 col table label|price|sublabel|subprice)
+cases.fourColTable = ROWS.flatMap(([l, p, n], r) => { const m = /^(.*?) (\$[\d.]+)$/.exec(n); return [...tbl(r, l, p), ...(m ? [run(m[1], 270, Y(r)), run(m[2], 400, Y(r))] : [run(n, 270, Y(r))])]; });
+// b: short lower-case notes
+const SH = ["per item", "each", "per item", "each", "per request", "per hour", "each", "each", "per copy", "per card", "per month", "each", "per order", "per roll", "per year", "varies"];
+cases.shortLower = ROWS.flatMap(([l, p], r) => [...tbl(r, l, p), run(SH[r], 270, Y(r))]);
+// c: third column another tier price, mixed forms
+cases.tierThird = ROWS.flatMap(([l, p], r) => [...tbl(r, l, p), run(r % 4 === 0 ? "N/A" : r % 4 === 1 ? "Same" : r % 4 === 2 ? "Premier: $0" : "Gold $5.00", 300, Y(r))]);
+// c2: tier column "Premier $0" for all
+cases.tierThirdWords = ROWS.flatMap(([l, p], r) => [...tbl(r, l, p), run(`Premier ${p.replace(/\d+(\.\d+)?/, (x) => String(Math.max(0, +x - 5)))}`, 300, Y(r))]);
+// e: wrapped notes / description column, 3 lines per row, lowercase continuations
+const D = ["Charged for each item paid into", "a negative balance, daily maximum", "of $150 per business day"];
+cases.wrappedNotes3 = ROWS.slice(0, 10).flatMap(([l, p], r) => [...tbl(3 * r, l, p), ...D.map((t, k) => run(t, 270, Y(3 * r + k)))]);
+cases.wrappedNotes2 = ROWS.slice(0, 12).flatMap(([l, p], r) => [...tbl(2 * r, l, p), ...D.slice(0, 2).map((t, k) => run(t, 270, Y(2 * r + k)))]);
+// e2: long lowercase notes filling column (one line)
+cases.longLowerNotes = ROWS.flatMap(([l, p, n], r) => [...tbl(r, l, p), run(("plus " + n.toLowerCase() + " applies to all accounts here").slice(0, 40), 270, Y(r))]);
+// d: real two-column schedule: left table, right single-cell fee lines (one space), offsets
+const RF = ["Debit card replacement $10.00", "Rush card delivery $50.00", "PIN change $2.00", "Safe deposit 3 x 5 $30.00", "Box drilling $200.00", "Lost key $25.00", "Fax per page $1.00", "Photocopy $0.25", "Bill pay expedited $9.95", "External transfer $3.00", "Foreign check $10.00", "Collection item $30.00"];
+cases.rightSingleCellSameBaseline = [...ROWS.flatMap(([l, p], r) => tbl(r, l, p)), ...RF.map((t, r) => run(t, 300, Y(r)))];
+cases.rightSingleCellOffset = [...ROWS.flatMap(([l, p], r) => tbl(r, l, p)), ...RF.map((t, r) => run(t, 300, Y(r) - 5))];
+cases.rightSingleCellHeadings = [...ROWS.flatMap(([l, p], r) => tbl(r, l, p)), ...RF.flatMap((t, r) => r % 2 ? [run(t, 300, Y(r + Math.floor(r / 2)))] : [run("SECTION " + r, 300, Y(r + r / 2)), run(t, 300, Y(r + r / 2 + 1))]).slice(0, 16)];
+cases.rightGapCells = [...ROWS.flatMap(([l, p], r) => tbl(r, l, p)), ...RF.flatMap((t, r) => { const m = /^(.*) (\$[\d.]+)$/.exec(t)!; return [run(m[1], 300, Y(r)), run(m[2], 450, Y(r))]; })];
+cases.rightLeaders = [...ROWS.flatMap(([l, p], r) => tbl(r, l, p)), ...RF.map((t, r) => { const m = /^(.*) (\$[\d.]+)$/.exec(t)!; return run(`${m[1]} ${".".repeat(26 - m[1].length)} ${m[2]}`, 300, Y(r)); })];
+// right column with more lines than left (left shorter: 6 rows)
+cases.rightLongerSingle = [...ROWS.slice(0, 6).flatMap(([l, p], r) => tbl(r, l, p)), ...RF.map((t, r) => run(t, 300, Y(r)))];
+cases.rightLongerSingle5 = [...ROWS.slice(0, 5).flatMap(([l, p], r) => tbl(r, l, p)), ...RF.map((t, r) => run(t, 300, Y(r)))];
+cases.raggedLowerNotes = ROWS.flatMap(([l, p, n], r) => [...tbl(r, l, p), run("plus " + n.toLowerCase() + (r % 3 ? " for all accounts" : " applies to every checking account"), 270, Y(r))]);
+cases.raggedLowerNotesClipped = ROWS.flatMap(([l, p, n], r) => [...tbl(r, l, p), run(("plus " + n.toLowerCase() + " for all accounts at this bank").slice(0, 34 + (r % 4) * 2), 270, Y(r))]);
+cases.mixedCaseNotes = ROWS.flatMap(([l, p, n], r) => [...tbl(r, l, p), run(((r % 3 === 0 ? "plus " + n.toLowerCase() : n) + " for all accounts at this bank").slice(0, 34 + (r % 4) * 2), 270, Y(r))]);
+cases.mixedCaseNotesRagged = ROWS.flatMap(([l, p, n], r) => [...tbl(r, l, p), run(((r % 3 === 0 ? "plus " + n.toLowerCase() : n) + " for all accounts at this bank").slice(0, 26 + (r % 5) * 4), 270, Y(r))]);
+const WN: [string,string,string[]][] = [
+ ["Overdraft fee (per item)", "$30.00", ["Daily maximum $150; charged for each", "item we pay into a negative balance", "on your checking account"]],
+ ["Returned item (NSF)", "$30.00", ["Daily maximum $150; charged for each", "item we return unpaid for lack of", "available funds"]],
+ ["Outgoing domestic wire", "$25.00", ["International wire $45; submit the", "request before 2 p.m. for same day", "processing"]],
+ ["Account research", "$25.00", ["Minimum charge $10; billed per hour", "of research with a one hour minimum", "for each request"]],
+ ["Debit card replacement", "$10.00", ["Rush delivery $50; standard delivery", "takes seven to ten business days", "by mail"]],
+ ["Safe deposit box 3x5", "$30.00", ["Late payment $10; rent is due each", "year on the anniversary of the lease", "date"]],
+ ["Stop payment", "$25.00", ["Online request $15; each stop lasts", "six months and may be renewed for", "another fee"]],
+];
+cases.wrappedDesc3 = WN.flatMap(([l, p, d], r) => [...tbl(3 * r, l, p), ...d.map((t, k) => run(t, 270, Y(3 * r + k)))]);
+cases.wrappedDesc2 = WN.flatMap(([l, p, d], r) => [...tbl(2 * r, l, p), ...d.slice(0, 2).map((t, k) => run(t, 270, Y(2 * r + k)))]);
+it("pubSame", () => { const a = layoutPageResult(cases.rightSingleCellSameBaseline, { columnReading: false }).text; console.log(publish(a).join("\n")); });
+it("adv3", () => {
+  for (const [name, items] of Object.entries(cases)) {
+    const a = layoutPageResult(items, { columnReading: true }).text, b = layoutPageResult(items, { columnReading: false }).text;
+    console.log(`=== ${name}: ${a === b ? "UNCHANGED" : "SPLIT"}`);
+    if (a === b) continue;
+    console.log(a.split("\n").slice(0, 6).join("\n"), "\n...");
+    const pa = publish(a), pb = publish(b);
+    console.log("ON only:", pa.filter((x) => !pb.includes(x)));
+    console.log("OFF only:", pb.filter((x) => !pa.includes(x)));
+  }
+});
+it("show", () => { console.log("ON>>\n" + layoutPageResult(cases.wrappedDesc3, { columnReading: true }).text + "\nOFF>>\n" + layoutPageResult(cases.wrappedDesc3, { columnReading: false }).text.split("\n").slice(0,6).join("\n")); });
