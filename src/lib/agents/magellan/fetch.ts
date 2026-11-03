@@ -29,6 +29,7 @@ import type { BrowserFetchResult } from "./browser-fetch";
 import { runCompanionFetch, type RunCompanionFetchResult } from "./companion-fetch";
 import { addOperatorSchedules, OPERATOR_SCHEDULE_STRATEGY, OPERATOR_SCHEDULES, type OperatorScheduleResult } from "./operator-schedules";
 import { isArticleLink, isErrorPageLink } from "./link-coverage";
+import { oldLabelledAddress } from "./old-labelled-link";
 import { normalizeDocumentUrl } from "@/lib/agents/answer-key-score";
 
 type SqlTag = typeof sql;
@@ -244,6 +245,43 @@ function linkIsGone(result: FetchResult): boolean {
     result.redirectedHome === true ||
     isErrorPageLink(result.sourceUrl)
   );
+}
+
+/** The failure reason of a link sent back to discovery because its address calls it old or archived (#1026, #1455 class). */
+export const OLD_LABELLED_LINK_FAILURE = "magellan_old_labelled_link";
+
+/** What the fetch does about an address that calls itself old or archived (`oldLabelledFetchAction`). */
+export type OldLabelledFetchAction =
+  | { kind: "none" }
+  | { kind: "forget_remembered"; url: string; word: string }
+  | { kind: "send_back"; url: string; word: string };
+
+/**
+ * Pure (#1026, #1455 class, Nov 3): the label rule reads the address the bank links to, the one we
+ * ask for, never where a redirect lands: Westreet's current link "/documents/fee-schedule" redirects
+ * to "Fee-Schedule-Old.pdf", which may well be its current schedule, so it keeps its link.
+ * - A person's correction locks the profile: nothing changes.
+ * - The saved link (`fee_schedule_url`) is old-labelled: it goes back to discovery before anything
+ *   is downloaded (Citizens Bank & Trust's "/schedule-of-fees-old", whatever address it remembers).
+ * - Only the remembered address is old-labelled and the saved link is a different, current address:
+ *   the remembered address is set aside and the saved link is fetched (the good link is kept).
+ * - Only the remembered address is old-labelled and there is no saved link: it goes back to discovery.
+ */
+export function oldLabelledFetchAction(row: Pick<FetchCandidateRow, "fee_schedule_url" | "profile_canonical_source_url" | "profile_locked_by_correction">): OldLabelledFetchAction {
+  if (row.profile_locked_by_correction === true) return { kind: "none" };
+  const saved = normalizeHttpUrl(row.fee_schedule_url);
+  const remembered = normalizeHttpUrl(row.profile_canonical_source_url ?? null);
+  const savedWord = oldLabelledAddress(saved);
+  if (saved && savedWord) return { kind: "send_back", url: row.fee_schedule_url!.trim(), word: savedWord };
+  const rememberedWord = oldLabelledAddress(remembered);
+  if (!remembered || !rememberedWord) return { kind: "none" };
+  if (saved) return { kind: "forget_remembered", url: remembered, word: rememberedWord };
+  return { kind: "send_back", url: row.profile_canonical_source_url!.trim(), word: rememberedWord };
+}
+
+/** Pure: the candidate without an old-labelled remembered address when its saved link is current (`oldLabelledFetchAction`). */
+export function withoutOldRemembered(row: FetchCandidateRow): FetchCandidateRow {
+  return oldLabelledFetchAction(row).kind === "forget_remembered" ? { ...row, profile_canonical_source_url: null } : row;
 }
 
 function sha256(bytes: Uint8Array): string {
@@ -917,6 +955,75 @@ async function sendGoneLinkToDiscovery(db: SqlTag, result: FetchResult, feeSched
   return cleared.length > 0;
 }
 
+/**
+ * An old-labelled link goes back to discovery before it is fetched (#1026, #1455 class): the URL is
+ * remembered as rejected so discovery never takes it again, the remembered address is dropped, the
+ * saved link is cleared while it is still the one judged, and the bank is marked due a search. Never
+ * past a person's correction (the caller skips a locked profile; the SQL checks again).
+ */
+async function sendOldLabelledLinkToDiscovery(
+  db: SqlTag,
+  row: FetchCandidateRow,
+  action: Extract<OldLabelledFetchAction, { kind: "send_back" }>,
+  reason: string,
+): Promise<boolean> {
+  const institutionId = Number(row.id);
+  const rejected = JSON.stringify([{ url: action.url, reason, at: new Date().toISOString() }]);
+  await db`
+    UPDATE institution_source_profiles
+       SET rejected_source_urls = (
+             SELECT COALESCE(jsonb_agg(entry), '[]'::jsonb)
+               FROM jsonb_array_elements(COALESCE(rejected_source_urls, '[]'::jsonb)) entry
+              WHERE entry->>'url' IS DISTINCT FROM ${action.url}
+           ) || ${rejected}::jsonb,
+           canonical_source_url = NULL,
+           updated_at = NOW()
+     WHERE institution_id = ${institutionId}
+       AND locked_by_correction IS NOT TRUE
+  `;
+  const cleared = await db`
+    UPDATE institution_sources inst
+       SET fee_schedule_url = NULL,
+           rescue_status = 'pending',
+           failure_reason = ${OLD_LABELLED_LINK_FAILURE},
+           failure_reason_note = ${reason},
+           failure_reason_updated_at = NOW()
+     WHERE inst.id = ${institutionId}
+       AND btrim(COALESCE(inst.fee_schedule_url, '')) = ${row.fee_schedule_url?.trim() ?? ""}
+       AND NOT EXISTS (
+         SELECT 1 FROM institution_source_profiles profile
+          WHERE profile.institution_id = inst.id AND profile.locked_by_correction IS TRUE
+       )
+    RETURNING inst.id
+  `;
+  return cleared.length > 0;
+}
+
+/** The result of a fetch the label rule stopped before any request (`oldLabelledFetchAction`). */
+function oldLabelledResult(row: FetchCandidateRow, url: string, word: string, outcome: "failed" | "skipped"): FetchResult {
+  return {
+    institutionId: Number(row.id),
+    institutionName: String(row.institution_name),
+    outcome,
+    sourceUrl: url,
+    finalUrl: null,
+    statusCode: null,
+    contentType: null,
+    documentType: null,
+    contentHash: null,
+    bytes: 0,
+    reason: `Link's address labels it old or archived ("${word}"), not the current fee schedule`,
+    attemptOutcome: outcome === "failed" ? "wrong_document" : null,
+    etag: null,
+    lastModified: null,
+    durationMs: 0,
+    previousDocumentId: null,
+    body: null,
+    vaultStatus: null,
+    vaultKey: null,
+  };
+}
+
 /** Saves the downloaded bytes to the vault and records the key on the document row. */
 async function storeInVault(
   db: SqlTag,
@@ -983,6 +1090,40 @@ export async function fetchAndRecordLink(
 ): Promise<{ result: FetchResult; sourceDocumentId: number | null; supersededCopies: number }> {
   const { learning, vaultSchema, vault, vaultOn, dryRun } = ctx;
   let supersededCopies = 0;
+  // #1026, #1455 class (Nov 3): the label rule runs before anything is downloaded or stored, so an
+  // old link's new bytes never become the page's current copy (`oldLabelledFetchAction`).
+  if (ctx.keepRemembered) {
+    // A side copy of the saved link: an old-labelled one is not fetched at all.
+    const word = row.profile_locked_by_correction === true ? null : oldLabelledAddress(normalizeHttpUrl(row.profile_canonical_source_url ?? row.fee_schedule_url));
+    if (word) return { result: oldLabelledResult(row, (row.profile_canonical_source_url ?? row.fee_schedule_url ?? "").trim(), word, "skipped"), sourceDocumentId: null, supersededCopies };
+  } else {
+    const action = oldLabelledFetchAction(row);
+    if (action.kind === "forget_remembered") row = { ...row, profile_canonical_source_url: null };
+    if (action.kind === "send_back") {
+      const result = oldLabelledResult(row, action.url, action.word, "failed");
+      if (dryRun) return { result, sourceDocumentId: null, supersededCopies };
+      result.sentBackToDiscovery = await sendOldLabelledLinkToDiscovery(db, row, action, result.reason ?? "");
+      if (learning) {
+        await recordAttempt(db, {
+          institutionId: result.institutionId,
+          sourceDocumentId: null,
+          stage: "fetch",
+          strategy: ctx.strategy.strategy,
+          version: ctx.strategy.version,
+          fingerprint: action.url,
+          outcome: "wrong_document",
+          yieldCount: 0,
+          costMicrousd: 0,
+          durationMs: 0,
+          runId: ctx.runId,
+          stepId: ctx.stepId,
+          foldIntoPlaybook: true,
+          detail: { url: action.url, reason: result.reason, old_labelled: action.word, sent_back: result.sentBackToDiscovery, ...(ctx.detail ?? {}) },
+        });
+      }
+      return { result, sourceDocumentId: null, supersededCopies };
+    }
+  }
   const previous = await loadPreviousDocument(db, row, learning, vaultSchema);
   const result = await fetchCandidate(row, fetchImpl, previous);
   if (dryRun) return { result, sourceDocumentId: null, supersededCopies };
@@ -1145,7 +1286,7 @@ export async function runMagellanFetch(
   const results: FetchResult[] = [];
   let supersededCopies = 0;
   for (const candidate of rows) {
-    const row = withRequestedUrl(withoutArticleRemembered(candidate), options.institutionId, options.requestedUrl);
+    const row = withRequestedUrl(withoutOldRemembered(withoutArticleRemembered(candidate)), options.institutionId, options.requestedUrl);
     const fetched = await fetchAndRecordLink(db, row, fetchImpl, {
       learning,
       vaultSchema,

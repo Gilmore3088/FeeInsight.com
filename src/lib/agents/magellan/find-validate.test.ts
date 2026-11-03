@@ -207,6 +207,39 @@ describe("business-only schedules", () => {
   });
 });
 
+describe("old or archived documents (#1026, #1455 class, Nov 3)", () => {
+  const page = (body: string) => vi.fn(async () => new Response(`<html><body><main>${body}</main></body></html>`, { status: 200, headers: { "content-type": "text/html" } }));
+  const lines = "<h1>Schedule of Fees</h1><p>Overdraft fee $35.00</p><p>Stop payment $30.00</p><p>Wire $25.00</p><p>Cashier's check $10.00</p>";
+
+  it("rejects an address that calls the document old or archived without opening it", async () => {
+    for (const url of [
+      "https://www.cbt-co.com/deposit-accounts/schedule-of-fees-old",
+      "https://www.winsouthcu.com/_/kcms-doc/1526/59288/PDF.FEE.SCHED.716.OLD.pdf",
+      "https://cjpolicefirefcu.org/old-web-site/",
+      "https://www.clackamascountybank.com/archive-2021/personal-checking.php",
+    ]) {
+      const fetchImpl = page(lines);
+      expect(await validateFeeCandidate({ url, score: 0.9, reasons: [] }, fetchImpl)).toMatchObject({ ok: false, verdict: "old_labelled" });
+      expect(fetchImpl).not.toHaveBeenCalled();
+    }
+  });
+
+  it("judges the address the bank links to, not where it redirects, and keeps banks named Old", async () => {
+    const moved = vi.fn(async () => {
+      const response = new Response(`<html><body><main>${lines}</main></body></html>`, { status: 200, headers: { "content-type": "text/html" } });
+      Object.defineProperty(response, "url", { value: "https://bank.example/fees/schedule-of-fees-old" });
+      return response;
+    });
+    // Westreet FCU (Nov 3): its current link redirects to "Fee-Schedule-Old.pdf", which may be its current schedule.
+    const landedOld = await validateFeeCandidate({ url: "https://bank.example/fees", score: 0.9, reasons: [] }, moved);
+    expect(landedOld.verdict).not.toBe("old_labelled");
+    const oldNational = await validateFeeCandidate({ url: "https://www.oldnational.com/fee-schedule", score: 0.9, reasons: [] }, page(lines));
+    expect(oldNational.verdict).not.toBe("old_labelled");
+    const priorNotice = await validateFeeCandidate({ url: "https://bank.example/prior-notice", score: 0.9, reasons: [] }, page(lines));
+    expect(priorNotice.verdict).not.toBe("old_labelled");
+  });
+});
+
 describe("the bank's own documents only (#1033)", () => {
   const html = "<html><body><main><h1>Schedule of Fees</h1><p>Overdraft fee $30.00</p><p>NSF fee $30.00</p><p>Stop payment fee $25.00</p><p>Wire transfer fee $20.00</p></main></body></html>";
 

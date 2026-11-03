@@ -8,6 +8,7 @@ import { MISFILED_TAKEDOWN_CHECKS } from "./feedback-sync";
 import { BANDED_ZERO_CHECK, BANDED_ZERO_REASON } from "@/lib/agents/darwin/banded-zero-check";
 import { ACCOUNT_BENEFIT_ZERO_CHECK, ACCOUNT_BENEFIT_ZERO_REASON } from "@/lib/agents/darwin/account-benefit-zero-check";
 import { CANADIAN_DOCUMENT_CHECK, CANADIAN_DOCUMENT_REASON } from "@/lib/agents/darwin/canadian-document-check";
+import { OLD_LABELLED_DOCUMENT_CHECK, OLD_LABELLED_DOCUMENT_REASON } from "@/lib/agents/darwin/old-labelled-document-check";
 import { CARD_PROGRAM_SECTION_CHECK, CARD_PROGRAM_SECTION_REASON } from "@/lib/agents/darwin/card-program-section-check";
 import { DOCUMENT_OWNER_CHECK, DOCUMENT_OWNER_REASON } from "@/lib/agents/darwin/document-owner";
 import { INTERNATIONAL_DIRECTION_CHECK, INTERNATIONAL_DIRECTION_REASON } from "@/lib/agents/darwin/international-direction-check";
@@ -87,6 +88,7 @@ const PRODUCERS: Record<string, Producer[]> = {
   "agents/darwin/banded-zero-check.ts": [{ check: BANDED_ZERO_CHECK, reasons: [BANDED_ZERO_REASON] }],
   "agents/darwin/account-benefit-zero-check.ts": [{ check: ACCOUNT_BENEFIT_ZERO_CHECK, reasons: [ACCOUNT_BENEFIT_ZERO_REASON] }],
   "agents/darwin/canadian-document-check.ts": [{ check: CANADIAN_DOCUMENT_CHECK, reasons: [CANADIAN_DOCUMENT_REASON] }],
+  "agents/darwin/old-labelled-document-check.ts": [{ check: OLD_LABELLED_DOCUMENT_CHECK, reasons: [`${OLD_LABELLED_DOCUMENT_REASON}: #2229 (current link #16917)`] }],
   "agents/darwin/card-program-section-check.ts": [{ check: CARD_PROGRAM_SECTION_CHECK, reasons: [CARD_PROGRAM_SECTION_REASON] }],
   "agents/darwin/document-owner.ts": [{ check: DOCUMENT_OWNER_CHECK, reasons: [DOCUMENT_OWNER_REASON] }],
   "agents/darwin/edition-effective-check.ts": [{ check: EDITION_CHECK, reasons: [OLDER_EDITION_REASON, NOT_YET_EFFECTIVE_REASON] }],

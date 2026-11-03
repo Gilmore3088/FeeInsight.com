@@ -6,6 +6,7 @@ import { unconfirmedDocumentHost } from "./other-bank-host";
 import { looksLikeJsShell } from "@/lib/agents/rosetta/js-fallback";
 import { creditTermsOpening, documentOpeningKind } from "@/lib/non-deposit-document";
 import { legacyAddress, legacyOpening } from "./legacy-page";
+import { oldLabelledAddress } from "./old-labelled-link";
 
 /**
  * The fee-page check every Magellan finder (free and paid) runs before a link is
@@ -103,6 +104,7 @@ export type CandidateVerdict =
   | "youth_account_document"
   | "card_rate_table_document"
   | "legacy_page"
+  | "old_labelled"
   | "non_fee_document"
   | "unconfirmed_host"
   | "unreadable_pdf_weak_label"
@@ -254,8 +256,13 @@ function confirmDocumentHost(candidate: FeeCandidate, validation: CandidateValid
   return { ...rejected("unconfirmed_host", `Candidate is on another host: ${why}`, validation.status, candidate.score), html: validation.html, scoringText: validation.scoringText };
 }
 
-/** The address checks, before anything is fetched. Null when the address may be the schedule. */
-function rejectedAddress(candidate: FeeCandidate): CandidateValidation | null {
+/**
+ * The address checks, before anything is fetched. Null when the address may be the schedule.
+ * `landed` is true for the address a redirect ended on: the old-label rule reads only the address
+ * the bank links to (a current link that redirects to "Fee-Schedule-Old.pdf" may be serving its
+ * current schedule, Westreet FCU on Nov 3), the same as the fetch step's `oldLabelledFetchAction`.
+ */
+function rejectedAddress(candidate: FeeCandidate, landed = false): CandidateValidation | null {
   if (isBusinessOnlyLink(candidate.url)) {
     return rejected("business_schedule", "Candidate address names a business-only schedule", null, candidate.score);
   }
@@ -267,6 +274,11 @@ function rejectedAddress(candidate: FeeCandidate): CandidateValidation | null {
   }
   if (legacyAddress(candidate.url)) {
     return rejected("legacy_page", "Candidate address names a legacy or discontinued accounts page, not the current fee schedule", null, candidate.score);
+  }
+  // #1026, #1455 class (Nov 3): the address calls the document old or archived ("Fee-Schedule-Old.pdf", "/archive-2021/").
+  const oldWord = landed ? null : oldLabelledAddress(candidate.url);
+  if (oldWord) {
+    return rejected("old_labelled", `Candidate address labels the document old or archived ("${oldWord}"), not the current fee schedule`, null, candidate.score);
   }
   if (isArticleLink(candidate.url)) {
     return rejected("article_page", "Candidate is an article, blog post or news item, not a fee schedule", null, candidate.score);
@@ -293,7 +305,7 @@ async function checkFeeCandidate(candidate: FeeCandidate, fetchImpl: Fetcher): P
   if (!finalUrl) return checkResponse(candidate, response);
   // A page is judged where it landed: "/fee-schedule" redirecting to a checking page is a product page (#1051).
   const landed = { ...candidate, url: finalUrl, requestedUrl: candidate.url };
-  const validation = rejectedAddress(landed) ?? (await checkResponse(landed, response));
+  const validation = rejectedAddress(landed, true) ?? (await checkResponse(landed, response));
   return { ...validation, finalUrl };
 }
 

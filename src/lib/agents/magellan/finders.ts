@@ -12,6 +12,7 @@ import {
   type FeeCandidate,
 } from "./find-validate";
 import { isSitemapIndex, robotsAllows, robotsDisallows, robotsSitemaps, sitemapLocations } from "./site-signals";
+import { oldLabelledLink } from "./old-labelled-link";
 
 /**
  * The Magellan find team: one specialist per way of finding a bank's fee schedule.
@@ -393,6 +394,12 @@ export function scoreLink(
   if (looksLikePdfUrl(url)) {
     score += 0.1;
     reasons.push("pdf");
+  }
+  // #1026, #1455 class (Nov 3): a link whose address or words call it old or archived is never the fee link.
+  const oldWord = oldLabelledLink(url, label);
+  if (oldWord) {
+    score = 0;
+    reasons.push(`old_labelled:${oldWord}`);
   }
   return { url, label, score: Math.max(0, Math.min(score, 0.98)), source, foundOn, reasons };
 }
@@ -968,6 +975,7 @@ export const FINDER_ORDER: Array<{ key: FinderKey; run: (ctx: SearchContext) => 
 
 const REJECTION_VERDICTS = new Set([
   "not_fee_page",
+  "old_labelled",
   "payment_page",
   "rate_page",
   "too_few_fee_words",

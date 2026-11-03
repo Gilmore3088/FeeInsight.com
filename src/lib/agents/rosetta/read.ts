@@ -1,4 +1,5 @@
 import { feeSourceFetch } from "@/lib/agents/fee-source-fetch";
+import { oldLabelledAddress } from "@/lib/agents/magellan/old-labelled-link";
 import { createHash } from "crypto";
 import { feesSentToDarwinSql, THIN_DOCUMENT_MAX_FEES, thinRereadKindSql } from "@/lib/agents/thin-document";
 
@@ -2243,6 +2244,9 @@ export function linkedFeePageCompanion(url: string, referrerUrl: string | null):
   }
   // A loan or bill payment page is not the bank's schedule either (matagordaccu.com/online-payment).
   if (isNonDepositLink("", url) || namesPaymentPage("", url)) return null;
+  // #1026, #1455 class (Nov 3): a link whose address calls it old or archived ("Fee-Schedule-Old.pdf",
+  // "/archive-2021/") is never stored as the bank's document (Magellan's `oldLabelledAddress`).
+  if (oldLabelledAddress(url)) return null;
   return {
     documentType: /\.pdf$/i.test(path) ? "pdf" : "html",
     role: additionalDocumentRole(path),

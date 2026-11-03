@@ -1679,6 +1679,29 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   `canadian_document` flag; event `darwin.canadian_document_takedown`). Step detail
   `canadian_document_check`. Dry run Oct 19: 12 fees on docs 26833 and 26834, all Natbank; the same
   12 are #2022 hand takedowns, and Atlas points Natbank's registry at its U.S. accounts page.
+- Old or archived documents (`old-labelled-document-check.ts`, v1, #1026, #1455 class, Nov 3).
+  86 live fees at 5 banks came from documents whose own address calls them old or archived
+  (Westreet's "Fee-Schedule-Old.pdf", fee 43316 among its 32). The live-site audit cannot see this.
+  - A loose SQL pre-filter on the document path picks candidates (`oldLabelledDocumentRowsSql`), and
+    Magellan's `oldLabelledAddress` decides.
+  - The current link's copy is the document the link's newest plain fetch stored (a redirect's
+    landing), or else the newest stored copy at the link's address.
+  - A fee comes down only when all of these hold: the current link is a different, non-old address;
+    its copy is one Rosetta typed `fee_schedule`; and that copy's newest text does not state the fee
+    (`checkFeeAgainstSource`).
+  - A fee stays live when it has no amount or name (`not_judged`); when the bank has no link; when the
+    link is the old document or its fetch lands on it (Westreet's current link redirects to the "Old"
+    file); when the link is old itself (Magellan sends it back to discovery); when the link has no
+    stored copy; when the copy is not a fee schedule; or when the current text still states the fee.
+  - It runs at most hourly; an institution-scoped run always reads.
+  - The switch `OLD_LABELLED_DOCUMENT_TAKEDOWN_LIVE` is off. Switched on, a match goes through the
+    12-hour second look (`darwin.old_labelled_document`) and is archived with `old_labelled_document:
+    #<doc> (current link #<link doc>)`: batch `darwin-old-labelled-document-<run>`, the verified row
+    rejected with the `old_labelled_document` flag, event `darwin.old_labelled_document_takedown`.
+  - Step detail: `old_labelled_document_check`.
+  - Dry run Nov 3 (prod, read-only, after review): 238 candidates, 86 old-labelled, 0 would come
+    down. 80 are on the link's own document or its landing, 4 are not judged, and Clackamas's 2 are
+    stated on its current page.
 - A late charge's cap or floor (`late-charge-bound-check.ts`, #1905). A loan schedule states its
   late charge as a share of the payment with a cap or floor ("5% of the principal and interest ...;
   maximum late charge of $30", "Minimum Late Fee $10" beside "5% of Payment Amount"). The cap or
@@ -2930,6 +2953,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `SAME_LINE_READ_CHECK_VERSION` | `darwin.same_line_read` | v1 | `darwin/same-line-read-check.ts` |
 | `PRODUCT_SPLIT_CHECK_VERSION` | `darwin.product_split` | v1 | `darwin/product-split-check.ts` |
 | `CANADIAN_DOCUMENT_CHECK_VERSION` | `darwin.canadian_document` | v1 | `darwin/canadian-document-check.ts` |
+| `OLD_LABELLED_DOCUMENT_CHECK_VERSION` | `darwin.old_labelled_document` | v1 | `darwin/old-labelled-document-check.ts` |
 | `LATE_CHARGE_BOUND_CHECK_VERSION` | `darwin.late_charge_bound` | v1 | `darwin/late-charge-bound-check.ts` |
 | `RATE_FLOOR_CHECK_VERSION` | `darwin.rate_floor` | v1 | `darwin/rate-floor-check.ts` |
 | `NO_FEE_SENTENCE_CHECK_VERSION` | `darwin.no_fee_sentence` | v1 | `darwin/no-fee-sentence-check.ts` |
