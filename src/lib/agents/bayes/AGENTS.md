@@ -22,6 +22,12 @@ settled; no historical re-extract, repair, rejudge or provider/source work follo
 - `ledger.ts`: the `bayes-replay-ledger` step. A job closes when nothing is queued (done and
   excluded are terminal) and is `stuck` when nothing settled across `STUCK_AFTER_CHECKS` counts.
   A rerun whose reach cannot be counted yet is `not_counted`, with the reason, never closed.
+- Superseded rows (v2, 2026-11-02). `loadManifests()` declares each manifest at the current
+  version only, so a version bump adds a row and the older row is never counted again. Each run
+  closes every `open` or `stuck` row whose manifest the code declares at another change key, with
+  the note `superseded by <current change key>` and one check row, keeping its last counts as
+  history, and lists them in the step detail (`superseded`). The Quality page counts only current
+  rows and shows superseded ones apart, so the open total is the real queue.
 
 ## Adding a manifest
 
@@ -55,4 +61,4 @@ fails a PR that changes one of these constants without updating its line here (#
 
 | Constant | Strategy | Version | File |
 |---|---|---|---|
-| `BAYES_LEDGER_VERSION` | — | v1 | `bayes/ledger.ts` |
+| `BAYES_LEDGER_VERSION` | — | v2 | `bayes/ledger.ts` |

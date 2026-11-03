@@ -111,6 +111,11 @@ const SWEEP_PROBES: Record<string, () => SweepProbe> = {
   NO_FEE_SENTENCE_TAKEDOWN_LIVE: () => one([pub("monthly_maintenance", "It’s easy to open. It makes banking more convenient. There are no minimum balance requirements or monthly service fees.", 100, NO_FEES)]),
   ZERO_WAIVER_ROW_TAKEDOWN_LIVE: () => one([pub("cashiers_check", "Cashier's Checks", 0, "No Fee for Cashier's Checks")],
     "Cornerstone Checking:\n\n2 Boxes Personal Checks Free per Year\n\nNo Fee for Cashier's Checks\n\nCornerstone Plus:"),
+  // Mountain Star FCU (text 36365, live 159428): "Fax Service" is an item of the free services list; the $5.00 is the money market excess check's.
+  FREE_LIST_ITEM_TAKEDOWN_LIVE: () => one([pub("document_reproduction", "Fax Service", 500, "Money market | Fax Service / $5.00")],
+    "Mailed paper | $1.00\nstatement | Instant Issue | Other Free Services: Anytime, Notary\n$10.00 | Service, Signature Guarantee, Unlimited\nDebit Card\nMembership Fee $3.00 | Check Writing, Balance Inquiries,\nMoney market | Fax Service\n$5.00\nexcess check\nMoney Orders $.75 ea."),
+  // Peninsula Community FCU (live 73916): a rate disclosure's balance threshold read as a $5 minimum balance fee.
+  NOT_ACCOUNT_FEE_LINE_TAKEDOWN_LIVE: () => one([pub("minimum_balance", "If your average daily balance is below", 500, "If your average daily balance is below $100.00 ($5.00 for accounts held by those under 18 years of age), no dividends are earned")]),
   DARWIN_LOAN_PAYMENT_EXAMPLE_TAKEDOWN_LIVE: () => one([pub("other_lending_fee", "Loan Documentation Fee, estimated payment", 147389, "Loan Documentation Fee, estimated payment of $1,473.89")]),
   CANADIAN_DOCUMENT_TAKEDOWN_LIVE: () => one([pub("monthly_maintenance", "Monthly Fee", 400, "Monthly Fee $4.00")], "Chequing account Monthly Fee $4.00 ... Unlimited Interac e‑Transfers with no fees"),
   NON_DEPOSIT_DOCUMENT_TAKEDOWN_LIVE: () => one([pub("appraisal_fee", "Appraisal", 40000, "Appraisal $400")], "Current Rates\nAppraisal $400", "https://www.bankofgreene.com/current-rates/"),

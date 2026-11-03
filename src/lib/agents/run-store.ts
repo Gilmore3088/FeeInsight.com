@@ -129,6 +129,8 @@ import { readVerifyMisses, verifyMissDetail, verifyMissNote } from "@/lib/agents
 import { bandedZeroDetail, recheckBandedZeros } from "@/lib/agents/darwin/banded-zero-check";
 import { accountBenefitZeroDetail, recheckAccountBenefitZeros } from "@/lib/agents/darwin/account-benefit-zero-check";
 import { recheckZeroWaiverRows, zeroWaiverRowDetail } from "@/lib/agents/darwin/zero-waiver-row-check";
+import { freeListItemDetail, recheckFreeListItems } from "@/lib/agents/darwin/free-list-item-check";
+import { notAccountFeeLineDetail, recheckNotAccountFeeLines } from "@/lib/agents/darwin/not-account-fee-line-check";
 import { cardProgramSectionDetail, recheckCardProgramSections } from "@/lib/agents/darwin/card-program-section-check";
 import { loanSectionDetail, recheckLoanSections } from "@/lib/agents/darwin/loan-section-check";
 import { lineConflictDetail, recheckLineConflicts } from "@/lib/agents/darwin/line-conflict-check";
@@ -149,6 +151,7 @@ import { runBriefingRefresh, summarizeBriefingRefresh } from "@/lib/hamilton/bri
 import { runLeadWatch, summarizeLeadWatch } from "@/lib/leads/lead-alerts";
 import { runIndexNowPing, summarizeIndexNow } from "@/lib/seo/indexnow";
 import { runAnswerKeyScore, summarizeAnswerKeyScore } from "@/lib/agents/answer-key-score";
+import { runFixedCohortScore, summarizeFixedCohort } from "@/lib/agents/deming/fixed-cohort";
 import { runScoreboardSnapshot, summarizeScoreboard } from "@/lib/agents/scoreboard";
 import { persistCorrectiveArtifact, recordCorrectiveWarnings } from "@/lib/agents/deming/corrective-source-store";
 import { runDemingRegression, summarizeDemingRegression, recordRegressionNotes, DEMING_REGRESSION_VERSION } from "@/lib/agents/deming/regression";
@@ -1537,6 +1540,30 @@ async function executeAgenticStep(
       const zeroWaiverRowNote = zeroWaiverRow.matched > 0
         ? ` Waiver-row $0 re-check: ${zeroWaiverRow.matched.toLocaleString()} of ${zeroWaiverRow.checked.toLocaleString()} live $0 fee(s) at ${zeroWaiverRow.institutions.toLocaleString()} institution(s) were read from a no-fee item or a waiver row (${zeroWaiverRow.live && !zeroWaiverRow.dryRun ? `${zeroWaiverRow.flagged.toLocaleString()} flagged, ${zeroWaiverRow.takenDown.length.toLocaleString()} archived` : zeroWaiverRow.dryRun ? "dry run: would take down, nothing written" : "switch off: would take down, nothing written"}).`
         : "";
+      // #1092 (Mountain Star FCU, live 159428): live priced fees named as an item of a free services list
+      // whose price was taken from another line (free-list-item-check.ts); a report only on a dry run or
+      // with its switch off (FREE_LIST_ITEM_TAKEDOWN_LIVE, off).
+      const freeListItem = await recheckFreeListItems(tx, {
+        runId: run.id,
+        stepId: step.id,
+        dryRun: run.runKind === "dry_run",
+        institutionId: numericRunParam(params, ["institution_id"]),
+      });
+      const freeListItemNote = freeListItem.matched > 0
+        ? ` Free-list item re-check: ${freeListItem.matched.toLocaleString()} of ${freeListItem.checked.toLocaleString()} live priced fee(s) at ${freeListItem.institutions.toLocaleString()} institution(s) are named as an item of a free services list and priced from another line (${freeListItem.live && !freeListItem.dryRun ? `${freeListItem.flagged.toLocaleString()} flagged, ${freeListItem.takenDown.length.toLocaleString()} archived` : freeListItem.dryRun ? "dry run: would take down, nothing written" : "switch off: would take down, nothing written"}).`
+        : "";
+      // Knox v170 (backlog dry run 3): live fees whose line is no account fee, a rate disclosure's balance
+      // threshold (73916) or an online services section's monthly charge (152003) (not-account-fee-line-check.ts);
+      // a report only on a dry run or with its switch off (NOT_ACCOUNT_FEE_LINE_TAKEDOWN_LIVE, off).
+      const notAccountFeeLine = await recheckNotAccountFeeLines(tx, {
+        runId: run.id,
+        stepId: step.id,
+        dryRun: run.runKind === "dry_run",
+        institutionId: numericRunParam(params, ["institution_id"]),
+      });
+      const notAccountFeeLineNote = notAccountFeeLine.matched > 0
+        ? ` Not-an-account-fee line re-check: ${notAccountFeeLine.matched.toLocaleString()} of ${notAccountFeeLine.checked.toLocaleString()} live fee(s) at ${notAccountFeeLine.institutions.toLocaleString()} institution(s) read a dividend threshold or an online service's monthly charge (${notAccountFeeLine.live && !notAccountFeeLine.dryRun ? `${notAccountFeeLine.flagged.toLocaleString()} flagged, ${notAccountFeeLine.takenDown.length.toLocaleString()} archived` : notAccountFeeLine.dryRun ? "dry run: would take down, nothing written" : "switch off: would take down, nothing written"}).`
+        : "";
       // #2057/#2062: a person's holds and corrections filed against verify, read into
       // lessons and a per-check missed tally, at most hourly (verify-misses.ts). Read-only: no fee changes.
       const verifyMisses = await readVerifyMisses(tx, {
@@ -1656,7 +1683,7 @@ async function executeAgenticStep(
         : "";
       return {
         status: "completed",
-        summary: `Darwin verified ${verification.verifiedFees.toLocaleString()} raw fee observations from ${verification.processedRawFees.toLocaleString()} selected rows (${verification.skippedFees.toLocaleString()} skipped).${verification.deferredRawFees ? ` ${verification.deferredRawFees.toLocaleString()} row(s) deferred without a verification decision because current source/raw admission remains unresolved.` : ""}${recheckReceiptNote(recheck)}${release.deferred ? ` ${release.deferred.toLocaleString()} held fee(s) deferred without a release decision.` : ""}${holdRereadNote}${conditionalZero.selected > 0 ? ` Settled ${(conditionalZero.selected - (conditionalZero.deferred ?? 0)).toLocaleString()} conditional-$0 hold(s) (${conditionalZero.verified.toLocaleString()} verified free on the bank's schedule).${conditionalZero.deferred ? ` ${conditionalZero.deferred.toLocaleString()} conditional-$0 hold(s) deferred without a decision.` : ""}` : ""}${verification.categoryChange && verification.categoryChange.candidates > 0 ? ` ${verification.categoryChange.candidates.toLocaleString()} row(s) Knox re-filed since Darwin's decision ${verification.categoryChange.live ? `(${verification.categoryChange.selected.toLocaleString()} judged again under today's category)` : "(switch off: counted, not judged again)"}.` : ""}${verification.categoryChange && verification.categoryChange.takeoverProof.rows > 0 ? ` ${verification.categoryChange.takeoverProof.rows.toLocaleString()} row(s) a re-read took over under a new category ${verification.categoryChange.takeoverProof.live ? "(judged again)" : "(take-over proof switch off: counted, not judged again)"}.` : ""}${liveFragmentNote}${liveFragmentFullNote}${hourlyNote}${hourlyFullNote}${ownUnitNote}${ownUnitFullNote}${maintenanceFrequencyNote}${accountOwnerNote(accountOwner)}${accountOwnerFull ? ` Whole live table: ${(accountOwnerFull.outcomes.refile ?? 0).toLocaleString()} live monthly or minimum balance fees would take a nearer numbered account.` : ""}${nonDepositNote}${nonDepositFullNote}${translatedCopyNote}${productPageRepeatNote}${rereadCategoryNote}${liveNameRefreshNote}${sameLineReplacementNote}${sameLineReadNote}${editionNote}${canadianDocumentNote}${lateChargeBoundNote}${rateFloorNote}${noFeeSentenceNote}${loanPaymentExampleNote}${workedExampleNote}${odTransferNote}${protectionItemNote}${loanPaymentNsfNote}${internationalDirectionNote}${bandedZeroNote}${accountBenefitZeroNote}${zeroWaiverRowNote}${cardProgramSectionNote}${loanSectionNote}${lineConflictNote}${staleCopyNote}${releaseRepairNote}${releaseRepairFullNote}${documentOwnerNote}${verifyMissNote(verifyMisses)}`,
+        summary: `Darwin verified ${verification.verifiedFees.toLocaleString()} raw fee observations from ${verification.processedRawFees.toLocaleString()} selected rows (${verification.skippedFees.toLocaleString()} skipped).${verification.deferredRawFees ? ` ${verification.deferredRawFees.toLocaleString()} row(s) deferred without a verification decision because current source/raw admission remains unresolved.` : ""}${recheckReceiptNote(recheck)}${release.deferred ? ` ${release.deferred.toLocaleString()} held fee(s) deferred without a release decision.` : ""}${holdRereadNote}${conditionalZero.selected > 0 ? ` Settled ${(conditionalZero.selected - (conditionalZero.deferred ?? 0)).toLocaleString()} conditional-$0 hold(s) (${conditionalZero.verified.toLocaleString()} verified free on the bank's schedule).${conditionalZero.deferred ? ` ${conditionalZero.deferred.toLocaleString()} conditional-$0 hold(s) deferred without a decision.` : ""}` : ""}${verification.categoryChange && verification.categoryChange.candidates > 0 ? ` ${verification.categoryChange.candidates.toLocaleString()} row(s) Knox re-filed since Darwin's decision ${verification.categoryChange.live ? `(${verification.categoryChange.selected.toLocaleString()} judged again under today's category)` : "(switch off: counted, not judged again)"}.` : ""}${verification.categoryChange && verification.categoryChange.takeoverProof.rows > 0 ? ` ${verification.categoryChange.takeoverProof.rows.toLocaleString()} row(s) a re-read took over under a new category ${verification.categoryChange.takeoverProof.live ? "(judged again)" : "(take-over proof switch off: counted, not judged again)"}.` : ""}${liveFragmentNote}${liveFragmentFullNote}${hourlyNote}${hourlyFullNote}${ownUnitNote}${ownUnitFullNote}${maintenanceFrequencyNote}${accountOwnerNote(accountOwner)}${accountOwnerFull ? ` Whole live table: ${(accountOwnerFull.outcomes.refile ?? 0).toLocaleString()} live monthly or minimum balance fees would take a nearer numbered account.` : ""}${nonDepositNote}${nonDepositFullNote}${translatedCopyNote}${productPageRepeatNote}${rereadCategoryNote}${liveNameRefreshNote}${sameLineReplacementNote}${sameLineReadNote}${editionNote}${canadianDocumentNote}${lateChargeBoundNote}${rateFloorNote}${noFeeSentenceNote}${loanPaymentExampleNote}${workedExampleNote}${odTransferNote}${protectionItemNote}${loanPaymentNsfNote}${internationalDirectionNote}${bandedZeroNote}${accountBenefitZeroNote}${zeroWaiverRowNote}${freeListItemNote}${notAccountFeeLineNote}${cardProgramSectionNote}${loanSectionNote}${lineConflictNote}${staleCopyNote}${releaseRepairNote}${releaseRepairFullNote}${documentOwnerNote}${verifyMissNote(verifyMisses)}`,
         detail: {
           selected_raw_fees: verification.selectedRawFees,
           processed_raw_fees: verification.processedRawFees,
@@ -1716,6 +1743,8 @@ async function executeAgenticStep(
           banded_zero_check: bandedZeroDetail(bandedZero),
           account_benefit_zero_check: accountBenefitZeroDetail(accountBenefitZero),
           zero_waiver_row_check: zeroWaiverRowDetail(zeroWaiverRow),
+          free_list_item_check: freeListItemDetail(freeListItem),
+          not_account_fee_line_check: notAccountFeeLineDetail(notAccountFeeLine),
           card_program_section_check: cardProgramSectionDetail(cardProgramSection),
           loan_section_check: loanSectionDetail(loanSection),
           line_conflict_check: lineConflictDetail(lineConflict),
@@ -3177,11 +3206,15 @@ async function executeAgenticStep(
         .catch((error: unknown) => ({ value: null, error: error instanceof Error ? error.message : String(error) }));
       const result = await runAnswerKeyScore({ runId: run.id, stepId: step.id, dryRun: run.runKind === "dry_run", db: tx });
       const score = result.score;
+      // Deming's fixed cohort (2026-11-02): the 62 keys frozen on Nov 2, scored every day the same
+      // way, so a day-over-day move is the pipeline's, not the eligibility check's.
+      const fixed = await runFixedCohortScore({ db: tx, keys: result.referenceKeys ?? null, runId: run.id, stepId: step.id, dryRun: run.runKind === "dry_run" });
       const relabelLine = relabel.value ? summarizeAnswerKeyRelabels(relabel.value) : `Atlas's answer-key relabel failed: ${relabel.error}.`;
       return {
         status: "completed",
-        summary: `${relabelLine} ${summarizeAnswerKeyScore(result)}`,
+        summary: `${relabelLine} ${summarizeAnswerKeyScore(result)} ${summarizeFixedCohort(fixed.score)}`,
         detail: {
+          fixed_cohort: { ...fixed.score, event_id: fixed.eventId, record_error: fixed.recordError },
           answer_key_relabel: relabel.value ? answerKeyRelabelDetail(relabel.value) : { error: relabel.error },
           schema_ready: result.schemaReady,
           reference_eligibility: result.reference ?? null,
@@ -3438,6 +3471,8 @@ async function executeAgenticStep(
           failed: result.failed,
           queued_records: result.queuedRecords,
           jobs: result.jobs,
+          superseded: result.superseded,
+          ...(result.supersededError ? { superseded_error: result.supersededError } : {}),
         },
       };
     }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { replayStatus, summarizeBayesLedger, STUCK_AFTER_CHECKS, type BayesLedgerResult } from "./ledger";
+import { closeSupersededJobs, currentChangeKeys, replayStatus, summarizeBayesLedger, supersededNote, STUCK_AFTER_CHECKS, type BayesLedgerResult } from "./ledger";
 import { changeKey, currentCopyCount, guardRunCount, loadManifests, peerRangeCount, retidyCount } from "./manifests";
 import { KNOX_RULES_STRATEGY } from "@/lib/agents/knox/specialists";
 import { CATEGORY_GUARD_VERSION } from "@/lib/fee-category-guard";
@@ -55,6 +55,8 @@ describe("manifests", () => {
     const manifests = await loadManifests();
     const keys = manifests.map(changeKey);
     expect(new Set(keys).size).toBe(keys.length);
+    // One current version per manifest key, so an older key of the same manifest is superseded.
+    expect(new Set(manifests.map((manifest) => manifest.key)).size).toBe(manifests.length);
     expect(keys).toContain(`knox.rules@${KNOX_RULES_STRATEGY.version}`);
     expect(keys).toContain(`hamilton.guard_catch_up@g${CATEGORY_GUARD_VERSION}.f${FREQUENCY_FILL_VERSION}`);
     for (const [source, version] of Object.entries(REGISTRY_PARSER_VERSIONS)) {
@@ -98,13 +100,63 @@ describe("current copy and retidy counts", () => {
   });
 });
 
+describe("superseded rows", () => {
+  const manifest = (key: string, version: number, versionLabel?: string) =>
+    ({ key, version, versionLabel, owner: "knox", stage: null, strategy: null, unit: "text", affects: "x", count: null }) as const;
+
+  it("maps each declared manifest to its current change key", () => {
+    const current = currentChangeKeys([manifest("knox.rules", 163), manifest("hamilton.guard_catch_up", 100, "g100.f2")]);
+    expect([...current.entries()]).toEqual([["knox.rules", "knox.rules@163"], ["hamilton.guard_catch_up", "hamilton.guard_catch_up@g100.f2"]]);
+    expect(supersededNote("knox.rules@163")).toBe("superseded by knox.rules@163");
+  });
+
+  it("dry run lists the open and stuck older rows the SQL returns and writes nothing", async () => {
+    const queries: string[] = [];
+    const db = ((strings: TemplateStringsArray) => {
+      queries.push(strings.join("?"));
+      return Promise.resolve([
+        { id: 1, change_key: "knox.rules@147", manifest_key: "knox.rules", status: "open", queued: "8340" },
+        { id: 2, change_key: "magellan.registry.cra@1", manifest_key: "magellan.registry.cra", status: "stuck", queued: 1 },
+      ]);
+    }) as never;
+    const closed = await closeSupersededJobs(db, new Map([["knox.rules", "knox.rules@163"], ["magellan.registry.cra", "magellan.registry.cra@3"]]), { runId: null, dryRun: true });
+    expect(closed).toEqual([
+      { changeKey: "knox.rules@147", manifestKey: "knox.rules", supersededBy: "knox.rules@163", previousStatus: "open", lastQueued: 8340 },
+      { changeKey: "magellan.registry.cra@1", manifestKey: "magellan.registry.cra", supersededBy: "magellan.registry.cra@3", previousStatus: "stuck", lastQueued: 1 },
+    ]);
+    expect(queries).toHaveLength(1);
+    expect(queries[0]).toMatch(/status IN \('open', 'stuck'\)/);
+    expect(queries[0]).not.toMatch(/UPDATE|INSERT/);
+  });
+
+  it("reads nothing when no manifest is declared", async () => {
+    const db = (() => { throw new Error("no query expected"); }) as never;
+    expect(await closeSupersededJobs(db, new Map(), { runId: 1, dryRun: false })).toEqual([]);
+  });
+});
+
 describe("summarizeBayesLedger", () => {
-  const base: BayesLedgerResult = { schemaReady: true, dryRun: false, jobs: [], closed: 0, open: 0, stuck: 0, notCounted: 0, failed: 0, queuedRecords: 0 };
+  const base: BayesLedgerResult = { schemaReady: true, dryRun: false, jobs: [], superseded: [], closed: 0, open: 0, stuck: 0, notCounted: 0, failed: 0, queuedRecords: 0 };
   it("names open, stuck and uncounted changes", () => {
     const jobs = Array.from({ length: 6 }, () => ({}) as BayesLedgerResult["jobs"][number]);
     expect(summarizeBayesLedger({ ...base, jobs, closed: 2, open: 1, stuck: 1, notCounted: 2, queuedRecords: 40 }))
       .toBe("Recorded 4 rule changes: 2 closed, 1 open with 40 records queued, 1 stuck (queue not moving). 2 not countable yet.");
   });
+  it("names the superseded rows it closed and their stale queue apart from the real queue", () => {
+    const superseded = [
+      { changeKey: "knox.rules@147", manifestKey: "knox.rules", supersededBy: "knox.rules@163", previousStatus: "open", lastQueued: 8340 },
+      { changeKey: "knox.rules@145", manifestKey: "knox.rules", supersededBy: "knox.rules@163", previousStatus: "open", lastQueued: 8100 },
+    ];
+    const jobs = [{}] as BayesLedgerResult["jobs"];
+    expect(summarizeBayesLedger({ ...base, jobs, open: 1, queuedRecords: 40, superseded }))
+      .toBe("Recorded 1 rule changes: 0 closed, 1 open with 40 records queued. Closed 2 superseded older-version rows (16440 stale queued, not in the queue).");
+    expect(summarizeBayesLedger({ ...base, dryRun: true, superseded: superseded.slice(0, 1) })).toMatch(/Would close 1 superseded older-version row \(8340/);
+  });
+
+  it("says when closing superseded rows failed", () => {
+    expect(summarizeBayesLedger({ ...base, supersededError: "boom" })).toMatch(/closing superseded rows failed \(boom\)/);
+  });
+
   it("says when the tables are missing", () => {
     expect(summarizeBayesLedger({ ...base, schemaReady: false })).toMatch(/not created yet/);
   });

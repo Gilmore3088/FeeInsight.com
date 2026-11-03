@@ -4,6 +4,8 @@ import { findRateFloors, RATE_FLOOR_TAKEDOWN_LIVE } from "@/lib/agents/darwin/ra
 import { findLateChargeBounds, LATE_CHARGE_BOUND_TAKEDOWN_LIVE } from "@/lib/agents/darwin/late-charge-bound-check";
 import { findNoFeeSentences, NO_FEE_SENTENCE_TAKEDOWN_LIVE } from "@/lib/agents/darwin/no-fee-sentence-check";
 import { findZeroWaiverRows, ZERO_WAIVER_ROW_TAKEDOWN_LIVE } from "@/lib/agents/darwin/zero-waiver-row-check";
+import { findFreeListItems, FREE_LIST_ITEM_PREFILTER, FREE_LIST_ITEM_TAKEDOWN_LIVE } from "@/lib/agents/darwin/free-list-item-check";
+import { findNotAccountFeeLines, NOT_ACCOUNT_FEE_LINE_TAKEDOWN_LIVE } from "@/lib/agents/darwin/not-account-fee-line-check";
 import { findLoanPaymentExamples, LOAN_PAYMENT_EXAMPLE_TAKEDOWN_LIVE } from "@/lib/agents/darwin/loan-payment-example-check";
 import { canadianDocument, CANADIAN_DOCUMENT_TAKEDOWN_LIVE } from "@/lib/agents/darwin/canadian-document-check";
 import {
@@ -156,6 +158,33 @@ export const SWEEP_REPLAYS: readonly SweepReplay[] = [
       if (!on("ZERO_WAIVER_ROW_TAKEDOWN_LIVE")) return [];
       const rows = fees.flatMap((fee, index) => fee.amountCents === 0 ? [{ ...base(fee, index), source_line: note(fee), artifact_id: DOCUMENT_ID }] : []);
       return findZeroWaiverRows(rows, new Map([[DOCUMENT_ID, c.text]])).matches
+        .map((m) => ({ index: indexOf(m.feePublishedId), action: "takedown", reason: m.reason }));
+    },
+  },
+  {
+    check: "darwin.free_list_item",
+    switches: { FREE_LIST_ITEM_TAKEDOWN_LIVE },
+    scope: "sweep",
+    replays: "Darwin's free-list item re-check (`findFreeListItems`) on every published priced fee whose Knox line joins a name line to a price line, with the member's text as the artifact Knox read",
+    run(fees, c, on) {
+      if (!on("FREE_LIST_ITEM_TAKEDOWN_LIVE")) return [];
+      const stacked = new RegExp(FREE_LIST_ITEM_PREFILTER);
+      const rows = fees.flatMap((fee, index) => flatPriced(fee) && stacked.test(note(fee))
+        ? [{ ...base(fee, index), source_line: note(fee), artifact_id: DOCUMENT_ID }] : []);
+      return findFreeListItems(rows, new Map([[DOCUMENT_ID, c.text]])).matches
+        .map((m) => ({ index: indexOf(m.feePublishedId), action: "takedown", reason: m.reason }));
+    },
+  },
+  {
+    check: "darwin.not_account_fee_line",
+    switches: { NOT_ACCOUNT_FEE_LINE_TAKEDOWN_LIVE },
+    scope: "sweep",
+    replays: "Darwin's not-an-account-fee line re-check (`findNotAccountFeeLines`) on every published flat fee, with the member's text as the artifact Knox read: a dividend threshold on its Knox line, and a monthly maintenance fee under an online services section",
+    run(fees, c, on) {
+      if (!on("NOT_ACCOUNT_FEE_LINE_TAKEDOWN_LIVE")) return [];
+      const rows = fees.flatMap((fee, index) => fee.amountCents != null && fee.amountCents >= 0
+        ? [{ ...base(fee, index), source_line: note(fee), artifact_id: DOCUMENT_ID }] : []);
+      return findNotAccountFeeLines(rows, new Map([[DOCUMENT_ID, c.text]])).matches
         .map((m) => ({ index: indexOf(m.feePublishedId), action: "takedown", reason: m.reason }));
     },
   },

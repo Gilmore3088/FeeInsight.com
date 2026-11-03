@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { getAgentQuality, scheduleProblems } from "./agent-quality";
+import { getAgentQuality, replayTotals, scheduleProblems, type ReplayJobRow } from "./agent-quality";
 
 vi.mock("./connection", () => ({ sql: vi.fn() }));
 
@@ -50,5 +50,31 @@ describe("getAgentQuality", () => {
   it("tells a step that never ran apart from one that could not be read", async () => {
     const quality = await getAgentQuality(fakeDb({ agent_run_steps: [] }));
     expect(quality.bayes).toBeNull();
+  });
+});
+
+describe("replayTotals", () => {
+  const row = (changeKey: string, status: string, queued: number, superseded: boolean): ReplayJobRow => ({
+    changeKey, owner: "knox", unit: "text", status, affected: queued, done: 0, queued, excluded: 0, note: null, lastCheckedAt: null, superseded,
+  });
+
+  it("counts the queue from current rows only and superseded rows apart", () => {
+    expect(replayTotals([
+      row("knox.rules@163", "open", 8343, false),
+      row("magellan.registry.fed-payments@2", "stuck", 2, false),
+      row("darwin.verify_rules@3", "not_counted", 0, false),
+      row("knox.rules@147", "open", 8340, true),
+      row("knox.rules@64", "closed", 5041, true),
+    ])).toEqual({ open: 1, stuck: 1, queued: 8345, superseded: 2 });
+  });
+
+  it("reads the superseded flag the query computes", async () => {
+    const quality = await getAgentQuality(fakeDb({
+      replay_jobs: [
+        { change_key: "knox.rules@163", owner_agent: "knox", unit: "text", status: "open", queued: 5, superseded: false },
+        { change_key: "knox.rules@160", owner_agent: "knox", unit: "text", status: "closed", queued: 9, note: "superseded by knox.rules@163", superseded: true },
+      ],
+    }));
+    expect(quality.replayJobs?.map((job) => [job.changeKey, job.superseded])).toEqual([["knox.rules@163", false], ["knox.rules@160", true]]);
   });
 });

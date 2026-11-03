@@ -11,7 +11,15 @@
  *   GLYPH_REPAIR_VERSION         glyph-repair.ts
  */
 export const ROSETTA_READ_VERSION = 3;
-export const PDF_LAYOUT_VERSION = 5;
+export const PDF_LAYOUT_VERSION = 6;
+/**
+ * v6 (Mountain Star FCU fee 159428, Nov 2): side-by-side fee tables keep each cell in its own
+ * table (pdf-layout.ts `tableCellColumns`). Reader replay (reader-replay.ts) reads once more every
+ * current completed `read.pdf_layout` text that holds a cell break (" | ") and has no layout read
+ * of its bytes at this version, once PDF_CELL_REPLAY_LIVE is on. A later layout bump replays
+ * nothing unless this number moves with it.
+ */
+export const PDF_LAYOUT_REPLAY_VERSION = 6;
 /** Existing prose rereads stay settled; the new detector has its own due witness. */
 export const PDF_PROSE_REREAD_VERSION = 4;
 export const PDF_STACKED_REPAIR_VERSION = 1;

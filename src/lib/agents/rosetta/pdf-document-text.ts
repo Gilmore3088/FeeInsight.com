@@ -9,7 +9,14 @@ export interface PdfTextExtraction {
   stackedGeometry?: StackedGeometryReceipt;
   /** The layout reading's fee pairs against the PDF's drawing order (#2219). */
   readerAgreement?: PdfReaderAgreement;
+  /**
+   * Layout v6: pages read as side-by-side fee tables, and baselines where a priced item crossed a
+   * table's edge and was written on its own line (`layoutPageResult`). Bound to the text read.
+   */
+  tableColumns?: TableColumnsReceipt;
 }
+
+export interface TableColumnsReceipt { pages: number[]; ambiguousLines: number; textHash: string }
 
 /** Rosetta's existing complete-document layout reader, also used for reference checks. */
 export async function extractPdfDocumentText(bytes: Uint8Array, options: {
@@ -66,7 +73,12 @@ export async function extractPdfDocumentText(bytes: Uint8Array, options: {
         const streamTexts = pages.map((items) => repair(streamPageText(items)));
         const text = pageTexts.join("\n\n");
         const readerAgreement = { ...compareReadings(pageTexts, streamTexts), textHash: textSha256(text) };
-        return { text, totalPages, pages: pageTexts, readerAgreement, stackedGeometry: {
+        const tableColumns = {
+          pages: layouts.flatMap((page, index) => page.tableColumns ? [index + 1] : []),
+          ambiguousLines: layouts.reduce((sum, page) => sum + page.ambiguousLines, 0),
+          textHash: textSha256(text),
+        };
+        return { text, totalPages, pages: pageTexts, readerAgreement, tableColumns, stackedGeometry: {
           sourceHash: createHash("sha256").update(bytes).digest("hex"),
           textHash: textSha256(text),
           stackedPages: layouts.flatMap((page, index) => page.stackedColumns ? [index + 1] : []),

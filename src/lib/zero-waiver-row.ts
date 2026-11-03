@@ -34,6 +34,19 @@
  *   is a label whose own line, later cell or next stacked lines name a fee or charge ("Minimum daily
  *   balance to avoid monthly fee: None Monthly maintenance fee: $0"): refuse rather than match.
  *
+ * - `avoid_fee_advice` (Knox v168, second re-read backlog dry run, Nov 2): the line sits in a schedule's
+ *   "Ways to Avoid" section (`AVOID_FEES_HEADING`, a line of its own: "Ways to Avoid", "How to Avoid Fees",
+ *   "WAYS TO AVOID FEES"), and the cell its free word sits in is advice, not a price: "Reconcile online for
+ *   FREE", "FREE with good | address on file", "Share Draft Copy | FREE online" (`ADVICE_FREE_CELL`: "for
+ *   free", or "free" followed by with, online, when, if, by, at, through or via). Financial Health FCU
+ *   (institution 6465, doc 17979) prints its fees, then a "Ways to Avoid" table of each fee and how to avoid
+ *   it; Knox read "Reconcile online" as $0 account research, and "Bad Address Charge" (live 89909) and
+ *   "Share Draft Copy" (live 105000) went live at $0 beside the bank's own $12.00 and $1.00/$2.00 rows.
+ *   Every place the text prints the line must be in such a section. A bare free cell ("Paper Statements
+ *   | Free") in that section is the bank's price and stays, and so is every line before the heading. A
+ *   heading that names one thing to avoid ("How to Avoid Paying Interest on Purchases", "How to avoid the
+ *   Paper Statement Fee:") opens no section: its rows are the bank's prices.
+ *
  * Only a $0 is tested. A condition inside the price cell ("Monthly fee $0 with e-statements",
  * "Cashier's check | Free for Premier members") is the fee's own row and is not this rule's: the
  * conditional-$0, tier-perk and audience rules read those.
@@ -41,7 +54,7 @@
 
 import { accountListLead } from "@/lib/account-benefit-zero";
 
-export type ZeroWaiverRowKind = "no_fee_sentence" | "waiver_requirement";
+export type ZeroWaiverRowKind = "no_fee_sentence" | "waiver_requirement" | "avoid_fee_advice";
 
 export interface ZeroWaiverRow {
   kind: ZeroWaiverRowKind;
@@ -171,12 +184,73 @@ export interface ZeroWaiverRowInput {
   documentText: string | null | undefined;
 }
 
+/** A section heading of ways to avoid fees, on a line of its own; one naming a single thing to avoid is none. */
+export const AVOID_FEES_HEADING =
+  /^(?:ways|how|tips?)\s+to\s+(?:avoid|reduce)(?:\s+(?:or\s+reduce\s+)?(?:(?:the|these|your|banking|account)\s+)?(?:fees?|charges?|service\s+charges?))?\s*:?$/i;
+/** A free word that is advice: "Reconcile online for FREE", "FREE with good address on file", "FREE online". */
+const ADVICE_FREE_CELL = /\bfor\s+free\b|\bfree\s+(?:with|online|when|if|by|at|through|via)\b/i;
+const FREE_IN_LINE = /\bfree\b/gi;
+/** A line that starts the bank's schedule again ends the section. */
+const SCHEDULE_TITLE_LINE = /^(?:schedule of (?:fees|charges)|fee schedule)\b/i;
+
+/** Line indexes inside a "Ways to Avoid" section of the text. */
+function avoidSectionLines(lines: readonly string[]): Set<number> {
+  const inside = new Set<number>();
+  let open = false;
+  for (const [index, line] of lines.entries()) {
+    if (AVOID_FEES_HEADING.test(line)) {
+      open = true;
+      continue;
+    }
+    if (open && SCHEDULE_TITLE_LINE.test(line)) open = false;
+    if (open) inside.add(index);
+  }
+  return inside;
+}
+
+/** The " | " or " / " cell of `line` around character `at`. */
+function cellAround(line: string, at: number): string {
+  const breaks = [...line.matchAll(/\s+[|/]\s+/g)];
+  let start = 0;
+  let end = line.length;
+  for (const match of breaks) {
+    const from = match.index ?? 0;
+    if (from + match[0].length <= at) start = from + match[0].length;
+    else if (from >= at) {
+      end = from;
+      break;
+    }
+  }
+  return line.slice(start, end);
+}
+
+/**
+ * Whether every place the text prints `line` (Knox's excerpt, or the line the shared check traces) sits in
+ * a "Ways to Avoid" section with its last free word in an advice cell (see the module note).
+ */
+export function avoidFeeAdvice(line: string | null | undefined, documentText: string | null | undefined): boolean {
+  const wanted = tidyLine(line ?? "");
+  if (!wanted || !documentText || !/\bfree\b/i.test(wanted)) return false;
+  const lines = documentText.split(/\r?\n/).map(tidyLine);
+  const inside = avoidSectionLines(lines);
+  if (inside.size === 0) return false;
+  const printed = lines.map((text, index) => ({ text, index, at: text.indexOf(wanted) })).filter((row) => row.at >= 0);
+  if (printed.length === 0) return false;
+  return printed.every(({ text, index, at }) => {
+    if (!inside.has(index)) return false;
+    const frees = [...wanted.matchAll(FREE_IN_LINE)];
+    const last = frees.at(-1);
+    return last?.index != null && ADVICE_FREE_CELL.test(cellAround(text, at + last.index));
+  });
+}
+
 /** Pure: a $0 read from such a line (see the module note). Any other amount, or no line, is never one. */
 export function zeroWaiverRowOf(input: ZeroWaiverRowInput): ZeroWaiverRow | null {
   if (input.amount == null || Math.abs(input.amount) >= 0.005) return null;
   const row = zeroWaiverRowLine(input.line);
   if (row?.kind === "no_fee_sentence" && !inFreeItemList(row.label, input.documentText)) return null;
   if (row?.kind === "waiver_requirement" && feeAfterLabel(row.label, input.documentText)) return null;
+  if (!row && avoidFeeAdvice(input.line, input.documentText)) return { kind: "avoid_fee_advice", label: tidyLine(input.line ?? "") };
   return row;
 }
 

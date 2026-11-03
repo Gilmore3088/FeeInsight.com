@@ -55,14 +55,14 @@ replay PDFs with the switch off and at its default and checks each text's sha256
 d5771aa66's (`__fixtures__/source-bytes/pdf-text-main-sha256.json`).
 
 **Measured** with shadow-lab experiment `pdf-column-reading` (`source-replay.test.ts`, 38 reproduced
-documents, same keys, today's pipeline on both sides):
+documents, same keys, today's pipeline on both sides; main 53c80d54e merged, layout v6 and Knox v170):
 
 | Measure | Switch off | Switch on |
 |---|---|---|
-| Re-read recall | 897 / 1,187 (75.6%) | 916 / 1,187 (77.2%) |
+| Re-read recall | 898 / 1,187 (75.7%) | 917 / 1,187 (77.3%) |
 | Keys lost | | 0 |
 | R4 keys still missed | 32 | 26 |
-| Published fees not in the answer key | 30 | 32 |
+| Published fees not in the answer key | 29 | 31 |
 
 - **Keys gained (19):**
   - R4 (6): state:7114 stop_payment:3000, state:8036 cashiers_check:0, state:8085
@@ -86,9 +86,9 @@ documents, same keys, today's pipeline on both sides):
 - **The 26 R4 keys still missed:**
   - 10 are wrapped table cells, not columns: a price cell on two lines with its label centred
     between them ("$10.00 if account closed / Account Closure / within 90 days"), 9 on Texhillco and
-    Seacoast's "Cashier's Check with Expedited Shipping / $ 45.00". Open #2948 (layout v6,
-    `tableCellLines`) pairs that shape inside its own side-by-side table bands; once both land,
-    reading these column bands with it is the next step.
+    Seacoast's "Cashier's Check with Expedited Shipping / $ 45.00". Layout v6 (#2948,
+    `tableCellLines`) pairs that shape inside its own side-by-side table bands only; reading these
+    column bands with it is the next step.
   - 16 already read on one line in today's re-read or after the split, and are missed downstream
     (Knox or Darwin): state:10193 x2 (a maintenance fee stated in a sentence), state:1338 (its
     description is on the next line), state:3148, state:3981, state:6730, state:7114
@@ -98,9 +98,8 @@ documents, same keys, today's pipeline on both sides):
   replay text that has already been read.
 
 **Before the switch flips:**
-1. Reconcile with #2948 (open; layout v6, ungated `tableCellColumns`): it changes none of the 18
-   replay PDFs, and its detector would run before this one. Whichever lands second rebases
-   `layoutPageResult`.
+1. Layout v6 (#2948, merged during this PR and merged in): it changes none of the 18 replay PDFs,
+   and its `tableCellColumns` runs before this detector, which runs only when v6 finds no tables.
 2. A PDF reader version for the change. Flipping the switch alone re-reads nothing; only documents
    read after it get the new text. A `PDF_LAYOUT_VERSION` bump with a replay lane (as #2948 adds
    for v6) would re-read current PDF texts; it is not in this PR.

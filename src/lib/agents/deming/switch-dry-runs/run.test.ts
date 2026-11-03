@@ -162,7 +162,7 @@ describe("switch dry runs: one pass over every pending count", () => {
     expect(report.footnotedAtmHeading.summary.liveNonNetwork).toMatchObject({ fees: 1, documents: 1, noText: 0, wouldLeave: 0 });
     // Waiver-row $0s: the list item would come down, the notary row stays, the textless row is not judged.
     expect(report.zeroWaiverRow.summary).toMatchObject({
-      checked: 3, noText: 1, wouldTakeDown: 1, institutions: 1, byKind: { no_fee_sentence: 1, waiver_requirement: 0 }, byCategory: { stop_payment: 1 },
+      checked: 3, noText: 1, wouldTakeDown: 1, institutions: 1, byKind: { no_fee_sentence: 1, waiver_requirement: 0, avoid_fee_advice: 0 }, byCategory: { stop_payment: 1 },
     });
     expect(report.zeroWaiverRow.summary.samples.map((m) => m.feePublishedId)).toEqual([64331]);
     // Fresh audit: 8 scorable - 1 amount - 1 category = 6 of 8.

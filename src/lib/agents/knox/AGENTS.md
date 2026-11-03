@@ -286,13 +286,13 @@ club account's own monthly or minimum balance fee no longer sets the bank's chec
   the same text used to be skipped as "already extracted under another document", so it was
   never read again by a newer rules version.
 - Banks of $10B or more in assets (`KNOX_REREAD_ASSET_FLOOR`) have each current page re-read
-  once per rules version, ahead of other texts. The rules re-check only reaches documents
+  at the re-read floor (once per rules version until Nov 2; see "The re-read floor" below). The rules re-check only reaches documents
   with live fees, so a large bank's missing fee otherwise waited for a new copy of its page.
   Among them, a bank with no live overdraft fee goes first, then the page Knox read longest
   ago: ordered by newest text alone, each version bump (ten on Oct 8) restarted the same banks
   and the tail, GreenState among them, was never reached.
 - A priority bank (`KNOX_PRIORITY_REREAD_IDS`) or state market leader with no live overdraft
-  fee has its current page re-read once per rules version too, so a rules fix for a missed
+  fee has its current page re-read at the re-read floor too, so a rules fix for a missed
   overdraft reaches it. `asset_size` is in thousands, so the $10B floor misses most state
   leaders.
 - Exact fees go to Darwin with `needs_darwin_verification`. Waived fees keep their price
@@ -333,13 +333,46 @@ text Knox has read before is picked again when any one of these holds:
    (Atlas's read-now runs) uses that institution alone as the list and drops the overdraft
    condition.
 
+Since Nov 2, triggers 1, 3, 4 and 7 (and an empty read) wait for the re-read floor
+(`KNOX_REREAD_BELOW_VERSION` v167, `KNOX_REREAD_REFRESH_DAYS` 14; see "The re-read floor and order").
 Triggers 4 to 7 need Magellan's current-copy columns (`currentCopySchemaReady`). Every pick still
 skips an older copy whose current copy has a text, and a text already read under another document
 id of the same bank (an older copy's rows never block the current copy). Bayes's replay ledger
 counts the current copies these triggers would pick with the same query (`countKnoxRereadsDue`,
 `countKnoxRules` in `bayes/manifests.ts`); a current copy that matches none keeps its older read.
 
+### The re-read floor and order (Nov 2)
+
+Until Nov 2 the read-again triggers 1, 3, 4 and 7 (and an empty read, which has no rows) came back
+at every rules version, so each bump re-queued the same pages: about 44% of the 13,664 reads in the
+week to Nov 2 repeated a read made that week, while texts behind live fees with a read below v97
+waited. Now (`textArtifactQuery`):
+
+- **Floor.** Those re-reads wait until the text has no `extract.rules` read at or above
+  `KNOX_REREAD_BELOW_VERSION` (v167, the version the floor was built at) in the last
+  `KNOX_REREAD_REFRESH_DAYS` (14) days. A rules bump no longer re-queues them; raise the floor with a
+  rules change that should reach those pages at once. Trigger 2 (the rules re-check's missing fees)
+  stays once per version, and so does a run for one institution (Atlas's read-now and error-fix runs).
+  The floor is one AND term over every re-read trigger, so the stale, lineup and twin triggers (their
+  own floors v97, v73, v82 today) wait for it too: raise `KNOX_REREAD_BELOW_VERSION` with any of them
+  raised above it. A text is still never read twice at the same version. The floor holds nothing until
+  the rules version passes it (today v167 = floor).
+- **Order.** After the priority-bank order, texts behind live fees (on their own document or on an
+  older copy of the page) come first, the oldest rules read first (never read before any read); then
+  the stale-first, large-bank and newest-text order as before.
+- **Bayes.** `countKnoxRereadsDue` runs the same query, so the `knox.rules` queue is what Knox will
+  select; texts the floor holds are counted as `knox_read_at_floor_recently`.
+- It changes which texts are re-read and when, not what a read finds: no live fee is held, re-filed
+  or taken down by it. Finding: `docs/project/findings/2026-11-02-knox-reread-floor.md`.
+
 ### The re-read backlog (`reread-backlog.ts`, gap 10, `KNOX_REREAD_BACKLOG_LIVE` off)
+
+Dry run, Nov 2 (42 random texts of the first 600 it picks, 877 live fees): 115 new rows to Darwin, all
+tracing to their line, no live fee taken down by its path, and 5 wrong reads, so it stayed off and the
+reading rules were fixed instead (v166; finding `2026-11-02-knox-backlog-dry-run-misfiles.md`). The
+re-run on v166 reads none of the five. It turns on only after its own sampled-clean dry run. A second dry run
+(Nov 2, 40 texts, 214 new rows) found 7 more wrong reads in four classes, fixed in v168 (finding
+`2026-11-02-knox-backlog-dry-run-2-misfiles.md`); its re-run reads none of them.
 
 The triggers above re-read the same texts at every rules bump (priority banks, the v97 floor,
 $10B+ banks), so a text read at v97-v154 that trips none of them kept its old read: on 2 Nov 2026
@@ -2149,6 +2182,22 @@ only ("NSF ACH", "CD ROM", "NCB ATM", "NON CO OP ATM") stays as printed. The ren
 under the v22/v26 guards; nothing is held, re-filed or taken down. Read-only count Oct 25: 14 live
 names at 13 institutions match, every one printed so on its own page and none with a same-name live
 row in its category; 13 should be renamed, and "FAX IN" waits because "Fax in" ends on a joining word.
+v28 (Nov 2, Knox v164): a live name that is a bullet item with another column's cells glued in front
+(`bulletItemName`) takes the name Knox reads today: Steel Valley FCU's 54298 "Rate Schedule. The Dividend
+Period is the period of time at | October 15th and the account will remain open. If you | Ph" becomes
+"Photocopy Fee", 54295 "Percentage Yield for that balance range ... or telepho" becomes "Legal Process
+Fee", 93059 "Rate Schedule, dividends are calculated by applying a: Items Sent For Collection" becomes "Items
+Sent For Collection". Publish keeps the live row when Knox re-reads it at the same price (`identical`), so
+the v164 read alone never reaches a live name. The new name is `reReadName` (one name in the fee's own text
+at its category and amount); the stored name must be that name after a ": " or " | " join, or, at the name
+limit, end in a cell the name starts with or read as a cut sentence; the fee's own page must print the name
+as a bullet item; and the dropped words hold no price and no audience (`AUDIENCE_WORDS`, shared with Knox:
+business, commercial, corporate, organization, non-customer, non-member and the like). An account's own
+fee is never renamed. The rename goes through the retidy's own checks (category guard, same-name twin,
+trace) and `writeLiveRenames`; nothing is held, re-filed or taken down. Read-only count Nov 2: 85 live
+names at 45 institutions are a glued name whose last cell their latest page prints as a bullet item (the
+SQL prefilter; how many of them Knox's re-read renames is known only after the dry run); the cut names like
+54295 are on top of that.
 
 `isCutoffName` (publish's `cutoff_name` hold; in `cutoff-shape.ts` since v104, re-exported by
 `name-retidy.ts`) has a narrow live twin, `liveFragmentName` (#1443), built from the same regex pieces: a dangling joining word (lower-case "a/an/the" only;
@@ -2513,6 +2562,139 @@ gates do not move (Texas 586 / 11, held out 60 / 4; seven states 926 / 29). Shad
 31 of 160 with recall 972 / 1,302 unchanged. Darwin's verify refuses the same reads and its
 `zero_waiver_row` live re-check reports what is live (`ZERO_WAIVER_ROW_TAKEDOWN_LIVE`, off). The shared
 check is unchanged. The stale-read floor stays at v97.
+v164 (live-source audit draw 275762, Nov 2; Steel Valley FCU 6230, Rosetta artifact 12240): a read whose
+own line (its excerpt) has a later cell opening with a list bullet and words, with the line's price in that
+cell or after it and none before it, and whose name opens with the words of the cells before the bullet,
+takes the name Knox's rules give the bullet's item alone at the same category and amount, when exactly one
+such name exists (`bulletItemRead` in `knox/bullet-cell-rows.ts`). Those cells are another column's text:
+prose ("Rate Schedule. The Dividend Period is the period of time at | October 15th and the account will
+remain open. If you | • Photocopy Fee ....$5.00/Copy" went live as 54298, its name cut to "... If you | Ph"
+by the 120-character limit, which counts from the start), a feature bullet ("• Unlimited check writing | •
+Stop Payments - $30.00 per item") or another column's heading ("Abandoned Property | • Teller Check |
+$2.00"). It renames only; the lines stay as stored. The first version (review of #2952) read the item as a
+line of its own and moved the other cells below the run of bullets; on Elite Community CU's page (text
+13895), whose left column is itself a wrapping bullet list, the moved cells came back out of place and a
+priceless "• IRA administration" named the dormant account's "$5/month": a false $5 IRA fee. The name is
+kept when the cells before the bullet name the read's own category ("NSF Fee | • Per Item | $30.00"), carry
+an audience (`AUDIENCE_WORDS`: business, corporate, organization, non-customer, non-member and the like),
+or the item alone reads no such fee ("Wire Transfers | • Outgoing Domestic | $35.00"); a bare bullet cell, a
+first-cell bullet, a price before the bullet and an account's own fee (monthly maintenance, minimum
+balance) are never renamed. Sample (prod stored texts, read-only, Nov 2): on 20 full two-column bullet-list texts and Elite Community's 13895, 26 reads are renamed and none is added or lost; on the 61 stored lines and 7 passages of the first sample, 30 renamed, 1 added (a $3 card replacement whose glued name had failed a later name check; publish holds its sentence name as `cutoff_name`), none lost. Each
+changed read was checked against its own line. The stored text and the shared check are unchanged; every
+new name is the bullet cell's own words and traces on the stored line. The stale-read floor stays at v97.
+
+v166 (Knox re-read backlog dry run, Nov 2; v165 is #2953's): three classes the dry run for
+`KNOX_REREAD_BACKLOG_LIVE` found among 115 new rows from 42 random backlog texts, each wrong on the bank's
+own line. A wire row whose subject is the bank's notice of the wire is held, never the wire fee
+(`wireNotificationName` in `src/lib/wire-notification.ts`): Intercredit Bank (827) prints
+"‐Incoming Wire Transfer Email Notification ... No Fee" beside its $15 incoming wire. A wire priced with
+its notice ("Incoming Wire with Phone Notification") stays the wire; other types keep their notices (an
+escheat notice is the dormant fee). Mobile banking and hold mail join the named services whose own
+monthly charge is held, not filed as monthly maintenance (`SERVICE_MONTHLY_CHARGE_NAME` v2: "Mobile
+Banking Monthly Service Charge | No Fee", BAC Community Bank 1265). Reactivating an account is the
+dormant account fee even when its note names a closure window (`accountReactivationName` in
+`src/lib/account-reactivation.ts`: "Account Reactivation (check or savings closed for less than 3
+months)" $10, Midwest Heritage 1839, had matched the short-window early closure rule first); one price
+for a reactivation or a closure stays early closure. Guard v106 holds the same names. The re-run on the
+same 42 texts reads none of the five wrong rows. The shared check is unchanged. The stale-read floor
+stays at v97.
+
+v167 (K1, James's missing-fee review of Nov 2; v165 is #2953's, v166 #2957's: River City Bank GA 2037,
+Special Metals FCU NY 5956, Mountain Star FCU TX 4467; extract.table v12, category guard v107): a clean name-and-price row no rule
+names never leaves silently. The table pass skipped such a row with no hold and no count (`if (!hint)
+continue`); it now holds a clean label and one price as unclassified (`unclassifiedRowHold`: a short
+label, one price, no balance, minimum, rate, limit or outsized figure; a row without "fee" or "charge"
+only in a fee schedule, as the rules pass holds one) and counts any other such row
+(`table_row_no_category`). A row the heading above filed under a category Darwin's checks refuse ("ATM
+Withdrawals 4 per month" over "Wire Transfers / $15.00") is held under its own name when that names
+nothing; any other refused row is counted (`table_row_guard_refused`). Its holds are admitted after every specialist, so they never take another
+reader's place under the unclassified cap. A price cell with a short bracketed note holding no other
+figure ("$4.00 (returned deposit item – per item)") is a label-and-price row (`priceOnlyCell`); "$0.07
+per $100" and a note with a "$", "%" or digit still are not. The held-name vocabulary files a late
+loan, mortgage, lease, vehicle or installment payment as late_payment (a card's stays held: credit card
+fees, DECISIONS Oct 7), a charged-back check or item as deposited_item_return, an image statement as
+check_image, a coin deposit as coin_counting (a percentage through `percent.ts`), a transaction copy or
+reprinted statement as document_reproduction, and a savings withdrawal fee or money market excess check
+as excess_withdrawal. Left held: an instant-issue card and a protest fee (the answer keys leave both
+unfiled; each raised the gates' category errors), a "CU Check" and a bare "Wire Transfers" (both need a
+decision), "Address Change - Failure to notify" and "Check Payable to 3rd Party" (no type). Measured:
+over 44 prod stored texts (the three banks' and 41 others with these shapes) 12 reads and 2 coin
+deposit rates are added, 0 renamed, and every added read traces with the shared check on its own line;
+3 junk-named second reads go (a row of three or more cells that names its own fee before its price ends
+`columnContinuations`' join of the wrap above it, `namesItsOwnFee`; each plain read stays); a late loan
+payment whose name carries a cap word ("max", "up to", "not to exceed", "cap") is not read, since the
+limit guard reads only figures of $100 or more; the answer-key gates do
+not move (Texas 586 right / 11 wrong, tuning 526 / 7; seven states 926 / 29). Over every frozen text the
+vocabulary adds 4 reads and renames one ("Coin Deposits: Bad Address Locator Fee" -> "Bad Address
+Locator Fee", same price and category, live 90350; the rules re-check keys on category and price).
+Admit-only for live fees: guard v107 refuses nothing more (0 live fees move on the dry run) and the live
+correction paths read without the vocabulary. The shared check is unchanged. The stale-read floor stays
+at v97.
+
+v168 (second Knox re-read backlog dry run, Nov 2; v167 is #2958's; the free-list check follows as v169): four
+classes a second dry run found among 214 new rows from 40 backlog texts (7 wrong on the bank's own
+line). A safe deposit box table whose header names a late-fee column ("BOX SIZE | ANNUALLY | LATE FEE")
+prints each box's late charge beside its rent; v76's two-column box rule read "3” x 10” x 24” | $35.00 |
+$6.00" as two rents, so no specialist now reads a late-column price as the box's (`boxLateColumnRead` in
+`box-late-column.ts`; Eglin FCU 5451). A three-dimension box size in its own cell after another fee's
+name starts its own line, as v63 has it for a two-dimension size glued to its price
+(`withBoxSizeCellsSplit`: "COINSTAR® Coin Counting Service | 10” x 10” x 24” | $105.00" was read as coin
+counting $105). A $0 whose free word is advice in a "Ways to Avoid" section ("Reconcile online for FREE",
+"FREE with good address on file", Financial Health FCU 6465) is held (`zeroWaiverRowOf`, kind
+`avoid_fee_advice`; Darwin's verify and live re-check read the same). A plain returned check or item read
+as NSF, beside the page's own NSF or insufficient-funds read at a higher price, is filed as the returned
+deposited item by the guard's own v22/v23 rule (`withReturnBesideNsf`, `plainReturnBesideNsf`; First
+Financial Bank 624: "Returned check charge | $7.00" beside "Returned NSF/OD Fee ... | $32.00"); an NSF read
+at the return's own price, or the page's own deposited item return, keeps it NSF. A wire's
+confirmation is its notice (`wireNotificationName`: "Wire Sent Confirmation: | $5.00 per item", Century FCU
+7131). Guard v108 refuses the confirmation under every wire type and moves a coin counting name carrying
+a box size to the box. The re-run on the same 40 texts reads none of the seven. The shared check is
+unchanged. The stale-read floor stays at v97.
+
+v169 (#1092, James's Nov 2 review; Mountain Star FCU 4467, document 38274, text 36365; v167 is #2958's,
+v168 the second backlog dry run's fix): a priced
+read whose name is an item of a "free services" list and whose price the self-check found on another
+line is held untraced, never sent to Darwin (`freeListItemRead` in `src/lib/free-list-item.ts`, on the line
+`checkFeeAgainstSource` traced; dropped reason `free_list_item`). Mountain Star's side-by-side PDF table,
+read before Rosetta's layout v6, ends its right column in "Other Free Services: Anytime, Notary" / "Service,
+Signature Guarantee, Unlimited" / "Check Writing, Balance Inquiries," / "Money market | Fax Service", with
+"$5.00" / "excess check" below: the price windows read "Fax Service" over the $5.00 and it went live as
+159428 (raw 935219, verified 206116). The $5.00 is the left column's money market excess check price. The
+list opens at a line's last cell (or a line of its own) whose label before a colon says free or no charge
+and names what is listed (not "Toll-Free ...", "Free Checking", a sentence or a note), and runs on through
+that column while its cells carry commas, through the item after a cell that ends with one. The shared
+check already ends a row at another name between a name and its price (`feeRow`) and never prices a line
+that says free from below; here the other label is a cell of the name's own line and the free word is on
+the heading. Sample (prod stored texts, read-only, Nov 2, main vs head): 51 read.pdf_layout multi-column
+texts (36365 and 50 others) and all 207 texts with such a list heading that live priced fees cite: the one
+read lost is Fax Service $5, held untraced; none added or changed. Answer-key gates unchanged (Texas 586 /
+11, seven states 927 / 28 on top of v168). Darwin's verify refuses the same reads (`free_list_item`) and its live re-check
+reports the live one (`FREE_LIST_ITEM_TAKEDOWN_LIVE`, off). The shared check is unchanged. The stale-read
+floor stays at v97.
+
+v170 (third Knox re-read backlog dry run, Nov 2; 40 random backlog texts at v169, four wrong reads, each
+against the bank's own line): (1) a heading a responsive table repeats inside each cell ("Returned Check
+(Service / Item) | $10 (Fee) | Per item (Terms/Conditions)" under "Category | Service / Item | Fee |
+Terms/Conditions", River Town FCU 6757, doc 41792) is stripped before any reader sees the line
+(`withoutColumnLabelEchoes` in `knox/column-label-echo.ts`): only a trailing "(Label)" that equals a whole
+cell of a heading row within 150 lines above, and only on a row where a cell after the first carries one;
+a name's own note ("Draft Fee (monthly)") stays. The label had kept the plain returned check NSF beside the
+page's $25 NSF and filed "Statement Copy" as check_image. (2) A rate disclosure's balance threshold ("If
+your average daily balance is below $100.00 ($5.00 for accounts held by those under 18 years of age), no
+dividends are earned", Peninsula Community FCU 4447) is no fee (`dividendThresholdSentence` in
+`src/lib/dividend-threshold.ts`; dropped reason `dividend_threshold`). (3) A monthly service fee whose own
+line, printed once, sits under a section title for online, electronic or digital services ("Online Fees" /
+"Cinfed Connection Monthly Service Fee | FREE", Cinfed FCU 6561) is that service's charge, not monthly
+maintenance (`onlineServiceMonthlyFee` in `src/lib/service-monthly-charge.ts`; dropped reason
+`online_service_monthly`). (4) A threshold a comparison word ties to the name ("Cashier's Check more than
+$1,000 (MCB customers only)", Morton Community Bank 273) is put back into the name after every reader
+(`withThresholdFigures` in `knox/threshold-name.ts`, a rename only, kept where Darwin's checks pass), so
+the shared check finds the row. Re-run: on the 40 texts all four wrong reads are gone and no right read is
+lost (682 publishable rows, all tracing); on 60 fresh random texts (main vs head) 5 reads are renamed to
+keep their thresholds, each now tracing, and none is added, held or dropped. Answer-key gates unchanged.
+Darwin's verify refuses (2) and (3), and its live re-check (`darwin.not_account_fee_line`,
+`NOT_ACCOUNT_FEE_LINE_TAKEDOWN_LIVE` off) reports the live ones (73916, 152003). The guard is unchanged
+(v108). The stale-read floor stays at v97.
 
 v128 (#1912): a line whose only price is two different prices glued into one cell ("Card Replacement
 .....Share Draft Protest ..... $20.00$10.00", "Change of Personal Identification Number (PIN)Wire
@@ -3072,12 +3254,12 @@ fails a PR that changes one of these constants without updating its line here (#
 | `ACCOUNT_SUBJECT_CORRECT_STRATEGY` | `knox.account_subject_correct` | v1 | `knox/account-subject-correct.ts` |
 | `ANCILLARY_OWNER_CORRECT_STRATEGY` | `knox.ancillary_owner_correct` | v2 | `knox/ancillary-owner-correct.ts` |
 | `LINEUP_CORRECT_STRATEGY` | `knox.lineup_correct` | v2 | `knox/lineup-correct.ts` |
-| `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v27 | `knox/name-retidy.ts` |
+| `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v28 | `knox/name-retidy.ts` |
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v3 | `knox/paid-extract.ts` |
 | `KNOX_PAID_FIND_MISS_VERSION` | — | v1 | `knox/paid-find-misses.ts` |
 | `TWO_READ_AGREEMENT_STRATEGY` | `knox.two_read_agreement` | v2 | `knox/two-read-agreement.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v163 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v170 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
-| `KNOX_TABLE_STRATEGY` | `extract.table` | v11 | `knox/table-rows.ts` |
+| `KNOX_TABLE_STRATEGY` | `extract.table` | v12 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v2 | `knox/takedown-lessons.ts` |
 | `UNTRACED_READ_ERROR_EVIDENCE_VERSION` | `knox.untraced_held` read-error report | v1 | `knox/untraced-read-error.ts` |

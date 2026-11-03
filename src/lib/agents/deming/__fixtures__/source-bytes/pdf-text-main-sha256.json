@@ -1,5 +1,5 @@
 {
- "note": "sha256 of extractPdfDocumentText(bytes).text for every PDF source-bytes fixture, read by main d5771aa66 before PDF_COLUMN_READING_LIVE existed. pdf-column-reading-inert.test.ts checks the switch-off read against it.",
+ "note": "sha256 of extractPdfDocumentText(bytes).text for every PDF source-bytes fixture, read by main before PDF_COLUMN_READING_LIVE existed (d5771aa66, and the same 18 texts again at 53c80d54e with layout v6). pdf-column-reading-inert.test.ts checks the switch-off read against it.",
  "main": "d5771aa66",
  "sha256": {
   "missed_fees:state:3981": "281e98b8c4bf2b72a89d9d8c12d31ab6fc0c54325409f0ca7d765ba9fcb74854",

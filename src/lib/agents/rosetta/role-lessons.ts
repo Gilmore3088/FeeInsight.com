@@ -7,6 +7,16 @@ import type { AgentLesson } from "@/lib/agents/learning/lesson-types";
  */
 export const ROSETTA_LESSONS: AgentLesson[] = [
   {
+    id: "fee-159428-cells-stay-in-their-table",
+    agent: "rosetta",
+    stage: "read",
+    lesson: "When a PDF page sets fee tables side by side, read each table on its own: cut the page at its gutters, keep an amount column with the table on its left, and never write a cell from one table on a line with a cell from another because they share a baseline. An amount printed midway beside a label that wraps onto two lines is that label's. An item that runs across a table's edge goes on its own line, paired with nothing.",
+    why: "Mountain Star FCU's tri-fold brochure (text 36365) was read across the page, so the General Fees row 'Money market / excess check $5.00' shared a line with 'Fax Service' from the next panel's list of free services; Knox published 'Fax Service $5' (fee 159428) for a service the bank lists as free. On Nov 2, 3,226 current pdf_layout texts with a cell break carried 30,735 live fees.",
+    evidence: { issues: [1092], prs: [], files: ["docs/project/findings/2026-11-02-pdf-side-by-side-tables-share-a-baseline.md", "src/lib/agents/rosetta/pdf-layout.ts"] },
+    appliesTo: ["read"],
+    since: "2026-11-02",
+  },
+  {
     id: "issue-1094-amount-on-the-next-line",
     agent: "rosetta",
     stage: "document kind",
@@ -181,7 +191,7 @@ export const ROSETTA_LESSONS: AgentLesson[] = [
     agent: "rosetta",
     stage: "read",
     lesson: "A PDF page in two independent columns is read one column at a time, but only on positive evidence: a gutter no row reaches across, and each side standing on its own (prose, or lines that hold their own label and price). A fee table is also two columns, its labels and its prices, so a shared baseline whose right side opens at its edge with a price, or is only price cells, keeps the page row by row. When titles or footnotes span the page, look for the gutter within each region between them.",
-    why: "On the answer-key documents' own bytes, reading across put two fees on one line (San Francisco FCU's \"Youth Savings | Free | Official Check | Free\") and cut headings from their rows (First State Bank of Livingston's \"Wire transfers | 202288762-020 Rev.\"). Reading independent columns publishes 19 more keys and loses none (897 to 916 of 1,187). An early rule tested only the right side's edge and split a five-tier price table, losing 4 keys.",
+    why: "On the answer-key documents' own bytes, reading across put two fees on one line (San Francisco FCU's \"Youth Savings | Free | Official Check | Free\") and cut headings from their rows (First State Bank of Livingston's \"Wire transfers | 202288762-020 Rev.\"). Reading independent columns publishes 19 more keys and loses none (898 to 917 of 1,187). An early rule tested only the right side's edge and split a five-tier price table, losing 4 keys.",
     evidence: { issues: [1092], prs: [], files: ["docs/project/findings/2026-11-02-pdf-columns-read-across.md", "src/lib/agents/rosetta/pdf-columns.ts"] },
     appliesTo: ["read"],
     since: "2026-11-02",

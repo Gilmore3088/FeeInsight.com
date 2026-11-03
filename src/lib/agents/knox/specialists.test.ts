@@ -125,7 +125,9 @@ describe("Knox pass 2a: extract.table", () => {
     // The shared accuracy check pairs each dot-leader name with the price that opens the
     // next line, so all four trace.
     expect(fees(text)).toEqual(reads);
-    expect(held(text)).toEqual([]);
+    // v167 (extract.table v12): the WPIN replacement row names no category, so it is held for review
+    // instead of skipped with no trace.
+    expect(held(text)).toEqual([["unclassified", "Wire Transfer Agreement (WPIN) Replacement Fee", 10, null]]);
   });
 
   it("reads structured rows through a small adapter over Rosetta's cell lines", () => {
@@ -457,7 +459,8 @@ describe("Knox v70 monthly maintenance and low-balance fees (#1100)", () => {
   });
 
   it("reads the price after a balance figure's own \"minimum\" (Government Employees FCU 2435)", () => {
-    expect(fees("Monthly Service Charge Below $500.00 minimum $5.00 per Month")).toContainEqual(["Monthly Service Charge Below minimum", 5, "monthly_maintenance"]);
+    // v170: the name keeps its line's threshold ("Below $500.00 minimum"), the page's own words (`withThresholdFigures`).
+    expect(fees("Monthly Service Charge Below $500.00 minimum $5.00 per Month")).toContainEqual(["Monthly Service Charge Below $500.00 minimum", 5, "monthly_maintenance"]);
     // The balance itself is never the fee.
     expect(fees("Monthly Service Charge Below $500.00 minimum $5.00 per Month")).not.toContainEqual(expect.arrayContaining([500]));
   });

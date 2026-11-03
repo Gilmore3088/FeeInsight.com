@@ -11,7 +11,8 @@ import { loadSourceBytes, readSourceManifest, SOURCE_BYTES_DIR } from "./source-
 /**
  * `PDF_COLUMN_READING_LIVE` is inert while off (#1092): every PDF among the answer-key documents'
  * source bytes reads to exactly the text main read before the switch existed (sha256 recorded from
- * main d5771aa66 in `pdf-text-main-sha256.json`), with the switch held off and at its code default.
+ * main d5771aa66 and again at 53c80d54e, layout v6, in `pdf-text-main-sha256.json`), with the switch held
+ * off and at its code default.
  */
 
 const HASHES = join(process.cwd(), SOURCE_BYTES_DIR, "pdf-text-main-sha256.json");

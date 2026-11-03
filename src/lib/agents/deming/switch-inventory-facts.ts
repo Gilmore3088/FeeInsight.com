@@ -78,6 +78,7 @@ export const SWITCH_FACTS: Readonly<Record<string, SwitchFacts>> = {
   HAND_LINK_REPAIR_LIVE: { firstSeen: "2026-10-19 20507faf2" },
   HAND_TAKEDOWN_RETURNS_LIVE: { firstSeen: "2026-10-19 f9b61cf2b" },
   HELD_VOCABULARY_RELABEL_LIVE: { firstSeen: "2026-11-02 0dd240218" },
+  HMDA_RELINK_LIVE: { firstSeen: "2026-11-02 824c156a5" },
   HOLD_SOURCE_REREAD_LIVE: { firstSeen: "2026-11-01 ea9a3dc3d" },
   HOURLY_FREQUENCY_LIVE: { firstSeen: "2026-10-16 6739f264d" },
   HOURLY_LINE_LIVE: { firstSeen: "2026-10-18 1626342c7" },

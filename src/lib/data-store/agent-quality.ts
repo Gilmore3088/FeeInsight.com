@@ -32,6 +32,33 @@ export interface ReplayJobRow {
   excluded: number;
   note: string | null;
   lastCheckedAt: string | null;
+  /**
+   * An older version's row: Bayes closed it as `superseded by <current key>`, or a newer row of the
+   * same manifest was counted after it. Its counts are history, not queued work.
+   */
+  superseded: boolean;
+}
+
+export interface ReplayTotals {
+  open: number;
+  stuck: number;
+  queued: number;
+  superseded: number;
+}
+
+/** Pure: the replay queue from current rows only; superseded rows are counted apart. */
+export function replayTotals(rows: ReplayJobRow[]): ReplayTotals {
+  const totals: ReplayTotals = { open: 0, stuck: 0, queued: 0, superseded: 0 };
+  for (const row of rows) {
+    if (row.superseded) {
+      totals.superseded += 1;
+      continue;
+    }
+    if (row.status === "open") totals.open += 1;
+    if (row.status === "stuck") totals.stuck += 1;
+    if (row.status === "open" || row.status === "stuck") totals.queued += row.queued;
+  }
+  return totals;
 }
 
 export interface RepeatedError {
@@ -117,9 +144,11 @@ export async function getAgentQuality(db: SqlTag = sql): Promise<AgentQuality> {
     stepOrUnknown(db, "deming-fresh-audit"),
     orNull("replay jobs", async () => {
       const rows = await db<Array<Record<string, unknown>>>`
-        SELECT change_key, owner_agent, unit, status, affected, done, queued, excluded, note, last_checked_at
+        SELECT change_key, owner_agent, unit, status, affected, done, queued, excluded, note, last_checked_at,
+               (COALESCE(note, '') LIKE 'superseded by %'
+                OR last_checked_at < MAX(last_checked_at) OVER (PARTITION BY manifest_key)) AS superseded
           FROM replay_jobs
-         ORDER BY CASE status WHEN 'stuck' THEN 0 WHEN 'open' THEN 1 WHEN 'not_counted' THEN 2 ELSE 3 END, queued DESC, change_key
+         ORDER BY superseded, CASE status WHEN 'stuck' THEN 0 WHEN 'open' THEN 1 WHEN 'not_counted' THEN 2 ELSE 3 END, queued DESC, change_key
       `;
       return rows.map((row) => ({
         changeKey: String(row.change_key),
@@ -132,6 +161,7 @@ export async function getAgentQuality(db: SqlTag = sql): Promise<AgentQuality> {
         excluded: Number(row.excluded ?? 0),
         note: row.note ? String(row.note) : null,
         lastCheckedAt: iso(row.last_checked_at),
+        superseded: row.superseded === true,
       }));
     }),
     stepOrUnknown(db, "bayes-replay-ledger"),
