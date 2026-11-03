@@ -224,13 +224,15 @@ describe("old or archived documents (#1026, #1455 class, Nov 3)", () => {
     }
   });
 
-  it("rejects a current address that redirects to an old one, and keeps banks named Old", async () => {
+  it("judges the address the bank links to, not where it redirects, and keeps banks named Old", async () => {
     const moved = vi.fn(async () => {
       const response = new Response(`<html><body><main>${lines}</main></body></html>`, { status: 200, headers: { "content-type": "text/html" } });
       Object.defineProperty(response, "url", { value: "https://bank.example/fees/schedule-of-fees-old" });
       return response;
     });
-    expect(await validateFeeCandidate({ url: "https://bank.example/fees", score: 0.9, reasons: [] }, moved)).toMatchObject({ ok: false, verdict: "old_labelled" });
+    // Westreet FCU (Nov 3): its current link redirects to "Fee-Schedule-Old.pdf", which may be its current schedule.
+    const landedOld = await validateFeeCandidate({ url: "https://bank.example/fees", score: 0.9, reasons: [] }, moved);
+    expect(landedOld.verdict).not.toBe("old_labelled");
     const oldNational = await validateFeeCandidate({ url: "https://www.oldnational.com/fee-schedule", score: 0.9, reasons: [] }, page(lines));
     expect(oldNational.verdict).not.toBe("old_labelled");
     const priorNotice = await validateFeeCandidate({ url: "https://bank.example/prior-notice", score: 0.9, reasons: [] }, page(lines));

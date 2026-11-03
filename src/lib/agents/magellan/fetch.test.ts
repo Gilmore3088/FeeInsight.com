@@ -1,7 +1,7 @@
 import { createHash } from "crypto";
 import { describe, expect, it, vi } from "vitest";
 
-import { fetchAndRecordLink, MAGELLAN_FETCH_STRATEGY, MAGELLAN_STALE_LINK_REFETCH_DAYS, redirectedToHomepage, runMagellanFetch, savedLinkFetched, sendsValidators, withoutArticleRemembered, withRequestedUrl } from "./fetch";
+import { fetchAndRecordLink, MAGELLAN_FETCH_STRATEGY, MAGELLAN_STALE_LINK_REFETCH_DAYS, oldLabelledFetchAction, redirectedToHomepage, runMagellanFetch, savedLinkFetched, sendsValidators, withoutArticleRemembered, withoutOldRemembered, withRequestedUrl } from "./fetch";
 
 type DbMock = ReturnType<typeof vi.fn>;
 
@@ -246,7 +246,7 @@ describe("Magellan agentic fetch", () => {
     const sqlText = db.mock.calls.map((call) => templateText(call[0])).join("\n");
     expect(sqlText).toContain("rejected_source_urls");
     expect(sqlText).toContain("rescue_status = 'pending'");
-    expect(sqlText).toContain("ELSE 'magellan_dead_link' END");
+    expect(sqlText).toContain("failure_reason = 'magellan_dead_link'");
     expect(sqlText).toContain("locked_by_correction IS TRUE");
   });
 
@@ -268,28 +268,106 @@ describe("Magellan agentic fetch", () => {
     expect(result.results[0]).toMatchObject({ outcome: "failed", reason: "Link is the site's error page, not a fee schedule" });
     const sqlText = db.mock.calls.map((call) => templateText(call[0])).join("\n");
     expect(sqlText).toContain("rejected_source_urls");
-    expect(sqlText).toContain("ELSE 'magellan_dead_link' END");
+    expect(sqlText).toContain("failure_reason = 'magellan_dead_link'");
   });
 
-  it("sends a bank whose stored fee link calls itself old back to discovery (#1026, #1455 class)", async () => {
-    const db = createDbMock([
-      {
+  describe("old-labelled links (#1026, #1455 class, Nov 3)", () => {
+    const bound = (db: DbMock, fragment: string) => db.mock.calls.filter((call) => templateText(call[0]).includes(fragment)).flatMap((call) => call.slice(1));
+
+    it("sends an old saved link back to discovery before anything is downloaded, whatever address it remembers", async () => {
+      // Citizens Bank & Trust (3767): the saved link is "/schedule-of-fees-old", the remembered address a current page.
+      const db = createDbMock([{
         id: 3767,
         institution_name: "Citizens Bank & Trust Co.",
         fee_schedule_url: "https://www.cbt-co.com/deposit-accounts/schedule-of-fees-old",
         asset_size: "500",
         last_crawl_at: null,
         consecutive_failures: 0,
-      },
-    ]);
-    const fetchImpl = vi.fn().mockResolvedValueOnce(response("<html><h1>Schedule of Fees</h1><p>Overdraft $30.00</p></html>"));
+        profile_canonical_source_url: "https://www.cbt-co.com/deposit-accounts/common-features",
+      }]);
+      const fetchImpl = vi.fn();
 
-    const result = await runMagellanFetch({ runId: 107, db: asFetchDb(db), fetchImpl });
+      const result = await runMagellanFetch({ runId: 107, db: asFetchDb(db), fetchImpl });
 
-    expect(result.results[0]?.reason).toContain("labels it old or archived");
-    const sqlText = db.mock.calls.map((call) => templateText(call[0])).join("\n");
-    expect(sqlText).toContain("rejected_source_urls");
-    expect(sqlText).toContain("'magellan_old_labelled_link'");
+      expect(fetchImpl).not.toHaveBeenCalled();
+      expect(result.results[0]).toMatchObject({ outcome: "failed", attemptOutcome: "wrong_document", sourceUrl: "https://www.cbt-co.com/deposit-accounts/schedule-of-fees-old" });
+      expect(result.results[0]?.reason).toContain("labels it old or archived");
+      const sqlText = db.mock.calls.map((call) => templateText(call[0])).join("\n");
+      expect(sqlText).not.toContain("INSERT INTO source_documents");
+      // The bound failure reason, and the rejected URL is the saved link, not the remembered page.
+      expect(bound(db, "UPDATE institution_sources inst")).toContain("magellan_old_labelled_link");
+      const rejected = bound(db, "rejected_source_urls").find((value) => typeof value === "string" && value.startsWith("[{"));
+      expect(JSON.parse(String(rejected))[0].url).toBe("https://www.cbt-co.com/deposit-accounts/schedule-of-fees-old");
+    });
+
+    it("sets an old remembered address aside and fetches the bank's current saved link", async () => {
+      const db = createDbMock([{
+        id: 50,
+        institution_name: "Moved CU",
+        fee_schedule_url: "https://cu.example/fee-schedule.pdf",
+        asset_size: "500",
+        last_crawl_at: null,
+        consecutive_failures: 0,
+        profile_canonical_source_url: "https://cu.example/archive-2021/fee-schedule.pdf",
+      }]);
+      const fetchImpl = vi.fn().mockResolvedValueOnce(response("%PDF", "application/pdf"));
+
+      await runMagellanFetch({ runId: 109, db: asFetchDb(db), fetchImpl });
+
+      expect(fetchImpl.mock.calls[0][0]).toBe("https://cu.example/fee-schedule.pdf");
+      expect(bound(db, "UPDATE institution_sources inst")).not.toContain("magellan_old_labelled_link");
+    });
+
+    it("keeps a current link that redirects to an old-named file (Westreet FCU)", async () => {
+      const db = createDbMock([{
+        id: 6933,
+        institution_name: "Westreet Federal Credit Union",
+        fee_schedule_url: "http://www.westreet.org/documents/fee-schedule",
+        asset_size: "500",
+        last_crawl_at: null,
+        consecutive_failures: 0,
+        profile_canonical_source_url: "http://www.westreet.org/documents/fee-schedule",
+      }]);
+      const landed = response("%PDF", "application/pdf");
+      Object.defineProperty(landed, "url", { value: "https://westreet.org/wp-content/uploads/2021/06/Fee-Schedule-Old.pdf" });
+      const fetchImpl = vi.fn().mockResolvedValueOnce(landed);
+
+      const result = await runMagellanFetch({ runId: 110, db: asFetchDb(db), fetchImpl });
+
+      expect(fetchImpl).toHaveBeenCalledTimes(1);
+      expect(result.results[0]?.sentBackToDiscovery).toBeFalsy();
+      const sqlText = db.mock.calls.map((call) => templateText(call[0])).join("\n");
+      expect(sqlText).toContain("INSERT INTO source_documents");
+      expect(bound(db, "UPDATE institution_sources inst")).not.toContain("magellan_old_labelled_link");
+    });
+
+    it("never moves a link a person's correction locked", async () => {
+      const db = createDbMock([{
+        id: 51,
+        institution_name: "Pinned Bank",
+        fee_schedule_url: "https://pinned.example/fee-schedule-old.pdf",
+        asset_size: "500",
+        last_crawl_at: null,
+        consecutive_failures: 0,
+        profile_canonical_source_url: "https://pinned.example/fee-schedule-old.pdf",
+        profile_locked_by_correction: true,
+      }]);
+      const fetchImpl = vi.fn().mockResolvedValueOnce(response("%PDF", "application/pdf"));
+
+      await runMagellanFetch({ runId: 111, db: asFetchDb(db), fetchImpl });
+
+      expect(fetchImpl).toHaveBeenCalledTimes(1);
+      expect(bound(db, "UPDATE institution_sources inst")).not.toContain("magellan_old_labelled_link");
+    });
+
+    it("decides from the saved link first, then the remembered address", () => {
+      const row = { fee_schedule_url: "https://cu.example/fees.pdf", profile_canonical_source_url: "https://cu.example/fees-old.pdf" };
+      expect(oldLabelledFetchAction(row)).toMatchObject({ kind: "forget_remembered", url: "https://cu.example/fees-old.pdf" });
+      expect(withoutOldRemembered({ ...row, id: 1, institution_name: "CU", asset_size: null, last_crawl_at: null, consecutive_failures: 0 }).profile_canonical_source_url).toBeNull();
+      expect(oldLabelledFetchAction({ ...row, fee_schedule_url: null })).toMatchObject({ kind: "send_back", url: "https://cu.example/fees-old.pdf" });
+      expect(oldLabelledFetchAction({ fee_schedule_url: "https://www.oldpoint.com/personal/fee-schedule", profile_canonical_source_url: null })).toEqual({ kind: "none" });
+      expect(oldLabelledFetchAction({ ...row, profile_locked_by_correction: true })).toEqual({ kind: "none" });
+    });
   });
 
   it("keeps a stored link at a bank named Old (the host is never read)", async () => {
@@ -307,8 +385,7 @@ describe("Magellan agentic fetch", () => {
 
     await runMagellanFetch({ runId: 108, db: asFetchDb(db), fetchImpl });
 
-    const sqlText = db.mock.calls.map((call) => templateText(call[0])).join("\n");
-    expect(sqlText).not.toContain("magellan_old_labelled_link");
+    expect(db.mock.calls.flatMap((call) => call.slice(1))).not.toContain("magellan_old_labelled_link");
   });
 
   it("treats a fee link that redirects to the homepage as gone", async () => {
@@ -336,7 +413,7 @@ describe("Magellan agentic fetch", () => {
     });
     const sqlText = db.mock.calls.map((call) => templateText(call[0])).join("\n");
     expect(sqlText).not.toContain("last_success_at = NOW()");
-    expect(sqlText).toContain("ELSE 'magellan_dead_link' END");
+    expect(sqlText).toContain("failure_reason = 'magellan_dead_link'");
   });
 
   it("keeps the link on a block (403), which can pass", async () => {
@@ -497,7 +574,7 @@ describe("Magellan agentic fetch", () => {
       const linkDb = learningDb({ id: 900, content_hash: bodyHash, etag: null, last_modified: null });
       await runMagellanFetch({ runId: 201, stepId: 7, db: asFetchDb(linkDb), fetchImpl: vi.fn().mockResolvedValueOnce(response(body)) });
       expect(detailOf(linkDb)).toMatchObject({ link: "https://learning.example/fees" });
-      const remembered = { ...candidate, profile_canonical_source_url: "https://learning.example/old-fees.pdf" };
+      const remembered = { ...candidate, profile_canonical_source_url: "https://learning.example/fees-2025.pdf" };
       const rememberedDb = learningDb({ id: 900, content_hash: bodyHash, etag: null, last_modified: null }, null, remembered);
       await runMagellanFetch({ runId: 201, stepId: 7, db: asFetchDb(rememberedDb), fetchImpl: vi.fn().mockResolvedValueOnce(response(body)) });
       expect(detailOf(rememberedDb)).not.toBeNull();

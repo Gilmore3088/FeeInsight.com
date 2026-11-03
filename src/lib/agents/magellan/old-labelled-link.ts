@@ -15,8 +15,12 @@
  *
  * Conservative on purpose. The path is split into words at "/", "-", "_", ".", "+", spaces and
  * camel case ("FeeScheduleOld"), and the extension dropped. Then:
- *   - "archive", "archived", "archives", "superseded", "expired", "obsolete" and "outdated" mark it
- *     anywhere in the path ("/archive-2021/", "/archive/2019/fees.pdf");
+ *   - "archive", "archives" and "archived" mark it only as a whole path segment or the start of one
+ *     ("/archive/2019/fees.pdf", "/archive-2021/", "/archives/"), never inside a run-together word
+ *     ("/DocumentArchive/") or later in a segment;
+ *   - "superseded", "obsolete" and "outdated" mark it anywhere in the path;
+ *   - "expired" marks it only as a segment's last word ("fee-schedule-expired.pdf"), so
+ *     "/lost-or-expired-card-fees" is a current page;
  *   - "old", "previous" and "prior" mark it only as the last word of a path segment
  *     ("Fee-Schedule-Old.pdf", "truthnsavings_old.pdf") or right before a document or site word
  *     ("old-fee-schedule.pdf", "/old-web-site/", "old-home.html", "prior-disclosures"), or before a
@@ -32,10 +36,14 @@
  */
 
 /** Words that mark a document old wherever they sit in its path. */
-const ALWAYS_OLD = new Set(["archive", "archived", "archives", "superseded", "expired", "obsolete", "outdated"]);
+const ALWAYS_OLD = new Set(["superseded", "obsolete", "outdated"]);
+/** An archive folder: the segment is, or starts with, "archive", "archives" or "archived" ("archive-2021"). */
+const ARCHIVE_SEGMENT = /^(archive[sd]?)(?![a-z])/i;
+/** Words that mark it old only as a segment's last word. */
+const OLD_AT_SEGMENT_END = new Set(["expired"]);
 /** Words that mark it old only at a segment's end or beside a document word. */
 const OLD_BESIDE_DOCUMENT = new Set(["old", "previous", "prior"]);
-const OLD_WORDS = new Set([...ALWAYS_OLD, ...OLD_BESIDE_DOCUMENT]);
+const OLD_WORDS = new Set([...ALWAYS_OLD, ...OLD_BESIDE_DOCUMENT, ...OLD_AT_SEGMENT_END, "archive", "archived", "archives"]);
 /** Document and site words: what an old word must stand beside. */
 const DOCUMENT_WORDS = new Set([
   "fee", "fees", "schedule", "schedules", "sched", "disclosure", "disclosures", "version", "versions",
@@ -75,12 +83,15 @@ export function oldLabelledAddress(url: string | null | undefined): string | nul
     // keep the encoded path
   }
   for (const segment of path.split("/")) {
+    const archive = ARCHIVE_SEGMENT.exec(segment.trim());
+    if (archive) return archive[1].toLowerCase();
     const tokens = words(segment);
     for (let index = 0; index < tokens.length; index += 1) {
       const token = tokens[index];
       if (ALWAYS_OLD.has(token)) return token;
-      if (!OLD_BESIDE_DOCUMENT.has(token)) continue;
       const last = tokens.slice(index + 1).every((rest) => YEAR.test(rest));
+      if (OLD_AT_SEGMENT_END.has(token) && last) return token;
+      if (!OLD_BESIDE_DOCUMENT.has(token)) continue;
       if (last || documentWordAfter(tokens, index)) return token;
     }
   }

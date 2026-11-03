@@ -24,23 +24,35 @@ type SqlTag = typeof sql;
  * candidates and the exact rule runs here.
  *
  * An old label alone does not take a fee down: the document may still be the only schedule the bank
- * has posted, and an old page's price can still be today's. A fee comes down only when the bank's
- * own current fee link proves a newer schedule exists and that schedule does not state the fee:
+ * has posted, and an old page's price can still be today's. The label is read on the address the
+ * bank links to, never where a redirect lands (Magellan's fetch and discovery read it the same way).
+ * A fee comes down only when the bank's own current fee link proves a newer schedule exists and that
+ * schedule does not state the fee:
+ * - `not_judged`: the fee has no amount or no name, so the source check cannot judge it. Kept.
  * - `no_current_link`: the bank has no fee link (Magellan is searching). Kept.
  * - `current_link_is_this_page`: the bank's fee link is this old document's own address (WinSouth,
- *   Central Jersey Police & Fire, Citizens Bank & Trust on Nov 3). Kept: Magellan's fetch sends that
- *   link back to discovery, and once a newer link is found and captured the fee is judged again.
- * - `current_link_old_labelled`: the link is another old-labelled address. Kept, the same way.
- * - `current_link_not_captured`: the link is a different, current address, but no stored copy of it
- *   with text exists yet (Westreet's "/documents/fee-schedule" on Nov 3). Kept: nothing proves that
- *   address is a schedule, or that it answers. Judged again once Magellan captures it.
+ *   Central Jersey Police & Fire, Citizens Bank & Trust on Nov 3; Magellan's fetch sends such a link
+ *   back to discovery), or the current link's own fetch landed on and stored this
+ *   document (Westreet FCU: "/documents/fee-schedule" redirects to "Fee-Schedule-Old.pdf", doc 2229,
+ *   fetch attempts 1832859 and 2909890), so the bank still serves it as its schedule. Kept.
+ * - `current_link_old_labelled`: the link is another old-labelled address. Kept: Magellan's fetch
+ *   sends that link back to discovery, and once a newer link is found and captured the fee is judged
+ *   again.
+ * - `current_link_not_captured`: the link is a different, current address with no stored copy with
+ *   text yet. Kept: nothing proves that address is a schedule, or that it answers.
+ * - `current_link_not_schedule`: the current link's copy is not one Rosetta typed a fee schedule
+ *   (`agent_source_texts.document_kind`): a landing or product page that prints no prices proves
+ *   nothing about the old schedule's. Kept.
  * - `stated_on_current_link`: the current link's newest stored text states the fee at its amount
  *   (the one shared check, `checkFeeAgainstSource`). Kept: the price is today's, so taking it down
  *   would lose a right fee. A live twin from the current copy, if any, is the duplicate checks' job.
- * - `takedown`: the current link is a different, non-old address with stored text, and that text
- *   does not state the fee. The old document's fee comes down as `old_labelled_document: #<doc>
+ * - `takedown`: the current link is a different, non-old address whose stored copy is a fee schedule
+ *   that does not state the fee. The old document's fee comes down as `old_labelled_document: #<doc>
  *   (current link #<link doc>)`.
- * So the check errs toward keeping a fee whenever nothing proves a newer schedule exists.
+ * The current link's copy is the document its newest plain fetch stored (`pipeline_attempts`, strategy
+ * `fetch.http`, when the bank's remembered address is that link), else the newest stored copy at the
+ * link's own address. So the check errs toward keeping a fee whenever nothing proves a newer schedule
+ * exists.
  *
  * Every candidate is read each step (a few hundred live fees on Nov 3), at most once per
  * `OLD_LABELLED_DOCUMENT_SCAN_INTERVAL_HOURS`, keyed on the last event of a full read; an
@@ -60,11 +72,12 @@ type SqlTag = typeof sql;
 export const OLD_LABELLED_DOCUMENT_CHECK = "darwin.old_labelled_document";
 export const OLD_LABELLED_DOCUMENT_CHECK_VERSION = 1;
 /**
- * The switch, off. The Nov 3 dry run (prod, read-only) read 86 live fees on the 5 old-labelled
- * documents at 5 banks: 0 would come down. 52 are kept because the bank's link is the old document
- * itself (WinSouth 24, Central Jersey Police & Fire 16, Citizens Bank & Trust 12), 32 because
- * Westreet's current link was never captured, and Clackamas County Bank's 2 because its current
- * page (doc 16917) still states both prices. The banks' live sites could not be fetched from the
+ * The switch, off. The Nov 3 dry run (prod, read-only, after the #2968 review) read 86 live fees on
+ * the 5 old-labelled documents at 5 banks: 0 would come down. 80 are kept because the bank's link is
+ * the old document or its own fetch lands on it (Westreet 31 through its redirect to
+ * "Fee-Schedule-Old.pdf", WinSouth 23, Central Jersey Police & Fire 14, Citizens Bank & Trust 12), 4
+ * have no amount (`not_judged`), and Clackamas County Bank's 2 are stated on its current page (doc
+ * 16917). The banks' live sites could not be fetched from the
  * session that built this, so no takedown has been checked against a bank's current document; the
  * switch turns on by PR once a re-count after Magellan's fetch captures the banks' current links
  * has a sample checked against them (sampled-clean rule). Roll back by setting it to false.
@@ -81,15 +94,17 @@ export const OLD_LABELLED_PREFILTER = "(old|archiv|previous|prior|supersed|expir
 export type OldLabelledVerdict =
   | "takedown"
   | "not_old_labelled"
+  | "not_judged"
   | "no_current_link"
   | "current_link_is_this_page"
   | "current_link_old_labelled"
   | "current_link_not_captured"
+  | "current_link_not_schedule"
   | "stated_on_current_link";
 
 export const OLD_LABELLED_VERDICTS: readonly OldLabelledVerdict[] = [
-  "takedown", "not_old_labelled", "no_current_link", "current_link_is_this_page", "current_link_old_labelled",
-  "current_link_not_captured", "stated_on_current_link",
+  "takedown", "not_old_labelled", "not_judged", "no_current_link", "current_link_is_this_page", "current_link_old_labelled",
+  "current_link_not_captured", "current_link_not_schedule", "stated_on_current_link",
 ];
 
 export interface OldLabelledDocumentRow {
@@ -103,9 +118,13 @@ export interface OldLabelledDocumentRow {
   document_url: string | null;
   /** The bank's fee link (`institution_sources.fee_schedule_url`). */
   current_link: string | null;
-  /** The newest stored copy of that link with text, when one exists. */
+  /** The current link's copy: the document its newest plain fetch stored, else the newest copy at its address. */
   link_document_id: number | string | null;
+  /** That copy's own address (where the link's fetch landed). */
+  link_document_url?: string | null;
   link_text: string | null;
+  /** Rosetta's type of that copy (`agent_source_texts.document_kind`). */
+  link_kind?: string | null;
 }
 
 export interface OldLabelledDocumentMatch {
@@ -162,25 +181,53 @@ export function oldLabelledPageKey(url: string | null | undefined): string {
  * Pure: what the check does with one live fee (see the module note). The old word is the document's;
  * `null` means the address is not old-labelled at all.
  */
+/** Rosetta's document kind a current link's copy needs before it can prove an old schedule stale. */
+export const OLD_LABELLED_SCHEDULE_KINDS: readonly string[] = ["fee_schedule"];
+
 export function oldLabelledDocumentVerdict(input: {
   documentUrl: string | null;
+  sourceDocumentId?: number | null;
   currentLink: string | null;
+  linkDocumentId?: number | null;
+  linkDocumentUrl?: string | null;
   linkText: string | null;
+  linkKind?: string | null;
   feeName: string | null;
   amount: number | null;
   canonicalFeeKey: string | null;
 }): OldLabelledVerdict {
   if (!oldLabelledAddress(input.documentUrl)) return "not_old_labelled";
+  if (input.amount == null || !Number.isFinite(input.amount) || !(input.feeName ?? "").trim()) return "not_judged";
   const link = (input.currentLink ?? "").trim();
   if (!link) return "no_current_link";
-  if (oldLabelledPageKey(link) === oldLabelledPageKey(input.documentUrl)) return "current_link_is_this_page";
+  const page = oldLabelledPageKey(input.documentUrl);
+  // The link is the old document, or the link's own fetch landed on it (a redirect): the bank still serves it.
+  if (oldLabelledPageKey(link) === page) return "current_link_is_this_page";
+  if (input.linkDocumentId != null && input.sourceDocumentId != null && input.linkDocumentId === input.sourceDocumentId) return "current_link_is_this_page";
+  if (input.linkDocumentUrl && oldLabelledPageKey(input.linkDocumentUrl) === page) return "current_link_is_this_page";
   if (oldLabelledAddress(link)) return "current_link_old_labelled";
   if (!input.linkText || !input.linkText.trim()) return "current_link_not_captured";
-  if (input.amount != null && input.feeName) {
-    const stated = checkFeeAgainstSource(input.linkText, input.feeName, input.amount, ".", input.canonicalFeeKey);
-    if (stated.ok) return "stated_on_current_link";
-  }
+  const stated = checkFeeAgainstSource(input.linkText, input.feeName!, input.amount, ".", input.canonicalFeeKey);
+  if (stated.ok) return "stated_on_current_link";
+  // A landing or product page that does not print the fee proves nothing about the old schedule's prices.
+  if (!OLD_LABELLED_SCHEDULE_KINDS.includes((input.linkKind ?? "").trim())) return "current_link_not_schedule";
   return "takedown";
+}
+
+/** Pure: a row's verdict (`oldLabelledDocumentVerdict` on the row's columns). */
+function rowVerdict(row: OldLabelledDocumentRow): OldLabelledVerdict {
+  return oldLabelledDocumentVerdict({
+    documentUrl: row.document_url,
+    sourceDocumentId: num(row.source_document_id),
+    currentLink: row.current_link,
+    linkDocumentId: num(row.link_document_id),
+    linkDocumentUrl: row.link_document_url ?? null,
+    linkText: row.link_text,
+    linkKind: row.link_kind ?? null,
+    feeName: row.fee_name,
+    amount: num(row.amount),
+    canonicalFeeKey: row.canonical_fee_key,
+  });
 }
 
 function emptyVerdicts(): Record<OldLabelledVerdict, number> {
@@ -200,14 +247,7 @@ export function findOldLabelledDocuments(rows: OldLabelledDocumentRow[]): OldLab
     seen.add(feeId);
     const documentUrl = (row.document_url ?? "").trim();
     const amount = num(row.amount);
-    const verdict = oldLabelledDocumentVerdict({
-      documentUrl,
-      currentLink: row.current_link,
-      linkText: row.link_text,
-      feeName: row.fee_name,
-      amount,
-      canonicalFeeKey: row.canonical_fee_key,
-    });
+    const verdict = rowVerdict(row);
     verdicts[verdict] += 1;
     if (verdict === "not_old_labelled") continue;
     const linkDocumentId = num(row.link_document_id);
@@ -242,8 +282,11 @@ export function findOldLabelledDocuments(rows: OldLabelledDocumentRow[]): OldLab
 
 /**
  * Read-only: every live fee whose document's path passes the loose pre-filter, with the bank's fee
- * link and the newest stored text of a copy of that link (any of the bank's documents at the same
- * page key). This is also the dry-run read: `countOldLabelledDocuments` runs it and applies the rule.
+ * link and that link's copy: the document the bank's newest plain fetch (`fetch.http`, ok or
+ * unchanged) stored when its remembered address is the link (a redirect's landing included), else the
+ * newest of the bank's documents at the link's page key; with that copy's address, newest text and
+ * Rosetta's document kind. This is also the dry-run read: `countOldLabelledDocuments` runs it and
+ * applies the rule.
  */
 export function oldLabelledDocumentRowsSql(db: SqlTag, options: { institutionId?: number; limit?: number } = {}) {
   const scoped = options.institutionId != null;
@@ -263,32 +306,57 @@ export function oldLabelledDocumentRowsSql(db: SqlTag, options: { institutionId?
          AND NOT EXISTS (SELECT 1 FROM published_fee_corrections corrected WHERE corrected.fee_published_id = fp.fee_published_id AND corrected.status = 'current')
          AND lower(regexp_replace(COALESCE(sd.document_url, ''), '^[a-z]+://[^/]+', '', 'i')) ~ ${OLD_LABELLED_PREFILTER}
     ), banks AS (
-      SELECT DISTINCT live.institution_id, btrim(inst.fee_schedule_url) AS current_link
+      SELECT DISTINCT live.institution_id, btrim(inst.fee_schedule_url) AS current_link,
+             btrim(profile.canonical_source_url) AS remembered
         FROM live
         JOIN institution_sources inst ON inst.id = live.institution_id
-    ), links AS (
-      SELECT banks.institution_id, banks.current_link, copy.id AS link_document_id, copy.normalized_text AS link_text
+        LEFT JOIN institution_source_profiles profile ON profile.institution_id = live.institution_id
+    ), keyed AS (
+      SELECT banks.*,
+             regexp_replace(regexp_replace(lower(banks.current_link), '^https?://(www\\.)?', ''), '/+$', '') AS link_key,
+             regexp_replace(regexp_replace(lower(COALESCE(banks.remembered, banks.current_link)), '^https?://(www\\.)?', ''), '/+$', '') AS asked_key
         FROM banks
+    ), links AS (
+      SELECT keyed.institution_id, keyed.current_link,
+             COALESCE(fetched.source_document_id, by_address.id) AS link_document_id
+        FROM keyed
+        -- The link's own fetch: the newest plain fetch that asked for the link (the remembered address is the link).
         LEFT JOIN LATERAL (
-          SELECT sd.id, t.normalized_text
+          SELECT pa.source_document_id
+            FROM pipeline_attempts pa
+           WHERE pa.institution_id = keyed.institution_id
+             AND pa.stage = 'fetch'
+             AND pa.strategy = 'fetch.http'
+             AND pa.outcome IN ('ok', 'unchanged')
+             AND pa.source_document_id IS NOT NULL
+             AND keyed.current_link IS NOT NULL
+             AND keyed.asked_key = keyed.link_key
+           ORDER BY pa.id DESC
+           LIMIT 1
+        ) fetched ON TRUE
+        LEFT JOIN LATERAL (
+          SELECT sd.id
             FROM source_documents sd
-            JOIN LATERAL (
-              SELECT ast.normalized_text FROM agent_source_texts ast
-               WHERE ast.source_document_id = sd.id
-               ORDER BY ast.id DESC
-               LIMIT 1
-            ) t ON TRUE
-           WHERE sd.institution_id = banks.institution_id
-             AND banks.current_link IS NOT NULL
-             AND regexp_replace(regexp_replace(lower(btrim(sd.document_url)), '^https?://(www\\.)?', ''), '/+$', '')
-               = regexp_replace(regexp_replace(lower(banks.current_link), '^https?://(www\\.)?', ''), '/+$', '')
+           WHERE sd.institution_id = keyed.institution_id
+             AND keyed.current_link IS NOT NULL
+             AND regexp_replace(regexp_replace(lower(btrim(sd.document_url)), '^https?://(www\\.)?', ''), '/+$', '') = keyed.link_key
            ORDER BY sd.id DESC
            LIMIT 1
-        ) copy ON TRUE
+        ) by_address ON TRUE
+    ), copies AS (
+      SELECT links.*, btrim(sd.document_url) AS link_document_url, t.normalized_text AS link_text, t.document_kind AS link_kind
+        FROM links
+        LEFT JOIN source_documents sd ON sd.id = links.link_document_id
+        LEFT JOIN LATERAL (
+          SELECT ast.normalized_text, ast.document_kind FROM agent_source_texts ast
+           WHERE ast.source_document_id = links.link_document_id
+           ORDER BY ast.id DESC
+           LIMIT 1
+        ) t ON TRUE
     )
-    SELECT live.*, links.current_link, links.link_document_id, links.link_text
+    SELECT live.*, copies.current_link, copies.link_document_id, copies.link_document_url, copies.link_text, copies.link_kind
       FROM live
-      JOIN links ON links.institution_id = live.institution_id
+      JOIN copies ON copies.institution_id = live.institution_id
      ORDER BY live.fee_published_id
      LIMIT ${limit}::int
   `;
@@ -396,14 +464,7 @@ function keptFeeIds(rows: OldLabelledDocumentRow[]): { passing: number[]; unjudg
   const passing: number[] = [];
   const unjudged: number[] = [];
   for (const row of rows) {
-    const verdict = oldLabelledDocumentVerdict({
-      documentUrl: row.document_url,
-      currentLink: row.current_link,
-      linkText: row.link_text,
-      feeName: row.fee_name,
-      amount: num(row.amount),
-      canonicalFeeKey: row.canonical_fee_key,
-    });
+    const verdict = rowVerdict(row);
     if (verdict === "stated_on_current_link") passing.push(Number(row.fee_published_id));
     else if (verdict !== "takedown" && verdict !== "not_old_labelled") unjudged.push(Number(row.fee_published_id));
   }

@@ -85,6 +85,10 @@ describe("linkedFeePageCompanion (a schedule behind a link is stored as the bank
     expect(linkedFeePageCompanion("https://www.tucsonfcu.com/wp-content/uploads/2026/09/October-2026-Loan-Rates.pdf", null)).toBeNull();
     expect(linkedFeePageCompanion("https://www.goldmarkfcu.com/wp-content/themes/goldmark/pdf/2026-privacy-policy.pdf", null)).toBeNull();
     expect(linkedFeePageCompanion("not a url", null)).toBeNull();
+    // #1026, #1455 class: an old or archived copy is never pointed at as the bank's document.
+    expect(linkedFeePageCompanion("https://westreet.org/wp-content/uploads/2021/06/Fee-Schedule-Old.pdf", "https://westreet.org/fees")).toBeNull();
+    expect(linkedFeePageCompanion("https://www.clackamascountybank.com/archive-2021/personal-checking.php", null)).toBeNull();
+    expect(linkedFeePageCompanion("https://www.oldnational.com/fee-schedule.pdf", null)).toMatchObject({ documentType: "pdf" });
     // A payment page is not the bank's schedule (review of #2940).
     expect(linkedFeePageCompanion("https://www.matagordaccu.com/online-payment", "https://www.matagordaccu.com/fees")).toBeNull();
   });

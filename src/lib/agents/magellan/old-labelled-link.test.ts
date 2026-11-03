@@ -18,6 +18,9 @@ const OLD_ADDRESSES = [
   "https://bank.example/fees/previous-fee-schedule.pdf",
   "https://bank.example/fees/schedule%20(superseded).pdf",
   "https://bank.example/fees/obsolete/fee-schedule.pdf",
+  "https://bank.example/archives/fee-schedule.pdf",
+  "https://bank.example/disclosures/archived/fees.pdf",
+  "https://bank.example/disclosures/fee-schedule-expired.pdf",
 ];
 
 // Addresses that look close but are current pages (several are live documents on prod, Nov 3).
@@ -42,6 +45,11 @@ const CURRENT_ADDRESSES = [
   "https://bank.example/retired-military-checking",
   "https://bank.example/fees/hold-policy",
   "https://bank.example/fee-schedule",
+  "https://bank.example/lost-or-expired-card-fees",
+  "https://bank.example/expired-card-replacement-fee",
+  "https://bank.example/DocumentArchive/fee-schedule.pdf",
+  "https://bank.example/documentarchive/fee-schedule.pdf",
+  "https://bank.example/statement-archive/fees",
 ];
 
 describe("oldLabelledAddress", () => {

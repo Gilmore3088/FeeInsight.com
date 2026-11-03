@@ -1679,22 +1679,29 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   `canadian_document` flag; event `darwin.canadian_document_takedown`). Step detail
   `canadian_document_check`. Dry run Oct 19: 12 fees on docs 26833 and 26834, all Natbank; the same
   12 are #2022 hand takedowns, and Atlas points Natbank's registry at its U.S. accounts page.
-- Old or archived documents (`old-labelled-document-check.ts`, v1, #1026, #1455 class, Nov 3). 86
-  live fees at 5 banks came from documents whose own address calls them old or archived (Westreet's
-  "Fee-Schedule-Old.pdf", fee 43316 among its 32), which the live-site audit cannot see. A loose SQL
-  pre-filter on the document path picks candidates (`oldLabelledDocumentRowsSql`) and Magellan's
-  `oldLabelledAddress` decides. A fee comes down only when the bank's current fee link is a
-  different, non-old address with a stored copy whose newest text does not state the fee
-  (`checkFeeAgainstSource`); it stays live when the bank has no link, when the link is the old
-  document itself or another old one (Magellan sends it back to discovery), when the link was never
-  captured, or when the current text still states the fee. At most hourly; an institution-scoped run
-  always reads. On (`OLD_LABELLED_DOCUMENT_TAKEDOWN_LIVE`, off), a match goes through the 12-hour
-  second look (`darwin.old_labelled_document`) and is archived with `old_labelled_document: #<doc>
-  (current link #<link doc>)` (batch `darwin-old-labelled-document-<run>`, verified row rejected with
-  the `old_labelled_document` flag; event `darwin.old_labelled_document_takedown`). Step detail
-  `old_labelled_document_check`. Dry run Nov 3 (prod, read-only): 238 candidates, 86 old-labelled,
-  0 would come down (52 on a link that is the old document, 32 at Westreet whose current link was
-  never captured, Clackamas's 2 stated on its current page).
+- Old or archived documents (`old-labelled-document-check.ts`, v1, #1026, #1455 class, Nov 3).
+  86 live fees at 5 banks came from documents whose own address calls them old or archived
+  (Westreet's "Fee-Schedule-Old.pdf", fee 43316 among its 32). The live-site audit cannot see this.
+  - A loose SQL pre-filter on the document path picks candidates (`oldLabelledDocumentRowsSql`), and
+    Magellan's `oldLabelledAddress` decides.
+  - The current link's copy is the document the link's newest plain fetch stored (a redirect's
+    landing), or else the newest stored copy at the link's address.
+  - A fee comes down only when all of these hold: the current link is a different, non-old address;
+    its copy is one Rosetta typed `fee_schedule`; and that copy's newest text does not state the fee
+    (`checkFeeAgainstSource`).
+  - A fee stays live when it has no amount or name (`not_judged`); when the bank has no link; when the
+    link is the old document or its fetch lands on it (Westreet's current link redirects to the "Old"
+    file); when the link is old itself (Magellan sends it back to discovery); when the link has no
+    stored copy; when the copy is not a fee schedule; or when the current text still states the fee.
+  - It runs at most hourly; an institution-scoped run always reads.
+  - The switch `OLD_LABELLED_DOCUMENT_TAKEDOWN_LIVE` is off. Switched on, a match goes through the
+    12-hour second look (`darwin.old_labelled_document`) and is archived with `old_labelled_document:
+    #<doc> (current link #<link doc>)`: batch `darwin-old-labelled-document-<run>`, the verified row
+    rejected with the `old_labelled_document` flag, event `darwin.old_labelled_document_takedown`.
+  - Step detail: `old_labelled_document_check`.
+  - Dry run Nov 3 (prod, read-only, after review): 238 candidates, 86 old-labelled, 0 would come
+    down. 80 are on the link's own document or its landing, 4 are not judged, and Clackamas's 2 are
+    stated on its current page.
 - A late charge's cap or floor (`late-charge-bound-check.ts`, #1905). A loan schedule states its
   late charge as a share of the payment with a cap or floor ("5% of the principal and interest ...;
   maximum late charge of $30", "Minimum Late Fee $10" beside "5% of Payment Amount"). The cap or
