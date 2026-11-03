@@ -586,6 +586,13 @@ DATABASE_URL=<prod URL> npm run audit:switch-dry-runs -- --json > switch-dry-run
      with the daily receipt's own figure (right / scorable), then the amount-and-category-only
      share (`traceLiveFee`, `checkFeeCategory`). This is a stored-copy measure, not a check
      against the bank's current schedule.
+  11. `HTML_HEADING_CONTEXT_LIVE` (#1092, Rosetta `read.html_dom`, Knox v177,
+     `rosetta/html-heading-scope.ts`, `knox/heading-category-rows.ts`). Exposure only, from the same read
+     as section 8: the current HTML documents and the live fees on them that a flip would reach once
+     re-read (it needs the `HTML_READ_VERSION` bump). The switch only adds a trailer after the unchanged
+     text and Knox only adds reads, so no live fee changes until a page is read again; the added reads are
+     measured on the answer-key documents' bytes (shadow-lab experiments `html-heading-context` and
+     `html-heading-context-with-row-pairing`; admit-only, `shadow-lab/heading-context-admit.test.ts`).
 - A new switch that waits on a production count adds its counter here in the same PR
   (deming/issue-1092-a-switch-ships-its-dry-run-count).
 

@@ -50,6 +50,19 @@ Rosetta owns source text normalization.
   through helpers. Vault, hand-supplied and injected test reads keep their existing transports.
   Scope and compatibility: `docs/project/findings/2026-10-19-safe-fee-source-fetch.md` (#2136).
 - Use deterministic HTML, text, and PDF extraction first.
+- Heading context (`html-heading-scope.ts`, behind `HTML_HEADING_CONTEXT_LIVE`, off; #1092, class R1):
+  the HTML reader also records which real heading each line sits under: an `h1`-`h6` or
+  `role="heading"` element, a table's header row (one cell heads the rows; a wider row by its cell over
+  the rows' names), or a heading alone in a one-cell table row. Scope is the HTML outline's (the next
+  heading of the same or a higher rank, or the end of a sectioning element or a layout table's cell); a
+  table's own header wins inside it. Hidden headings and headings in a nav, header, footer, aside, form or
+  dialog are refused and block the heading above. Nothing is guessed from a line's shape. The record is a
+  trailer line after the unchanged text (`src/lib/heading-context-trailer.ts`: line count, FNV-1a hash,
+  spans; digits and punctuation only), written by `read.html_dom` only (not the JavaScript fallback), and
+  ignored when it no longer matches the text. Knox's free read and the shared source check strip it first.
+  Off, no trailer is written and the text is main's byte for byte; on, the text above the trailer is too.
+  Measured on the source replay: 898 to 900 of 1,187 (914 to 916 with row pairing), 0 lost
+  (`docs/project/findings/2026-11-03-html-heading-category.md`).
 - HTML is read through a parsed DOM (`read.html_dom`, `html-dom.ts`): each data-table
   row is one line with cells joined by ` | `, definition lists pair term and
   description, layout tables read as blocks. Row pairing (`html-row-pairing.ts`, behind
@@ -188,7 +201,8 @@ Rosetta owns source text normalization.
   v1). Above v1, a current completed text either HTML reader wrote is due once until a read of its
   bytes records the version or a receipt carries it (`html_read_version`); no other reader's text,
   and no legacy text (no reader; already due under `ROSETTA_READ_VERSION`), enters. At v1 the
-  selection SQL is the same text as before the version existed. v2 is `HTML_ROW_PAIRING_LIVE`.
+  selection SQL is the same text as before the version existed. v2 is `HTML_ROW_PAIRING_LIVE`; `HTML_HEADING_CONTEXT_LIVE`
+  takes the next number (base plus one per HTML reader switch on: whichever flips first takes v2, the second v3).
 - Scoped layout 5 repairs (#2219) keep the global reader 3 and prose-layout 4 replay floors
   settled (`PDF_PROSE_REREAD_VERSION`). `PDF_STACKED_REPAIR_VERSION` v1 makes only current
   completed PDF-layout texts with at least three crossed bullet-price cells and three
@@ -534,7 +548,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `BATCH_REVIEW_VERSION` | — | v1 | `rosetta/batch-review.ts` |
 | `ROSETTA_JS_FALLBACK_VERSION` | — | v3 | `rosetta/reader-versions.ts` |
 | `ROSETTA_OCR_VERSION` | — | v3 | `rosetta/reader-versions.ts` |
-| `HTML_READ_VERSION` | `read.html_dom`, `read.js_fallback` reader replay (`detail.html_read`); v2 with `HTML_ROW_PAIRING_LIVE` | v1 | `rosetta/reader-versions.ts` |
+| `HTML_READ_VERSION` | `read.html_dom`, `read.js_fallback` reader replay (`detail.html_read`); base plus one per HTML reader switch on (`HTML_ROW_PAIRING_LIVE`, `HTML_HEADING_CONTEXT_LIVE`) | v1 | `rosetta/reader-versions.ts` |
 | `ROSETTA_PAID_READ_VERSION` | — | v2 | `rosetta/paid-read.ts` |
 | `PDF_LAYOUT_VERSION` | — | v6 | `rosetta/reader-versions.ts` |
 | `PDF_LAYOUT_REPLAY_VERSION` | `read.pdf_layout` reader replay | v6 | `rosetta/reader-versions.ts` |

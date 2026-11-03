@@ -191,6 +191,9 @@ describe("switch dry runs: one pass over every pending count", () => {
       legacy: { documents: 2, documentsWithLiveFees: 1, liveFees: 9 },
       textDiffed: false,
     });
+    // HTML heading context: the same exposure, read once for both HTML reader switches.
+    expect(report.htmlHeadingContext.summary).toEqual(report.htmlRowPairing.summary);
+    expect(mock.htmlReaderExposure).toHaveBeenCalledTimes(1);
   });
 
   it("should_print_every_section_with_its_totals", async () => {
@@ -233,6 +236,9 @@ describe("switch dry runs: one pass over every pending count", () => {
     expect(text).toContain("LIVE TAKEDOWN: switched on, 1 of 2 selected live monthly maintenance fees at 1 institutions would come down");
     expect(text).toContain("1 live monthly maintenance fees past the row cap were left unjudged (re-run with a higher --row-cap)");
     expect(text).toContain("## 10. Live accuracy");
+    expect(text).toContain("## 11. HTML_HEADING_CONTEXT_LIVE (#1092, Rosetta read.html_dom, Knox v177)");
+    expect(text).toContain("EXPOSED: 7 current HTML documents (5 with live fees) carry 61 live fees; the flip re-reads them only with the HTML reader's version bumped");
+    expect(text.indexOf("## 11.")).toBeGreaterThan(text.indexOf("## 10."));
     // The daily receipt's own figure leads; the derived share follows, labelled.
     const receipt = text.indexOf("Daily receipt's figure (right on amount, category, source, fee line and name): 5 / 8 = 62.50%");
     const derived = text.indexOf("Amount and category only (not the receipt's figure): 6 / 8 = 75.00%");

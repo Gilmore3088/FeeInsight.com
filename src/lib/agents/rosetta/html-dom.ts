@@ -1,6 +1,8 @@
 import { parseDocument } from "htmlparser2";
 
+import { HTML_HEADING_CONTEXT_LIVE, HeadingScope, headingSpans, isHiddenElement, headingLevel, type ScopeToken } from "./html-heading-scope";
 import { HTML_ROW_PAIRING_LIVE, pairDomRow, type PairedRow, type PairingNode } from "./html-row-pairing";
+import type { HeadingSpan } from "@/lib/heading-context-trailer";
 import type { SourceTableRow } from "./table-rows";
 
 /**
@@ -40,6 +42,12 @@ export interface HtmlDomExtraction {
   tableRows: number;
   /** The same rows as cells (plus definition-list pairs), for `agent_source_texts.table_rows`. */
   rows: SourceTableRow[];
+  /**
+   * `HTML_HEADING_CONTEXT_LIVE` only: `text` again with the heading scope's marks, for
+   * `headingContextSpans` once the caller has normalised `text`. `text` itself never changes.
+   */
+  headingMarked?: string;
+  headingScope?: HeadingScope;
 }
 
 function isElement(node: DomNode): node is DomNode & DomElement {
@@ -111,27 +119,45 @@ function collapse(value: string): string {
 
 class TextWriter {
   private readonly parts: string[] = [];
+  /** The same parts with the heading scope's marks between them; only when `scope` is set. */
+  private readonly markedParts: string[] = [];
   tableRows = 0;
   readonly rows: SourceTableRow[] = [];
   tables = 0;
 
-  /** `HTML_ROW_PAIRING_LIVE`: a label and price one DOM row holds share a line (html-row-pairing.ts). */
-  constructor(readonly pairRows = false) {}
+  /**
+   * `HTML_ROW_PAIRING_LIVE`: a label and price one DOM row holds share a line (html-row-pairing.ts).
+   * `scope` (`HTML_HEADING_CONTEXT_LIVE`, html-heading-scope.ts): marks which heading each line sits
+   * under in a second copy of the output; the text itself is written exactly as without it.
+   */
+  constructor(readonly pairRows = false, readonly scope: HeadingScope | null = null) {}
 
   write(value: string): void {
     this.parts.push(value);
+    if (this.scope) this.markedParts.push(value);
   }
 
   line(value: string): void {
     this.parts.push(`\n${value}\n`);
+    if (this.scope) this.markedParts.push(`\n${value}\n`);
   }
 
   break(): void {
     this.parts.push("\n");
+    if (this.scope) this.markedParts.push("\n");
+  }
+
+  /** A heading scope mark: in the marked copy only. */
+  mark(value: string): void {
+    if (this.scope && value) this.markedParts.push(value);
   }
 
   toString(): string {
     return this.parts.join("");
+  }
+
+  marked(): string {
+    return this.markedParts.join("");
   }
 }
 
@@ -164,9 +190,12 @@ function walk(nodes: DomNode[], out: TextWriter): void {
       }
     }
     const block = BLOCK_TAGS.has(name);
+    const scoped = out.scope?.enter(node, () => inlineText(node)) ?? null;
     if (block) out.break();
+    if (scoped) out.mark(scoped.before);
     walk(node.children, out);
     if (block) out.break();
+    if (scoped) out.mark(out.scope!.exit(scoped.token));
   }
 }
 
@@ -310,9 +339,12 @@ function writeTable(table: DomElement, out: TextWriter): void {
     }
     for (const row of rows) {
       for (const cell of cellsOf(row)) {
+        // A layout table's cell is a sectioning root: a heading in it ends with it.
+        const root: ScopeToken | null = out.scope?.enterRoot() ?? null;
         out.break();
         walk(cell.children, out);
         out.break();
+        if (root) out.mark(out.scope!.exit(root));
       }
     }
     out.break();
@@ -331,6 +363,9 @@ function writeTable(table: DomElement, out: TextWriter): void {
   const grid = gridRows(rows);
   const width = Math.max(...grid.map((row) => row.columns.length));
   let labels: Array<string | null> | null = null;
+  // `HTML_HEADING_CONTEXT_LIVE`: the table's own heading for the rows under it; undefined until the
+  // table prints one, so its first rows keep the heading above the table.
+  let tableHeading: number | null | undefined;
   for (const gridRow of grid) {
     const { row, rowCells, cells } = gridRow;
     if (cells.length === 0) continue;
@@ -339,6 +374,16 @@ function writeTable(table: DomElement, out: TextWriter): void {
     // is a section heading ("Checking accounts") and names no column.
     if (header && cells.length >= 2) labels = headerLabels(gridRow);
     const line = (header ? cells : lineCells(gridRow, labels)).join(CELL_SEPARATOR);
+    if (out.scope) {
+      const heads = rowHeading(gridRow, header, out.scope);
+      if (heads !== undefined) {
+        tableHeading = heads;
+        out.mark(out.scope.contextMark(null));
+        if (heads != null) out.mark(out.scope.headingMark(heads));
+      } else {
+        out.mark(out.scope.contextMark(tableHeading === undefined ? out.scope.current() : tableHeading));
+      }
+    }
     out.line(line);
     out.tableRows += 1;
     const columns = Array.from({ length: width }, (_, index) => gridRow.columns[index] ?? "");
@@ -353,6 +398,54 @@ function writeTable(table: DomElement, out: TextWriter): void {
     });
   }
   out.break();
+  if (out.scope) out.mark(out.scope.contextMark());
+}
+
+function firstHeading(element: DomElement): DomElement | null {
+  for (const child of elementChildren(element)) {
+    if (headingLevel(child) != null) return child;
+    const inner = firstHeading(child);
+    if (inner) return inner;
+  }
+  return null;
+}
+
+/** The element itself, or any element from it down to `target`, is hidden. */
+function hiddenOnPath(element: DomElement, target: DomElement): boolean {
+  if (isHiddenElement(element)) return true;
+  if (element === target) return false;
+  const next = elementChildren(element).find((child) => child === target || contains(child, target));
+  return next ? hiddenOnPath(next, target) : false;
+}
+
+function contains(element: DomElement, target: DomElement): boolean {
+  return elementChildren(element).some((child) => child === target || contains(child, target));
+}
+
+/**
+ * `HTML_HEADING_CONTEXT_LIVE`: the heading a table row starts for the rows under it. A header row
+ * heads them by its one cell, or by its cell over the rows' names (grid column 0); a row whose one
+ * cell holds a heading element (and prints only that heading) heads them by that heading. Returns
+ * the registered id, null for a header that names nothing usable (refused, hidden, or no cell over
+ * the names), and undefined for an ordinary row.
+ */
+function rowHeading(grid: GridRow, header: boolean, scope: HeadingScope): number | null | undefined {
+  const { row, rowCells, cells, cellColumns, starts } = grid;
+  if (header) {
+    // One header cell element (not one cell left after empty ones drop) heads the whole table.
+    if (rowCells.length === 1 && cells.length === 1) {
+      return scope.tableHeading("t", -1, cells[0], isHiddenElement(rowCells[0]) || isHiddenElement(row));
+    }
+    const at = cellColumns.indexOf(0);
+    const cell = rowCells[starts.indexOf(0)];
+    if (at < 0 || !cell) return null;
+    return scope.tableHeading("t", at, cells[at], isHiddenElement(cell) || isHiddenElement(row));
+  }
+  if (cells.length !== 1 || rowCells.length !== 1) return undefined;
+  const heading = firstHeading(rowCells[0]);
+  if (!heading || inlineText(heading) !== cells[0]) return undefined;
+  const level = (headingLevel(heading) ?? 2) as 1 | 2 | 3 | 4 | 5 | 6;
+  return scope.tableHeading(level, -1, cells[0], hiddenOnPath(rowCells[0], heading) || isHiddenElement(row));
 }
 
 function writeDefinitionList(list: DomElement, out: TextWriter, tableIndex?: number): void {
@@ -389,12 +482,29 @@ function writeDefinitionList(list: DomElement, out: TextWriter, tableIndex?: num
 export interface HtmlDomOptions {
   /** Defaults to `HTML_ROW_PAIRING_LIVE`; the shadow lab's source replay sets it to measure the switch. */
   rowPairing?: boolean;
+  /**
+   * Defaults to `HTML_HEADING_CONTEXT_LIVE`: also mark which heading each line sits under
+   * (`headingMarked`). `text` is the same either way; only a caller that appends the trailer
+   * (`headingContextSpans` with `appendHeadingContext`) stores anything new.
+   */
+  headingContext?: boolean;
 }
 
 /** Raw text with line structure kept; the caller normalizes whitespace. */
 export function extractHtmlDomText(html: string, options: HtmlDomOptions = {}): HtmlDomExtraction {
   const document = parseDocument(html, { decodeEntities: true, lowerCaseTags: true });
-  const out = new TextWriter(options.rowPairing ?? HTML_ROW_PAIRING_LIVE);
+  const scope = (options.headingContext ?? HTML_HEADING_CONTEXT_LIVE) ? new HeadingScope() : null;
+  const out = new TextWriter(options.rowPairing ?? HTML_ROW_PAIRING_LIVE, scope);
   walk(document.children, out);
-  return { text: out.toString(), tableRows: out.tableRows, rows: out.rows };
+  const extraction: HtmlDomExtraction = { text: out.toString(), tableRows: out.tableRows, rows: out.rows };
+  return scope ? { ...extraction, headingMarked: out.marked(), headingScope: scope } : extraction;
+}
+
+/**
+ * The heading-context spans of a normalised reader text (`heading-context-trailer.ts`): none
+ * without the switch, and none when the marked copy does not give the text's own lines.
+ */
+export function headingContextSpans(extraction: HtmlDomExtraction, normalizedText: string, normalize: (value: string) => string): HeadingSpan[] {
+  if (extraction.headingMarked == null || !extraction.headingScope) return [];
+  return headingSpans(extraction.headingMarked, normalizedText, normalize, extraction.headingScope.registered);
 }

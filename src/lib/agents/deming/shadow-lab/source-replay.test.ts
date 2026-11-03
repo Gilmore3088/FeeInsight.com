@@ -102,4 +102,56 @@ describe("shadow lab source-bytes replay", () => {
     },
     REPLAY_TIMEOUT_MS,
   );
+
+  // `HTML_HEADING_CONTEXT_LIVE` (#1092): measured against today's readers, and against row pairing alone
+  // with both switches on, since row pairing is the other HTML reader switch waiting to flip.
+  const headingRuns = [
+    { experiment: "html-heading-context", base: { htmlRowPairing: false, htmlHeadingContext: false } },
+    { experiment: "html-heading-context-with-row-pairing", base: { htmlRowPairing: true, htmlHeadingContext: false } },
+  ] as const;
+  for (const { experiment, base: baseSwitches } of headingRuns) {
+    it(
+      `should_replay_the_${experiment}_experiment_on_the_reread_with_no_provider_calls`,
+      async () => {
+        assertOfflineEnv();
+        const { applyManifest, loadScenarios } = await import("./scenarios");
+        const { currentVariant, EXPERIMENTS, experimentalVariant } = await import("./variants");
+        const { readSourceManifest, rereadAcceptedSources } = await import("./source-bytes");
+        const { replayDelta, replaySources } = await import("./source-replay");
+        const { renderReplayDelta } = await import("./source-replay-report");
+        const { withoutHeadingContext } = await import("@/lib/heading-context-trailer");
+
+        const config = EXPERIMENTS[experiment];
+        const frozenManifest = JSON.parse(readFileSync(MANIFEST_PATH, "utf8")) as Record<string, string>;
+        const cases = applyManifest(loadScenarios(), frozenManifest);
+        const manifest = readSourceManifest();
+        const before = await rereadAcceptedSources(process.cwd(), baseSwitches);
+        const on = await rereadAcceptedSources(process.cwd(), {
+          htmlRowPairing: config.switches?.htmlRowPairing ?? false,
+          htmlHeadingContext: config.switches?.htmlHeadingContext,
+        });
+        // The trailer is all the switch writes: without it, every re-read is the switch-off text.
+        for (const [key, read] of on) {
+          const off = before.get(key);
+          expect(read.ok && off?.ok).toBe(true);
+          if (read.ok && off?.ok) expect(withoutHeadingContext(read.text)).toBe(off.text);
+        }
+
+        const base = replaySources({ manifest, cases, rereads: before, variant: currentVariant });
+        const run = () => replaySources({ manifest, cases, rereads: on, variant: experimentalVariant(config) });
+        const switched = run();
+        expect(JSON.stringify(run())).toBe(JSON.stringify(switched));
+        expect(provider.calls).toBe(0);
+        expect(switched.total.frozen).toEqual(base.total.frozen);
+
+        if (OUT) {
+          const delta = replayDelta(base, switched);
+          mkdirSync(OUT, { recursive: true });
+          writeFileSync(join(OUT, `source-replay-${config.id}.json`), `${JSON.stringify({ base: base.total.reread, total: switched.total, delta }, null, 1)}\n`);
+          writeFileSync(join(OUT, `source-replay-${config.id}.md`), renderReplayDelta(config.id, base, switched, delta));
+        }
+      },
+      REPLAY_TIMEOUT_MS,
+    );
+  }
 });

@@ -6,7 +6,7 @@
  *   PDF_LAYOUT_VERSION           pdf-layout.ts
  *   ROSETTA_OCR_VERSION          ocr.ts
  *   ROSETTA_JS_FALLBACK_VERSION  js-fallback.ts
- *   HTML_READ_VERSION            html-dom.ts and html-row-pairing.ts (read.html_dom, read.js_fallback)
+ *   HTML_READ_VERSION            html-dom.ts, html-row-pairing.ts, html-heading-scope.ts (read.html_dom, read.js_fallback)
  *   ROSETTA_TABLE_ROWS_VERSION   table-rows.ts
  *   PDF_READER_AGREEMENT_VERSION pdf-reader-agreement.ts
  *   GLYPH_REPAIR_VERSION         glyph-repair.ts
@@ -44,6 +44,11 @@ export const ROSETTA_JS_FALLBACK_VERSION = 3;
  * v2 is `HTML_ROW_PAIRING_LIVE` (html-row-pairing.ts): flipping that switch must move this to 2 in
  * the same PR (reader-replay.test.ts fails otherwise), so turning row pairing on re-reads HTML pages
  * and no PDF. Kept as a literal so this module stays free of imports.
+ *
+ * `HTML_HEADING_CONTEXT_LIVE` (html-heading-scope.ts, #1092) takes the next number: the version is the
+ * base plus one for each HTML reader switch that is on (reader-replay.test.ts). Whichever of the two
+ * switches flips first takes v2, the second v3; the flip that turns heading context on re-reads every
+ * HTML page once so its stored text gains the heading-context trailer.
  */
 export const HTML_READ_BASE_VERSION: number = 1;
 export const HTML_READ_VERSION: number = 1;

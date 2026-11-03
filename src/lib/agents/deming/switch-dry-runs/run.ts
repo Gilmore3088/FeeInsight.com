@@ -60,6 +60,8 @@ export interface SwitchDryRunReport {
   };
   zeroWaiverRow: { switch: "ZERO_WAIVER_ROW_TAKEDOWN_LIVE"; issue: number; rowsRead: Bounded; summary: ZeroWaiverRowSummary };
   htmlRowPairing: { switch: "HTML_ROW_PAIRING_LIVE"; issue: number; summary: HtmlRowPairingSummary };
+  /** Section 11: the same HTML exposure, read once, for the other HTML reader switch (#1092). */
+  htmlHeadingContext: { switch: "HTML_HEADING_CONTEXT_LIVE"; issue: number; summary: HtmlRowPairingSummary };
   serviceMaintenance: ServiceMaintenanceSection;
   liveAccuracy: LiveAccuracy;
 }
@@ -232,6 +234,8 @@ async function excerptAtPublish(reader: SwitchAuditReader, options: SwitchAuditO
 }
 
 export async function runSwitchDryRuns(reader: SwitchAuditReader, options: SwitchAuditOptions, now: Date = new Date()): Promise<SwitchDryRunReport> {
+  // Both HTML reader switches share one exposure read (sections 8 and 11).
+  const htmlExposure = summarizeHtmlExposure(await reader.htmlReaderExposure());
   return {
     generatedAt: now.toISOString(),
     options,
@@ -242,7 +246,8 @@ export async function runSwitchDryRuns(reader: SwitchAuditReader, options: Switc
     footnotedAtmHeading: await footnotedAtmHeading(reader, options),
     heldVocabulary: await heldVocabulary(reader, options),
     zeroWaiverRow: await zeroWaiverRow(reader, options),
-    htmlRowPairing: { switch: "HTML_ROW_PAIRING_LIVE", issue: 1092, summary: summarizeHtmlExposure(await reader.htmlReaderExposure()) },
+    htmlRowPairing: { switch: "HTML_ROW_PAIRING_LIVE", issue: 1092, summary: htmlExposure },
+    htmlHeadingContext: { switch: "HTML_HEADING_CONTEXT_LIVE", issue: 1092, summary: htmlExposure },
     serviceMaintenance: await serviceMaintenanceSection(reader, options),
     liveAccuracy: liveAccuracyFrom(await reader.freshAudit(options.accuracySample)),
   };

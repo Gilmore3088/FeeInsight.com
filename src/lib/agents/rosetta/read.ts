@@ -52,7 +52,8 @@ import {
 } from "@/lib/agents/rosetta/text-survival";
 import { BATCH_REVIEW_CHECK, reviewReadBatches, type BatchReviewResult } from "@/lib/agents/rosetta/batch-review";
 import { DOCX_STRATEGY, DocxReadError, extractDocxText } from "@/lib/agents/rosetta/docx";
-import { extractHtmlDomText } from "@/lib/agents/rosetta/html-dom";
+import { extractHtmlDomText, headingContextSpans } from "@/lib/agents/rosetta/html-dom";
+import { appendHeadingContext } from "@/lib/heading-context-trailer";
 import {
   alternateDocumentUrls,
   embeddedDataText,
@@ -392,7 +393,10 @@ export function normalizeWhitespace(value: string): string {
 
 function extractHtmlText(html: string): { text: string; tableRows: number; rows: SourceTableRow[] } {
   const extracted = extractHtmlDomText(html);
-  return { text: normalizeWhitespace(extracted.text), tableRows: extracted.tableRows, rows: extracted.rows };
+  const text = normalizeWhitespace(extracted.text);
+  // `HTML_HEADING_CONTEXT_LIVE` (#1092): the heading each line sits under, as a trailer after the
+  // unchanged text (heading-context-trailer.ts). Off: no trailer, so the text is main's byte for byte.
+  return { text: appendHeadingContext(text, headingContextSpans(extracted, text, normalizeWhitespace)), tableRows: extracted.tableRows, rows: extracted.rows };
 }
 
 export function hashText(value: string): string {

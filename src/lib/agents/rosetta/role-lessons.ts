@@ -197,6 +197,16 @@ export const ROSETTA_LESSONS: AgentLesson[] = [
     since: "2026-11-02",
   },
   {
+    id: "issue-1092-keep-the-heading-a-line-sits-under",
+    agent: "rosetta",
+    stage: "read",
+    lesson: "Keep the structure a page states, not only its words: when the reader writes an HTML page as lines, also record which real heading each line sits under (an h1-h6 or role=heading element, a table's header row, a heading in a one-cell table row), by the HTML outline (the next heading of the same or a higher rank, or the end of its section, ends it; a table's own header wins inside the table). Never record a heading for a bold line, a short line or a styled div, and record none for a hidden heading or one in a nav, header, footer, aside, form or dialog. Store it so that no reader of the text can see a difference: the text itself stays byte for byte as before, and the record goes after it in a form that checks it still describes that text (a line count and a hash).",
+    why: "Fourteen answer-key misses on HTML pages had their fee type only in a heading or a column header, and the stored text kept no heading levels, so a heading and a short line looked alike and every rule that guessed a heading from a line's shape lost to review (#2872, #2888, #2965). Recording only what the markup states, behind HTML_HEADING_CONTEXT_LIVE (off), publishes two more answer-key fees on the documents' own bytes (898 to 900 of 1,187; 914 to 916 with row pairing) and loses none.",
+    evidence: { issues: [1092], prs: [], files: ["docs/project/findings/2026-11-03-html-heading-category.md", "src/lib/agents/rosetta/html-heading-scope.ts", "src/lib/heading-context-trailer.ts"] },
+    appliesTo: ["read"],
+    since: "2026-11-03",
+  },
+  {
     id: "page-starts-2026-11-02",
     agent: "rosetta",
     stage: "read",

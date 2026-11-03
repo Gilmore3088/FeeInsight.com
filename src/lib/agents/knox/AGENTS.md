@@ -2719,6 +2719,25 @@ holds. Darwin's verify refuses the same reads (`service_maintenance_heading`) an
 is live (`SERVICE_MAINTENANCE_TAKEDOWN_LIVE`, off). The shared check is unchanged. The stale-read floor stays at
 v97.
 
+v177 (#1092, class R1 of the lab's answer-key misses; v176 is open PR #2969): a priced row whose own name
+files nowhere is read under the real heading or table header it sits under, when that heading names one fee
+type (`withHeadingCategoryReads` in `heading-category-rows.ts`): Sterling Federal Bank's "Night Depository"
+(h2) over "Bag Replacement: $25.00 each" is the night deposit fee "Night Depository - Bag Replacement" $25.
+Which heading a line sits under comes only from the heading-context trailer Rosetta's HTML reader writes with
+`HTML_HEADING_CONTEXT_LIVE` on (`src/lib/heading-context-trailer.ts`, `rosetta/html-heading-scope.ts`): h1-h6,
+`role="heading"`, a table's header row, or a heading in a one-cell table row, never a line's shape.
+`runFreeSpecialists` reads the text without the trailer first, so main's reads are kept whole and in order,
+then reads each candidate row once more with its heading in front of its name, in the document around it, and
+admits it only when that read is exactly one fee of the heading's family at the row's own price and the shared
+check traces it. Refused: a row main reads or holds with a category, a row whose own name files, a row with
+two prices or $0, a heading with a figure, a list ("and", "&", "/", ","), an account or product word
+("Premier Checking", "Business Checking Fees"), or the monthly maintenance type, and every hidden heading or
+heading in a nav, header, footer, aside, form or dialog. A text with no trailer, or one whose line count or
+hash does not match, reads exactly as v175. Measured on the source replay (switch on): 898 to 900 of 1,187
+(914 to 916 with row pairing), 0 keys lost, 0 new publications outside the key
+(`findings/2026-11-03-html-heading-category.md`). The shared check strips the trailer and is otherwise
+unchanged. The stale-read floor stays at v97.
+
 v175 (sixth Knox re-read backlog dry run, Nov 3; renumbered from v173 when merging after #2953; 40 backlog texts at v172, one wrong and five doubtful
 rows of 97 changed, each against the bank's own line): (1) the heading of a bullet list is read from its own
 line even when the other column's priced row shares it (`listHeadingOf` in `rules.ts`: "Stop Payment |
@@ -3366,7 +3385,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v3 | `knox/paid-extract.ts` |
 | `KNOX_PAID_FIND_MISS_VERSION` | — | v1 | `knox/paid-find-misses.ts` |
 | `TWO_READ_AGREEMENT_STRATEGY` | `knox.two_read_agreement` | v2 | `knox/two-read-agreement.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v175 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v177 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v13 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v2 | `knox/takedown-lessons.ts` |

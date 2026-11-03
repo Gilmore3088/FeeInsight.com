@@ -239,6 +239,23 @@ function htmlRowPairing(report: SwitchDryRunReport): string[] {
   ];
 }
 
+function htmlHeadingContext(report: SwitchDryRunReport): string[] {
+  const { html, legacy, byReader } = report.htmlHeadingContext.summary;
+  return [
+    "## 11. HTML_HEADING_CONTEXT_LIVE (#1092, Rosetta read.html_dom, Knox v177)",
+    "Method: exposure only, as section 8. The switch adds a heading-context trailer to texts an HTML reader writes after the flip, and Knox v177 then " +
+      "adds a read for a priced row whose own name files nowhere under a heading that names one fee type. The text above the trailer is unchanged and " +
+      "every read main makes is kept, so no live fee changes until a page is read again; the audit has no HTML bytes, so it cannot count the added reads. " +
+      "They are measured on the answer-key documents' bytes (shadow-lab experiments html-heading-context and html-heading-context-with-row-pairing).",
+    `EXPOSED: ${html.documents} current HTML documents (${html.documentsWithLiveFees} with live fees) carry ${html.liveFees} live fees; ` +
+      `the flip re-reads them only with the HTML reader's version bumped (HTML_READ_VERSION). Legacy texts with no reader recorded (format unknown): ` +
+      `${legacy.documents} documents, ${legacy.liveFees} live fees.`,
+    ...byReader.map((row) => `  ${row.reader}: ${row.documents} documents at ${row.institutions} institutions, ${row.documentsWithLiveFees} with live fees, ${row.liveFees} live fees`),
+    "NOT COUNTED: a live fee the paid read took from a line Knox's free read now names under its heading in another category would be a re-file " +
+      "candidate for Darwin's re-read category check; counting it needs the page's bytes.",
+  ];
+}
+
 function serviceMaintenance(report: SwitchDryRunReport): string[] {
   const { rowsRead, summary } = report.serviceMaintenance;
   const lines = [
@@ -302,6 +319,8 @@ export function formatSwitchDryRuns(report: SwitchDryRunReport): string {
     ...serviceMaintenance(report),
     "",
     ...accuracy(report),
+    "",
+    ...htmlHeadingContext(report),
     "",
   ].join("\n");
 }

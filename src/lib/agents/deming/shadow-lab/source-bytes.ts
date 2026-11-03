@@ -4,7 +4,8 @@ import { join } from "node:path";
 import { gunzipSync } from "node:zlib";
 import { detectFormat, isLikelyScannedPdf } from "@/lib/agents/learning/format";
 import { decodeTextBytes, expandUnicodeLigatures } from "@/lib/agents/rosetta/glyph-repair";
-import { extractHtmlDomText } from "@/lib/agents/rosetta/html-dom";
+import { extractHtmlDomText, headingContextSpans } from "@/lib/agents/rosetta/html-dom";
+import { appendHeadingContext } from "@/lib/heading-context-trailer";
 import { looksLikeJsShell } from "@/lib/agents/rosetta/js-fallback";
 import { extractPdfDocumentText } from "@/lib/agents/rosetta/pdf-document-text";
 import { normalizeWhitespace } from "@/lib/agents/rosetta/read";
@@ -35,6 +36,8 @@ export type SourceRead =
 export interface SourceReadOptions {
   /** `HTML_ROW_PAIRING_LIVE` held on or off for this read (rosetta/html-row-pairing.ts). */
   htmlRowPairing?: boolean;
+  /** `HTML_HEADING_CONTEXT_LIVE` held on or off: the heading-context trailer (rosetta/html-heading-scope.ts). */
+  htmlHeadingContext?: boolean;
 }
 
 /**
@@ -59,9 +62,11 @@ export async function readSourceBytes(
   if (format !== "html" && format !== "text") return { ok: false, reason: `no offline reader for ${format}` };
   const raw = expandUnicodeLigatures(decodeTextBytes(bytes, contentType));
   if (format === "text") return { ok: true, text: normalizeWhitespace(raw), reader: "read.plain_text" };
-  const text = normalizeWhitespace(extractHtmlDomText(raw, { rowPairing: options.htmlRowPairing }).text);
+  const extracted = extractHtmlDomText(raw, { rowPairing: options.htmlRowPairing, headingContext: options.htmlHeadingContext });
+  const text = normalizeWhitespace(extracted.text);
   if (text.length === 0 || looksLikeJsShell(raw, text)) return { ok: false, reason: "page built by JavaScript: needs the fallback" };
-  return { ok: true, text, reader: "read.html_dom" };
+  // As rosetta/read.ts stores it: the trailer goes after the text, which is unchanged.
+  return { ok: true, text: appendHeadingContext(text, headingContextSpans(extracted, text, normalizeWhitespace)), reader: "read.html_dom" };
 }
 
 /** Lower-case word and number tokens; layout, punctuation and separators are set aside. */

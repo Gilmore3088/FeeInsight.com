@@ -86,6 +86,12 @@ export interface SwitchOverrides {
    */
   htmlRowPairing?: boolean;
   /**
+   * `HTML_HEADING_CONTEXT_LIVE` (#1092, rosetta/html-heading-scope.ts): a Rosetta reader switch, like
+   * `htmlRowPairing`. With it on, the re-read ends with the heading-context trailer, and Knox's free read
+   * (`runFreeSpecialists`) reads the rows the trailer's headings name; the frozen texts carry no trailer.
+   */
+  htmlHeadingContext?: boolean;
+  /**
    * Knox v174's service-heading hold and Darwin's matching refusal (#1092, `service-maintenance-heading.ts`).
    * Off is how main read before v174: the hold has no switch of its own, only its live re-check does
    * (`SERVICE_MAINTENANCE_TAKEDOWN_LIVE`), so this override exists to measure what the hold changes.
@@ -151,6 +157,20 @@ export const EXPERIMENTS: Readonly<Record<string, ExperimentConfig>> = {
       "Rosetta's HTML reader writes a label and its price that one DOM row holds (an ARIA row, a grid row of columns, a flex row) on one line (`HTML_ROW_PAIRING_LIVE` switched on). A reader switch: the frozen-text lab cannot move, and the source replay (`source-replay.test.ts`) re-reads the answer-key documents' bytes with it on.",
     excerptAtPublish: false,
     switches: { htmlRowPairing: true },
+  },
+  "html-heading-context": {
+    id: "html-heading-context",
+    description:
+      "Rosetta's HTML reader records which real heading (h1-h6, role=heading) or table header each line sits under, as a trailer after the unchanged text, and Knox reads a priced row whose own name files nowhere under the fee type its heading names (`HTML_HEADING_CONTEXT_LIVE` switched on). A reader switch: the frozen-text lab cannot move; the source replay re-reads the answer-key documents' bytes with it on.",
+    excerptAtPublish: false,
+    switches: { htmlHeadingContext: true },
+  },
+  "html-heading-context-with-row-pairing": {
+    id: "html-heading-context-with-row-pairing",
+    description:
+      "`HTML_HEADING_CONTEXT_LIVE` and `HTML_ROW_PAIRING_LIVE` both switched on, measured against row pairing alone on the source replay.",
+    excerptAtPublish: false,
+    switches: { htmlHeadingContext: true, htmlRowPairing: true },
   },
   "daily-cap-lines": {
     id: "daily-cap-lines",

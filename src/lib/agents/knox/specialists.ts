@@ -33,6 +33,8 @@ import { extractAccountTableCandidates, KNOX_ACCOUNT_TABLE_STRATEGY } from "@/li
 import { checkFeeAgainstSource, joinLabeledFeeCardText } from "@/lib/custom-report/source-check";
 import { rateFeeFromHeld, type RateFeeCandidate } from "@/lib/agents/knox/percent";
 import { contextFees, NO_LONGER_CHARGED } from "@/lib/agents/knox/context-names";
+import { withHeadingCategoryReads } from "@/lib/agents/knox/heading-category-rows";
+import { splitHeadingContext } from "@/lib/heading-context-trailer";
 import { frequencyFromLine, settledFrequency } from "@/lib/fee-frequency";
 import { verifiedFrequency } from "@/lib/agents/darwin/verified-frequency";
 import { storedOwnExcerpt } from "@/lib/agents/knox/own-cells";
@@ -850,7 +852,14 @@ import { onlineServiceMonthlyFee } from "@/lib/service-monthly-charge";
 // `LOW_BALANCE_CHARGE` leaves "Monthly Service Charge or Minimum Balance Fee" to monthly maintenance, and
 // `ITEM_INSUFFICIENT` skips deposited, cashed and paid items. The shared check is unchanged. The stale-read
 // floor stays at v97.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 175 } as const;
+// v177 (#1092, class R1; v176 is open PR #2969, so this takes the next free number): a priced row whose own
+// name files nowhere, under a real HTML heading or table header that names one fee type, is read as that
+// type's fee (`withHeadingCategoryReads`, heading-category-rows.ts). The heading comes only from the
+// trailer Rosetta writes with `HTML_HEADING_CONTEXT_LIVE` on (heading-context-trailer.ts); a text without
+// one reads exactly as v175, so while the switch is off no stored text reads differently. Admit-only:
+// main's reads of the text are kept whole and in order. The shared check strips the trailer and is
+// otherwise unchanged. The stale-read floor stays at v97.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 177 } as const;
 
 export interface SpecialistRun {
   strategy: string;
@@ -1115,6 +1124,17 @@ interface FreeSpecialistOptions {
 }
 
 export function runFreeSpecialists(storedText: string, options: FreeSpecialistOptions = {}): FreeExtractionResult {
+  // v177 (#1092): an HTML text Rosetta read with `HTML_HEADING_CONTEXT_LIVE` on ends with a trailer
+  // naming the heading each line sits under (`heading-context-trailer.ts`). Every reader below reads
+  // the text without it, so main's read is unchanged; then rows whose own name files nowhere are read
+  // under their structural heading (`withHeadingCategoryReads`, admit-only). No trailer: main's read.
+  const { text, lines } = splitHeadingContext(storedText);
+  const base = readStoredText(text, options);
+  if (!lines || lines.size === 0) return base;
+  return withHeadingCategoryReads(base, text, lines, { read: (composed) => readStoredText(composed, options) });
+}
+
+function readStoredText(storedText: string, options: FreeSpecialistOptions): FreeExtractionResult {
   // #2070: a discontinued account's table is flagged before any specialist reads the text
   // (`flagDiscontinuedTables`); with the switch on its rows are left out, so none is read or held.
   const discontinued = flagDiscontinuedTables(storedText, options.withoutDiscontinuedTables ?? discontinuedTablesLive());

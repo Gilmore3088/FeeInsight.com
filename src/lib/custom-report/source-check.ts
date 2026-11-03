@@ -36,6 +36,7 @@ import { networkColumnRow } from "./network-column-rows";
 import { rateBoundOf } from "@/lib/rate-bound";
 import { rewardCreditOf } from "@/lib/reward-credit";
 import { sourceLineTerms, type SourceLineTerms } from "./source-line-terms";
+import { withoutHeadingContext } from "@/lib/heading-context-trailer";
 const NSF_POLICY_CATEGORIES = new Set(["nsf", "overdraft"]);
 
 export type SourceCheckFailure =
@@ -1533,13 +1534,15 @@ export function ownSizePrintsAmount(text: string, feeName: string, amount: numbe
 }
 
 export function checkFeeAgainstSource(
-  sourceText: string | null | undefined,
+  storedText: string | null | undefined,
   feeName: string,
   amount: number,
   categoryPattern: string,
   canonicalFeeKey?: string | null,
   options: SourceCheckOptions = {},
 ): SourceCheckResult {
+  // #1092: an HTML text's heading-context trailer is Knox's input, never a line a fee traces to.
+  const sourceText = withoutHeadingContext(storedText);
   const own = (text: string | null | undefined) => checkFeeAgainstOwnSource(text, feeName, amount, categoryPattern, canonicalFeeKey, options);
   const bounded = (text: string | null | undefined) => {
     const result = own(text);

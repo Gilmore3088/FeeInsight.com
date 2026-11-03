@@ -1414,4 +1414,14 @@ export const KNOX_LESSONS: AgentLesson[] = [
     appliesTo: ["extract"],
     since: "2026-11-02",
   },
+  {
+    id: "issue-1092-heading-names-the-row-only-on-structure",
+    agent: "knox",
+    stage: "extract",
+    lesson: "Read a row under its heading only when the page's structure says the row sits under it, never because a line looks like a heading. When the stored text records the real heading or table header a priced row sits under, and the row's own name files nowhere, read the row with that heading in front of its name (\"Night Depository\" over \"Bag Replacement: $25.00 each\" is the night deposit fee). Only add: never change, re-file or drop a read the row already gets, and leave a row with two prices or a $0 as it was. A heading lends a fee type only when it is one short name for one type: refuse a heading with a figure, a list (\"and\", \"&\", \"/\"), an account or product name (\"Premier Checking\", \"Business Checking Fees\"), the account's monthly fee, or a heading that names nothing (\"Fees\", \"Other Services\", \"Amount\", \"Service | Fee\"). The nearest structural heading wins, even when it names nothing, and the shared source check must still trace the read.",
+    why: "R1 of the lab's answer-key misses is a fee type printed only in a heading or a column header (54 of 356, 14 on HTML pages). Two earlier attempts to infer a heading from a line's shape were dropped after three and four review rounds (#2872's retired section half, #2888's bare \"Title Fee\"), and the PDF column reader closed after six (#2965). Reading only the headings the HTML reader records from markup adds two answer-key fees on the documents' own bytes and loses none; most HTML R1 misses are refused, because their heading is not markup, names an account, or the row's own name already files.",
+    evidence: { issues: [1092], prs: [], files: ["src/lib/agents/knox/heading-category-rows.ts", "src/lib/agents/knox/heading-category-rows.test.ts", "src/lib/agents/deming/shadow-lab/heading-context-admit.test.ts", "docs/project/findings/2026-11-03-html-heading-category.md"] },
+    appliesTo: ["extract"],
+    since: "2026-11-03",
+  },
 ];

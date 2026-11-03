@@ -790,6 +790,12 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
     // needs a named second cell and the list's own price. Darwin's live re-check (`darwin.credit_card_section`,
     // CREDIT_CARD_SECTION_TAKEDOWN_LIVE off) reports the 75 live credit card section replacements (62 texts).
     // No replay. Floor stays v97.
+    // v177 (#1092, class R1; v176 is open PR #2969): a priced row whose own name files nowhere is read under the
+    // real HTML heading or table header the text's heading-context trailer names (`withHeadingCategoryReads`).
+    // Only a text Rosetta read with HTML_HEADING_CONTEXT_LIVE on carries a trailer, and the switch is off, so no
+    // stored text reads differently; the flip re-reads HTML pages through HTML_READ_VERSION, and Knox reads each
+    // new text as it lands. Admit-only on the frozen lab texts and the 20 re-read HTML documents. No replay.
+    // Floor stays v97.
     {
       key: "knox.rules",
       owner: "knox",
