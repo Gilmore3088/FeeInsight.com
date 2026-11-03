@@ -801,7 +801,22 @@ import { onlineServiceMonthlyFee } from "@/lib/service-monthly-charge";
 // Darwin's verify refuses (2) and (3), and its live re-check (`darwin.not_account_fee_line`,
 // NOT_ACCOUNT_FEE_LINE_TAKEDOWN_LIVE off) reports the live ones (Nov 2 dry run: 73916 and 152003 of 493
 // candidates). The shared check is unchanged. The stale-read floor stays at v97.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 170 } as const;
+// v171 (Knox re-read backlog dry run 4, Nov 3; two wrong and four doubtful reads of 40 stored texts, each
+// against the bank's own line). (1) A short "Stop Pay" is the stop payment ahead of the check, money order
+// and draft rules (`STOP_PAY_SHORT` in rules.ts, read while the held-name rules are on): Northwest Missouri
+// Regional FCU's "Counter Check Stop Pay Fee (per check) $25.00" filed as counter_check. (2) A list of free
+// items one per line is no stacked table (table v13, `freeItemList`): O'Bannon Banking Co's "Special Rates
+// on one Safe Deposit Box" took the next item's "Free" ("Free Photocopies (limits may apply)"), and "Free
+// Bill Pay" / "Free Online Statements and Check Images" read as $0 fees the same way. An item under "This
+// account also includes:" and a perk an account's own cell of a comparison table prices free ("Checks | 1st
+// order of starter checks FREE ... (FREE Checking)") are one account's benefit (`accountBenefitZeroOf`,
+// held, never sent to Darwin as a free fee). (3) An item named insufficient with no "funds" ("| ACH -
+// Insufficient | $ 30.00 |", Four Corners FCU) is the page's NSF row (`ITEM_INSUFFICIENT`), so its plain
+// "Returned Check | $ 25.00" is the deposited item return (`withReturnBesideNsf`), as live 149144 files it.
+// Darwin's account-benefit re-check v2 reads the two new benefit shapes (DARWIN_ACCOUNT_BENEFIT_ZERO_LIVE
+// off; Nov 3 dry run: 308 candidates, the same 12 matches as v1, none new). The shared check is unchanged.
+// The stale-read floor stays at v97.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 171 } as const;
 
 export interface SpecialistRun {
   strategy: string;

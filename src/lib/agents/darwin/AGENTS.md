@@ -1772,6 +1772,17 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   Nov 1: 16 of 142 live free-item $0s at 5 institutions; in the core categories 3 incoming wires
   (100941 at 6914, 152991 at 8495, 159066 at 550), each traced to its list line by `checkFeeAgainstSource`. Re-count Nov 2 after the reviews of #2894:
   12 at 4 institutions, all 3 incoming wires; 56942, 56943, 141651, 141652 stay live as known misses.
+  v2 (Knox v171, fourth backlog dry run, Nov 3): two more shapes from O'Bannon Banking Co (2415): an item
+  under "This account also includes:" (`account_waivers`, the account the nearest name above the lead), and
+  `account_column`, a perk an account's own cell of a comparison table names and prices free ("Checks | 1st
+  order of starter checks FREE ... (FREE Checking)" under a header row of two accounts or more), when the
+  cells cannot be lined up with the accounts or another account's cell differs. The query also selects a
+  live $0 whose stored line has a free word in a cell after the row's label on a text with a line naming
+  two accounts in neighbouring cells, and reads 1,500 characters before the line
+  (`ACCOUNT_COLUMN_LOOKBACK_CHARS`; the list walk still reaches 450). Dry run Nov 3 (prod, read-only): 308
+  candidates (143 free-item lines, 165 cell rows); v1 and v2 each match the same 12, v2 none more. A first
+  `account_column` matched 5 more (62793, 91112, 98245, 124983, 165162: a bare free word or "None" under an
+  account, two account pages side by side, junk header rows) and was narrowed before merge.
 - A $0 whose own line is no priced row (`zero-waiver-row-check.ts`, #1092, shadow lab Nov 2): "No Fee
   for Cashier's Checks" and "No Fee for Stop Payments" in an account's list of free items, and "Minimum
   Balance required to avoid a Service Charge / FREE" (an account table's balance row, the next heading's
@@ -2895,7 +2906,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `LOAN_PAYMENT_NSF_REFILE_CHECK_VERSION` | `darwin.loan_payment_nsf_refile` | v1 | `darwin/loan-payment-nsf-refile-check.ts` |
 | `INTERNATIONAL_DIRECTION_CHECK_VERSION` | `darwin.international_direction` | v4 | `darwin/international-direction-check.ts` |
 | `BANDED_ZERO_CHECK_VERSION` | `darwin.banded_zero` | v1 | `darwin/banded-zero-check.ts` |
-| `ACCOUNT_BENEFIT_ZERO_CHECK_VERSION` | `darwin.account_benefit_zero` | v1 | `darwin/account-benefit-zero-check.ts` |
+| `ACCOUNT_BENEFIT_ZERO_CHECK_VERSION` | `darwin.account_benefit_zero` | v2 | `darwin/account-benefit-zero-check.ts` |
 | `ZERO_WAIVER_ROW_CHECK_VERSION` | `darwin.zero_waiver_row` | v2 | `darwin/zero-waiver-row-check.ts` |
 | `FREE_LIST_ITEM_CHECK_VERSION` | `darwin.free_list_item` | v1 | `darwin/free-list-item-check.ts` |
 | `NOT_ACCOUNT_FEE_LINE_CHECK_VERSION` | `darwin.not_account_fee_line` | v1 | `darwin/not-account-fee-line-check.ts` |

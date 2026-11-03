@@ -1374,4 +1374,14 @@ export const KNOX_LESSONS: AgentLesson[] = [
     appliesTo: ["extract"],
     since: "2026-11-02",
   },
+  {
+    id: "backlog-dry-run-4-2026-11-03-stop-pay-free-item-insufficient",
+    agent: "knox",
+    stage: "extract",
+    lesson: "File a row by the charge it names, read every short form of that charge, and never let one item's free word price another. \"Stop Pay\" is a stop payment wherever a check, money order or draft word sits beside it (\"Counter Check Stop Pay Fee (per check)\" is the stop payment on a counter check, not the counter check), so the short form must be tried where the long one is, ahead of the item rules. A list of free items, one per line (\"Free Bill Pay\" / \"Free Online Statements and Check Images\"), is no stacked table: the free word that opens a line is that line's own item, never the price of the line above. An item under \"This account also includes:\" or in one account's cell of a comparison table is that account's perk: hold it or tie it to the account, never publish it as the bank's price with no product. And an item named insufficient with no \"funds\" (\"ACH - Insufficient\") is the page's NSF row: read it, so the plain returned check beside it is filed as the deposited item return the way live fees already file it.",
+    why: "The fourth dry run for KNOX_REREAD_BACKLOG_LIVE (40 backlog texts, Nov 3, Knox v170) found Northwest Missouri Regional FCU's \"Counter Check Stop Pay Fee (per check)\" $25 filed as counter_check (\"Stop Pay\" was only a held-name rule, tried after counter_check); four O'Bannon Banking Co perks published as $0 fees with no product (the stacked-table adapter paired \"Special Rates on one Safe Deposit Box\" with the next item's \"Free\", and the v157 benefits gate had no \"This account also includes:\" lead or account-table cell); and Four Corners FCU's \"Returned Check\" $25 re-filed as NSF beside live 149144's deposited item return, because the page's own NSF row \"ACH - Insufficient\" $30 named no fee to the rules. Knox v171 reads none of them wrong on the 40 texts and loses no right read, keeps the third dry run's 40 texts clean, and on 60 fresh random texts changes only a perk list's six crossed-over free reads (gone) and one insufficient check charge (now read as NSF).",
+    evidence: { issues: [1026], prs: [], files: ["src/lib/agents/knox/rules.ts", "src/lib/agents/knox/table-rows.ts", "src/lib/account-benefit-zero.ts", "src/lib/agents/darwin/account-benefit-zero-check.ts", "src/lib/agents/knox/backlog-dry-run-4.test.ts", "docs/project/findings/2026-11-03-knox-backlog-dry-run-4-misfiles.md"] },
+    appliesTo: ["extract"],
+    since: "2026-11-03",
+  },
 ];

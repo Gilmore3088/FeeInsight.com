@@ -2,7 +2,7 @@ import type { sql } from "@/lib/data-store/connection";
 import { invalidatePublicReadCache } from "@/lib/data-store/fee-cache";
 import { inSavepoint } from "@/lib/agents/savepoint";
 import { secondLook } from "@/lib/agents/hamilton/second-look";
-import { ACCOUNT_BENEFIT_WALK_CHARS, accountBenefitZeroOf, type AccountBenefitKind } from "@/lib/account-benefit-zero";
+import { ACCOUNT_BENEFIT_WALK_CHARS, ACCOUNT_COLUMN_LOOKBACK_CHARS, accountBenefitZeroOf, type AccountBenefitKind } from "@/lib/account-benefit-zero";
 import { storedLine } from "./rate-floor-check";
 
 type SqlTag = typeof sql;
@@ -43,9 +43,16 @@ type SqlTag = typeof sql;
  * Re-count Nov 2 after the reviews of #2894 (the walk is a whitelist of the account's own entries):
  * of 3,436 live $0 fees, 142 free-item lines, 12 match at 4 institutions, all 3 core incoming wires;
  * 56942, 56943 (6914) and 141651, 141652 (8379) stay live as known misses.
+ *
+ * v2 (Knox v171, fourth re-read backlog dry run, Nov 3): the test also reads an item under "This account
+ * also includes:" and a perk an account's own cell of a comparison table prices free (`account_column`).
+ * The query also selects a live $0 whose stored line has a free word in a cell after the row's label, on a
+ * text with a line that names two accounts in neighbouring cells, and each window reaches
+ * `ACCOUNT_COLUMN_LOOKBACK_CHARS` (1,500) before the line. Dry run Nov 3 (prod read-only, this query): 308
+ * candidates (143 free-item lines, 165 cell rows); v1 and v2 each match the same 12, none new.
  */
 export const ACCOUNT_BENEFIT_ZERO_CHECK = "darwin.account_benefit_zero";
-export const ACCOUNT_BENEFIT_ZERO_CHECK_VERSION = 1;
+export const ACCOUNT_BENEFIT_ZERO_CHECK_VERSION = 2;
 export const ACCOUNT_BENEFIT_ZERO_REASON = "account_benefit_zero";
 export const ACCOUNT_BENEFIT_ZERO_FLAG = "account_benefit_zero";
 export const ACCOUNT_BENEFIT_ZERO_LIMIT = 1_000;
@@ -138,6 +145,7 @@ export function findAccountBenefitZeros(rows: AccountBenefitZeroRow[]): AccountB
       holder_grant: matches.filter((fee) => fee.kind === "holder_grant").length,
       account_waivers: matches.filter((fee) => fee.kind === "account_waivers").length,
       feature_list: matches.filter((fee) => fee.kind === "feature_list").length,
+      account_column: matches.filter((fee) => fee.kind === "account_column").length,
     },
     samples: matches.slice(0, ACCOUNT_BENEFIT_ZERO_SAMPLES),
     matches,
@@ -153,7 +161,8 @@ export function findAccountBenefitZeros(rows: AccountBenefitZeroRow[]): AccountB
 export function accountBenefitZeroRowsSql(db: SqlTag, options: { institutionId?: number; limit?: number } = {}) {
   const scoped = options.institutionId != null;
   const limit = Math.max(1, Math.min(options.limit ?? ACCOUNT_BENEFIT_ZERO_LIMIT, 5_000));
-  const WALK = ACCOUNT_BENEFIT_WALK_CHARS;
+  // v2 (Knox v171): an account table's header row may sit up to ACCOUNT_COLUMN_LOOKBACK_CHARS above its row.
+  const WALK = Math.max(ACCOUNT_BENEFIT_WALK_CHARS, ACCOUNT_COLUMN_LOOKBACK_CHARS);
   return db<AccountBenefitZeroRow[]>`
     WITH c AS (
       SELECT fp.fee_published_id, fp.lineage_ref AS fee_verified_id, fp.institution_id, fr.fee_name,
@@ -163,10 +172,16 @@ export function accountBenefitZeroRowsSql(db: SqlTag, options: { institutionId?:
         FROM published_fee_records fp
         JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
         JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
+        LEFT JOIN agent_source_texts cell_text
+          ON cell_text.id = (substring(fr.extraction_note FROM 'artifact #([0-9]+)'))::bigint
        WHERE fp.rolled_back_at IS NULL
          AND fp.quarantined_at IS NULL
          AND fp.amount = 0
-         AND substring(fr.extraction_note FROM 'excerpt="(.*)"$') ~* '(^|[,;:]\\s*)(free|no (fee|charge|cost)|complimentary|waived)\\y'
+         AND (substring(fr.extraction_note FROM 'excerpt="(.*)"$') ~* '(^|[,;:]\\s*)(free|no (fee|charge|cost)|complimentary|waived)\\y'
+              -- v2 (Knox v171): a free word in a table cell after the row's label, on a text with a line
+              -- that names two accounts in neighbouring cells (an account comparison table's header).
+              OR (substring(fr.extraction_note FROM 'excerpt="(.*)"$') ~* '\\|[^|]*\\y(free|no charge|n/c|none|waived)\\y'
+                  AND cell_text.normalized_text ~ '(Checking|Savings|Club|Account)[^\\n|]{0,40} \\| [^\\n|]{0,60}(Checking|Savings|Club|Account)'))
          AND (${!scoped} OR fp.institution_id = ${options.institutionId ?? 0})
        ORDER BY fp.fee_published_id
        LIMIT ${limit}::int
@@ -204,7 +219,7 @@ export async function recheckAccountBenefitZeros(
   const live = options.live ?? accountBenefitZeroLive();
   const result: AccountBenefitZeroResult = {
     live, dryRun: options.dryRun, scoped: options.institutionId != null,
-    checked: 0, matched: 0, institutions: 0, byKind: { holder_grant: 0, account_waivers: 0, feature_list: 0 },
+    checked: 0, matched: 0, institutions: 0, byKind: { holder_grant: 0, account_waivers: 0, feature_list: 0, account_column: 0 },
     samples: [], flagged: 0, waiting: 0, takenDown: [],
   };
 

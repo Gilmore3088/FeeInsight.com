@@ -2696,6 +2696,30 @@ Darwin's verify refuses (2) and (3), and its live re-check (`darwin.not_account_
 `NOT_ACCOUNT_FEE_LINE_TAKEDOWN_LIVE` off) reports the live ones (73916, 152003). The guard is unchanged
 (v108). The stale-read floor stays at v97.
 
+v171 (fourth Knox re-read backlog dry run, Nov 3; 40 backlog texts at v170, two wrong and four doubtful
+reads, each against the bank's own line): (1) a short "Stop Pay" is the stop payment ahead of the check,
+money order and draft rules (`STOP_PAY_SHORT` in `rules.ts`, tried in `FEE_PATTERNS` right after "stop
+payment(s)" while the held-name rules are on): Northwest Missouri Regional FCU's "Counter Check Stop Pay Fee
+(per check) $25.00" (7465, doc 42066) had filed as counter_check because "Stop Pay" was only a held-name
+rule. (2) A list of free items, one per line, is no stacked table (table v13, `freeItemList` in
+`table-rows.ts`): O'Bannon Banking Co's "Special Rates on one Safe Deposit Box" (2415, doc 42058) took the
+next item's "Free" ("Free Photocopies (limits may apply)"), and "Free Bill Pay" / "Free Online Statements
+and Check Images" read as $0 fees the same way. One account's perks are held (`accountBenefitZeroOf`): an
+item under "This account also includes:" (`account_waivers`, the account the nearest name above the lead)
+and a perk an account's own cell of a comparison table prices free (`account_column`: "Checks | 1st order
+of starter checks FREE ... (FREE Checking)" under "Regular Checking | Safeguard FREE Checking | Premiere
+Club | ..."). A bare free word under an account prices that row's fee for the account and stays. (3) An
+item named insufficient with no "funds" is the NSF row (`ITEM_INSUFFICIENT`): Four Corners FCU's "| ACH -
+Insufficient | $ 30.00 |" (6169, doc 41706) was unread, so `withReturnBesideNsf` saw no NSF price and the
+plain "Returned Check | $ 25.00" stayed NSF beside live 149144's deposited item return; the page is not
+ambiguous, so no live-category fallback is needed. Re-run: on the 40 rb4 texts every wrong and doubtful row
+is gone, no right row is lost and live 149144 is reproduced (558 -> 555 publishable rows, all tracing); on
+the 40 rb3 texts one right row is added ("Bill Payment Stop Pay Fee" $33 as stop_payment) and none lost; on
+60 fresh random texts (main vs head) a perk list's six crossed-over $0 reads are gone and "Insufficient
+Check Charge" $28 is read as NSF. The answer-key texts' reads do not change. Darwin's account-benefit re-check v2 reads the new kinds (`DARWIN_ACCOUNT_BENEFIT_ZERO_LIVE`
+off; Nov 3 dry run: 308 candidates, the same 12 matches as v1). The guard is unchanged (v108). The
+stale-read floor stays at v97.
+
 v128 (#1912): a line whose only price is two different prices glued into one cell ("Card Replacement
 .....Share Draft Protest ..... $20.00$10.00", "Change of Personal Identification Number (PIN)Wire
 Transfers (incoming) ..... $ 2.00n/c*", Access FCU document 33871) is two PDF columns flattened onto
@@ -3258,8 +3282,8 @@ fails a PR that changes one of these constants without updating its line here (#
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v3 | `knox/paid-extract.ts` |
 | `KNOX_PAID_FIND_MISS_VERSION` | — | v1 | `knox/paid-find-misses.ts` |
 | `TWO_READ_AGREEMENT_STRATEGY` | `knox.two_read_agreement` | v2 | `knox/two-read-agreement.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v170 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v171 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
-| `KNOX_TABLE_STRATEGY` | `extract.table` | v12 | `knox/table-rows.ts` |
+| `KNOX_TABLE_STRATEGY` | `extract.table` | v13 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v2 | `knox/takedown-lessons.ts` |
 | `UNTRACED_READ_ERROR_EVIDENCE_VERSION` | `knox.untraced_held` read-error report | v1 | `knox/untraced-read-error.ts` |
