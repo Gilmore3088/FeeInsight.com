@@ -33,7 +33,8 @@ import { creditCardSectionColumns, creditCardSectionRead, creditCardStatementRea
 import { checkFeeCategory, plainReturnBesideNsf, SCHEDULE_NSF_NAME } from "@/lib/fee-category-guard";
 import { BOX_CATEGORY } from "@/lib/custom-report/box-size-name";
 import { carryColumnHeadingCell, columnHeadingCell, extractTableCandidates, KNOX_TABLE_STRATEGY } from "@/lib/agents/knox/table-rows";
-import { extractAccountTableCandidates, KNOX_ACCOUNT_TABLE_STRATEGY } from "@/lib/agents/knox/account-table";
+import { accountRowRivalRead, extractAccountTableCandidates, KNOX_ACCOUNT_TABLE_STRATEGY } from "@/lib/agents/knox/account-table";
+import { accountTableCells } from "@/lib/custom-report/account-table";
 import { checkFeeAgainstSource, joinLabeledFeeCardText } from "@/lib/custom-report/source-check";
 import { rateFeeFromHeld, type RateFeeCandidate } from "@/lib/agents/knox/percent";
 import { contextFees, NO_LONGER_CHARGED } from "@/lib/agents/knox/context-names";
@@ -905,7 +906,17 @@ import { onlineServiceMonthlyFee } from "@/lib/service-monthly-charge";
 // waiver footnote. (5) Doubtful reads: a marketing sentence no longer ends the account lookback (LifeStore), a label
 // with control characters names no account (Meridia), and "This account contains a ..." leaves the fee's name
 // (Blackhawk). The stale-read floor stays at v97.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 179 } as const;
+// v180 (eleventh re-read backlog dry run, Nov 3; 40 texts at v179, 4 wrong and 9 doubtful of 67 changed rows): (1)
+// "Additional withdrawals (per withdrawal over 3 per month)" is the excess withdrawal charge (rules.ts), so the money
+// market column's $10 is named by its own cell, never glued to the ATM column's "In-person": Advancial FCU. (2) Each
+// priced cell of an account table's monthly fee row is its own column's value: the account-table header walk goes on
+// above a one-cell caption inside the table ("Free E-Statements"), no other specialist files a column's price under
+// another fee or puts the row's label on a cell that states another fee (`accountRowRivalRead`), and a monthly fee
+// priced "per paper statement" is the paper statement charge (families.ts): Community First National Bank. (3) A
+// free row whose condition opens the next line ("when opting for E-Statements") beside a priced read of the same
+// fee is no $0 (`conditionalFreeRow`): The People's FCU. A free Zelle line files under bill_pay ("Bill Pay & Zelle")
+// by the top-50 fold, unchanged. The stale-read floor stays at v97.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 180 } as const;
 
 export interface SpecialistRun {
   strategy: string;
@@ -1158,6 +1169,25 @@ function cellAlreadyRead(read: ExtractedFeeCandidate, prior: readonly ExtractedF
   });
 }
 
+/** Words that open a condition printed on the line under a free row. */
+const CONDITION_LINE_START = /^(?:when|if|unless|with|provided|for\s+(?:members|accounts)\s+(?:with|who))\b/i;
+
+/**
+ * v180 (backlog dry run 11): the free row a read's excerpt is stored on is followed by a line whose first
+ * cell opens with a condition ("when opting for E-Statements/no mail paper statements"), so the row's $0
+ * holds only on that condition. Pure.
+ */
+export function conditionalFreeRow(excerpt: string | null | undefined, text: string): boolean {
+  const probe = (excerpt ?? "").replace(/\s+/g, " ").trim();
+  if (probe.length < 6) return false;
+  const lines = text.split("\n").map((line) => line.replace(/\s+/g, " ").trim());
+  return lines.some((line, at) => {
+    if (line !== probe && !line.startsWith(probe)) return false;
+    const next = lines.slice(at + 1).find((later) => later.length > 0);
+    return next != null && CONDITION_LINE_START.test(next.split(" | ")[0]);
+  });
+}
+
 interface FreeSpecialistOptions {
   institutionName?: string | null;
   /** v133 (#2040): defaults to the switch, on since v155. */ noChargeSentences?: boolean;
@@ -1296,6 +1326,7 @@ function readFreeText(sourceText: string, discontinuedRows: DiscontinuedTableFla
     .split("\n").map((line) => (heldWireLines.has(line.trim()) ? "" : line)).join("\n");
   const windows = priceWindows(legacyText);
   const stackedPrices = stackedFeePrices(text);
+  const accountRowCells = accountTableCells(newestColumnText(legacyText));
   const specialists: Array<{ strategy: string; version: number; pass: 1 | 2; run: () => ExtractionRulesResult }> = [
     { ...KNOX_RULES_STRATEGY, pass: 1, run: () => withNetworkColumnFees(checkText, withContextFees(legacyText, extractCandidatesFromText(text))) },
     // v62: the table pass reads a fee-change table at its newest column too, as the self-check does.
@@ -1379,6 +1410,12 @@ function readFreeText(sourceText: string, discontinuedRows: DiscontinuedTableFla
     // account's paper statement (`creditCardStatementRead`: USF FCU's "Visa Monthly Paper Statement Fee").
     found.candidates = found.candidates.filter((read) => !creditCardStatementRead(read));
     found.held = found.held.filter((read) => !creditCardStatementRead(read));
+    // v180 (backlog dry run 11): on an account table's monthly fee row the account-table specialist reads by
+    // column, each priced cell is its own column's value under the row's label; no other specialist files a
+    // column's price under another fee or puts the row's label on a cell that states another fee
+    // (`accountRowRivalRead`: Community First National Bank's "Monthly Service Fees | None | $5 per paper
+    // statement ... | $6 if $300 minimum ... | $10 ...").
+    found.candidates = found.candidates.filter((read) => !accountRowRivalRead({ ...read, strategy: specialist.strategy }, accountRowCells));
     for (const [reason, count] of Object.entries(found.dropped ?? {})) countDropped(reason as DroppedLineReason, count);
     let added = 0;
     let selfCheckFailed = 0;
@@ -1837,6 +1874,16 @@ function readFreeText(sourceText: string, discontinuedRows: DiscontinuedTableFla
   }
   for (let at = candidates.length - 1; at >= 0; at--) {
     if (candidates[at].amount === 0 && !zeroPrintedForRead(candidates[at].excerpt, sourceText)) candidates.splice(at, 1);
+  }
+  // v180 (backlog dry run 11, The People's FCU text 12465): a free row whose condition is printed on the next
+  // line ("Bill Payer ..... Free" over "when opting for E-Statements/no mail paper statements"), beside a priced
+  // read of the same fee ("Bill Payer ..... $4.95" over "without Electronic Statements"), is the fee waived on
+  // that condition, never an unconditional $0 (`conditionalFreeRow`).
+  for (let at = stillHeld.length - 1; at >= 0; at--) {
+    const row = stillHeld[at];
+    if (row.amount !== 0 || row.shape !== "zero") continue;
+    const priced = candidates.some((read) => (read.amount ?? 0) > 0 && read.canonicalHint === row.canonicalHint && read.feeName.trim().toLowerCase() === row.feeName.trim().toLowerCase());
+    if (priced && conditionalFreeRow(row.excerpt, sourceText)) stillHeld.splice(at, 1);
   }
   const unitHolds = stillHeld.map(row => row.shape === "zero" && row.canonicalHint && row.amount != null
     ? withOwnFeeUnit({ ...row, amount: row.amount, canonicalHint: row.canonicalHint }, sourceText) : row);
