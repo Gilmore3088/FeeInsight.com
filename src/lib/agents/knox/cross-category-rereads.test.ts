@@ -20,6 +20,17 @@ describe("Knox v182 last name review (read-name-review.ts)", () => {
     // An account that says whose price it is stays; so does a label that does not file alone.
     expect(gluedHeadingName("Money Market Accounts: ATM/Debit Card reissue", "card_replacement")).toBeNull();
     expect(gluedHeadingName("Cashier's Check: Customer", "cashiers_check")).toBeNull();
+    // An account or card in capitals says whose price it is (review of 29ef3de53d2; rb10 text 40788, live #141969).
+    expect(gluedHeadingName("VISA CHECK CARD CHARGES: Non Sufficient Funds", "nsf")).toBeNull();
+    expect(gluedHeadingName("GOLD CHECKING: Monthly Service Charge", "monthly_maintenance")).toBeNull();
+    // A card inside another row's label is no product (slice text 27330: "LOAN/LEASE/CREDIT CARD PAYMENT BY
+    // ONLINE/MOBILE USING | SAFE DEPOSIT BOX DRILLING FEE | g$100.00").
+    expect(gluedHeadingName("LOAN/LEASE/CREDIT CARD PAYMENT BY ONLINE/MOBILE USING: SAFE DEPOSIT BOX DRILLING FEE", "safe_deposit_box")).toBe("SAFE DEPOSIT BOX DRILLING FEE");
+    // A heading not in capitals that ends in "Fees" is still a heading (rb10 text 4803, live #41503: "IRA Share Savings
+    // Account Fees | Wire-Outgoing International | $40.00 ea"), and so is "Account Fees" (rb5 text 39789).
+    expect(gluedHeadingName("IRA Share Savings Account Fees: Wire-Outgoing International", "wire_intl_outgoing")).toBe("Wire-Outgoing International");
+    expect(gluedHeadingName("Account Fees: A low balance service charge", "minimum_balance")).toBe("A low balance service charge");
+    expect(gluedHeadingName("CONSUMER ACCOUNTS: Statement Printout", "document_reproduction")).toBeNull();
     // A sentence's clause is no row's label (rb12 text 24830): kept whole.
     expect(gluedHeadingName("For Kasasa Cash, if qualifications are met each monthly qualification cycle: (1) Domestic ATM fees incurred during quali", "atm_non_network")).toBeNull();
   });
@@ -39,6 +50,12 @@ describe("Knox v182 last name review (read-name-review.ts)", () => {
       read("safe_deposit_box", "LOAN FEES: 3x10 Box", 50, "LOAN FEES | 3x10 Box | $50.00/year"),
     ];
     expect(withReviewedNames(twins, "").map((box) => box.feeName)).toEqual(["Safe Deposit Box 3x10"]);
+    // Two accounts' fees at one price stay two fees.
+    const accounts = [
+      { ...read("monthly_maintenance", "Monthly Service Charge", 10, "Monthly Service Charge | $10"), lineup: { productName: "Gold Checking" } },
+      { ...read("monthly_maintenance", "Monthly Service Charge", 10, "Monthly Service Charge | $10"), lineup: { productName: "Platinum Checking" } },
+    ];
+    expect(withReviewedNames(accounts, "")).toHaveLength(2);
   });
 
   it("names advice by the title above it, and keeps an advice name with no title as the fee's own words", () => {
@@ -61,6 +78,9 @@ describe("Knox v182 last name review (read-name-review.ts)", () => {
     const lyons = "No monthly service charge if average daily balance exceeds $1,000; Lower balance accounts are charged a monthly service charge of $5.00 Super Advantage Checking Maintain a $1,000 average daily balance, and Super Advantage Checking gets you a long list of rewards and pays interest. $1000 Deposit to open Tiered rates - variable interest rate earned. Prestige 50 Checking $5 Deposit to open";
     const lower = read("monthly_maintenance", "Lower balance accounts are charged a monthly service charge of", 5, "Lower balance accounts are charged a monthly service charge of $5.00");
     expect(reviewReadName(lower, lyons)).toBeNull();
+    // A monthly fee at the opening deposit's own price is still a fee (review of 29ef3de53d2).
+    const savings = "Regular Savings $5 minimum opening deposit; monthly service charge $5";
+    expect(reviewReadName(read("monthly_maintenance", "Monthly service charge", 5, savings), savings)).toBeNull();
   });
 
   it("files a box's late charge as the box's and paper statements offered in a check image's name as the paper statement", () => {
@@ -99,6 +119,8 @@ describe("Knox v182 plain returned item beside the NSF fee (withReturnBesideNsf)
     expect(withReturnBesideNsf([fee("nsf", "Returned Item", 30), fee("nsf", "NSF", 30), fee("deposited_item_return", "Deposited Item Return", 30)])[0].canonicalHint).toBe("nsf");
     // A priced NSF line is no free one.
     expect(freeNsfLine("Non-Sufficient Funds (NSF) Fee $30\nReturned Item Fee $10")).toBe(false);
+    // A waiver is no free price (review of 29ef3de53d2).
+    expect(freeNsfLine("Overdraft/NSF Fee Waived for first item per year\nReturned Item Fee $10")).toBe(false);
   });
 });
 

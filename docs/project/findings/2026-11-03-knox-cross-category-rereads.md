@@ -83,7 +83,8 @@ Live fees the cross-category scan found:
   - `glued_heading` drops a prefix when the label alone files under the read's category, the prefix does not, and
     the prefix is a section heading (capitals, or ending in "Fees", "Charges" or "Services") or another fee's name.
     A prefix that names an audience or a delivery speed ("Non-Customer Services", "Expedited delivery") or an
-    account stays, and so does a clause of other words ("(Per month some exclusions apply)", "For Kasasa Cash, if
+    account, product or card stays, capitals or not ("VISA CHECK CARD CHARGES: Non Sufficient Funds", rb10 text
+    40788, live #141969; review of 29ef3de53d2), and so does a clause of other words ("(Per month some exclusions apply)", "For Kasasa Cash, if
     ...: (1) ...").
   - `glyph_before_price` drops a glyph printed against the price ("NSF FEE: g").
   - `box_size_footnote` removes a box size's footnote digit when the side it leaves is a box's (30 inches or
@@ -92,15 +93,19 @@ Live fees the cross-category scan found:
     category. With no such title the read keeps its name: live #135372 "To avoid a monthly paper statement fee" is
     a real $3 fee.
   - `opening_deposit` drops a price whose own words call it a deposit to open or join. It reads only the read's own
-    window: on Lyons FCU's long line the "$5 Deposit to open" belongs to another account.
+    window: on Lyons FCU's long line the "$5 Deposit to open" belongs to another account. It drops the price only
+    when every time the window prints it, it is a deposit: "Regular Savings $5 minimum opening deposit; monthly
+    service charge $5" keeps its $5 fee (review of 29ef3de53d2).
   - `caps_cell_label` drops a capitals label whose price sits in the next cell's own label.
   - `box_late_fee` files the box late fee as Hamilton's fold does.
   - `paper_offer` files a check image name that offers paper statements as `paperStatementRead`. The offer must use
     the word "available" or open with "Free". A "Paper statement with check images" fee stays check_image.
-  - Twins the renames create are merged.
+  - Twins the renames create are merged. A twin has the same name, price, category and product, so one fee read at
+    one price for two accounts (Gold Checking and Platinum Checking) stays two reads (review of 29ef3de53d2).
 - `withReturnBesideNsf` covers both missed returned-item cases:
   - A schedule that prints its NSF fee free (`freeNsfLine`) prices no NSF item, so a priced plain return there is
-    the deposited item return (Live Oak).
+    the deposited item return (Live Oak). A waiver is no free price: "Overdraft/NSF Fee Waived for first item per
+    year" is not a free NSF line (review of 29ef3de53d2).
   - A deposited item return at the plain return's own price no longer marks it as the member's item (TXN). One at
     another price still does: Parthenon prints NSF $33, Returned Item $30 and its own Deposited Item Return $25, so
     its $30 return is the member's item and stays nsf. Live #99606, filed deposited_item_return, looks wrong by its
@@ -167,15 +172,25 @@ Live fees the cross-category scan found:
   - #52129 "Official Check" $15 (cashiers_check) is doubtful: its line says "Charged if you ask us to refund or
     replace a check drawn on Tech CU". That is a replacement or refund of an official check, not its purchase. It is
     left for review: no Knox misread class covers it.
-- Darwin's section misread check v5, dry run on Nov 3 (prod, SELECT only):
-  - `wire_service_monthly_fee`: 0 of the live monthly fees whose name says "wire".
-  - `read_name_review`: 0 from opening deposit, capitals cell, box late fee or paper offer. That covers 77 live fees
-    with a deposit or capitals-cell line (each checked against the opening-deposit pattern at its own price), 0
-    late_payment fees named for a box, and 0 check_image paper-statement names that offer paper statements (12 such
-    names price images, none says "available" or opens with "Free").
-  - `return_beside_nsf`: 1 of 471 live plain returns filed as nsf, #133756 "Returned Check" $20. Its page prints
-    "Insufficient Funds (NSF) | $0". Its siblings were read from the same artifact, and its text was checked for a
-    free NSF line.
+- Darwin's section misread check v5 on prod, Nov 3 (SELECT only). The review of 29ef3de53d2 found the first v5
+  read was invalid SQL (a missing comma between the `retextured` and `picked` CTEs). `recheckSectionMisreads`
+  catches a failed read and reports nothing, so the first counts here came from hand-written queries, not from the
+  function. Now:
+  - The comma is in, and `section-misread-check.db.test.ts` runs the real read and the step (dry run) on the
+    production schema; without the comma it fails with "syntax error at or near picked". It is in CI's E2E list.
+  - The plain returns' siblings are gathered once per text by a grouped join, not by a per-row scan of `live`
+    (the reviewer's corrected per-row form timed out at 60 s).
+  - The real read, rendered from `sectionMisreadRowsSql` and run with `EXPLAIN ANALYZE`: 7,786 rows, 18.9 s, then
+    11.8 s warm. Main's v4 read: 7,279 rows, 30.7 s, then 13.6 s warm.
+  - Counts from `findSectionMisreads` on those rows. The texts were cut to the lines the v5 rules read: the fee's own
+    line, the three lines above it, and the NSF lines.
+    - `wire_service_monthly_fee`: 0. No live monthly fee's name says "wire".
+    - `read_name_review`: 0 of 89 candidates. These are fees with a deposit or capitals-cell line, a box late fee,
+      or a paper-statement image name. 12 of the 89 stored lines are not in their text, so they are judged on
+      the line alone, as Knox does.
+    - `return_beside_nsf`: 1 of 471 live plain returns filed as nsf: #133756 "Returned Check" $20, beside
+      "Insufficient Funds (NSF) | $0". 354 of the 471 have a sibling fee or a free-NSF-like line to judge; the
+      rest cannot match.
   - The v1 to v4 rules are unchanged, so the check reports 1 more live fee than v4. Switch off: nothing is written.
 
 **Left open:**
@@ -186,5 +201,6 @@ Live fees the cross-category scan found:
   cell is read three ways before the account table's "Austin Star Checking Plus Monthly fee" read. Fixing that
   ordering is its own change.
 
-**Guard:** `src/lib/agents/knox/cross-category-rereads.test.ts`, `src/lib/agents/darwin/section-misread-check.test.ts`.
+**Guard:** `src/lib/agents/knox/cross-category-rereads.test.ts`, `src/lib/agents/darwin/section-misread-check.test.ts`,
+`src/lib/agents/darwin/section-misread-check.db.test.ts`.
 **Agent lesson:** knox/backlog-cross-category-2026-11-03-name-a-read-by-its-own-row

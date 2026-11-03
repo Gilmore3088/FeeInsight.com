@@ -1359,9 +1359,10 @@ export function withReturnBesideNsf<T extends { feeName: string; amount: number 
 }
 
 /** v182: a line that prints the NSF or insufficient-funds fee free, with no price ("Non-Sufficient Funds (NSF) Fee No charge"). */
-const FREE_PRICE_WORDS = /\b(?:no\s+charge|free|none|waived)\b|\$\s?0(?:\.00)?(?![\d.])/i;
+// A waiver is no free price ("Overdraft/NSF Fee Waived for first item per year": review of 29ef3de53d2).
+const FREE_PRICE_WORDS = /\b(?:no\s+charge|free|none)\b|\$\s?0(?:\.00)?(?![\d.])/i;
 export function freeNsfLine(text: string): boolean {
-  return text.split("\n").some((line) => SCHEDULE_NSF_NAME.test(line) && FREE_PRICE_WORDS.test(line) && !/\$\s?[1-9]/.test(line) &&
+  return text.split("\n").some((line) => SCHEDULE_NSF_NAME.test(line) && FREE_PRICE_WORDS.test(line) && !/\$\s?[1-9]/.test(line) && !/\bwaiv/i.test(line) &&
     !/\breturn/i.test(line) && line.trim().split(/\s+/).length <= 10);
 }
 

@@ -34,6 +34,8 @@ export interface ReviewedRead {
   feeName: string;
   amount: number;
   excerpt: string;
+  /** The account the read belongs to, when Knox read one. */
+  lineup?: { productName?: string | null } | null;
 }
 
 export type NameReviewRule = "glued_heading" | "glyph_before_price" | "box_size_footnote" | "advice_name" | "opening_deposit" | "caps_cell_label" | "box_late_fee" | "paper_offer";
@@ -56,13 +58,21 @@ function priceText(amount: number): string {
 const QUALIFIER_PREFIX = /\b(?:non-?members?|non-?customers?|business|commercial|seniors?|students?|youth|minors?|expedit\w*|rush|overnight|express|same[- ]day|next[- ]day)\b/i;
 /** A section heading: printed in capitals, or ending in a heading word ("LOAN FEES", "Customer Services"). */
 const SECTION_HEADING = /\b(?:fees|charges|services)\s*$/i;
-/** An account named in the prefix says whose price it is ("Money Market Accounts", "Four Star Banking with Interest"). */
+/**
+ * A prefix in capitals that ends in an account or card says whose price it is ("GOLD CHECKING", "CONSUMER ACCOUNTS",
+ * "VISA CHECK CARD CHARGES": review of 29ef3de53d2, live #141969). A card inside another row's label
+ * ("LOAN/LEASE/CREDIT CARD PAYMENT BY ONLINE/MOBILE USING", slice text 27330) names no product. A heading not in
+ * capitals that ends in "Fees" stays a heading ("IRA Share Savings Account Fees", rb10 text 4803, live #41503).
+ */
+const PRODUCT_PREFIX = /\b(?:checking|savings|money\s+market|share|accounts?|ira|certificates?|club|visa|mastercard|cards?)(?:\s+accounts?)?(?:\s+(?:fees|charges|services))?\s*$/i;
+/** An account named in a prefix not in capitals ("Money Market Accounts", "Four Star Banking with Interest"). */
 const ACCOUNT_PREFIX = /\b(?:checking|savings|money\s+market|share|accounts?|ira|certificates?|banking|club)\b/i;
 
 /**
  * The label of a composed name ("P: N") when the label N files under `key` alone and the prefix P is no part of the
- * fee: a section heading or another fee's name. A prefix that qualifies the fee (an
- * audience, a delivery speed) or names an account is kept, and so is any prefix that files under `key` itself.
+ * fee: a section heading or another fee's name. A prefix that qualifies the fee (an audience, a delivery speed) or
+ * names an account (a heading in capitals that ends in an account or card) is kept, and so is any prefix that files
+ * under `key` itself.
  */
 export function gluedHeadingName(name: string, key: string): string | null {
   const at = name.indexOf(": ");
@@ -76,7 +86,8 @@ export function gluedHeadingName(name: string, key: string): string | null {
   if (classifyFeeText(label) !== key) return null;
   const prefixKey = classifyFeeText(prefix);
   if (prefixKey === key || QUALIFIER_PREFIX.test(prefix)) return null;
-  if (prefix === prefix.toUpperCase() && /[A-Z]{3}/.test(prefix)) return label;
+  // A heading in capitals is dropped unless it ends in an account or card ("VISA CHECK CARD CHARGES").
+  if (prefix === prefix.toUpperCase() && /[A-Z]{3}/.test(prefix)) return PRODUCT_PREFIX.test(prefix) ? null : label;
   if (SECTION_HEADING.test(prefix)) return label;
   if (ACCOUNT_PREFIX.test(prefix)) return null;
   // Another fee's name ("Wire Transfer: Deposit Item Chargeback"). A clause of other words ("(Per month some
@@ -112,7 +123,7 @@ export function reviewReadName<T extends ReviewedRead>(read: T, text: string): {
     feeName = sized;
     changed = "box_size_footnote";
   }
-  if (read.amount > 0 && OPENING_DEPOSIT(priceText(read.amount)).test(ownWindow(text, excerpt))) return { read: null, rule: "opening_deposit" };
+  if (read.amount > 0 && depositOnly(ownWindow(text, excerpt), read.amount)) return { read: null, rule: "opening_deposit" };
   if (ADVICE.test(feeName)) {
     // Only renamed: an advice name is often a real fee's only words ("To avoid a monthly paper statement fee of
     // $3.00 ...", live 135372), so a read with no title above keeps its name.
@@ -155,6 +166,17 @@ function ownWindow(text: string, excerpt: string): string {
 }
 const OWN_WINDOW_REACH = 40;
 
+/**
+ * Every time the read's own words print its price, they call it a deposit to open or join. A window that also prints
+ * the price as a charge ("Regular Savings $5 minimum opening deposit; monthly service charge $5") keeps the read.
+ */
+function depositOnly(window: string, amount: number): boolean {
+  const price = priceText(amount);
+  const all = window.match(new RegExp(price, "gi")) ?? [];
+  const deposits = window.match(new RegExp(OPENING_DEPOSIT(price).source, "gi")) ?? [];
+  return deposits.length > 0 && deposits.length >= all.length;
+}
+
 /** The short title line right above the read's own line (no price, at most six words), or null. */
 function titleAbove(text: string, excerpt: string): string | null {
   const lines = text.split("\n").map((line) => line.replace(/\s+/g, " ").trim());
@@ -193,5 +215,6 @@ export function withReviewedNames<T extends ReviewedRead>(reads: readonly T[], t
 function twinKey(read: ReviewedRead): string {
   const size = read.canonicalHint === "safe_deposit_box" ? read.feeName.match(/\b(\d{1,2})\s?[xX×]\s?(\d{1,2})\b/) : null;
   const name = size ? `size ${Number(size[1])}x${Number(size[2])}` : read.feeName.toLowerCase();
-  return `${read.canonicalHint}|${name}|${read.amount}`;
+  // Two accounts' fees at one price are two fees (review of 29ef3de53d2): the product is part of the key.
+  return `${read.canonicalHint}|${name}|${read.amount}|${(read.lineup?.productName ?? "").toLowerCase()}`;
 }

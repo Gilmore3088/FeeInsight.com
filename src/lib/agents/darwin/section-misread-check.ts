@@ -177,7 +177,7 @@ export interface SectionMisreadRow {
   /** Version 3: the fee has no product and the bank has a live fee of its name, with no product, at another price. */
   audience_candidate?: boolean | null;
   /** Version 5: the other live NSF and deposited item return fees read from the same text (a plain return's page reads). */
-  siblings?: Array<{ fee_name: string | null; amount: number | string | null; canonical_fee_key: string | null }> | null;
+  siblings?: Array<{ fee_published_id?: number | string | null; fee_name: string | null; amount: number | string | null; canonical_fee_key: string | null }> | null;
 }
 
 export interface SectionMisreadMatch {
@@ -283,7 +283,7 @@ export function returnBesideNsfKind(row: SectionMisreadRow, text: string | undef
   const name = (row.fee_name ?? "").trim();
   const amount = num(row.amount) as number;
   const read = { feeName: name, amount, canonicalHint: "nsf" as string | null };
-  const others = (row.siblings ?? []).map((sibling) => ({ feeName: (sibling.fee_name ?? "").trim(), amount: num(sibling.amount), canonicalHint: sibling.canonical_fee_key }));
+  const others = (row.siblings ?? []).filter((sibling) => String(sibling.fee_published_id ?? "") !== String(row.fee_published_id)).map((sibling) => ({ feeName: (sibling.fee_name ?? "").trim(), amount: num(sibling.amount), canonicalHint: sibling.canonical_fee_key }));
   const [filed] = withReturnBesideNsf([read, ...others], [], text);
   return filed.canonicalHint === "deposited_item_return"
     ? { kind: RETURN_BESIDE_NSF_REASON, evidence: `${name.slice(0, 50)} $${amount} beside ${others.map((other) => `${other.canonicalHint} $${other.amount}`).join(", ").slice(0, 80) || "a free NSF fee"}` }
@@ -557,7 +557,7 @@ export function sectionMisreadRowsSql(db: SqlTag, options: { institutionId?: num
           OR (live.canonical_fee_key = 'nsf'
               AND a.normalized_text ~* ${FEE_CARD_TEXT_SQL}
               AND a.normalized_text ~* ${DEPOSIT_OR_CASH_TEXT_SQL})
-    )
+    ),
     picked AS (
       SELECT * FROM named
       UNION
@@ -568,18 +568,24 @@ export function sectionMisreadRowsSql(db: SqlTag, options: { institutionId?: num
       SELECT * FROM retextured
       UNION
       SELECT * FROM reviewed
+    ),
+    -- Version 5: a plain return's page reads, the live NSF and deposited item return fees from its text, gathered
+    -- once per text (one hash join, not a scan of live per row); the fee itself is left out in findSectionMisreads.
+    return_texts AS (
+      SELECT DISTINCT reviewed.artifact_id FROM reviewed
+       WHERE reviewed.canonical_fee_key = 'nsf' AND reviewed.artifact_id IS NOT NULL
+    ),
+    text_siblings AS (
+      SELECT other.artifact_id,
+             jsonb_agg(jsonb_build_object('fee_published_id', other.fee_published_id, 'fee_name', other.fee_name, 'amount', other.amount, 'canonical_fee_key', other.canonical_fee_key)) AS siblings
+        FROM live other
+        JOIN return_texts r ON r.artifact_id = other.artifact_id
+       WHERE other.canonical_fee_key IN ('nsf', 'deposited_item_return')
+       GROUP BY other.artifact_id
     )
-    SELECT picked.*, sib.siblings
+    SELECT picked.*, CASE WHEN picked.canonical_fee_key = 'nsf' THEN text_siblings.siblings END AS siblings
       FROM picked
-      -- Version 5: a plain return's page reads, the other live NSF and deposited item return fees from its text.
-      LEFT JOIN LATERAL (
-        SELECT jsonb_agg(jsonb_build_object('fee_name', other.fee_name, 'amount', other.amount, 'canonical_fee_key', other.canonical_fee_key)) AS siblings
-          FROM live other
-         WHERE picked.canonical_fee_key = 'nsf'
-           AND other.artifact_id = picked.artifact_id
-           AND other.fee_published_id <> picked.fee_published_id
-           AND other.canonical_fee_key IN ('nsf', 'deposited_item_return')
-      ) sib ON true
+      LEFT JOIN text_siblings ON text_siblings.artifact_id = picked.artifact_id
      ORDER BY picked.fee_published_id
      LIMIT ${limit}::int
   `;

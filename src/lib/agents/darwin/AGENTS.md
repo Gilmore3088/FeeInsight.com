@@ -1985,9 +1985,14 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   statements offered in a check image's name); a rename alone is no match. `return_beside_nsf`: a plain returned item
   filed NSF that `withReturnBesideNsf` files as the deposited item return, read with the other live NSF and
   deposited item return fees from the same text and that text (an NSF fee printed free, or a deposited return at
-  its own price). Dry run Nov 3 (prod, read-only): 0 live monthly fees named for a wire; 0 of the 77 live fees whose
-  stored line names a deposit or a capitals cell, 0 box late fees, 0 offering check image names; 1 of 471 live plain
-  returns filed NSF, 133756 "Returned Check" $20 beside "Insufficient Funds (NSF) | $0". Switch off.
+  its own price). The plain returns' siblings are gathered once per text (a grouped join on `live`), not by a
+  per-row scan of it. Review of 29ef3de53d2: the first v5 read was invalid SQL (a missing comma) that the step's
+  catch hid, so its first dry-run counts did not come from this function; `section-misread-check.db.test.ts` now
+  runs the real read and step on the production schema. Real read, Nov 3 (prod, SELECT only, `EXPLAIN ANALYZE`):
+  7,786 rows (v4 7,279), 18.9 s then 11.8 s warm (main's v4: 30.7 s then 13.6 s). Its rows and texts, judged by
+  `findSectionMisreads`: 0 live monthly fees named for a wire; 0 of the 89 review candidates (a deposit or capitals-cell
+  line, a box late fee, a paper-statement image name); 1 of 471 live plain returns filed NSF (354 with a sibling or
+  a free-NSF-like line to judge), 133756 "Returned Check" $20 beside "Insufficient Funds (NSF) | $0". Switch off.
 - A monthly maintenance fee whose row sits under a service's heading (`service-maintenance-check.ts`,
   #1092, state key 5608): River City Bank's "Consumer Online Banking Services and Mobile Banking Fees" over
   "Monthly Maintenance Fee | No charge" is the online banking service's fee; published as the account's
