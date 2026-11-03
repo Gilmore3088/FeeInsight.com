@@ -14,6 +14,7 @@ import { zeroWaiverRowRead } from "@/lib/zero-waiver-row";
 import { freeListItemRead } from "@/lib/free-list-item";
 import { dividendThresholdSentence } from "@/lib/dividend-threshold";
 import { onlineServiceMonthlyFee } from "@/lib/service-monthly-charge";
+import { serviceMaintenanceRead } from "@/lib/service-maintenance-heading";
 import { requireInternationalVerification } from "./international-verification";
 import { matchOriginalRawSource } from "./locked-raw-source";
 import { paidReturnedCandidateProof, PAID_RETURNED_EVENT_FLAG, PAID_RETURNED_ELIGIBILITY_FLAG } from "@/lib/custom-report/paid-returned-events";
@@ -171,6 +172,7 @@ export type DarwinReasonCode =
   | "free_list_item"
   | "dividend_threshold"
   | "online_service_monthly"
+  | "service_maintenance_heading"
   | "name_rule"
   | "maintenance_per_item"
   | "history_jump"
@@ -205,6 +207,7 @@ export const DARWIN_REASON_TEXT: Readonly<Record<DarwinReasonCode, string>> = {
   free_list_item: "A priced fee the page lists as an item of a \"free services\" list and whose price the source check took from another line: another fee's price, not this one's",
   dividend_threshold: "The balance a rate disclosure says earns no dividend or interest (\"If your average daily balance is below $100.00 ..., no dividends are earned\"), in a sentence that names no charge: no fee",
   online_service_monthly: "A monthly service fee printed in a section of online, electronic or digital services (\"Online Fees\"): that service's charge, not the account's monthly maintenance fee",
+  service_maintenance_heading: "A monthly maintenance fee whose row sits under a heading that names a service, not an account (\"Consumer Online Banking Services and Mobile Banking Fees\" over \"Monthly Maintenance Fee | No charge\"): the service's own fee, not the checking account's; held for a person",
   name_rule: "The name or line fails a rule Hamilton would take the live fee down for",
   maintenance_per_item: "A monthly maintenance fee whose own line prices it per item (\"$16 each\", \"$1.00 per withdrawal\"): not the account's monthly fee",
   history_jump: "Amount moved sharply from the bank's live value for this fee, and this copy is an earlier edition than the live value's or the same page does not show the change; held for a person to review",
@@ -870,7 +873,7 @@ export function pendingCategoryLesson(canonicalFeeKey: string | null, feeName: s
 
 function decisionFor(code: DarwinReasonCode | null): DarwinDecision {
   if (code == null) return "verified";
-  if (code === "outside_envelope" || code === "peer_outlier" || code === "category_lesson_pending" || code === "conditional_zero" || code === "account_benefit_zero" || code === "zero_waiver_row" || code === "maintenance_per_item" || code === "history_jump" || code === "insert_failed") return "needs_review";
+  if (code === "outside_envelope" || code === "peer_outlier" || code === "category_lesson_pending" || code === "conditional_zero" || code === "account_benefit_zero" || code === "zero_waiver_row" || code === "service_maintenance_heading" || code === "maintenance_per_item" || code === "history_jump" || code === "insert_failed") return "needs_review";
   if (code === "duplicate_in_batch" || code === "duplicate_verified") return "duplicate";
   return "rejected";
 }
@@ -2084,6 +2087,12 @@ export async function runDarwinVerify(
         if (!reasonCode && canonicalFeeKey === "monthly_maintenance"
           && [excerptOf(row.conditions), tracedLine].some((line) => onlineServiceMonthlyFee(row.fee_name, line, sourceText) !== null)) {
           reasonCode = "online_service_monthly";
+        }
+        // #1092 (Knox v174 holds new ones): and a monthly maintenance fee, $0 or priced, whose row sits
+        // under a service's heading, read on Knox's line and the line the shared check traces it to
+        // (`serviceMaintenanceRead`).
+        if (!reasonCode && serviceMaintenanceRead({ excerpt: excerptOf(row.conditions), tracedLine, canonicalFeeKey, documentText: sourceText })) {
+          reasonCode = "service_maintenance_heading";
         }
         if (!reasonCode && canonicalFeeKey && verifiedInBatch.has(batchKey(row, canonicalFeeKey))) {
           reasonCode = "duplicate_in_batch";

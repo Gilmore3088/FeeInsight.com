@@ -44,9 +44,25 @@
  * under a few short lines about whom the account is for; the account's name above them is the lead.
  * The walk reaches `ACCOUNT_BENEFIT_WALK_CHARS` (450) before the item, the window Darwin's re-check reads.
  * Also: "Here is what you get." after an account is opened counts as a lead.
+ *
+ * Knox v171 (backlog dry run 4, O'Bannon Banking Co, doc 42058):
+ * - `account_waivers` also takes a lead that says "this account (also) includes:" (`ACCOUNT_INCLUDES`).
+ *   It names no account, so the account is the nearest name on the few lines above it ("Regular
+ *   Checking" / "$7.00 Monthly Service Charge" / ... / "This account also includes:"), or the lead itself
+ *   when none is printed. Under that lead every short line is the account's own list ("Free Photocopies
+ *   (limits may apply)", "You must be at least 55 Years of Age"), until a blank-line heading, a table cell
+ *   or a priced row ends it.
+ * - `account_column`: a perk an account's own cell names and prices free, in an account comparison table
+ *   under a header row that names two accounts or more ("Regular Checking | Safeguard FREE Checking | Premiere Club | Money Market
+ *   Deposit" over "Checks | 1st order of starter checks FREE (postage not included) (FREE Checking) |
+ *   FREE Basic Checks"), is one account's term when the row's cells cannot be lined up with the accounts
+ *   (fewer cells than accounts) or another account's cell prints something else. A row whose every
+ *   account cell says the same free word ("Incoming Wire | Free | Free") stays, and so does a bare free
+ *   word under an account ("Bill Payment fee | FREE", "Monthly Service Charge | No Charge"): that prices
+ *   the row's own fee for the account, which the account lineup ties to its product.
  */
 
-export type AccountBenefitKind = "holder_grant" | "account_waivers" | "feature_list";
+export type AccountBenefitKind = "holder_grant" | "account_waivers" | "feature_list" | "account_column";
 
 export interface AccountBenefitZero {
   kind: AccountBenefitKind;
@@ -103,6 +119,13 @@ const SERVICE_BANKING = /\b(?:Online|Mobile|Digital|Internet|Telephone|Phone|Hom
 /** "Benefits of Premier Advantage", "all of the benefits of Basic Checking": the package's name. */
 const BENEFITS_OF = /\bbenefits? of\s+((?:[A-Z][\w'’&+-]*\s*){1,4})/;
 const ACCOUNT_WAIVERS = /\bthe following\s+(?:free\s+)?(?:fee waivers|waivers|benefits|perks|services|features|privileges|discounts)\b|\bbenefits? of\s+[A-Z]|\bhere(?:'s| is) what you get\b|\b(?:features\s*(?:&|and)\s*benefits|free services|perks|account benefits)\s*:/i;
+/** v171: "This account also includes:", "Your account comes with:", "Each account includes the following:". */
+const ACCOUNT_INCLUDES = /^(?:this|the|your|each|every)\s+account\s+(?:also\s+)?(?:includes|comes with|offers|features|provides|has)(?:\s+the following)?\s*:?$/i;
+/** v171: how many lines above an "account includes" lead may hold the account's name. */
+const INCLUDES_NAME_LINES = 8;
+/** v171: how far above an account table's row its header row may sit (lines, and characters). */
+const ACCOUNT_COLUMN_LINES = 40;
+export const ACCOUNT_COLUMN_LOOKBACK_CHARS = 1_500;
 const ACCOUNT_TERMS = /\b(?:opening deposit|minimum (?:deposit )?to open|no minimum balance|minimum balance requirement|no (?:monthly )?minimum balance required|no monthly (?:(?:maintenance|service) )?(?:fees?|charges?)|monthly (?:maintenance|service) (?:fees?|charges?)|unlimited check writing|no per item charges?|earns? (?:dividends|interest))\b/i;
 /** A perk with a dollar figure is no price: "$4.00 off each check order", "$15 discount on safe deposit boxes". */
 const PERK_AMOUNT = /\b(?:off|discount(?:ed)?|rebates?|refunds?|cash back|bonus)\b/i;
@@ -241,8 +264,111 @@ function escapeRegExp(text: string): string {
   return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+/**
+ * v171: the lead of an "account includes" list above the item, walking up the lines of `before` (the text
+ * right before the item): short lines of the account's own list, no blank-line heading, table cell or priced
+ * row between. The account is the nearest name in the few lines over the lead, or the lead's own words.
+ */
+function includesListAt(before: string, item: string): AccountBenefitZero | null {
+  const lines = before.replace(/\r/g, "").split("\n").map((line) => line.replace(/[ \t ]+/g, " ").trim());
+  // The item's own line opens right after the last line break.
+  if ((lines.at(-1) ?? "") !== "") return null;
+  let i = lines.length - 2;
+  for (let walked = 0; i >= 0 && walked <= WALK_ITEMS; i -= 1) {
+    const line = lines[i];
+    if (!line) continue;
+    if (ACCOUNT_INCLUDES.test(line)) break;
+    walked += 1;
+    if (line.length > ITEM_CHARS || line.includes(" | ") || /:\s*$/.test(line)) return null;
+    if (PRICED.test(line) && !ACCOUNT_TERMS.test(line) && !(PERK_AMOUNT.test(line) && /\$\s?\d|\d%/.test(line))) return null;
+  }
+  if (i < 0 || !ACCOUNT_INCLUDES.test(lines[i] ?? "")) return null;
+  const lead = lines[i];
+  for (let j = i - 1, seen = 0; j >= 0 && seen < INCLUDES_NAME_LINES; j -= 1) {
+    const above = lines[j];
+    if (!above) continue;
+    seen += 1;
+    if (above.includes(" | ") || WHOLE_BANK.test(above)) break;
+    const account = accountIn(above);
+    if (account) return { kind: "account_waivers", account, evidence: evidenceFrom([above, lead], item) };
+    if (/:\s*$/.test(above)) break;
+  }
+  return { kind: "account_waivers", account: lead.replace(/\s*:$/, ""), evidence: evidenceFrom([lead], item) };
+}
+
+/** The cells of a table line, trimmed, with the outer bars of a markdown row dropped. */
+function cellsOf(line: string): string[] {
+  return line.replace(/^\s*\|/, "").replace(/\|\s*$/, "").split(/\s\|\s|\s\||\|\s/).map((cell) => cell.trim());
+}
+
+const ZERO_IN_CELL = /\b(?:free|no charge|n\/c|none|waived)\b/i;
+
+/**
+ * v171: a $0 read from a cell of an account comparison table (see the module note), or null. `line` is
+ * Knox's excerpt ("Checks | 1st order of starter checks FREE"); the row is the text's line that holds it.
+ */
+export function accountColumnZeroOf(input: AccountBenefitZeroInput): AccountBenefitZero | null {
+  const excerpt = squash(input.line ?? "");
+  const text = input.documentText ?? "";
+  if (!excerpt.includes("|") || !text || !ZERO_IN_CELL.test(excerpt)) return null;
+  const lines = text.replace(/\r/g, "").split("\n");
+  const probe = excerpt.toLowerCase();
+  let found: AccountBenefitZero | null = null;
+  for (let index = 0; index < lines.length; index += 1) {
+    if (!squash(lines[index]).toLowerCase().includes(probe)) continue;
+    const column = accountColumnAt(lines, index, excerpt);
+    // Every place the row is printed must be such a cell.
+    if (!column) return null;
+    found ??= column;
+  }
+  return found;
+}
+
+function accountColumnAt(lines: string[], index: number, excerpt: string): AccountBenefitZero | null {
+  const cells = cellsOf(lines[index]);
+  if (cells.length < 2) return null;
+  // The $0's own cell: the first after the row's label that the excerpt reaches and that says it is free.
+  const reached = cellsOf(excerpt);
+  const at = cells.findIndex((cell, position) => position > 0 && position < reached.length && ZERO_IN_CELL.test(cell)
+    && squash(cell).toLowerCase().startsWith(squash(reached[position]).toLowerCase().slice(0, 12)));
+  // The row opens with a bare label ("Checks"), not another column's own priced row ("Monthly maintenance
+  // fee ........ $0 | Monthly maintenance fee ........ FREE": two account pages side by side).
+  if (at < 1 || ZERO_IN_CELL.test(cells[0]) || PRICED.test(cells[0]) || cells[0].length > 40) return null;
+  // The cell names its own perk ("1st order of starter checks FREE (postage not included)"): a bare free
+  // word under an account ("Bill Payment fee | FREE", "Monthly Service Charge | No Charge") prices the
+  // row's own fee for that account, which the account lineup ties to its product.
+  const own = squash(cells[at].replace(/\([^()]*\)/g, " ").replace(new RegExp(ZERO_IN_CELL.source, "gi"), " "));
+  if ((own.match(/[A-Za-z]{3,}/g) ?? []).length < 2) return null;
+  let chars = 0;
+  for (let up = index - 1; up >= Math.max(0, index - ACCOUNT_COLUMN_LINES); up -= 1) {
+    chars += lines[up].length + 1;
+    if (chars > ACCOUNT_COLUMN_LOOKBACK_CHARS) break;
+    if (!lines[up].includes("|")) continue;
+    const header = cellsOf(lines[up]).filter(Boolean);
+    // A header row of accounts: every cell but one row-label cell names a different account, and no cell
+    // carries a price ("Christmas Club Early Withdrawal | A fee for withdrawing from a Christmas Club
+    // account ... | $10 per withdrawal" is a fee row, "CHECKING | Live Free Checking | Begin Banking | FREE
+    // Member Services" a heading over services).
+    if (header.some((cell) => /\$\s?\d|^(?:free|no charge|none|n\/c)$|\bpage\s+\d/i.test(cell))) continue;
+    const accounts = [...new Set(header.map((cell) => accountIn(cell)).filter((name): name is string => Boolean(name)))];
+    if (accounts.length < 2 || accounts.length < header.length - 1) continue;
+    const values = cells.slice(1);
+    // The header may carry the row labels' column or not: either way each account has a cell.
+    const columns = header.length - (accountIn(header[0]) ? 0 : 1);
+    const lined = values.length === columns;
+    const zero = squash(cells[at]).toLowerCase();
+    if (lined && values.every((value) => squash(value).toLowerCase() === zero)) return null;
+    const accountAt = lined ? header[header.length - columns + at - 1] : null;
+    const account = accountAt && accountIn(accountAt) ? accountIn(accountAt)! : accounts.join(" / ");
+    return { kind: "account_column", account, evidence: `${squash(lines[up])} / ${squash(lines[index])}`.slice(0, 360) };
+  }
+  return null;
+}
+
 /** True when the $0 is one named account's benefit, with the kind, the account and the evidence. */
 export function accountBenefitZeroOf(input: AccountBenefitZeroInput): AccountBenefitZero | null {
+  const column = accountColumnZeroOf(input);
+  if (column) return column;
   const whole = tidy(input.line ?? "");
   const item = whole ? itemOf(squash(whole), input.feeName ?? "") : null;
   if (!item) return null;
@@ -270,6 +396,8 @@ export function accountBenefitZeroOf(input: AccountBenefitZeroInput): AccountBen
 }
 
 function benefitAt(text: string, at: number, item: string): AccountBenefitZero | null {
+  const includes = at > 0 ? includesListAt(text.slice(Math.max(0, at - WALK_CHARS), at), item) : null;
+  if (includes) return includes;
   const before = tidyWindow(text.slice(Math.max(0, at - WALK_CHARS), at));
   // The item is a list entry: set off by a separator, a line break or a full stop.
   if (!/(?:[,;:.\n]|^)\s*$/.test(before) || at === 0) return null;

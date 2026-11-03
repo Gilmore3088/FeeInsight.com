@@ -113,6 +113,7 @@ import { holdRereadDetail, runHoldSourceReread } from "@/lib/agents/darwin/hold-
 import { liveNameRefreshDetail, refreshLiveFeeNames } from "@/lib/agents/hamilton/live-name-refresh";
 import { recheckSameLineReplacements, sameLineReplacementDetail } from "@/lib/agents/darwin/same-line-replacement-check";
 import { recheckSameLineReads, sameLineReadDetail } from "@/lib/agents/darwin/same-line-read-check";
+import { recheckProductSplits, productSplitDetail } from "@/lib/agents/darwin/product-split-check";
 import { checkTwoReadAgreement, twoReadAgreementDetail, twoReadAgreementNote } from "@/lib/agents/knox/two-read-agreement";
 import { editionCheckDetail, recheckScheduleEditions } from "@/lib/agents/darwin/edition-effective-check";
 import { canadianDocumentDetail, recheckCanadianDocuments } from "@/lib/agents/darwin/canadian-document-check";
@@ -131,6 +132,7 @@ import { accountBenefitZeroDetail, recheckAccountBenefitZeros } from "@/lib/agen
 import { recheckZeroWaiverRows, zeroWaiverRowDetail } from "@/lib/agents/darwin/zero-waiver-row-check";
 import { freeListItemDetail, recheckFreeListItems } from "@/lib/agents/darwin/free-list-item-check";
 import { notAccountFeeLineDetail, recheckNotAccountFeeLines } from "@/lib/agents/darwin/not-account-fee-line-check";
+import { recheckServiceMaintenance, serviceMaintenanceDetail } from "@/lib/agents/darwin/service-maintenance-check";
 import { cardProgramSectionDetail, recheckCardProgramSections } from "@/lib/agents/darwin/card-program-section-check";
 import { loanSectionDetail, recheckLoanSections } from "@/lib/agents/darwin/loan-section-check";
 import { lineConflictDetail, recheckLineConflicts } from "@/lib/agents/darwin/line-conflict-check";
@@ -1397,6 +1399,17 @@ async function executeAgenticStep(
       const sameLineReadNote = sameLineRead.matched > 0
         ? ` Same-line read re-check: ${sameLineRead.matched.toLocaleString()} live fee(s) at ${sameLineRead.institutions.toLocaleString()} institution(s) are a second read of one printed line (${sameLineRead.live && !sameLineRead.dryRun ? `${sameLineRead.flagged.toLocaleString()} flagged, ${sameLineRead.takenDown.length.toLocaleString()} archived` : sameLineRead.dryRun ? "dry run: would take down, nothing written" : "switch off: would take down, nothing written"}).`
         : "";
+      // One printed line live twice under two products (product-split-check.ts); a report only on a
+      // dry run or with its switch off (PRODUCT_SPLIT_MERGE_LIVE).
+      const productSplit = await recheckProductSplits(tx, {
+        runId: run.id,
+        stepId: step.id,
+        dryRun: run.runKind === "dry_run",
+        institutionId: numericRunParam(params, ["institution_id"]),
+      });
+      const productSplitNote = productSplit.matched > 0
+        ? ` Product split re-check: ${productSplit.matched.toLocaleString()} live fee(s) at ${productSplit.institutions.toLocaleString()} institution(s) repeat one printed line under another product (${productSplit.live && !productSplit.dryRun ? `${productSplit.flagged.toLocaleString()} flagged, ${productSplit.takenDown.length.toLocaleString()} archived` : productSplit.dryRun ? "dry run: would take down, nothing written" : "switch off: would take down, nothing written"}).`
+        : "";
       // #2022: fees read from a Canadian bank's document (canadian-document-check.ts), at most hourly.
       const canadianDocument = await recheckCanadianDocuments(tx, {
         runId: run.id,
@@ -1564,6 +1577,18 @@ async function executeAgenticStep(
       const notAccountFeeLineNote = notAccountFeeLine.matched > 0
         ? ` Not-an-account-fee line re-check: ${notAccountFeeLine.matched.toLocaleString()} of ${notAccountFeeLine.checked.toLocaleString()} live fee(s) at ${notAccountFeeLine.institutions.toLocaleString()} institution(s) read a dividend threshold or an online service's monthly charge (${notAccountFeeLine.live && !notAccountFeeLine.dryRun ? `${notAccountFeeLine.flagged.toLocaleString()} flagged, ${notAccountFeeLine.takenDown.length.toLocaleString()} archived` : notAccountFeeLine.dryRun ? "dry run: would take down, nothing written" : "switch off: would take down, nothing written"}).`
         : "";
+      // #1092 (state key 5608): live monthly maintenance fees read from a row under a service's heading
+      // (service-maintenance-check.ts); a report only on a dry run or with its switch off
+      // (SERVICE_MAINTENANCE_TAKEDOWN_LIVE, off).
+      const serviceMaintenance = await recheckServiceMaintenance(tx, {
+        runId: run.id,
+        stepId: step.id,
+        dryRun: run.runKind === "dry_run",
+        institutionId: numericRunParam(params, ["institution_id"]),
+      });
+      const serviceMaintenanceNote = serviceMaintenance.matched + serviceMaintenance.unconfirmed + serviceMaintenance.unjudged > 0
+        ? ` Service-heading maintenance re-check: ${serviceMaintenance.matched.toLocaleString()} of ${serviceMaintenance.checked.toLocaleString()} live monthly maintenance fee(s) at ${serviceMaintenance.institutions.toLocaleString()} institution(s) sit under a service's heading (${serviceMaintenance.live && !serviceMaintenance.dryRun ? `${serviceMaintenance.flagged.toLocaleString()} flagged, ${serviceMaintenance.takenDown.length.toLocaleString()} archived` : serviceMaintenance.dryRun ? "dry run: would take down, nothing written" : "switch off: would take down, nothing written"}); ${serviceMaintenance.unconfirmed.toLocaleString()} unconfirmed (the shared check traces no line), ${serviceMaintenance.unjudged.toLocaleString()} left unjudged past the page limit.`
+        : "";
       // #2057/#2062: a person's holds and corrections filed against verify, read into
       // lessons and a per-check missed tally, at most hourly (verify-misses.ts). Read-only: no fee changes.
       const verifyMisses = await readVerifyMisses(tx, {
@@ -1683,7 +1708,7 @@ async function executeAgenticStep(
         : "";
       return {
         status: "completed",
-        summary: `Darwin verified ${verification.verifiedFees.toLocaleString()} raw fee observations from ${verification.processedRawFees.toLocaleString()} selected rows (${verification.skippedFees.toLocaleString()} skipped).${verification.deferredRawFees ? ` ${verification.deferredRawFees.toLocaleString()} row(s) deferred without a verification decision because current source/raw admission remains unresolved.` : ""}${recheckReceiptNote(recheck)}${release.deferred ? ` ${release.deferred.toLocaleString()} held fee(s) deferred without a release decision.` : ""}${holdRereadNote}${conditionalZero.selected > 0 ? ` Settled ${(conditionalZero.selected - (conditionalZero.deferred ?? 0)).toLocaleString()} conditional-$0 hold(s) (${conditionalZero.verified.toLocaleString()} verified free on the bank's schedule).${conditionalZero.deferred ? ` ${conditionalZero.deferred.toLocaleString()} conditional-$0 hold(s) deferred without a decision.` : ""}` : ""}${verification.categoryChange && verification.categoryChange.candidates > 0 ? ` ${verification.categoryChange.candidates.toLocaleString()} row(s) Knox re-filed since Darwin's decision ${verification.categoryChange.live ? `(${verification.categoryChange.selected.toLocaleString()} judged again under today's category)` : "(switch off: counted, not judged again)"}.` : ""}${verification.categoryChange && verification.categoryChange.takeoverProof.rows > 0 ? ` ${verification.categoryChange.takeoverProof.rows.toLocaleString()} row(s) a re-read took over under a new category ${verification.categoryChange.takeoverProof.live ? "(judged again)" : "(take-over proof switch off: counted, not judged again)"}.` : ""}${liveFragmentNote}${liveFragmentFullNote}${hourlyNote}${hourlyFullNote}${ownUnitNote}${ownUnitFullNote}${maintenanceFrequencyNote}${accountOwnerNote(accountOwner)}${accountOwnerFull ? ` Whole live table: ${(accountOwnerFull.outcomes.refile ?? 0).toLocaleString()} live monthly or minimum balance fees would take a nearer numbered account.` : ""}${nonDepositNote}${nonDepositFullNote}${translatedCopyNote}${productPageRepeatNote}${rereadCategoryNote}${liveNameRefreshNote}${sameLineReplacementNote}${sameLineReadNote}${editionNote}${canadianDocumentNote}${lateChargeBoundNote}${rateFloorNote}${noFeeSentenceNote}${loanPaymentExampleNote}${workedExampleNote}${odTransferNote}${protectionItemNote}${loanPaymentNsfNote}${internationalDirectionNote}${bandedZeroNote}${accountBenefitZeroNote}${zeroWaiverRowNote}${freeListItemNote}${notAccountFeeLineNote}${cardProgramSectionNote}${loanSectionNote}${lineConflictNote}${staleCopyNote}${releaseRepairNote}${releaseRepairFullNote}${documentOwnerNote}${verifyMissNote(verifyMisses)}`,
+        summary: `Darwin verified ${verification.verifiedFees.toLocaleString()} raw fee observations from ${verification.processedRawFees.toLocaleString()} selected rows (${verification.skippedFees.toLocaleString()} skipped).${verification.deferredRawFees ? ` ${verification.deferredRawFees.toLocaleString()} row(s) deferred without a verification decision because current source/raw admission remains unresolved.` : ""}${recheckReceiptNote(recheck)}${release.deferred ? ` ${release.deferred.toLocaleString()} held fee(s) deferred without a release decision.` : ""}${holdRereadNote}${conditionalZero.selected > 0 ? ` Settled ${(conditionalZero.selected - (conditionalZero.deferred ?? 0)).toLocaleString()} conditional-$0 hold(s) (${conditionalZero.verified.toLocaleString()} verified free on the bank's schedule).${conditionalZero.deferred ? ` ${conditionalZero.deferred.toLocaleString()} conditional-$0 hold(s) deferred without a decision.` : ""}` : ""}${verification.categoryChange && verification.categoryChange.candidates > 0 ? ` ${verification.categoryChange.candidates.toLocaleString()} row(s) Knox re-filed since Darwin's decision ${verification.categoryChange.live ? `(${verification.categoryChange.selected.toLocaleString()} judged again under today's category)` : "(switch off: counted, not judged again)"}.` : ""}${verification.categoryChange && verification.categoryChange.takeoverProof.rows > 0 ? ` ${verification.categoryChange.takeoverProof.rows.toLocaleString()} row(s) a re-read took over under a new category ${verification.categoryChange.takeoverProof.live ? "(judged again)" : "(take-over proof switch off: counted, not judged again)"}.` : ""}${liveFragmentNote}${liveFragmentFullNote}${hourlyNote}${hourlyFullNote}${ownUnitNote}${ownUnitFullNote}${maintenanceFrequencyNote}${accountOwnerNote(accountOwner)}${accountOwnerFull ? ` Whole live table: ${(accountOwnerFull.outcomes.refile ?? 0).toLocaleString()} live monthly or minimum balance fees would take a nearer numbered account.` : ""}${nonDepositNote}${nonDepositFullNote}${translatedCopyNote}${productPageRepeatNote}${rereadCategoryNote}${liveNameRefreshNote}${sameLineReplacementNote}${sameLineReadNote}${productSplitNote}${editionNote}${canadianDocumentNote}${lateChargeBoundNote}${rateFloorNote}${noFeeSentenceNote}${loanPaymentExampleNote}${workedExampleNote}${odTransferNote}${protectionItemNote}${loanPaymentNsfNote}${internationalDirectionNote}${bandedZeroNote}${accountBenefitZeroNote}${zeroWaiverRowNote}${freeListItemNote}${notAccountFeeLineNote}${serviceMaintenanceNote}${cardProgramSectionNote}${loanSectionNote}${lineConflictNote}${staleCopyNote}${releaseRepairNote}${releaseRepairFullNote}${documentOwnerNote}${verifyMissNote(verifyMisses)}`,
         detail: {
           selected_raw_fees: verification.selectedRawFees,
           processed_raw_fees: verification.processedRawFees,
@@ -1729,6 +1754,7 @@ async function executeAgenticStep(
           live_name_refresh: liveNameRefreshDetail(liveNameRefresh),
           same_line_replacement_check: sameLineReplacementDetail(sameLineReplacement),
           same_line_read_check: sameLineReadDetail(sameLineRead),
+          product_split_check: productSplitDetail(productSplit),
           edition_effective_check: editionCheckDetail(editions),
           canadian_document_check: canadianDocumentDetail(canadianDocument),
           late_charge_bound_check: lateChargeBoundDetail(lateChargeBound),
@@ -1745,6 +1771,7 @@ async function executeAgenticStep(
           zero_waiver_row_check: zeroWaiverRowDetail(zeroWaiverRow),
           free_list_item_check: freeListItemDetail(freeListItem),
           not_account_fee_line_check: notAccountFeeLineDetail(notAccountFeeLine),
+          service_maintenance_check: serviceMaintenanceDetail(serviceMaintenance),
           card_program_section_check: cardProgramSectionDetail(cardProgramSection),
           loan_section_check: loanSectionDetail(loanSection),
           line_conflict_check: lineConflictDetail(lineConflict),
@@ -2681,6 +2708,14 @@ async function executeAgenticStep(
             would_refuse: published.sameLineReadCheck.wouldRefuse,
             refused: published.sameLineReadCheck.refused,
             samples: published.sameLineReadCheck.samples,
+          },
+          // A re-read of a live fee's line under another product (product-split.ts): merged when its switch is on.
+          product_split_check: {
+            live: published.productSplitCheck.live,
+            matched: published.productSplitCheck.matched,
+            read_wins: published.productSplitCheck.readWins,
+            live_wins: published.productSplitCheck.liveWins,
+            samples: published.productSplitCheck.samples,
           },
           near_name_collapse: {
             live: nearNameCollapse.live,

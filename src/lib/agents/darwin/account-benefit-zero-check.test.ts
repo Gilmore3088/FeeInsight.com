@@ -38,7 +38,8 @@ describe("Darwin's account-benefit $0 re-check (#1397)", () => {
     expect(found.matches.map((fee) => fee.feePublishedId)).toEqual(WHITELIST_MATCHES);
     expect(WHITELIST_MATCHES.every((id) => fixture.matched.includes(id))).toBe(true);
     expect(WHITELIST_MISSES.every((id) => fixture.matched.includes(id) && !WHITELIST_MATCHES.includes(id))).toBe(true);
-    expect(found.byKind).toEqual({ holder_grant: 6, account_waivers: 4, feature_list: 2 });
+    // v2 (Knox v171): the account table cell kind reads none of them.
+    expect(found.byKind).toEqual({ holder_grant: 6, account_waivers: 4, feature_list: 2, account_column: 0 });
     const core = found.matches.filter((fee) => ["overdraft", "nsf", "stop_payment"].includes(fee.canonicalFeeKey ?? "") || fee.canonicalFeeKey?.startsWith("wire_"));
     expect(core.map((fee) => [fee.feePublishedId, fee.institutionId, fee.canonicalFeeKey, fee.kind])).toEqual([
       [100941, 6914, "wire_domestic_incoming", "feature_list"],

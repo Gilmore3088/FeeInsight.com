@@ -465,12 +465,36 @@ export function checkingNamePriceAmbiguous(excerpt: string | null | undefined, f
  * card lines get no deposit-fee category, skip-a-pay and loan processing are lending
  * fees, and a price is named by the words nearest before it (never by words after it).
  */
+/**
+ * v171 (backlog dry run 4): an ACH, check, item, draft or debit named insufficient, with no "funds"
+ * ("ACH - Insufficient", "Check - Insufficient", "Insufficient Item"): the NSF row.
+ */
+export const ITEM_INSUFFICIENT = /\b(?:ACH|checks?|items?|drafts?|debits?)\s*[-–:/]?\s*insufficient\b(?!\s*(?:funds?|balances?|deposits?|collateral)\b)|\binsufficient\s*[-–:/]?\s*(?:ACH|checks?|items?|drafts?|debits?)\b/i;
+
+/**
+ * v171 (backlog dry run 4): the held-name rule's short stop payment ("Stop Pay", "Stop-Pay", "Stop Pmt"),
+ * tried in FEE_PATTERNS right after "stop payment(s)" while the held-name rules are on.
+ */
+export const STOP_PAY_SHORT: FeePattern = { key: "stop_payment", pattern: /\bstop[- ]?pay\b(?![- ]?ments?)|\bstop p(?:y)?mts?\b/i };
+
+/**
+ * v172 (backlog dry run 5): a charge the name ties to the low or minimum balance ("low balance service
+ * charge", "Minimum Balance Fee", "Below Minimum Balance Charge"), read ahead of the monthly service
+ * charge rule. A minimum balance that only avoids another fee ("minimum balance to avoid the monthly
+ * service charge") is not one: the charge word must follow the balance words. Nor is a name that offers
+ * both ("Monthly or Minimum Balance Service Charge"): the monthly service charge rule keeps it.
+ */
+export const LOW_BALANCE_CHARGE = /(?<!\bmonthly\s+(?:or|and|\/)\s+)\b(?:low|minimum|min\.?)[- ]balance\s+(?:service\s+)?(?:fees?|charges?)\b/i;
+
 export const FEE_PATTERNS: FeePattern[] = [
   // A copy of something is a copy fee, whatever it copies ("Photocopy of paid item",
   // "Reproduction of cashier's checks", "ATM card supporting documents photocopy").
+  // v172 (backlog dry run 5): a statement's copy is no copy of an item, though the copy is priced per
+  // item (one that names checks or drafts still files here): Epb Employees FCU's "Statement Copies Per
+  // Item | $1" (doc 40771) filed check_image here, ahead of the statement-copy rule below.
   {
     key: "check_image",
-    pattern: /\b(?:photo|fax )?cop(?:y|ies)\b.{0,20}\b(?:paid |cancell?ed |cleared )?(?:checks?|drafts?|items?)\b|\b(?:check|draft)s?\b[\s/()a-z]{0,12}\b(?:photo)?cop(?:y|ies)\b/i,
+    pattern: /\b(?:photo|fax )?cop(?:y|ies)\b.{0,20}\b(?:paid |cancell?ed |cleared )?(?:checks?|drafts?)\b|(?<!\bstatements?\s{1,3})\b(?:photo|fax )?cop(?:y|ies)\b.{0,20}\b(?:paid |cancell?ed |cleared )?items?\b|\b(?:check|draft)s?\b[\s/()a-z]{0,12}\b(?:photo)?cop(?:y|ies)\b/i,
   },
   { key: "document_reproduction", pattern: /\b(?:reproduction|supporting documents?)\b/i },
   // A box size with three dimensions ("3"X10"X 21"") is a safe deposit box anywhere on the line.
@@ -543,6 +567,12 @@ export const FEE_PATTERNS: FeePattern[] = [
     key: "nsf",
     pattern: /\b(NSF|non[-\s]?sufficient|insufficient funds|return(ed)? (checks?|items?|ach|drafts?))\b/i,
   },
+  // v171 (backlog dry run 4): an item and "insufficient" with no "funds" is the NSF row: Four Corners
+  // FCU's "| ACH - Insufficient | $ 30.00 |" (doc 41706) named no fee, so the page's own NSF price went
+  // unread and its "Returned Check | $ 25.00" stayed NSF beside it (`withReturnBesideNsf` needs that
+  // price) while live 149144 files the same line as the deposited item return. A balance, deposit or
+  // collateral that is insufficient is no NSF.
+  { key: "nsf", pattern: ITEM_INSUFFICIENT },
   {
     key: "rush_card",
     // v68: "Rushed Debit Card Request", "Rush Plastic Order (2-day)", "Visa CHECKCARD".
@@ -587,10 +617,19 @@ export const FEE_PATTERNS: FeePattern[] = [
     pattern: /\b(domestic)?\s*(incoming|receive|received).{0,40}\bwires?\b|\bwires?\b.{0,30}\b(incoming|received)\b/i,
   },
   { key: "stop_payment", pattern: /\bstop payments?\b/i },
+  // v171 (backlog dry run 4): a short "Stop Pay" files as the stop payment here, before the check, money
+  // order and draft rules below take the row by its other words: Northwest Missouri Regional FCU's
+  // "Counter Check Stop Pay Fee (per check) $25.00" (doc 42066) went to counter_check, because "Stop
+  // Pay" was only a held-name rule (`HELD_NAME_PATTERNS`), tried after every rule here. Read only
+  // while the held-name rules are on (`STOP_PAY_SHORT`), so the switch still holds them all off.
+  STOP_PAY_SHORT,
   { key: "money_order", pattern: /\bmoney orders?\b/i },
   {
     key: "cashiers_check",
-    pattern: /\b(cashier'?s?\s+checks?|official checks?|certified checks?|bank checks?|teller'?s?\s+checks?|corporate checks?|treasurer'?s?\s+checks?)\b/i,
+    // v172 (backlog dry run 5): a short note may sit between the words ("Cashier's (Counter) Check | $3.00",
+    // Community Powered FCU, doc 42174), so the row's own label files it and never takes the section
+    // heading "Money Orders/ Cashier's Checks" into its name (money_order, tried first).
+    pattern: /\b(cashier'?s?\s+(?:\([^()]{1,20}\)\s*)?checks?|official checks?|certified checks?|bank checks?|teller'?s?\s+checks?|corporate checks?|treasurer'?s?\s+checks?)\b/i,
   },
   { key: "counter_check", pattern: /\b(counter|temporary|starter) checks?\b/i },
   // v16: "Checkbook Balancing" is account research, not check printing.
@@ -657,6 +696,12 @@ export const FEE_PATTERNS: FeePattern[] = [
   // v54: a copy charged by the page is document reproduction, even under research (`PER_PAGE_COPY`).
   { key: "document_reproduction", pattern: PER_PAGE_COPY },
   { key: "account_research", pattern: /\b(account research|research fee|reconciliation|account balancing)\b/i },
+  // v172 (backlog dry run 5): a charge named for the low or minimum balance is the minimum balance fee,
+  // though it is called a service charge: Citizens Bank of Ada's "A low balance service charge of $7.50
+  // will be assessed if the average daily balance ... falls below $1,500.00" (doc 41229) filed as monthly
+  // maintenance by the "service charge" rule below, while the account expert read the same line as
+  // minimum_balance, so one line went live under both.
+  { key: "minimum_balance", pattern: LOW_BALANCE_CHARGE },
   {
     key: "monthly_maintenance",
     pattern: /\b(monthly (service|maintenance)|maintenance (fee|charge)|monthly (fee|charge)|account service (fee|charge)|service charge)\b/i,
@@ -785,7 +830,7 @@ export const KNOX_HELD_NAME_RULES_LIVE = true;
 export const RETURNED_STATEMENT = /\b(?:return(?:ed)?|undeliverable|undelivered)\s+(?:mail(?:ed)?\s+)?statements?\b/i;
 
 export const HELD_NAME_PATTERNS: FeePattern[] = [
-  { key: "stop_payment", pattern: /\bstop[- ]?pay\b(?![- ]?ments?)|\bstop p(?:y)?mts?\b/i },
+  STOP_PAY_SHORT,
   { key: "reconveyance", pattern: /\breconvey(?:ance|ances)?\b/i },
   // A bare "Early Closure Fee" row (with its note), a club's withdrawal, or a closure inside a
   // short window. A sentence's "Early closure fee of $500 may apply" names no account: on Great
@@ -1616,7 +1661,7 @@ export function classifyPatternKey(value: string): string | null {
     // the abbreviation between the words hid Flagstar's "Linked Account (Deposit Overdraft (OD)
     // Protection) transaction fee | No charge" (institution 33) from the transfer patterns.
     .replace(OVERDRAFT_ABBREVIATION_PROTECTION, "$1 ");
-  let key = FEE_PATTERNS.find((entry) => entry.pattern.test(text))?.key ??
+  let key = FEE_PATTERNS.find((entry) => (heldNameRulesOn || entry !== STOP_PAY_SHORT) && entry.pattern.test(text))?.key ??
     (heldNameRulesOn ? HELD_NAME_PATTERNS.find((entry) => entry.pattern.test(text))?.key : null) ??
     V101_HELD_VOCABULARY.find((entry) => entry.pattern.test(text))?.key ??
     // v161: names no rule above files, which the taxonomy and DECISIONS already place.

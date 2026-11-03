@@ -76,6 +76,7 @@ export const NOT_REPLAYABLE_REASONS: Readonly<Record<string, string>> = {
   PDF_COLUMN_READING_LIVE: "a Rosetta reader switch: it changes how a PDF page's text runs become lines, and every golden member is text already read, so no golden number can move; it is measured on the answer-key documents' own bytes instead (shadow-lab experiment `pdf-column-reading`, `source-replay.test.ts`; `pdf-column-reading-inert.test.ts` holds the switch-off read to main's text)",
   PRODUCT_PAGE_CONFLICT_LIVE: `rolls back a product page's fee that conflicts with the bank's schedule; ${ONE_DOCUMENT}`,
   PRODUCT_PAGE_REPEAT_TAKEDOWN_LIVE: `takes down a product page's repeat of a schedule line (\`scheduleTwin\`); ${ONE_DOCUMENT}`,
+  PRODUCT_SPLIT_MERGE_LIVE: `merges a re-read of a live fee's printed line under another product (publish supersedes or refuses; Darwin takes the loser down); ${ONE_DOCUMENT}; measured instead by a read-only pass over every live pair on prod (Nov 3, off: 119 candidate pairs, 65 fees at 49 institutions would come down)`,
   PUBLISH_REFUSE_DUPLICATES_LIVE: `refuses rows the exact-duplicate collapse would close against live fees from earlier publish steps; ${ONE_DOCUMENT}`,
   PUBLISH_REFUSE_PAGE_COPIES_LIVE: `refuses rows the page-copy collapse would close; ${ONE_DOCUMENT}`,
   PUBLISH_REFUSE_SAME_LINE_READS_LIVE: "not wired yet: refuses a second read of a live fee's printed line at publish; the replayed publish gate does not call it (Darwin's same-line read sweep, which uses the same `readsSameLine`, is replayed)",

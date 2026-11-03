@@ -239,10 +239,33 @@ function htmlRowPairing(report: SwitchDryRunReport): string[] {
   ];
 }
 
+function serviceMaintenance(report: SwitchDryRunReport): string[] {
+  const { rowsRead, summary } = report.serviceMaintenance;
+  const lines = [
+    "## 9. SERVICE_MAINTENANCE_TAKEDOWN_LIVE (#1092, Knox v174)",
+    "Method: every live flat monthly maintenance fee Darwin's service-heading re-check selects (its own SQL; texts only where they print a service's words), " +
+      "judged by the re-check's own function (findServiceMaintenance) on the text Knox read: Knox's row and the line checkFeeAgainstSource traces the fee to " +
+      "must both sit under a heading that names only services (online, mobile, internet or text banking, bill pay, e-statements, remote deposit, Zelle, treasury). " +
+      "Admin-corrected fees are never selected.",
+    cap(rowsRead, "live monthly maintenance rows"),
+    `LIVE TAKEDOWN: switched on, ${summary.wouldTakeDown} of ${summary.checked} selected live monthly maintenance fees at ${summary.institutions} institutions would come down ` +
+      `(each after its 12-hour second look): ${summary.free} at $0, ${summary.priced} priced; by services: ${counts(summary.byServices)}. ` +
+      `${summary.alsoNotAccountFeeLine} more matches are also matched by main's online-services rule (onlineServiceMonthlyFee) and covered by NOT_ACCOUNT_FEE_LINE_TAKEDOWN_LIVE: not counted here. ` +
+      `${summary.noText} selected fees have no stored text or a text with no service word and are not judged. ` +
+      `${summary.unconfirmed} sit under a service's heading on Knox's row but the shared check traces no line: unconfirmed, never taken down. ` +
+      `${summary.unjudged} live monthly maintenance fees past the row cap were left unjudged${summary.unjudged > 0 ? " (re-run with a higher --row-cap)" : ""}.`,
+  ];
+  if (summary.samples.length) {
+    lines.push(`Would come down (first ${summary.samples.length}):`,
+      ...summary.samples.map((m) => `  pub ${m.feePublishedId} | inst ${m.institutionId} | ${money(m.amount)} "${clip(m.feeName, 60)}" | heading: "${clip(m.heading, 80)}" | line: "${clip(m.sourceLine)}" | traced: "${clip(m.tracedLine)}"`));
+  }
+  return lines;
+}
+
 function pdfColumnReading(report: SwitchDryRunReport): string[] {
   const { pdf, legacy, byReader } = report.pdfColumnReading.summary;
   return [
-    "## 9. PDF_COLUMN_READING_LIVE (#1092, Rosetta read.pdf_layout)",
+    "## 10. PDF_COLUMN_READING_LIVE (#1092, Rosetta read.pdf_layout)",
     "Method: exposure only. The audit reads the database, and the PDF bytes are in the document vault, so it cannot re-read a document " +
       "or say how many stored texts would change. It counts current copies whose newest text the PDF layout reader or free OCR wrote " +
       "(read.pdf_layout, read.ocr_tesseract) and the live fees on them. The change itself is measured on the answer-key documents' bytes " +
@@ -256,9 +279,9 @@ function pdfColumnReading(report: SwitchDryRunReport): string[] {
 
 function accuracy(report: SwitchDryRunReport): string[] {
   const a = report.liveAccuracy;
-  if (!a.readable) return ["## 10. Live accuracy", "The fresh audit could not read the live fees: accuracy is unknown."];
+  if (!a.readable) return ["## 11. Live accuracy", "The fresh audit could not read the live fees: accuracy is unknown."];
   return [
-    "## 10. Live accuracy (stored source, not the bank's current schedule)",
+    "## 11. Live accuracy (stored source, not the bank's current schedule)",
     `Method: ${a.method}`,
     `Seed ${a.seed}; source check v${a.sourceCheckVersion}; category guard v${a.categoryGuardVersion}.`,
     `Sampled ${a.sampled}; scorable ${a.scorable}; no stored text ${a.noText}.`,
@@ -273,7 +296,7 @@ export function formatSwitchDryRuns(report: SwitchDryRunReport): string {
     `# Switch dry runs (read-only), ${report.generatedAt}`,
     "One read-only snapshot for the whole run: it holds back vacuum while it runs, so run it off-peak (or on a replica).",
     `Samples capped at ${report.options.sampleCap} per list; totals count every row read.` +
-      (report.options.institutionIds ? ` Sections 1-7 limited to institutions ${report.options.institutionIds.join(", ")}.` : ""),
+      (report.options.institutionIds ? ` Sections 1-7 and 9 limited to institutions ${report.options.institutionIds.join(", ")}.` : ""),
     "",
     ...dailyCap(report),
     "",
@@ -291,6 +314,7 @@ export function formatSwitchDryRuns(report: SwitchDryRunReport): string {
     "",
     ...htmlRowPairing(report),
     "",
+    ...serviceMaintenance(report),
     ...pdfColumnReading(report),
     "",
     ...accuracy(report),

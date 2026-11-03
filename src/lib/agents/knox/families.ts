@@ -243,7 +243,10 @@ export function priceWindows(text: string): PriceWindow[] {
         ? nameAfterPrice(line.slice(value.end + qualifier.length))
         : null;
       // A price at the start of a line belongs to the name on the line above.
-      const stacked = !priceFirst && opensLine && pending != null;
+      // v172 (backlog dry run 5): unless it is a free word that goes on to name its own item ("No Charge
+      // on First Visa Debit Card.", `freeWordOnItem`): Citizens Bank of Ada's perk "Monthly Statements
+      // with Check Images" took the debit card's "No Charge" as a $0 check image fee (doc 41229).
+      const stacked = !priceFirst && opensLine && pending != null && !(value.zero && freeWordOnItem(line.slice(value.start)));
       const rawName = priceFirst ?? (stacked ? `${pending} ${own}` : own);
       if (priceFirst) priceFirstLine = true;
       windows.push({
@@ -300,6 +303,29 @@ function tierBase(feeName: string): string {
     .replace(/\s*[-–,(]?\s*\b(?:\d+(?:st|nd|rd|th)|first|second|third|each|per)\b.*$/i, "")
     .trim();
   return base.length >= 3 ? base : feeName;
+}
+
+/**
+ * v172 (backlog dry run 5): a free word that opens a line and goes on to name the item it prices ("No
+ * Charge on First Visa Debit Card.", "Free on your first order of checks"): that item's, never a price
+ * for the name on the line above. A note on when the line above is free ("Free on the first 3
+ * withdrawals", "No charge on balances over $500") names no item: no figure, and a card, check, order,
+ * box or statement word after "on".
+ */
+const FREE_WORD_ON_ITEM =
+  /^\s*(?:FREE|NONE|No Charge|NO CHARGE|N\/C)\s+on\s+(?:(?:the|your|one|an?|first|1st|initial)\s+)*(?![^\n]*\d)[A-Za-z][^\n]{0,60}?\b(?:cards?|checks?|orders?|box(?:es)?|statements?)\b/i;
+
+export function freeWordOnItem(line: string): boolean {
+  return FREE_WORD_ON_ITEM.test(line);
+}
+
+/**
+ * v172: the text right after a price opens with a name a rule files ("Monthly Service Charge." after
+ * "Account Fees: $4.95"): the price is that name's.
+ */
+function feeNamedAfterPrice(after: string): boolean {
+  const named = after.match(/^\s*([A-Z][A-Za-z'’ -]{2,60}?)\s*(?:[.;,|(]|$)/)?.[1];
+  return named != null && classifyPatternKey(named) != null;
 }
 
 interface FamilyMatch {
@@ -407,7 +433,12 @@ export function runFamilyExpert(expert: FamilyExpert, windows: PriceWindow[]): E
     // A tier row under the fee above it: "1st item $25" after "Overdraft fee".
     // A charge by the period, stated right after the price ("$5.00 per month").
     const periodic = /^\s*(?:per\s+(?:month|statement(?:\s+cycle)?|quarter)|\/\s*(?:mo|month)\b|monthly\b|a month\b)/i.test(window.after);
-    let match = matchFor(expert, name, heading, periodic);
+    // v172 (backlog dry run 5): a label whose price is followed by the fee's own name ("Account Fees: $4.95
+    // Monthly Service Charge.") names nothing itself, so it never borrows the heading above: Citizens Bank
+    // of Ada's perk line "Monthly Statements with Check Images" made the account's $4.95 monthly charge a
+    // check image fee (doc 41229). The rules pass reads the charge by the name after its price.
+    const namedAfterPrice = !window.priceFirst && heading != null && !classifyPatternKey(name) && feeNamedAfterPrice(window.after);
+    let match = matchFor(expert, name, namedAfterPrice ? null : heading, periodic);
     if (!match && recent && TIER_LABEL.test(name) && !classifyPatternKey(name)) {
       match = { hint: recent.hint, feeName: `${tierBase(recent.feeName)} (${name})` };
     }

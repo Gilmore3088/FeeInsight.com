@@ -436,10 +436,13 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   SAME_LINE_REPLACEMENT_CHECK_VERSION: "First version: each verify step re-reads every live fee after a confirmed same-line takedown (no cursor, a few dozen rows); its switch is on (Oct 26), so matches come down after the second look; nothing older to replay.",
   // v1 (#1876): two live reads of one printed line (same document, line, category and amount).
   SAME_LINE_READ_CHECK_VERSION: "First version: each verify step re-reads every live fee that shares its stored source line with another (no cursor, a few hundred rows); its switch is on (Oct 26), so matches come down after the second look; nothing older to replay.",
+  // v1 (Nov 3): one printed line live under two products (product-split-check.ts).
+  PRODUCT_SPLIT_CHECK_VERSION: "First version: each verify step re-reads every pair of live dollar fees of one institution, category, variant and amount under different products whose stored lines fold to the same words, on one document or an older copy and its current copy (no cursor, 119 pairs on Nov 3); its switch (PRODUCT_SPLIT_MERGE_LIVE) is off, so it only reports; nothing older to replay.",
   // v1 (#1882): a live $0 overdraft that is only the smallest band of a priced cell or row.
   BANDED_ZERO_CHECK_VERSION: "First version: each verify step re-reads every live $0 overdraft, NSF and continuous overdraft fee (about 140 rows, no cursor); its switch is on (Oct 26), so matches come down after the second look; nothing older to replay.",
   // v1 (#1397): a live $0 that is an item in one named account's list of benefits (Knox rules v157 holds new ones).
-  ACCOUNT_BENEFIT_ZERO_CHECK_VERSION: "First version: each verify step re-reads every live $0 fee whose stored line is a free item (no cursor, 142 rows on Nov 1); its switch (DARWIN_ACCOUNT_BENEFIT_ZERO_LIVE) is off, so it only reports; nothing older to replay.",
+  ACCOUNT_BENEFIT_ZERO_CHECK_VERSION: "First version: each verify step re-reads every live $0 fee whose stored line is a free item (no cursor, 142 rows on Nov 1); its switch (DARWIN_ACCOUNT_BENEFIT_ZERO_LIVE) is off, so it only reports; nothing older to replay. v2 (Nov 3, Knox v171): also reads an item under \"This account also includes:\" and a perk an account's own cell of a comparison table prices free, and selects live $0 cell rows on texts with an account header (308 candidates on Nov 3, the same 12 matches as v1, none new); still a report while the switch is off, re-read every step, nothing to replay.",
+  SERVICE_MAINTENANCE_CHECK_VERSION: "First version: each verify step re-reads every live flat monthly maintenance fee whose text prints a service's words (no cursor; not yet counted on prod); its switch (SERVICE_MAINTENANCE_TAKEDOWN_LIVE) is off, so it only reports; nothing older to replay.",
   NOT_ACCOUNT_FEE_LINE_CHECK_VERSION: "First version: each verify step re-reads every live flat fee whose Knox line says no dividend or interest is earned, and every live monthly maintenance fee on a text that prints an online services section title (no cursor; 493 rows on Nov 2, 2 matches, live 73916 and 152003); its switch (NOT_ACCOUNT_FEE_LINE_TAKEDOWN_LIVE) is off, so it only reports; nothing older to replay.",
   FREE_LIST_ITEM_CHECK_VERSION: "First version: each verify step re-reads every live flat priced fee whose Knox line joins a name line to a price line on a text that prints a free services list heading (no cursor; 39 rows on Nov 2, 1 match, live 159428); its switch (FREE_LIST_ITEM_TAKEDOWN_LIVE) is off, so it only reports; nothing older to replay.",
   ZERO_WAIVER_ROW_CHECK_VERSION: "First version: each verify step re-reads every live flat $0 fee whose stored line opens with a no-fee phrase or says \"to avoid / to waive\" (no cursor; not yet counted on prod); its switch (ZERO_WAIVER_ROW_TAKEDOWN_LIVE) is off, so it only reports; nothing older to replay. v2 (Nov 2, Knox v168): also reads a $0 whose free word is advice in a \"Ways to Avoid\" section (avoid_fee_advice); read-only on prod, 2 live fees match (89909, 105000 at Financial Health FCU), reported only while the switch is off.",
@@ -747,6 +750,28 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
     // are gone and no right read is lost; on 60 fresh random texts (main vs head) 5 reads are renamed only.
     // Darwin's live re-check (`darwin.not_account_fee_line`, NOT_ACCOUNT_FEE_LINE_TAKEDOWN_LIVE off) reports
     // the live ones (73916, 152003). No replay. Floor stays v97.
+    // v171 (fourth re-read backlog dry run, Nov 3): a short "Stop Pay" files as the stop payment ahead of the
+    // check rules (`STOP_PAY_SHORT`); a list of free items one per line is no stacked table (table v13,
+    // `freeItemList`); an item under "This account also includes:" and an account comparison table's perk
+    // cell are one account's benefit (`accountBenefitZeroOf`, held); an item named insufficient with no
+    // "funds" is the NSF row (`ITEM_INSUFFICIENT`), so the plain returned check beside it is the deposited
+    // item return. On the 40 rb4 texts (v170 vs v171) every wrong and doubtful row is gone and no right row is
+    // lost; rb3 gains one right row; on 60 fresh random texts (main vs head) six crossed-over perk reads go and
+    // one NSF read is added. Darwin's account-benefit re-check v2 (switch off) matches no new live fee. No
+    // replay. Floor stays v97.
+    // v172 (fifth re-read backlog dry run, Nov 3): a statement's copy priced per item is document
+    // reproduction; a low or minimum balance charge is minimum_balance ahead of "service charge"
+    // (`LOW_BALANCE_CHARGE`); a label priced before the fee's own name never borrows a heading
+    // (`feeNamedAfterPrice`); a free word naming its own item never prices the line above (`freeWordOnItem`);
+    // "Cashier's (Counter) Check" files by its own label. On the 40 rb5 texts (v171 vs v172) the six wrong
+    // rows are gone (two re-filed right, four dropped) and the other 93 changed rows are unchanged; rb, rb3 and
+    // rb4 do not change; rb2 re-files three already-stored "Service charge (Minimum Balance Fee)" reads to
+    // minimum_balance. No Darwin re-check (no guard rule). No replay. Floor stays v97.
+    // v174 (#1092, Nov 2, state key 5608; v164-v172 are on main, v173 is #2967's): a monthly maintenance read, $0 or priced, whose row sits under a
+    // heading that names a service rather than an account (`serviceMaintenanceOf`) is held as a range for
+    // review, never sent to Darwin. New reads only: on the 291 frozen texts no read changes. Darwin's live
+    // re-check (`darwin.service_maintenance_heading`, SERVICE_MAINTENANCE_TAKEDOWN_LIVE off) reports the
+    // live ones. No replay. Floor stays v97.
     {
       key: "knox.rules",
       owner: "knox",
