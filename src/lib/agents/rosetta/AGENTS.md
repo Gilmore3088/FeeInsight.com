@@ -95,7 +95,7 @@ Rosetta owns source text normalization.
   facing a label, or a label running into the gutter with its price just past it; so does a right
   side that is one more column of a left table: both sides' lines grouped into blocks (a lower-case
   or "(" line goes on with the block above; a right line facing a left continuation goes on too),
-  a right line facing the nearest left line within half a pitch, and half or more of the right
+  a right line facing the nearest left line within half a pitch, and 42% or more of the right
   blocks starting beside a left block that ends a line in an amount (cell, leader or one space)
   without a fee row of their own. Rotated text
   refuses. When no gutter runs the whole page, the page is cut into regions at lines with one

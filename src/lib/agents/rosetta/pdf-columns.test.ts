@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { PDF_COLUMN_READING_LIVE } from "./pdf-columns";
+import { PDF_COLUMN_READING_LIVE, rowStartShare } from "./pdf-columns";
+import { pageGutters, positioned } from "./pdf-geometry";
 import { layoutDocumentText, layoutPageResult, layoutPageText, type PdfTextItem } from "./pdf-layout";
 
 /**
@@ -28,6 +29,12 @@ const on = (items: PdfTextItem[]) => layoutPageResult(items, { columnReading: tr
 const off = (items: PdfTextItem[]) => layoutPageResult(items, { columnReading: false }).text;
 const linesOf = (text: string) => text.split("\n");
 const y = (row: number, top = TOP, pitch = PITCH) => top - row * pitch;
+/** The highest block-start share over the page's gutters (`rowStartShare`), rounded to two places. */
+const topShare = (items: PdfTextItem[]) => {
+  const gutters = pageGutters(positioned(items));
+  const shares = gutters ? gutters.middles.map((middle) => rowStartShare(gutters.items, middle)) : [0];
+  return Math.round(Math.max(...shares) * 100) / 100;
+};
 
 const LEFT_FEES = [
   ["Overdraft item", "$35.00"], ["Returned item", "$30.00"], ["Stop payment", "$25.00"],
@@ -451,6 +458,34 @@ describe("Rosetta pdf-columns: independent columns (PDF_COLUMN_READING_LIVE)", (
     it("should_keep_prose_beside_a_fee_table_as_its_description_column", () => {
       const items = [...labelPriceTable(LEFT_FEES, 40, 140), ...PROSE.map((text, row) => run(text, 250, TOP - 6 - row * PITCH))];
       expect(on(items)).toBe(off(items));
+    });
+
+    // The threshold sits midway (0.42) between the real splits' highest share (0.34) and the
+    // narrowest fee-table shapes the reviews found (0.50); both sides are pinned here.
+    it("should_refuse_the_fee_table_shapes_that_score_one_half", () => {
+      const headed = NOTED_ROWS.flatMap(([label, price, note], row) => (row % 2
+        ? [run(label, 40, y(row)), run(price, 180, y(row)), run(note, 270, y(row))]
+        : [run(label.toUpperCase(), 40, y(row)), run(note, 270, y(row)), run(`  ${label}`, 40, y(row + 0.5)), run(price, 180, y(row + 0.5))]));
+      const fourColumns = NOTED_ROWS.flatMap(([label, price, note], row) => {
+        const split = /^(.*?) (\$[\d.]+)$/.exec(note);
+        return [run(label, 40, y(row)), run(price, 180, y(row)),
+          ...(split ? [run(split[1], 270, y(row)), run(split[2], 400, y(row))] : [run(note, 270, y(row))])];
+      });
+      for (const [name, items] of [["sections headed by unpriced rows", headed], ["a four-column table", fourColumns]] as const) {
+        expect(topShare(items), name).toBe(0.5);
+        expect(on(items), name).toBe(off(items));
+      }
+    });
+
+    it("should_split_a_page_whose_right_blocks_start_on_priced_rows_a_third_of_the_time", () => {
+      // Every third right line is a single cell beside a priced row; the others are fee rows of their own.
+      const items = NOTED_ROWS.slice(0, 15).flatMap(([label, price, note], row) => [
+        run(label, 40, y(row)), run(price, 180, y(row)),
+        ...(row % 3 === 0 ? [run(note, 300, y(row))] : [run(RIGHT_FEES[row][0], 300, y(row)), run(RIGHT_FEES[row][1], 410, y(row))]),
+      ]);
+      expect(topShare(items)).toBe(0.33);
+      expect(on(items)).not.toBe(off(items));
+      expect(linesOf(on(items))[0]).toBe("Overdraft fee (per item) | $30.00");
     });
 
     it("should_keep_a_member_and_non_member_table_whose_second_price_opens_with_words", () => {

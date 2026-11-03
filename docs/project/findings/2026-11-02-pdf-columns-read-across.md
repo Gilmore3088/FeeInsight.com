@@ -39,7 +39,7 @@ runs only when no earlier detector fires. A gutter splits the page only when:
   "$ | 3.00", a bare "30.00", Free, No charge, N/A, Varies, with at most a unit after it), in its own
   cell or not: dot-leader rows and "Label $30" rows count. A right block starts on a row when it
   faces a priced row's first line and is not a fee row of its own (a cell row with a price, a
-  dot-leader line). When half or more of the right blocks start on rows, the split is refused.
+  dot-leader line). When 42% or more of the right blocks start on rows, the split is refused.
   - Row alignment alone could not separate them: the real splits share 36% to 100% of their
     baselines (texas:841's facing pages 90-100%). A line-count share (round two) let a wrapped
     description column through; exact-baseline, cell-only priced rows (round three) let notes beside
@@ -47,7 +47,8 @@ runs only when no earlier detector fires. A gutter splits the page only when:
   - Block-start share on the 27 splits of the 18 replay PDFs: 0.00 on 12; 0.07; 0.08 on 2; 0.13;
     0.14; 0.15; 0.16 on 3; 0.19; 0.25; 0.29; 0.32; 0.33; at most 0.34. The reviews' fee-table
     shapes score 0.50 (sections headed by unpriced rows; a four-column table) to 1.00. The threshold
-    is 0.5.
+    is 0.42, midway between 0.34 and 0.50; `pdf-columns.test.ts` pins both 0.50 shapes as refused
+    and a 0.33 page as split.
   - Cost: fee lines beside fee lines on shared baselines, neither cut into cells ("Label $30" beside
     "Rush delivery $50"), read like a table's notes and keep their rows; so does prose set beside a
     fee table, whatever its leading. None of the 19 replay gains has that shape;
@@ -60,7 +61,7 @@ strip of bullet glyphs joins its column (U.S. Century). When no gutter runs the 
 page is cut into regions at lines holding one item half the text width wide (a title, a footnote),
 and each region is tried alone; spanning lines are read whole.
 
-**Tests:** 58 near-miss tests on synthetic positioned runs (`pdf-columns.test.ts`): two fee lists,
+**Tests:** 60 near-miss tests on synthetic positioned runs (`pdf-columns.test.ts`): two fee lists,
 offset baselines, two side-by-side tables, prose beside a table both ways, account terms, full-width
 title, heading mid-page, spanning footnotes, title plus footnotes, bullet strip, booklet spread,
 landscape tables, three lists, headings and wrapped labels inside a column, box-size rows; and kept

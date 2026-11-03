@@ -101,7 +101,7 @@ function rowCrossesGutter(items: PositionedItem[], middle: number): boolean {
  * At least this share of the right side's blocks starting on a left priced row marks one table.
  * Measured on the 27 splits of the 18 replay PDFs (#1092): see `findings/2026-11-02-pdf-columns-read-across.md`.
  */
-const MIN_ROW_START_SHARE = 0.5;
+const MIN_ROW_START_SHARE = 0.42;
 const LEADER = /\.{4,}/;
 /**
  * A line ending in an amount: "$30.00", "$ | 3.00", a bare "30.00", or a word that stands for a
