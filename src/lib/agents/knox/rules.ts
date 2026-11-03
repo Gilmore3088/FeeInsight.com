@@ -1,3 +1,4 @@
+import { stopPaymentVariantName, stopPaymentVariantRows } from "@/lib/custom-report/stop-payment-variant";
 import { IRA_SECTION_TARGET, iraSectionClosingFee } from "@/lib/custom-report/ira-section-fee";
 import { scopedFeeStatements, type FeeApplicability } from "@/lib/fee-audience";
 import { CELL_SEPARATOR } from "@/lib/agents/rosetta/html-dom";
@@ -1743,6 +1744,25 @@ export function stopPaymentListRead(candidate: ExtractedFeeCandidate, text: stri
   if (!label || label.includes("|") || label.toLowerCase() !== normalizeSegment(candidate.feeName).toLowerCase() || !STOP_PAYMENT_ITEM.test(label)) return candidate;
   const name = `${heading.replace(/\s*:\s*$/, "")}: ${label}`;
   return passesDarwinChecks("stop_payment", name, candidate.amount) ? { ...candidate, canonicalHint: "stop_payment", feeName: name } : candidate;
+}
+
+/**
+ * v181 (backlog dry run 12): a bulleted variant under a stop payment row that prints its own price, in the
+ * page's last column, is that stop payment's price for the variant (`custom-report/stop-payment-variant.ts`:
+ * St. Louis Community FCU's "• Corporate Check | $15.00" under "Stop Payment Fee – Check or ACH (per item): |
+ * $20.00" and "Check series | $25.00"), named under the stop payment's label, when that passes Darwin's checks.
+ * The read must be the variant's own label at the variant's own price on that row. A list of different fees,
+ * an unbulleted read and a heading-less bullet pass through unchanged. Pure.
+ */
+export function stopPaymentVariantRead(candidate: ExtractedFeeCandidate, text: string): ExtractedFeeCandidate {
+  if (candidate.canonicalHint === "stop_payment" || !candidate.excerpt) return candidate;
+  const name = normalizeSegment(candidate.feeName).toLowerCase();
+  const excerpt = candidate.excerpt.replace(/\s+/g, " ").trim();
+  const rows = stopPaymentVariantRows(text).filter((row) =>
+    row.variant.toLowerCase() === name && Math.abs(row.amount - candidate.amount) < 0.005 && (row.row.includes(excerpt) || excerpt.includes(row.row)));
+  if (rows.length !== 1) return candidate;
+  const filed = stopPaymentVariantName(rows[0]);
+  return passesDarwinChecks("stop_payment", filed, candidate.amount) ? { ...candidate, canonicalHint: "stop_payment", feeName: filed } : candidate;
 }
 
 /**

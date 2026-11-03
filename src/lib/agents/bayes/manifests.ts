@@ -826,6 +826,15 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
     // fees not reproduced 408 to 408; rb11's three wrong reads and People's FCU's doubtful $0 fixed; rb5 renames one
     // confirmed fee only. The new excess withdrawal wording matches no live fee name (Nov 3, SELECT), so nothing
     // re-files. No replay. Floor stays v97.
+    // v181 (twelfth re-read backlog dry run, Nov 3): a bulleted variant under a priced stop payment row is that stop
+    // payment (`stopPaymentVariantRead`; the source check admits the composed name at its row only); a fee card whose
+    // description says the member deposited or cashed the item is the deposited item return; OCR noise on dot
+    // leaders is blanked (`withoutOcrLeaderNoise`); on a stem tie a priced fee's source line is the row whose label opens
+    // with the name. Harnesses rb..rb12 (v180 at 713cf507e89 vs v181): live fees not reproduced 456 to 456;
+    // rb12's two wrong rows and First Bank & Trust's OCR names fixed (its paid item charge now matches live #107178);
+    // 47 source lines change across 7,274 reads and the lost live fees, 0 verdicts. Nothing holds, re-files or takes
+    // down a live fee; live #40324 and #68629 read in another category now and stay live (finding). No replay. Floor
+    // stays v97.
     {
       key: "knox.rules",
       owner: "knox",

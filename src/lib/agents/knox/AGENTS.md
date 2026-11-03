@@ -2723,6 +2723,23 @@ holds. Darwin's verify refuses the same reads (`service_maintenance_heading`) an
 is live (`SERVICE_MAINTENANCE_TAKEDOWN_LIVE`, off). The shared check is unchanged. The stale-read floor stays at
 v97.
 
+v181 (twelfth Knox re-read backlog dry run, Nov 3; 40 backlog texts at v180, 2 wrong and 7 doubtful of 72 changed
+rows, each against the bank's own line): (1) A bulleted variant under a stop payment row that prints its own price,
+in the page's last column, is that stop payment's price for the variant (`stopPaymentVariantRead`,
+`custom-report/stop-payment-variant.ts`): walking up past other variants ("Check series") must reach the stop payment
+label, and a label naming any other fee ends the walk, so a list of different fees is untouched. St. Louis Community
+FCU's "• Corporate Check | $15.00" is "Stop Payment Fee – Check or ACH (per item): Corporate Check", and the source
+check admits that composed name at that row only. (2) A returned item read from a labeled fee card whose own
+description says the member deposited or cashed the item is the deposited item return (`depositedCardReturnRead`,
+`labeledFeeCardDescription`): ESL FCU's "Returned Item Fee" $10; its overdraft, certified check and stop payment
+cards are unchanged. (3) OCR noise on a dot leader (single letters, runs of a few repeated letters) is blanked before
+any reader runs (`withoutOcrLeaderNoise`): First Bank & Trust Co.'s "Paid Item Charge c" is "Paid Item Charge", the
+same fee as live #107178. (4) When two lines carry as many of a name's stems, the source check's line for a priced fee is
+the one whose label opens with the name (San Francisco FCU's "Maintenance Fee | $5.00/month", not its par value
+sentence). Synergy's "Returned Check Fee - Same Party Check" stays nsf: the page never says the check was deposited,
+and banks use "same party" and "two-party" both ways. Harnesses rb to rb12 (v180 vs v181): live fees not reproduced
+456 to 456; no right read lost. The stale-read floor stays at v97.
+
 v180 (eleventh Knox re-read backlog dry run, Nov 3; 40 backlog texts at v179, 4 wrong and 9 doubtful of 67 changed
 rows, each against the bank's own line): (1) "Additional withdrawals (per withdrawal over 3 per month)" is the excess
 withdrawal charge (the rules' excess withdrawal pattern; not when the line names an ATM, a network or foreign use),
@@ -3514,7 +3531,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v3 | `knox/paid-extract.ts` |
 | `KNOX_PAID_FIND_MISS_VERSION` | — | v1 | `knox/paid-find-misses.ts` |
 | `TWO_READ_AGREEMENT_STRATEGY` | `knox.two_read_agreement` | v2 | `knox/two-read-agreement.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v180 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v181 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v13 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v2 | `knox/takedown-lessons.ts` |
