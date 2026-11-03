@@ -93,10 +93,11 @@ Rosetta owns source text normalization.
   across refuses the split: a shared baseline whose right side opens at its own edge with a
   price, or is only price cells (a tier table's columns), or whose left side is a bare price
   facing a label, or a label running into the gutter with its price just past it; so does a right
-  side that is one more column of a left table: its lines grouped into blocks (a lower-case line, or
-  one with no left cell, goes on with the block above), half or more of its blocks start beside a
-  row ending in a price without a fee row of their own (Service | Fee | Notes, wrapped descriptions,
-  Member | Non-member). Rotated text
+  side that is one more column of a left table: both sides' lines grouped into blocks (a lower-case
+  or "(" line goes on with the block above; a right line facing a left continuation goes on too),
+  a right line facing the nearest left line within half a pitch, and half or more of the right
+  blocks starting beside a left block that ends a line in an amount (cell, leader or one space)
+  without a fee row of their own. Rotated text
   refuses. When no gutter runs the whole page, the page is cut into regions at lines with one
   item half the text width wide (a title, footnotes) and each region is tried alone. On the
   answer-key documents' bytes it publishes 19 more keys and loses none; it joins layout 6 without

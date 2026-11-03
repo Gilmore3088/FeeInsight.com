@@ -30,22 +30,27 @@ runs only when no earlier detector fires. A gutter splits the page only when:
 - no row reaches across it: no shared baseline whose right side opens at its own edge with a price,
   or is nothing but price cells ("$1 $1 $1 $1", "3 Free → $5"); none whose left side is a bare
   price facing a label; no label running into the gutter with its price just past it;
-- the right side is not one more column of a table on the left (two reviews of #2965). The right
-  side's lines are grouped into blocks: a line goes on with the block above when it starts in lower
-  case or has no left cell on its baseline, so a wrapped note or description is one block. A block
-  starts on a row when the left side on its first line is a table row ending in a price cell
-  ("Overdraft fee | $30.00") and the right side there is not a fee row of its own (a cell row with
-  a price, a dot-leader line). When half or more of the blocks start on rows, the split is refused:
-  a table's notes, descriptions (wrapped onto three lines too) and second prices ("Non-members
-  $30.00", "Not available") start on their rows, while independent columns start their blocks
-  wherever their own text runs. Prose that shares a table's baselines is refused the same way; prose
-  set in its own leading is not.
+- the right side is not one more column of a table on the left (three reviews of #2965). Both
+  sides' lines are grouped into blocks: a left line starting in lower case or "(" goes on with the
+  left block above (a wrapped label); a right line goes on with the right block above when it starts
+  that way or when the left line it faces does not start a left block. A right line faces the left
+  line nearest its baseline within half the line pitch, so notes set 4.5-6 pt below their rows still
+  face them. A left block is a priced row when one of its lines ends in an amount ("$30.00",
+  "$ | 3.00", a bare "30.00", Free, No charge, N/A, Varies, with at most a unit after it), in its own
+  cell or not: dot-leader rows and "Label $30" rows count. A right block starts on a row when it
+  faces a priced row's first line and is not a fee row of its own (a cell row with a price, a
+  dot-leader line). When half or more of the right blocks start on rows, the split is refused.
   - Row alignment alone could not separate them: the real splits share 36% to 100% of their
     baselines (texas:841's facing pages 90-100%). A line-count share (round two) let a wrapped
-    description column through, since only a third of its lines sit on a row.
-  - Block-start share on the 27 splits of the 18 replay PDFs: 0.00 on 17; 0.03 on 2; 0.07, 0.10,
-    0.11, 0.16, 0.20, 0.24, 0.25; at most 0.32 (Buffalo Metropolitan). The review's fee-table
-    shapes score 0.94 to 1.00. The threshold is 0.5;
+    description column through; exact-baseline, cell-only priced rows (round three) let notes beside
+    dot-leader, single-space and partly "$"-less rows through.
+  - Block-start share on the 27 splits of the 18 replay PDFs: 0.00 on 12; 0.07; 0.08 on 2; 0.13;
+    0.14; 0.15; 0.16 on 3; 0.19; 0.25; 0.29; 0.32; 0.33; at most 0.34. The reviews' fee-table
+    shapes score 0.50 (sections headed by unpriced rows; a four-column table) to 1.00. The threshold
+    is 0.5.
+  - Cost: fee lines beside fee lines on shared baselines, neither cut into cells ("Label $30" beside
+    "Rush delivery $50"), read like a table's notes and keep their rows; so does prose set beside a
+    fee table, whatever its leading. None of the 19 replay gains has that shape;
 - each side stands on its own: running prose (median line 25 characters or more, few cells), or at
   least 3 lines that hold their own label and price;
 - each side is a fifth of the text width or more and holds 5 lines or more; text is upright.
@@ -55,7 +60,7 @@ strip of bullet glyphs joins its column (U.S. Century). When no gutter runs the 
 page is cut into regions at lines holding one item half the text width wide (a title, a footnote),
 and each region is tried alone; spanning lines are read whole.
 
-**Tests:** 53 near-miss tests on synthetic positioned runs (`pdf-columns.test.ts`): two fee lists,
+**Tests:** 58 near-miss tests on synthetic positioned runs (`pdf-columns.test.ts`): two fee lists,
 offset baselines, two side-by-side tables, prose beside a table both ways, account terms, full-width
 title, heading mid-page, spanning footnotes, title plus footnotes, bullet strip, booklet spread,
 landscape tables, three lists, headings and wrapped labels inside a column, box-size rows; and kept
@@ -69,7 +74,9 @@ below its heading, pages the earlier detectors already read, and from the review
 Notes table, a notes column of long lines, a Member | Non-member table whose second price opens with
 words, table rows beside single-cell fee lines (which read like notes, so they stay rows), a
 description column wrapped onto three lines, near-equal mixed-case notes, all-lower-case notes, and
-prose on a table's own baselines. Switch tests: off by default, the
+prose on a table's own baselines, and from the third review: notes beside dot-leader rows, beside
+"Label $30" rows, beside a price column with "$" on some rows, descriptions beside labels that wrap
+onto unpriced lines, and notes set 4.5 and 6 pt below their rows. Switch tests: off by default, the
 default read is the switch-off read (3 tests). `shadow-lab/pdf-column-reading-inert.test.ts` reads all 18
 replay PDFs with the switch off and at its default and checks each text's sha256 against main
 d5771aa66's (`__fixtures__/source-bytes/pdf-text-main-sha256.json`).
@@ -123,7 +130,7 @@ documents, same keys, today's pipeline on both sides; main 53c80d54e merged, lay
 2. A PDF reader version for the change. Flipping the switch alone re-reads nothing; only documents
    read after it get the new text. A `PDF_LAYOUT_VERSION` bump with a replay lane (as #2948 adds
    for v6) would re-read current PDF texts; it is not in this PR.
-3. James runs the switch dry-run audit, section 9 (current PDF layout and free OCR documents and
+3. James runs the switch dry-run audit, section 10 (current PDF layout and free OCR documents and
    the live fees on them, as exposure; the audit cannot re-read bytes).
 
 **Lesson:** a fee table is also two columns, so split a page only on positive evidence that no row
