@@ -30,6 +30,41 @@ const CONSUMER = /\b(?:consumer|personal)\s+(?:clients?|customers?|accounts?|che
 const BUSINESS = /\b(?:business|commercial|corporate)\s+(?:clients?|customers?|accounts?|checking|savings)\b|\((?:business|commercial)\)|\bbusiness[- ]only\b/i;
 const BOTH = /\b(?:all|both consumer and business|consumer and business|personal and business)\s+(?:clients?|customers?|accounts?)\b/i;
 
+/**
+ * Knox v175 (backlog dry run 6): a misspelt "account" with the same letters ("accoutns", "acocunt",
+ * "acconts" is not one) still names the account, so "Business accoutns:" is a business label (LM FCU,
+ * doc 8108). Only a word of exactly the letters of "account" or "accounts" is read so.
+ */
+const ACCOUNT_LETTERS = new Set(["account", "accounts"].map((word) => [...word].sort().join("")));
+function withAccountSpelled(text: string): string {
+  return text.replace(/\b[a-z]{7,8}\b/gi, (word) => (ACCOUNT_LETTERS.has([...word.toLowerCase()].sort().join("")) ? (word.length === 8 ? "accounts" : "account") : word));
+}
+/**
+ * Knox v175: an audience label that opens its own clause ("Personal accounts: Internet Bill Pay Free
+ * Business accounts: Internet Bill Pay $4.95 per month"). The price belongs to the last label before it.
+ */
+const AUDIENCE_LABEL = /\b(consumer|personal|business|commercial|corporate)\s+(?:clients?|customers?|accounts?|checking|savings)\s*:/gi;
+const FREE_WORDS = /\b(?:free|no\s+charge|none|n\/c|waived)\b/i;
+/**
+ * The audience of the one price in a list of audience-labelled clauses, each priced: the price's own
+ * clause opens with the last label before it and names the fee, and every earlier label's clause is
+ * priced by a free word of its own. Null otherwise.
+ */
+function labelledClauseAudience(feeName: string, evidence: string): "consumer" | "business" | null {
+  const price = /\$\s*\d/.exec(evidence);
+  if (!price) return null;
+  const labels = [...evidence.matchAll(AUDIENCE_LABEL)].filter((label) => (label.index ?? 0) < price.index);
+  if (labels.length < 2) return null;
+  const last = labels.at(-1)!;
+  const own = evidence.slice((last.index ?? 0) + last[0].length, price.index);
+  if (FREE_WORDS.test(own) || !clean(own).toLowerCase().includes(clean(feeName).toLowerCase())) return null;
+  for (let at = 0; at < labels.length - 1; at += 1) {
+    const clause = evidence.slice((labels[at].index ?? 0) + labels[at][0].length, labels[at + 1].index);
+    if (!FREE_WORDS.test(clause)) return null;
+  }
+  return audience(last[1]);
+}
+
 const statementCache = new Map<string, ScopedFeeStatement[]>();
 
 /** The narrow mixed-audience construction that caused Pinnacle's two prices to collapse. */
@@ -70,8 +105,8 @@ export function feeApplicability(feeName: string, excerpt: string | null | undef
   const originalEvidence = excerpt?.trim() || feeName.trim();
   // "Credit Union Business Only" describes the service's purpose, not a business account.
   // Ignore this phrase for audience classification, but retain the original evidence.
-  const name = feeName.replace(/\bcredit union business only\b/gi, "");
-  const evidence = originalEvidence.replace(/\bcredit union business only\b/gi, "");
+  const name = withAccountSpelled(feeName.replace(/\bcredit union business only\b/gi, ""));
+  const evidence = withAccountSpelled(originalEvidence.replace(/\bcredit union business only\b/gi, ""));
   const scoped = scopedFeeStatements(evidence).find((fee) =>
     clean(fee.feeName).toLowerCase() === clean(feeName).toLowerCase() && (amount == null || fee.amount === amount));
   if (scoped) return scoped;
@@ -89,9 +124,12 @@ export function feeApplicability(feeName: string, excerpt: string | null | undef
   const consumer = nameConsumer || (rowLocal && CONSUMER.test(evidence));
   const business = nameBusiness || (rowLocal && BUSINESS.test(evidence));
   const sameAudience = rowLocal && BOTH.test(clean(evidence)) && !/\b(?:except|only|whereas|but|eliminat\w*|waiv\w*)\b/i.test(evidence);
+  // Knox v175: both audiences in one row-local excerpt, each in its own labelled clause: the price's own.
+  const labelled = rowLocal && !nameConsumer && !nameBusiness && consumer && business ? labelledClauseAudience(feeName, evidence) : null;
   let feeAudience: FeeAudience = "unknown";
   if (/\b(?:except|whereas|but)\b/i.test(evidence)) feeAudience = "unknown";
   else if (sameAudience) feeAudience = "both";
+  else if (labelled) feeAudience = labelled;
   else if (consumer && !business) feeAudience = "consumer";
   else if (business && !consumer) feeAudience = "business";
   return { feeAudience, audienceEvidence: feeAudience === "unknown" ? null : originalEvidence,

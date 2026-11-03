@@ -395,6 +395,7 @@
   "live_audit:7988-f50a636c|publish|stop_payment:2500",
   "live_audit:8092-06643945|publish|od_protection_transfer:500",
   "live_audit:8092-13c4a878|forbid|account_research:2000",
+  "live_audit:8092-13c4a878|forbid|card_replacement:1000",
   "live_audit:8092-13c4a878|publish|atm_non_network:100",
   "live_audit:8092-13c4a878|publish|cashiers_check:400",
   "live_audit:8092-13c4a878|publish|check_image:100",

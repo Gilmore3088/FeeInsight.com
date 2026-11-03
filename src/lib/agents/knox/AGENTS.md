@@ -2695,7 +2695,7 @@ keep their thresholds, each now tracing, and none is added, held or dropped. Ans
 Darwin's verify refuses (2) and (3), and its live re-check (`darwin.not_account_fee_line`,
 `NOT_ACCOUNT_FEE_LINE_TAKEDOWN_LIVE` off) reports the live ones (73916, 152003). The guard is unchanged
 (v108). The stale-read floor stays at v97.
-v174 (#1092, state key 5608, Nov 2; v164-v172 are on main, v173 is #2967's): a monthly maintenance read, $0 or priced, whose row sits under a heading
+v174 (#1092, state key 5608, Nov 2; v164-v172 are on main, #2967 ships as v175): a monthly maintenance read, $0 or priced, whose row sits under a heading
 that names a service rather than an account is held as a range for review instead of going to Darwin as the
 account's fee (`serviceMaintenanceOf` in `@/lib/service-maintenance-heading`, flag
 `knox_service_maintenance:<services>`; the $0 read in `insertHeldCandidate`, the priced one in
@@ -2718,6 +2718,42 @@ the River City row is the one read of 23 monthly maintenance reads on the 38 re-
 holds. Darwin's verify refuses the same reads (`service_maintenance_heading`) and its live re-check reports what
 is live (`SERVICE_MAINTENANCE_TAKEDOWN_LIVE`, off). The shared check is unchanged. The stale-read floor stays at
 v97.
+
+v175 (sixth Knox re-read backlog dry run, Nov 3; renumbered from v173 when merging after #2953; 40 backlog texts at v172, one wrong and five doubtful
+rows of 97 changed, each against the bank's own line): (1) the heading of a bullet list is read from its own
+line even when the other column's priced row shares it (`listHeadingOf` in `rules.ts`: "Stop Payment |
+Cashier’s Check | $5.00" over "• Money Order | $30.00 | Positive Pay Checks | $50.00/mo", Navigant FCU 7511,
+doc 2007), and an item bulleted under a stop payment heading (check, draft, money order, official check,
+ACH, bill payment, debit, item, payment) is that stop payment's price, filed stop_payment and named "Stop
+Payment: <item>" for every specialist (`stopPaymentListRead`); "Bill Payment" $30 had gone to Darwin as bill
+pay. (2) A card replacement or rush card read printed under a credit card title in its own column is left
+out (`creditCardSectionRead` in `credit-card-section.ts`, read per column as `loanReturnedPaymentRows`
+reads loan titles; a title also naming a debit, ATM or check card heads both kinds): Greylock FCU's "Card
+Replacement ...... Free" under "CREDIT CARD CHARGES" (6842, doc 20487) would have published as a $0 debit
+card replacement. (3) The audience reader (`feeApplicability`, `src/lib/fee-audience.ts`) reads a misspelt
+"account" of the same letters ("Business accoutns") and gives the one price of a row-local excerpt with two
+labelled clauses the last label's audience (LM FCU's business-only $4.95 bill pay, 5020, doc 8108). (4) A
+zero name another zero name of the same row and category opens with, word for word, is held once
+(`sameFreeCellName`: Truist's two-column "No charge for Paper Statement or Paperless ..." row). Left: Truist's
+"Monthly Maintenance | $5.00 | $0 | $0" (the $0 prices are other account columns; naming the column is
+product-split work) and Tongass FCU's "Non-Member Fees" prices (no non-member audience value; policy waits
+on `NON_CUSTOMER_CASHIERS_CHECK_LIVE`). Re-run: on rb6 the wrong row is gone and the other 95 changed rows are
+unchanged; rb, rb4 and rb5 stop reading four credit card section replacements; rb2 and rb3 do not change.
+Live (SELECT): no live fee is re-filed by the stop payment list or audience changes. Review of v172, folded in: a bare "Service Charge", "Charge" or "Fee" after a price
+never names it in the family experts (`GENERIC_FEE_NAME`; "ATM Fees" / "Foreign: $1.00 Service Charge." is
+"ATM Fees: Foreign" again); `LOW_BALANCE_CHARGE` leaves a name offering the monthly fee in full and the
+minimum balance fee ("Monthly Service Charge or Minimum Balance Fee") to monthly maintenance; and
+`ITEM_INSUFFICIENT` no longer files a deposited, cashed or paid insufficient item as NSF. None changes a
+harness read. Review of v175 (PR #2967): the credit card section ends at a debit card or ATM heading in any
+form ("2. Debit Card Fees", "Debit Card Fees (effective 1/1/2026)", "The following fees apply to all debit
+cards:") and at a title-case heading naming another section ("Miscellaneous", "Wire Transfers", "Collection
+Items"), never at a fee's own label or a column header row, and a row two columns name takes the cell
+printing its price; `ITEM_INSUFFICIENT` files an item "paid or returned" as NSF again and
+`DEPOSITED_ITEM_INSUFFICIENT` files "Deposited Item - Insufficient" as the deposited item return;
+`listHeadingOf` needs a named second cell (not "per request") and `stopPaymentListRead` the price most of the
+list's bullets carry. Darwin's live re-check (`darwin.credit_card_section`, `CREDIT_CARD_SECTION_TAKEDOWN_LIVE`
+off) reports the 75 live credit card section replacements on 62 texts (prod, read-only, Nov 3). The guard is
+unchanged (v108). The stale-read floor stays at v97.
 
 v172 (fifth Knox re-read backlog dry run, Nov 3; 40 backlog texts at v171, six wrong rows of 99 changed,
 each against the bank's own line): (1) a statement's copy priced per item is document reproduction: the
@@ -3330,7 +3366,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v3 | `knox/paid-extract.ts` |
 | `KNOX_PAID_FIND_MISS_VERSION` | — | v1 | `knox/paid-find-misses.ts` |
 | `TWO_READ_AGREEMENT_STRATEGY` | `knox.two_read_agreement` | v2 | `knox/two-read-agreement.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v174 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v175 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v13 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v2 | `knox/takedown-lessons.ts` |

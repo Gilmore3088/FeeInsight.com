@@ -162,3 +162,26 @@ describe("ONE Credit Union's current schedule beside its 2027 one (#1915, PR #25
     expect(found.takeovers.map((fee) => [fee.feePublishedId, fee.reason])).toEqual([[1, "older_edition: #28999 effective 2027-01-01"]]);
   });
 });
+
+describe("GTE FCU's closing edition line (doc 42265, Nov 3; check v5)", () => {
+  // The schedule's last lines, verbatim from the stored text (text 40659), after its 2027 prices.
+  const GTE_TEXT = [
+    "Member Schedule of Current Charges",
+    "Checking account charges: | Fee | Card services: | Fee",
+    ...Array.from({ length: 6 }, () => "Stop Payment2 | $37.00 | 2,12"),
+    "Overdraft Transfer2,10 | $8.00 | General charges:",
+    "Cards are not eligible. 19. Loan must be with GTE Financial for at least 6 months. 20. Includes deposit accounts, loan accounts, and credit card accounts. |",
+    "Effective Date 01/05/2027.",
+    "711 E. Henderson Ave., Tampa, FL 33602 | 813.871.2690 | gtefinancial.org",
+  ].join("\n");
+  const URL = "https://www.gtefinancial.org/content/dam/gte/docs/default-source/fee-schedules/member-schedule-of-current-charges.pdf";
+
+  it("holds the 2027 copy's rows at publish and in the live re-check until January 5", () => {
+    const heads = new Map([["42265", GTE_TEXT]]);
+    expect([...editionHolds([{ fee_verified_id: 7, source_document_id: 42265 }], heads, "2026-11-03")]).toEqual([[7, "2027-01-05"]]);
+    expect(editionHolds([{ fee_verified_id: 7, source_document_id: 42265 }], heads, "2027-01-05").size).toBe(0);
+    const live = row({ institution_id: 4374, fee_name: "Overdraft Transfer", amount: 8, canonical_fee_key: "overdraft_transfer", source_document_id: 42265, document_url: URL, head: GTE_TEXT, first_read: "2026-11-03" });
+    expect(judgeEditions([live], "2026-11-03").holds.map((fee) => fee.reason)).toEqual([`${NOT_YET_EFFECTIVE_REASON}: 2027-01-05 #42265`]);
+    expect(judgeEditions([{ ...live, live: false }], "2027-01-05").restores).toHaveLength(1);
+  });
+});

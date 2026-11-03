@@ -1395,6 +1395,16 @@ export const KNOX_LESSONS: AgentLesson[] = [
     since: "2026-11-03",
   },
   {
+    id: "backlog-dry-run-6-2026-11-03-column-headings-and-sections",
+    agent: "knox",
+    stage: "extract",
+    lesson: "Read a heading or section title from the page's own column, even when it shares a line with another column's row. A bullet list's heading printed beside the other column's priced cell (\"Stop Payment | Cashier's Check | $5.00\" over \"• Bill Payment | $30.00\") still heads its bullets, and an item listed under a stop payment heading is the stop payment's price for that item, never the item's own fee. A card replacement printed under a credit card title in its column is the credit card's, never the debit card's replacement. A price in a labelled clause (\"Personal accounts: … Free Business accounts: … $4.95\") takes that clause's audience, even when the bank misspells the label. And the same free cell repeated in a second column, cut shorter by the page, is one fee. When a narrower rule is added ahead of a broader one, bound it: a bare \"Service Charge\" names no fee, a name offering both the monthly fee and the minimum balance fee stays the monthly fee, and an insufficient item that was deposited, cashed or paid (with no return named) is not the NSF row, while one \"paid or returned\" still is.",
+    why: "The sixth dry run for KNOX_REREAD_BACKLOG_LIVE (40 backlog texts, Nov 3, Knox v172) found Navigant FCU's \"Bill Payment\" $30 under a two-column \"Stop Payment\" list filed bill_pay (the heading shared its line with \"Cashier's Check | $5.00\", so the bullets lost it), Greylock FCU's free credit card replacement read as a $0 card_replacement beside the debit card's $5, LM FCU's business-only $4.95 bill pay tagged consumer because \"Business accoutns\" was misspelt, and Truist's two-column \"No charge\" paper statement row read twice. Knox v175 files the stop payment bullets as stop payments, leaves credit card section replacements out (after the PR #2967 review fixed where the section ends, 75 live ones on 62 texts would not be read again as the debit card's; Darwin's off-switch re-check reports them), tags the $4.95 business, holds the free row once, and leaves the other 95 changed rows unchanged.",
+    evidence: { issues: [1026], prs: [], files: ["src/lib/agents/knox/rules.ts", "src/lib/agents/knox/credit-card-section.ts", "src/lib/fee-audience.ts", "src/lib/agents/knox/backlog-dry-run-6.test.ts", "docs/project/findings/2026-11-03-knox-backlog-dry-run-6-misfiles.md"] },
+    appliesTo: ["extract"],
+    since: "2026-11-03",
+  },
+  {
     id: "issue-1092-service-maintenance-heading-held",
     agent: "knox",
     stage: "extract",

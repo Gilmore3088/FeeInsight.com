@@ -320,13 +320,21 @@ export function freeWordOnItem(line: string): boolean {
 }
 
 /**
+ * v175 (review of v172): a bare fee word after the price ("Service Charge", "Charge", "Fee") names no fee
+ * of its own, so the heading still names the price ("ATM Fees" / "Foreign: $1.00 Service Charge." is
+ * "ATM Fees: Foreign").
+ */
+const GENERIC_FEE_NAME = /^(?:service\s+)?(?:charges?|fees?)$/i;
+
+/**
  * v172: the text right after a price opens with a name a rule files ("Monthly Service Charge." after
  * "Account Fees: $4.95"): the price is that name's.
  */
 function feeNamedAfterPrice(after: string): boolean {
   const named = after.match(/^\s*([A-Z][A-Za-z'’ -]{2,60}?)\s*(?:[.;,|(]|$)/)?.[1];
-  return named != null && classifyPatternKey(named) != null;
+  return named != null && !GENERIC_FEE_NAME.test(named) && classifyPatternKey(named) != null;
 }
+
 
 interface FamilyMatch {
   hint: string;
