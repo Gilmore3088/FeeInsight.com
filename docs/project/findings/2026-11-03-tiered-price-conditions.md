@@ -30,36 +30,50 @@ Knox wrote raw 760358 ($15, "or less – Overdraft fee per item per presentment"
   the row. The name was judged, not the row.
 - Nothing checked that the live tiers of a group were all there (completeness).
 
-**The class, live (prod, read-only, Nov 3):** of 2,981 live fees above $0 whose Knox excerpt states a
-balance, amount or count condition, 88 sit in a tier group by the shared reader (`@/lib/tiered-price`), and
-50 of those, at 35 institutions, are wrong: 31 are a tier whose name does not state its condition
-("unscoped") and 19 are a scoped tier whose sibling tiers are not all live ("incomplete"). Moose Lake's
-116685 is one (unscoped, 0 of 2 tiers live under scoped names). The 50 ids: 18812, 22129, 34461, 37262,
-55140, 68550, 68551, 72020, 72021, 74644, 75943, 80578, 81377, 81422, 81866, 83996, 83997, 84084, 84085,
-84502, 89440, 89748, 91565, 95341, 96889, 101785, 101786, 102393, 102642, 103056, 103078, 104534, 104545,
-110375, 115586, 116120, 116685, 120265, 120270, 121611, 124568, 126548, 127659, 127660, 132800, 136874,
-136933, 148646, 159922, 165707. Three are doubtful and should be read before any takedown: 148646 (its two
-tiers share a price), 95341 (every tier is $25) and 102393 ("≥$10").
+**The class, live (prod, read-only, Nov 3, re-run after the review of #2981):** of 2,982 live fees above
+$0 whose Knox excerpt states a balance, amount or count condition, 86 sit in a tier group by the shared
+reader (`@/lib/tiered-price`), and 48 of those, at 33 institutions, are wrong in one of two ways:
+
+- 31, at 26 institutions, are a tier whose name does not state its condition ("unscoped"). These are the
+  re-check's takedowns: 22129, 34461, 55140, 68551, 72020, 72021, 75943, 80578, 81422, 81866, 83996, 83997,
+  84084, 96889, 101785, 102393, 102642, 103056, 104534, 104545, 115586, 116120, 116685, 120270, 121611,
+  124568, 127659, 132800, 136874, 159922, 165707. Moose Lake's 116685 is one (0 of 2 tiers live under
+  scoped names). 102393 is doubtful and should be read before any takedown (its upper tier reads "≥$10").
+- 17 are a correctly scoped tier whose sibling tiers are not all live ("incomplete"): 18812, 37262, 68550,
+  74644, 81377, 84085, 84502, 89440, 89748, 91565, 101786, 103078, 110375, 120265, 126548, 127660, 136933.
+  Their own name and price are right, so the re-check counts them, report only; the missing tier is Knox's
+  to read.
+
+The first run (before the review) counted 50: 95341 (every tier $25) and 148646 (both tiers $35) were one
+price under every condition, which is no tier group.
 
 **Fix:**
 
 - `src/lib/tiered-price.ts` (shared, pure): finds a tier group, two or more lines (or clauses of one line)
   of one fee, each with one balance, amount or count condition and its own price above $0, with distinct
-  conditions. A cap ("maximum $150 per day"), a waiver threshold ("waived with $500 balance"), a $0 band,
-  two different fees on one line, and monthly maintenance and minimum balance reads are not tiers.
+  conditions and at least two different prices. Not tiers: a cap ("maximum $150 per day"), a waiver
+  threshold ("waived with $500 balance"), a rate's minimum ("over $1,000 0.25% with a $50.00 minimum": a
+  line that prints a percentage or a minimum is no tier, so no flat fee is made from the floor), a $0 band,
+  one price under every condition, monthly maintenance and minimum balance reads, and clauses of one line
+  that each name their own fee ("Cashier's check over $1,000 $10.00; Money order up to $1,000 $5.00": two
+  fees, each read as before).
 - Knox v183 (`src/lib/agents/knox/tier-names.ts`): each tier read keeps its condition in its name (the
   figure back in its own slot, or the condition in brackets); a tier printed on the same line that no
   reader read gets its own read; a group Knox cannot read in full under Darwin's checks, or whose reads
   sit in two categories, is held whole as `tier_incomplete`.
-- Category guard v110: a priced name's own trailing tier bracket is not read by the exclusions; includes
-  still read the whole name. On 1,038 live priced names ending in a bracket with a condition, the bracket
-  is read off 408 and the verdict changes on 0.
+- Category guard v110: a priced name's own trailing tier bracket is not read by the exclusions when the
+  only words before its condition are the threshold's own noun ("overdraft balance", "item amount",
+  "balance"); a bracket with any other word ("international over $1,000", "continuous over $5") is read
+  as before, so its category words still reach the exclusions. Includes still read the whole name. On
+  1,038 live priced names ending in a bracket with a condition, the bracket is read off 137 and the
+  verdict changes on 0.
 - Darwin verify: a read that is one tier of a group whose name does not state the tier is held
   (`tier_unscoped`), judged on Knox's own line and the traced line, not the name alone.
 - Darwin live re-check `darwin.tier_completeness` (`tier-completeness-check.ts`), behind
-  `TIER_COMPLETENESS_TAKEDOWN_LIVE`, off: the dry run above. Switching it on takes these fees down without
-  replacing them until Knox re-reads their texts (Knox's stale-read floor stays at v97, so no re-read
-  follows on its own); pair it with re-read requests for the 35 institutions.
+  `TIER_COMPLETENESS_TAKEDOWN_LIVE`, off, reading a window of whole lines around the fee's line. Switched
+  on, it takes down only the unscoped kind (`TIER_COMPLETENESS_TAKEDOWN_KINDS`). A takedown is not
+  replaced until Knox re-reads the text (Knox's stale-read floor stays at v97, so no re-read follows on
+  its own); pair it with re-read requests for the 26 institutions.
 
 **Moose Lake now:** Knox v183 reads document 35684's text as "Overdraft fee per item per presentment
 (overdraft balance $30.00 or less)" $15 and "Overdraft fee per item per presentment (overdraft balance

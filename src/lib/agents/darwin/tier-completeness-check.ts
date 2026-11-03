@@ -21,7 +21,8 @@ type SqlTag = typeof sql;
  * category. `findTierGaps` decides with the shared tier reader (`@/lib/tiered-price`): a live fee that
  * is one tier of a group matches when its live name does not state its tier's condition (`unscoped`) or
  * when some tier of the group has no live fee of that document and category at that price naming that
- * tier (`incomplete`). Switched on, a match goes through the shared 12-hour second look (check
+ * tier (`incomplete`). Only `unscoped` is taken down (`TIER_COMPLETENESS_TAKEDOWN_KINDS`): an `incomplete` fee's
+ * own name and price are right, so it is counted, report only. Switched on, an unscoped match goes through the shared 12-hour second look (check
  * `darwin.tier_completeness`) and is archived on its second failure: rolled back with
  * `tier_incomplete: <kind>, <live> of <tiers> tiers live`, its verified row rejected with the
  * `tier_incomplete` flag so publish does not bring it back, never deleted, and a
@@ -39,7 +40,7 @@ export const TIER_COMPLETENESS_REASON = "tier_incomplete";
 export const TIER_COMPLETENESS_FLAG = "tier_incomplete";
 export const TIER_COMPLETENESS_LIMIT = 6_000;
 export const TIER_COMPLETENESS_SAMPLES = 20;
-/** Characters of Knox's text read on each side of the fee's own line (a tier group sits within a few lines). */
+/** Characters of Knox's text read on each side of the fee's own line, cut back to whole lines (a tier group sits within a few lines). */
 export const TIER_WINDOW_CHARS = 900;
 
 /**
@@ -49,6 +50,12 @@ export const TIER_WINDOW_CHARS = 900;
 export const TIER_LINE_SQL_PATTERN = String.raw`(\$\s?[0-9.][0-9,.]*\s+(or|and)\s+(less|more|greater|over|under|above|below|up)\y|\y(more|less|greater|fewer)\s+than\s+\$|\y(over|under|above|below|exceeding|up\s+to)\s+\$|\$\s?[0-9.][0-9,.]*\s*(-|–|—|to)\s*\$|\y[0-9]{1,3}\s*(-|–|to)\s*[0-9]{1,3}\s+[a-z]|\y[0-9]{1,3}(st|nd|rd|th)?\s*(\+|or\s+more))`;
 
 export type TierGapKind = "unscoped" | "incomplete";
+/**
+ * The kinds the switch takes down. An `incomplete` fee is a scoped tier whose name is right; a sibling tier
+ * missing from the catalog is Knox's to read, not a reason to archive the one that is right (review of #2981:
+ * 18812, 89748, 110375 and 120265 are right as they stand), so it is counted, report only.
+ */
+export const TIER_COMPLETENESS_TAKEDOWN_KINDS: ReadonlySet<TierGapKind> = new Set(["unscoped"]);
 
 export interface TierCompletenessRow {
   fee_published_id: number | string;
@@ -86,6 +93,8 @@ export interface TierCompletenessFindings {
   matched: number;
   institutions: number;
   byKind: Record<TierGapKind, number>;
+  /** Matches of a kind the switch never takes down (`incomplete`): counted only. */
+  reportOnly: number;
   samples: TierGapMatch[];
 }
 
@@ -159,6 +168,7 @@ export function findTierGaps(rows: TierCompletenessRow[]): TierCompletenessFindi
       unscoped: matches.filter((fee) => fee.kind === "unscoped").length,
       incomplete: matches.filter((fee) => fee.kind === "incomplete").length,
     },
+    reportOnly: matches.filter((fee) => !TIER_COMPLETENESS_TAKEDOWN_KINDS.has(fee.kind)).length,
     samples: matches.slice(0, TIER_COMPLETENESS_SAMPLES),
     matches,
   };
@@ -191,12 +201,23 @@ export function tierCompletenessRowsSql(db: SqlTag, options: { institutionId?: n
     SELECT c.fee_published_id, c.fee_verified_id, c.institution_id, c.source_document_id, c.canonical_fee_key,
            c.fee_name, c.amount, c.excerpt,
            (
-             SELECT CASE WHEN strpos(adt.normalized_text, btrim(c.excerpt)) > 0
-                    THEN substring(adt.normalized_text
-                                   FROM greatest(1, strpos(adt.normalized_text, btrim(c.excerpt)) - ${TIER_WINDOW_CHARS}::int)
-                                   FOR 2 * ${TIER_WINDOW_CHARS}::int + length(c.excerpt)) END
-               FROM agent_source_texts adt
-              WHERE adt.id = c.text_id
+             -- Whole lines only: the window opens after the first line break past its start and closes before
+             -- the last one, unless it reaches the text's own start or end (review of #2981).
+             SELECT CASE WHEN w.at > 0 THEN
+                      CASE WHEN w.from_at > 1 THEN regexp_replace(w.before_line, '^[^\n]*\n', '') ELSE w.before_line END
+                      || CASE WHEN w.at + length(w.ex) + ${TIER_WINDOW_CHARS}::int <= length(w.body)
+                              THEN regexp_replace(w.from_line, '\n[^\n]*$', '') ELSE w.from_line END
+                    END
+               FROM (
+                 SELECT t.body, t.ex, t.at, greatest(1, t.at - ${TIER_WINDOW_CHARS}::int) AS from_at,
+                        substring(t.body FROM greatest(1, t.at - ${TIER_WINDOW_CHARS}::int) FOR t.at - greatest(1, t.at - ${TIER_WINDOW_CHARS}::int)) AS before_line,
+                        substring(t.body FROM t.at FOR length(t.ex) + ${TIER_WINDOW_CHARS}::int) AS from_line
+                   FROM (
+                     SELECT adt.normalized_text AS body, btrim(c.excerpt) AS ex, strpos(adt.normalized_text, btrim(c.excerpt)) AS at
+                       FROM agent_source_texts adt
+                      WHERE adt.id = c.text_id
+                   ) t
+               ) w
            ) AS window_lines,
            (
              SELECT COALESCE(jsonb_agg(jsonb_build_object('fee_published_id', s.fee_published_id, 'fee_name', s.fee_name, 'amount', s.amount)), '[]'::jsonb)
@@ -225,7 +246,7 @@ export async function recheckTierCompleteness(
   const live = options.live ?? TIER_COMPLETENESS_TAKEDOWN_LIVE;
   const result: TierCompletenessResult = {
     live, dryRun: options.dryRun, scoped: options.institutionId != null,
-    checked: 0, tiered: 0, matched: 0, institutions: 0, byKind: { unscoped: 0, incomplete: 0 }, samples: [], flagged: 0, waiting: 0, takenDown: [],
+    checked: 0, tiered: 0, matched: 0, institutions: 0, byKind: { unscoped: 0, incomplete: 0 }, reportOnly: 0, samples: [], flagged: 0, waiting: 0, takenDown: [],
   };
 
   let rows: TierCompletenessRow[];
@@ -238,9 +259,10 @@ export async function recheckTierCompleteness(
   const { matches, ...findings } = findTierGaps(rows);
   Object.assign(result, findings);
 
-  if (live && !options.dryRun && matches.length > 0) {
+  const takedown = matches.filter((fee) => TIER_COMPLETENESS_TAKEDOWN_KINDS.has(fee.kind));
+  if (live && !options.dryRun && takedown.length > 0) {
     const look = await secondLook(db, {
-      check: TIER_COMPLETENESS_CHECK, runId: options.runId, failing: matches, passing: [], dryRun: false, now: options.now,
+      check: TIER_COMPLETENESS_CHECK, runId: options.runId, failing: takedown, passing: [], dryRun: false, now: options.now,
     });
     result.flagged = look.flagged;
     result.waiting = look.waiting;
@@ -256,7 +278,7 @@ export async function recheckTierCompleteness(
         INSERT INTO agent_run_events (agent_run_id, step_id, event_type, status, message, detail)
         VALUES (
           ${options.runId}, ${options.stepId ?? null}, ${TIER_COMPLETENESS_CHECK}, 'completed',
-          ${`Read live fees priced in tiers: ${result.matched} of ${result.tiered} live tier fee(s) at ${result.institutions} institution(s) are unscoped or one tier short; ${live ? `${result.flagged} flagged, ${result.takenDown.length} archived` : "switch off, would take down, nothing written"}`},
+          ${`Read live fees priced in tiers: ${result.matched} of ${result.tiered} live tier fee(s) at ${result.institutions} institution(s) are unscoped (${result.byKind.unscoped}, the switch's) or one tier short (${result.reportOnly}, report only); ${live ? `${result.flagged} flagged, ${result.takenDown.length} archived` : "switch off, would take down the unscoped, nothing written"}`},
           ${JSON.stringify(tierCompletenessDetail(result))}::jsonb
         )
       `);
@@ -319,7 +341,7 @@ async function recordTakedownEvent(
       INSERT INTO agent_run_events (agent_run_id, step_id, event_type, status, message, detail)
       VALUES (
         ${options.runId}, ${options.stepId ?? null}, 'darwin.tier_completeness_takedown', 'completed',
-        ${`Archived ${archived.length} live fee(s) priced in tiers that were unscoped or one tier short, on their second look`},
+        ${`Archived ${archived.length} live fee(s) priced in tiers whose names hid their tier, on their second look`},
         ${JSON.stringify({ version: TIER_COMPLETENESS_CHECK_VERSION, taken_down: archived.length, samples: archived.slice(0, 50).map(sampleDetail) })}::jsonb
       )
     `);
@@ -354,6 +376,7 @@ export function tierCompletenessDetail(result: TierCompletenessResult) {
     matched: result.matched,
     institutions: result.institutions,
     by_kind: result.byKind,
+    report_only: result.reportOnly,
     flagged: result.flagged,
     waiting: result.waiting,
     taken_down: result.takenDown,

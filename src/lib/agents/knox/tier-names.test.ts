@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
 import { runFreeSpecialists } from "@/lib/agents/knox/specialists";
+import { checkFeeCategory } from "@/lib/fee-category-guard";
 import { MOOSE_LAKE_FEE_SCHEDULE } from "@/lib/tiered-price.fixtures";
 
 const doc = (...lines: string[]) => ["Fee Schedule", ...lines].join("\n");
@@ -67,5 +68,39 @@ describe("Knox v183 names each price tier with its own condition (#1110)", () =>
     const twoFees = doc("Stop payment $20, Wire transfer $15");
     expect(reads(twoFees).every(([, , name]) => !String(name).includes("("))).toBe(true);
     expect(held(twoFees).some(([shape]) => shape === "tier_incomplete")).toBe(false);
+  });
+
+  it("makes up no fee from a rate's minimum (review of #2981)", () => {
+    expect(reads(doc("Foreign check collection: up to $1,000 $25.00, over $1,000 0.25% with a $50.00 minimum"))).toEqual([
+      ["collection_item", 25, "Foreign check collection: up"],
+    ]);
+    expect(reads(doc("Coin counting non-customers: under $100 $5.00; $100 or more 5% ($10.00 min)"))).toEqual([
+      ["coin_counting", 5, "Coin counting non-customers: under $100"],
+    ]);
+    expect(reads(doc("Check cashing non-customer: under $100 $5.00; over $100 2% (minimum $10.00)"))).toEqual([
+      ["check_cashing", 5, "Check cashing non-customer: under $100"],
+    ]);
+  });
+
+  it("reads two fees on one line as two fees, not one fee's tiers (review of #2981)", () => {
+    const text = doc("Official checks: Cashier's check over $1,000 $10.00; Money order up to $1,000 $5.00");
+    expect(reads(text)).toEqual([
+      ["cashiers_check", 10, "Official checks: Cashier's check over $1,000"],
+      ["money_order", 5, "Money order up"],
+    ]);
+    expect(held(text)).toEqual([]);
+  });
+
+  it("leaves one price under every condition alone (review of #2981)", () => {
+    const text = doc("Collection Items (domestic) up to $1,000 | $25.00", "Collection Items (domestic) over $1,000 | $25.00");
+    expect(reads(text).map(([hint, amount]) => [hint, amount])).toEqual([["collection_item", 25], ["collection_item", 25]]);
+    expect(held(text)).toEqual([]);
+  });
+
+  it("lets the guard read a fee word in a tier bracket (review of #2981)", () => {
+    expect(checkFeeCategory("wire_domestic_outgoing", "Outgoing wire (international over $1,000)", { amount: 30 }).ok).toBe(false);
+    expect(checkFeeCategory("overdraft", "Overdraft fee (continuous over $5)", { amount: 30 }).ok).toBe(false);
+    expect(checkFeeCategory("nsf", "NSF fee (paid overdraft items over $5)", { amount: 30 }).ok).toBe(false);
+    expect(checkFeeCategory("overdraft", "Overdraft fee per item per presentment (overdraft balance $30.00 or less)", { amount: 15 }).ok).toBe(true);
   });
 });

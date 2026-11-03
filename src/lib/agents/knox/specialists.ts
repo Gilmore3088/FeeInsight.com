@@ -932,7 +932,8 @@ import { onlineServiceMonthlyFee } from "@/lib/service-monthly-charge";
 // tiers by a balance, amount or count condition is read as one fee per tier, each named with its own condition
 // ("Overdraft fee per item per presentment (overdraft balance more than $30.00)"), a tier printed on the same line
 // that no reader read gets its own read, and a group Knox cannot read in full is held as `tier_incomplete`
-// (`withTierNames`, `@/lib/tiered-price`). A cap, a waiver threshold, a $0 band, two fees on one line, and monthly
+// (`withTierNames`, `@/lib/tiered-price`). A cap, a waiver threshold, a rate's minimum, a $0 band, one price under
+// every condition, two fees on one line (clauses that each name their own fee), and monthly
 // maintenance and minimum balance reads are no tiers. v182 is left to the parallel Knox branch. The stale-read
 // floor stays at v97.
 export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 183 } as const;

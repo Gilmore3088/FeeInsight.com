@@ -1,13 +1,15 @@
 {
- "note": "Darwin tier completeness dry run, prod read-only, 2026-11-03 (tier-completeness-check.ts v1 SQL shape: every live fee above $0 whose Knox excerpt states a threshold, a 900-character window of Knox's text on each side of its line, and the live fees of the same document and category; findTierGaps decides). Switch off: nothing written.",
- "checked": 2981,
- "tiered": 88,
- "matched": 50,
- "institutions": 35,
+ "note": "Darwin tier completeness dry run, prod read-only, 2026-11-03, re-run after the review of #2981 (tier-completeness-check.ts v1 SQL shape: every live fee above $0 whose Knox excerpt states a threshold, a window of Knox's text cut to whole lines within 900 characters of each side of its line, and the live fees of the same document and category; findTierGaps decides). Only the unscoped kind is the switch's; incomplete is report only. Switch off: nothing written.",
+ "checked": 2982,
+ "tiered": 86,
+ "matched": 48,
+ "institutions": 33,
  "by_kind": {
   "unscoped": 31,
-  "incomplete": 19
+  "incomplete": 17
  },
+ "report_only": 17,
+ "unscoped_institutions": 26,
  "matches": [
   {
    "fee_published_id": 18812,
@@ -466,31 +468,6 @@
      "condition": "More Than $50K",
      "price": 100,
      "live": true
-    }
-   ]
-  },
-  {
-   "fee_published_id": 95341,
-   "institution_id": 8162,
-   "canonical_fee_key": "collection_item",
-   "fee_name": "Collection Items (domestic) $25 to $99.99",
-   "amount": 25,
-   "kind": "incomplete",
-   "tiers": [
-    {
-     "condition": "Under $25",
-     "price": 25,
-     "live": true
-    },
-    {
-     "condition": "$25 to $99.99",
-     "price": 25,
-     "live": true
-    },
-    {
-     "condition": "$100 or more",
-     "price": 25,
-     "live": false
     }
    ]
   },
@@ -980,26 +957,6 @@
    ]
   },
   {
-   "fee_published_id": 148646,
-   "institution_id": 4902,
-   "canonical_fee_key": "overdraft",
-   "fee_name": "ATM Share Overdraft (Balance Below $25.00)",
-   "amount": 35,
-   "kind": "incomplete",
-   "tiers": [
-    {
-     "condition": "Below $25.00",
-     "price": 35,
-     "live": true
-    },
-    {
-     "condition": "Below $0.00",
-     "price": 35,
-     "live": false
-    }
-   ]
-  },
-  {
    "fee_published_id": 159922,
    "institution_id": 321,
    "canonical_fee_key": "collection_item",
@@ -1042,23 +999,6 @@
  ],
  "rows": [
   {
-   "fee_published_id": 116685,
-   "fee_verified_id": 180007,
-   "institution_id": 3457,
-   "source_document_id": 35684,
-   "canonical_fee_key": "overdraft",
-   "fee_name": "Overdraft fee per item per presentment",
-   "amount": "30.00",
-   "excerpt": "More than $30.00 – Overdraft fee per item per presentment.",
-   "window_lines": "Images sent with statements | $3.00\n\nNon-Sufficient Funds (NSF) Return Item Fee / Overdraft Fees: A fee may be imposed for each withdrawal attempt when your account does not have sufficient funds to cover that item. A maximum of $150 in overdraft and/or NSF item fees is assessed per business day per account. Be aware each time the item is presented for payment you may be charged a fee. This applies to consumer and business accounts except as prohibited by law, whether the withdrawal attempt is in person, by check, or other electronic means as follows:\n\nIf your check/item is returned for insufficient funds (NSF) and overdraft balance at the end of business day is:\n\n$30.00 or less – Overdraft fee per item per presentment. | $15.00 per item\n\nMore than $30.00 – Overdraft fee per item per presentment. | $30.00 per item\n\nIf your check/item is returned for insufficient funds (NSF) and overdraft balance at the end of business day is:\n\n$30.00 or less | $15.00 per item\n\nMore than $30.00 | $30.00 per item\n\nIndemnity Bonds ( Lost Certificate of Deposit) | $10.00",
-   "siblings": [
-    {
-     "amount": 30,
-     "fee_name": "Overdraft fee per item per presentment"
-    }
-   ]
-  },
-  {
    "fee_published_id": 68550,
    "fee_verified_id": 191403,
    "institution_id": 624,
@@ -1067,15 +1007,17 @@
    "fee_name": "Cashier’s checks $1,000.00 or less per item",
    "amount": "5.00",
    "excerpt": "Cashier’s checks $1,000.00 or less per item | $5.00",
-   "window_lines": "Returned NSF/OD Fee (Insufficient Funds/Overdraft Fee, per item) *Per item - created by check, in-person withdrawal, ATM withdrawal, or other electronic means, as applicable | $32.00\n\nInstant statement | $1.00\n\nSpecial statement production, per statement | $5.00\n\nReturned check charge | $7.00\n\nCashier’s checks $1,000.00 or less per item | $5.00\n\nCashier’s checks over $1,000.00 per item | $10.00\n\nResearch and/or Reconciliation per hour | $25.00\n\nStop payment fee, per item | $32.00\n\nOverdraft Protection per transfer | $10.00",
+   "window_lines": "\nLost or Stolen Card\n\nRouting Number\n\nFinancial Calculators\n\nSecurity Resources\n\nSecurity Alerts\n\nIdentity Theft\n\nOnline Tips & Website Security\n\nAvoiding Social Engineering Attacks\n\nATM/Night Deposit Precautions\n\nSupport Center\n\nProduct Demos\n\nAbout\n\nAbout First Financial Bank\n\nCommunity Involvement\n\nNews & Events\n\nSuccess Stories\n\nCareers\n\nLocations & Hours\n\nContact Us\n\nRequest for Donation or Sponsorship\n\nLogin\n\nWhat can we help you find?\nSearch\n\nCommon Fees\n\nAdditional Common Fees Effective September 19, 2025.\n\nGeneral\n\nPaid NSF/OD Fee (Insufficient Funds/Overdraft Fee, per item) | $32.00\n\nReturned NSF/OD Fee (Insufficient Funds/Overdraft Fee, per item) *Per item - created by check, in-person withdrawal, ATM withdrawal, or other electronic means, as applicable | $32.00\n\nInstant statement | $1.00\n\nSpecial statement production, per statement | $5.00\n\nReturned check charge | $7.00\n\nCashier’s checks $1,000.00 or less per item | $5.00\n\nCashier’s checks over $1,000.00 per item | $10.00\n\nResearch and/or Reconciliation per hour | $25.00\n\nStop payment fee, per item | $32.00\n\nOverdraft Protection per transfer | $10.00\n\nReturn Mail Fee (per month) | $5.00\n\nTemporary Check Fee | $3.00\n\nDormant Account Fees:\n\nChecking, Money Market, and Savings Account Fee per month (An account is considered dormant after 182 days of inactive use. Fee does not apply to accounts with a balance of more than $100.) | $5.00\n\nWire Transfer:\n\nWire transfer, outgoing | $20.00\n\nWire transfer, incoming | $10.00\n\nInternational Wire, outgoing | $75.00\n\nInternational Wire, incoming | $30.00\n\nCollection Items:\n\nCollection/Foreign Item, incoming | $75.00\n\nCollection/Foreign Item, outgoing | $75.00\n\nForeign Drafts & Checks | $25.00 + International Fees\n\nDebit Card:\n\nDebit Card Replacement (after 3rd replaced card) | $10.00\n",
    "siblings": [
     {
      "amount": 5,
-     "fee_name": "Cashier’s checks $1,000.00 or less per item"
+     "fee_name": "Cashier’s checks $1,000.00 or less per item",
+     "fee_published_id": 68550
     },
     {
      "amount": 10,
-     "fee_name": "Cashier’s checks over per item"
+     "fee_name": "Cashier’s checks over per item",
+     "fee_published_id": 68551
     }
    ]
   },
@@ -1088,15 +1030,35 @@
    "fee_name": "Cashier’s checks over per item",
    "amount": "10.00",
    "excerpt": "Cashier’s checks over $1,000.00 per item | $10.00",
-   "window_lines": "Instant statement | $1.00\n\nSpecial statement production, per statement | $5.00\n\nReturned check charge | $7.00\n\nCashier’s checks $1,000.00 or less per item | $5.00\n\nCashier’s checks over $1,000.00 per item | $10.00\n\nResearch and/or Reconciliation per hour | $25.00\n\nStop payment fee, per item | $32.00\n\nOverdraft Protection per transfer | $10.00\n\nReturn Mail Fee (per month) | $5.00",
+   "window_lines": "\nSecurity Resources\n\nSecurity Alerts\n\nIdentity Theft\n\nOnline Tips & Website Security\n\nAvoiding Social Engineering Attacks\n\nATM/Night Deposit Precautions\n\nSupport Center\n\nProduct Demos\n\nAbout\n\nAbout First Financial Bank\n\nCommunity Involvement\n\nNews & Events\n\nSuccess Stories\n\nCareers\n\nLocations & Hours\n\nContact Us\n\nRequest for Donation or Sponsorship\n\nLogin\n\nWhat can we help you find?\nSearch\n\nCommon Fees\n\nAdditional Common Fees Effective September 19, 2025.\n\nGeneral\n\nPaid NSF/OD Fee (Insufficient Funds/Overdraft Fee, per item) | $32.00\n\nReturned NSF/OD Fee (Insufficient Funds/Overdraft Fee, per item) *Per item - created by check, in-person withdrawal, ATM withdrawal, or other electronic means, as applicable | $32.00\n\nInstant statement | $1.00\n\nSpecial statement production, per statement | $5.00\n\nReturned check charge | $7.00\n\nCashier’s checks $1,000.00 or less per item | $5.00\n\nCashier’s checks over $1,000.00 per item | $10.00\n\nResearch and/or Reconciliation per hour | $25.00\n\nStop payment fee, per item | $32.00\n\nOverdraft Protection per transfer | $10.00\n\nReturn Mail Fee (per month) | $5.00\n\nTemporary Check Fee | $3.00\n\nDormant Account Fees:\n\nChecking, Money Market, and Savings Account Fee per month (An account is considered dormant after 182 days of inactive use. Fee does not apply to accounts with a balance of more than $100.) | $5.00\n\nWire Transfer:\n\nWire transfer, outgoing | $20.00\n\nWire transfer, incoming | $10.00\n\nInternational Wire, outgoing | $75.00\n\nInternational Wire, incoming | $30.00\n\nCollection Items:\n\nCollection/Foreign Item, incoming | $75.00\n\nCollection/Foreign Item, outgoing | $75.00\n\nForeign Drafts & Checks | $25.00 + International Fees\n\nDebit Card:\n\nDebit Card Replacement (after 3rd replaced card) | $10.00\n\nGarnishment/Levy (each) | $150.00\n\nFind Us\n\nContact Us\n\nKasasa® Cycle Dates\n",
    "siblings": [
     {
      "amount": 5,
-     "fee_name": "Cashier’s checks $1,000.00 or less per item"
+     "fee_name": "Cashier’s checks $1,000.00 or less per item",
+     "fee_published_id": 68550
     },
     {
      "amount": 10,
-     "fee_name": "Cashier’s checks over per item"
+     "fee_name": "Cashier’s checks over per item",
+     "fee_published_id": 68551
+    }
+   ]
+  },
+  {
+   "fee_published_id": 116685,
+   "fee_verified_id": 180007,
+   "institution_id": 3457,
+   "source_document_id": 35684,
+   "canonical_fee_key": "overdraft",
+   "fee_name": "Overdraft fee per item per presentment",
+   "amount": "30.00",
+   "excerpt": "More than $30.00 – Overdraft fee per item per presentment.",
+   "window_lines": "\nExpedited Debit Card Shipping | $60.00\n\nDormant Account (per month when balance is $100 or less) | $10.00\n\nGarnishment Fee | $25.00\n\nImages sent with statements | $3.00\n\nNon-Sufficient Funds (NSF) Return Item Fee / Overdraft Fees: A fee may be imposed for each withdrawal attempt when your account does not have sufficient funds to cover that item. A maximum of $150 in overdraft and/or NSF item fees is assessed per business day per account. Be aware each time the item is presented for payment you may be charged a fee. This applies to consumer and business accounts except as prohibited by law, whether the withdrawal attempt is in person, by check, or other electronic means as follows:\n\nIf your check/item is returned for insufficient funds (NSF) and overdraft balance at the end of business day is:\n\n$30.00 or less – Overdraft fee per item per presentment. | $15.00 per item\n\nMore than $30.00 – Overdraft fee per item per presentment. | $30.00 per item\n\nIf your check/item is returned for insufficient funds (NSF) and overdraft balance at the end of business day is:\n\n$30.00 or less | $15.00 per item\n\nMore than $30.00 | $30.00 per item\n\nIndemnity Bonds ( Lost Certificate of Deposit) | $10.00\n\nReturned deposit item | $4.00\n\nStop payment (per request). These fees double for lost checkbook. | $20.00\n\nWire Transfers, Outgoing Domestic ** | $15.00\n\nWire Transfers, Outgoing International ** | $15.00\n\nDebit card replacement | $7.50\n\nQuick Links\n\nAgate Financial Services\n\nATMs\n\nCollege Ave\n\nDisclosures\n\nFraud Prevention\n\nFee Schedule\n\nLost or Stolen Card\n\nMoose Lake Area Chamber of Commerce\n\nRates\n\nReorder Checks\n\nCollege Avenue Student Loan Partnership\n\nPaying for college can be stressful. See how College Ave can help.\n\nLearn More\n\nVisa® Platinum Credit Card\n",
+   "siblings": [
+    {
+     "amount": 30,
+     "fee_name": "Overdraft fee per item per presentment",
+     "fee_published_id": 116685
     }
    ]
   },
@@ -1109,15 +1071,17 @@
    "fee_name": "Wire Transfer (Incoming) - up",
    "amount": "15.00",
    "excerpt": "Wire Transfer (Incoming) - up to $100,000 | $15",
-   "window_lines": "Lost Passbook | $30\nMail-in Deposits | $1\nMoney Order | $10\nNo Passbook Deposit (Passbook Account only) | $5 per item\nOfficial Check | $15\nReturn Mail for Incorrect Address | $10 per statement\nStop Payment Order (Checks / ACH) | $35\nTemporary Checks (3 checks) | $6\nWire Transfer (Incoming) - up to $100,000 | $15\nWire Transfer (Incoming) - over $100,000 | $18\nWire Transfer (Outgoing) - domestic | $20\nWire Transfer (Outgoing) - international | $35\nWire Transfer Amendment | $15\n\nGeneral Questions:\n1-212-285-4770\nMon - Fri : 9 am to 5 pm ET Sat and Sun : 10 am to 3 pm ET",
+   "window_lines": "Copy of Check / Money Instrument | $5 per item\nCopy of Statement | $5 per statement\nExcessive Activity Fee - Savings/Money Market Account Each automatic or pre-authorized transfer that exceeds 6 transfers in a month. | $10 per excess transaction\nInsufficient Available Funds Applies for each time an item is presented to us for payment and your available balance is insufficient to pay such item. The same item may be charged multiple times for such fee. | $29\nInactivity Fee - Checking/Savings no activity for 24 months. | $35 - one time fee\nLegal Process (Levy / subpoena, etc.) | $200\nLost Passbook | $30\nMail-in Deposits | $1\nMoney Order | $10\nNo Passbook Deposit (Passbook Account only) | $5 per item\nOfficial Check | $15\nReturn Mail for Incorrect Address | $10 per statement\nStop Payment Order (Checks / ACH) | $35\nTemporary Checks (3 checks) | $6\nWire Transfer (Incoming) - up to $100,000 | $15\nWire Transfer (Incoming) - over $100,000 | $18\nWire Transfer (Outgoing) - domestic | $20\nWire Transfer (Outgoing) - international | $35\nWire Transfer Amendment | $15\n\nGeneral Questions:\n1-212-285-4770\nMon - Fri : 9 am to 5 pm ET Sat and Sun : 10 am to 3 pm ET\nOr visit us at www.abacusbank.com.\n\n24/7 Automated Telephone Banking Services:\n1-888-818-6613 (English and Mandarin options available)\n\nReport Lost of Debit Card:\n1-800-472-3272 Available 24/7 (Chinese Translator available)\n1-800-299-9842 Mon-Fri 9am-5pm\n(English and Mandarin option available)\nOutside the U.S. Call : 1-1614-564-5105 Available 24/7\n\nReport Lost of Secured Credit Card:\n1-888-325-3678 Available 24/7\n1-212-285-4770\nMon - Fri: 9 am to 5 pm ET Sat and Sun : 10 am to 3 pm ET\n\nReport Lost of Regular Credit Card:\n1-800-883-0131 Available 24/7\nOutside the U.S. Call 1-813-868-2891 Available 24/7\n\nOnline Account Management",
    "siblings": [
     {
      "amount": 15,
-     "fee_name": "Wire Transfer (Incoming) - up"
+     "fee_name": "Wire Transfer (Incoming) - up",
+     "fee_published_id": 127659
     },
     {
      "amount": 18,
-     "fee_name": "Wire Transfer (Incoming) - over $100,000"
+     "fee_name": "Wire Transfer (Incoming) - over $100,000",
+     "fee_published_id": 127660
     }
    ]
   },
@@ -1130,15 +1094,17 @@
    "fee_name": "Wire Transfer (Incoming) - over $100,000",
    "amount": "18.00",
    "excerpt": "Wire Transfer (Incoming) - over $100,000 | $18",
-   "window_lines": "Mail-in Deposits | $1\nMoney Order | $10\nNo Passbook Deposit (Passbook Account only) | $5 per item\nOfficial Check | $15\nReturn Mail for Incorrect Address | $10 per statement\nStop Payment Order (Checks / ACH) | $35\nTemporary Checks (3 checks) | $6\nWire Transfer (Incoming) - up to $100,000 | $15\nWire Transfer (Incoming) - over $100,000 | $18\nWire Transfer (Outgoing) - domestic | $20\nWire Transfer (Outgoing) - international | $35\nWire Transfer Amendment | $15\n\nGeneral Questions:\n1-212-285-4770\nMon - Fri : 9 am to 5 pm ET Sat and Sun : 10 am to 3 pm ET\nOr visit us at www.abacusbank.com.",
+   "window_lines": "Copy of Statement | $5 per statement\nExcessive Activity Fee - Savings/Money Market Account Each automatic or pre-authorized transfer that exceeds 6 transfers in a month. | $10 per excess transaction\nInsufficient Available Funds Applies for each time an item is presented to us for payment and your available balance is insufficient to pay such item. The same item may be charged multiple times for such fee. | $29\nInactivity Fee - Checking/Savings no activity for 24 months. | $35 - one time fee\nLegal Process (Levy / subpoena, etc.) | $200\nLost Passbook | $30\nMail-in Deposits | $1\nMoney Order | $10\nNo Passbook Deposit (Passbook Account only) | $5 per item\nOfficial Check | $15\nReturn Mail for Incorrect Address | $10 per statement\nStop Payment Order (Checks / ACH) | $35\nTemporary Checks (3 checks) | $6\nWire Transfer (Incoming) - up to $100,000 | $15\nWire Transfer (Incoming) - over $100,000 | $18\nWire Transfer (Outgoing) - domestic | $20\nWire Transfer (Outgoing) - international | $35\nWire Transfer Amendment | $15\n\nGeneral Questions:\n1-212-285-4770\nMon - Fri : 9 am to 5 pm ET Sat and Sun : 10 am to 3 pm ET\nOr visit us at www.abacusbank.com.\n\n24/7 Automated Telephone Banking Services:\n1-888-818-6613 (English and Mandarin options available)\n\nReport Lost of Debit Card:\n1-800-472-3272 Available 24/7 (Chinese Translator available)\n1-800-299-9842 Mon-Fri 9am-5pm\n(English and Mandarin option available)\nOutside the U.S. Call : 1-1614-564-5105 Available 24/7\n\nReport Lost of Secured Credit Card:\n1-888-325-3678 Available 24/7\n1-212-285-4770\nMon - Fri: 9 am to 5 pm ET Sat and Sun : 10 am to 3 pm ET\n\nReport Lost of Regular Credit Card:\n1-800-883-0131 Available 24/7\nOutside the U.S. Call 1-813-868-2891 Available 24/7\n\nOnline Account Management\nVisit: www.mycardstatement.com\n",
    "siblings": [
     {
      "amount": 15,
-     "fee_name": "Wire Transfer (Incoming) - up"
+     "fee_name": "Wire Transfer (Incoming) - up",
+     "fee_published_id": 127659
     },
     {
      "amount": 18,
-     "fee_name": "Wire Transfer (Incoming) - over $100,000"
+     "fee_name": "Wire Transfer (Incoming) - over $100,000",
+     "fee_published_id": 127660
     }
    ]
   }

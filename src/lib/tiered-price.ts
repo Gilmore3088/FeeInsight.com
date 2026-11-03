@@ -23,8 +23,10 @@
  * - a count: "1-3 items", "4+ items", "6th or more items", "more than 10 transactions".
  * A tier group is two or more such prices of one fee: adjacent lines (blank lines between are skipped)
  * whose words without the condition are the same, or the clauses of one line, each with its own condition
- * and price. Not a tier: a cap ("maximum $150 per day"), a waiver threshold ("waived with $500 balance",
- * "no fee if $5 or less"), and two different fees on one line ("Stop payment $20, Wire transfer $15").
+ * and price, with at least two different prices. Not a tier: a cap ("maximum $150 per day"), a waiver
+ * threshold ("waived with $500 balance", "no fee if $5 or less"), a rate's minimum ("over $1,000 0.25% with a
+ * $50.00 minimum"), one price under every condition, and two different fees on one line, each clause naming
+ * its own fee ("Cashier's check over $1,000 $10.00; Money order up to $1,000 $5.00").
  */
 
 // A dollar figure: "$30", "$1,000.00", "$.50", "$50K". A comma that starts no thousands group ends it ("under $50, ...").
@@ -53,7 +55,13 @@ const COUNT_CONDITION = new RegExp(
   "gi",
 );
 /** Words that make a threshold a waiver, a cap or a limit, never a tier's own condition. */
-const NOT_A_TIER = /\b(?:waive[ds]?|waiver|no\s+(?:fee|charge)|free|n\/c|avoid(?:ed)?|unless|maintain(?:ed|s)?|keep|maximum|max\b|cap(?:ped)?\b|limit(?:ed)?\b|not\s+(?:be\s+)?(?:charged|assessed)|will\s+not|otherwise|regardless)\b/i;
+const NOT_A_TIER = /\b(?:waive[ds]?|waiver|no\s+(?:fee|charge)|free|n\/c|avoid(?:ed)?|unless|maintain(?:ed|s)?|keep|maximum|max\b|min(?:imum)?\b|cap(?:ped)?\b|limit(?:ed)?\b|not\s+(?:be\s+)?(?:charged|assessed)|will\s+not|otherwise|regardless)\b/i;
+/**
+ * A rate on the line ("0.25% with a $50.00 minimum", "5% ($10.00 min)"): its dollar figure is the rate's
+ * floor or cap, never a tier's flat price (review of #2981), so a line that prints a percentage is no tier.
+ */
+const PERCENT = /\d\s*%|\bpercent\b/i;
+const notATier = (text: string) => NOT_A_TIER.test(text) || PERCENT.test(text);
 const MONEY = new RegExp(FIG, "gi");
 /**
  * Categories whose balance conditions name an account's waiver or minimum, priced per account by its own
@@ -63,7 +71,10 @@ const MONEY = new RegExp(FIG, "gi");
 export const TIERLESS_CATEGORIES: ReadonlySet<string> = new Set(["monthly_maintenance", "minimum_balance"]);
 const HAS_MONEY = new RegExp(FIG, "i");
 /** The words a balance or amount threshold is stated about, from the lead-in line above a tier group. */
-const LEAD_NOUN = /\b((?:overdraft|overdrawn|negative|available|ledger|account|collected|ending|daily|current|average(?:\s+daily)?)\s+balance|(?:item|check|transaction|overdraft)\s+amount)\b/gi;
+const LEAD_NOUN_SOURCE = String.raw`(?:overdraft|overdrawn|negative|available|ledger|account|collected|ending|daily|current|average(?:\s+daily)?)\s+balance|(?:item|check|transaction|overdraft)\s+amount`;
+const LEAD_NOUN = new RegExp(String.raw`\b(${LEAD_NOUN_SOURCE})\b`, "gi");
+/** The only words a name's own tier bracket may print before its condition (`withoutTierScope`). */
+const SCOPE_NOUN = new RegExp(String.raw`^(?:${LEAD_NOUN_SOURCE}|balance|amount)$`, "i");
 const CLAUSE_BREAK = /\s*(?:;|\s\|\s|,\s|\.\s)\s*/g;
 
 export type TierKind = "dollar" | "count";
@@ -152,7 +163,7 @@ function baseWords(text: string, condition: TierCondition, price: Token): string
 
 /** One line read as one tier: one condition and one price outside it, no waiver, cap or limit words. */
 function tierOfLine(line: string): { condition: TierCondition; price: Token; base: string; label: string } | null {
-  if (NOT_A_TIER.test(line)) return null;
+  if (notATier(line)) return null;
   const conditions = tierConditionsIn(line);
   if (conditions.length !== 1) return null;
   const prices = pricesOutside(line, conditions);
@@ -166,14 +177,37 @@ function tierOfLine(line: string): { condition: TierCondition; price: Token; bas
   return { condition, price, base: baseWords(line, condition, price), label };
 }
 
+/** A group prints at least two different prices: one price under every condition is no tier (review of #2981). */
+function distinctPrices(prices: number[]): boolean {
+  return new Set(prices.map((price) => price.toFixed(2))).size >= 2;
+}
+
+const CLAUSE_STOP = new RegExp(
+  String.raw`\b(?:${UNIT.slice(3, -1)}|per|each|ea|fee|fees|charge|charges|if|is|are|the|of|for|when|a|an|and|or|to|by|on|in|at|with|than|more|less|over|under|above|below|up|between|exceeding|excess|balance|amount|overdraft|overdrawn|negative|available|ledger|account|collected|ending|daily|current|average)\b`,
+  "gi",
+);
+
+/** A clause's own fee words, without its condition, its price and the words any tier clause uses. */
+function feeWords(clause: string, condition: TierCondition, price: Token, offset: number): Set<string> {
+  const shift = (at: number) => at - offset;
+  let text = clause;
+  for (const [start, end] of [[condition.start, condition.end], [price.start, price.end]].sort((x, y) => y[0] - x[0])) {
+    const [from, to] = [shift(start), shift(end)];
+    if (from >= 0 && to <= clause.length + 1) text = `${text.slice(0, from)} ${text.slice(to)}`;
+  }
+  const words = collapse(text.toLowerCase().replace(MONEY, " ").replace(CLAUSE_STOP, " ").replace(/[^a-z]+/g, " ")).split(" ");
+  return new Set(words.filter((word) => word.length > 2));
+}
+
 /** The clauses of one line that each print one condition and one price ("1-3 items $1.00, 4+ items $2.00"). */
 function tiersOnOneLine(line: string): Array<{ condition: TierCondition; price: Token }> {
-  if (NOT_A_TIER.test(line)) return [];
+  if (notATier(line)) return [];
   const conditions = tierConditionsIn(line);
   const prices = pricesOutside(line, conditions);
   if (conditions.length < 2 || prices.length < 2) return [];
   const breaks = [0, ...[...line.matchAll(CLAUSE_BREAK)].map((match) => (match.index ?? 0) + 1), line.length + 1];
   const tiers: Array<{ condition: TierCondition; price: Token }> = [];
+  const clauseWords: Array<Set<string>> = [];
   for (let at = 0; at < breaks.length - 1; at++) {
     const [from, to] = [breaks[at], breaks[at + 1]];
     const inClause = <T extends { start: number }>(rows: T[]) => rows.filter((row) => row.start >= from && row.start < to);
@@ -184,8 +218,19 @@ function tiersOnOneLine(line: string): Array<{ condition: TierCondition; price: 
     // A $0 band is the fee waived below a threshold, never a priced tier.
     if (!(clausePrices[0].value > 0)) continue;
     tiers.push({ condition: clauseConditions[0], price: clausePrices[0] });
+    // The first clause's label before a colon ("Official checks:") heads every clause, so it is no clause's own fee.
+    const colon = line.indexOf(":");
+    const start = at === 0 && colon >= 0 && colon < Math.min(clauseConditions[0].start, clausePrices[0].start) ? colon + 1 : from;
+    clauseWords.push(feeWords(line.slice(start, to), clauseConditions[0], clausePrices[0], start));
   }
   if (tiers.length < 2) return [];
+  // Two fees on one line ("Cashier's check over $1,000 $10.00; Money order up to $1,000 $5.00"): clauses
+  // that each name a fee of their own, with no word in common, are two fees, never one fee's tiers.
+  const named = clauseWords.filter((words) => words.size > 0);
+  for (let a = 0; a < named.length; a++) {
+    for (let b = a + 1; b < named.length; b++) if (![...named[a]].some((word) => named[b].has(word))) return [];
+  }
+  if (!distinctPrices(tiers.map((tier) => tier.price.value))) return [];
   if (new Set(tiers.map((tier) => tier.condition.kind)).size !== 1) return [];
   if (new Set(tiers.map((tier) => collapse(tier.condition.text.toLowerCase()))).size !== tiers.length) return [];
   return tiers;
@@ -242,6 +287,7 @@ export function tierGroupAt(lines: readonly string[], index: number): TierGroup 
     return { condition: tier.condition.text, kind: tier.condition.kind, price: tier.price.value, line: at };
   });
   if (new Set(tiers.map((tier) => collapse(tier.condition.toLowerCase()))).size !== tiers.length) return null;
+  if (!distinctPrices(tiers.map((tier) => tier.price))) return null;
   const firstTier = tierOfLine(lines[rows[0]])!;
   const base = collapse(
     `${firstTier.label.slice(0, firstTier.condition.start)} ${firstTier.label.slice(firstTier.condition.end)}`
@@ -356,18 +402,21 @@ const TIER_SCOPE = /\s\(([^()]*)\)\s*$/;
 /**
  * For the category guard: the name without its own tier scope, so the scope's words ("or less") are
  * never read as a waiver threshold. Only a priced fee (above $0) whose name ends in a bracket that is a
- * tier condition with at most four words before it, and no waiver, cap or limit words anywhere in the
- * name. Every other name is returned unchanged.
+ * tier condition with nothing before it but the threshold's own noun ("overdraft balance", "item amount",
+ * "balance"), and no waiver, cap, minimum, limit or rate words anywhere in the name. Every other name is
+ * returned unchanged (review of #2981: "Outgoing wire (international over $1,000)" keeps "international").
  */
 export function withoutTierScope(name: string, amount: number | string | null | undefined): string {
   const price = amount == null || amount === "" ? null : Number(amount);
-  if (price == null || !Number.isFinite(price) || price <= 0 || NOT_A_TIER.test(name)) return name;
+  if (price == null || !Number.isFinite(price) || price <= 0 || notATier(name)) return name;
   const scope = name.match(TIER_SCOPE);
   if (!scope) return name;
   const conditions = tierConditionsIn(scope[1]);
   if (conditions.length !== 1) return name;
   const before = scope[1].slice(0, conditions[0].start).trim();
   const after = scope[1].slice(conditions[0].end).trim();
-  if (after || (before && before.split(/\s+/).length > 4)) return name;
+  // Only the threshold's own noun may come before the condition ("overdraft balance $30.00 or less"); any
+  // other word ("international over $1,000", "continuous over $5") is the fee's and stays for the guard.
+  if (after || (before && !SCOPE_NOUN.test(collapse(before)))) return name;
   return name.slice(0, scope.index).trimEnd();
 }

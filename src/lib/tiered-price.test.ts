@@ -70,3 +70,43 @@ describe("withoutTierScope (category guard)", () => {
     expect(withoutTierScope("Overdraft fee (unless the total overdraft is $50 or less)", 30)).toBe("Overdraft fee (unless the total overdraft is $50 or less)");
   });
 });
+
+describe("review of #2981: what is no tier group", () => {
+  const lines = (...rows: string[]) => tierLines(rows.join("\n"));
+  it("never reads a rate's minimum as a tier price", () => {
+    for (const line of [
+      "Foreign check collection: up to $1,000 $25.00, over $1,000 0.25% with a $50.00 minimum",
+      "Coin counting non-customers: under $100 $5.00; $100 or more 5% ($10.00 min)",
+      "Check cashing non-customer: under $100 $5.00; over $100 2% (minimum $10.00)",
+    ]) expect(tierGroupAt(lines(line), 0)).toBeNull();
+    expect(tierGroupAt(lines("Collection up to $1,000 | $25.00", "Collection over $1,000 | 0.25%, $50.00 minimum"), 0)).toBeNull();
+  });
+
+  it("never reads two fees on one line as tiers", () => {
+    expect(tierGroupAt(lines("Official checks: Cashier's check over $1,000 $10.00; Money order up to $1,000 $5.00"), 0)).toBeNull();
+    // One fee's clauses still are.
+    expect(tierGroupAt(lines("Wire: up to $100,000 $15.00; over $100,000 $18.00"), 0)?.tiers.map((tier) => tier.price)).toEqual([15, 18]);
+  });
+
+  it("needs two different prices", () => {
+    expect(tierGroupAt(lines("Collection Items (domestic) up to $1,000 | $25.00", "Collection Items (domestic) over $1,000 | $25.00"), 0)).toBeNull();
+    expect(tierGroupAt(lines("ATM fee: up to $100 $35.00; over $100 $35.00"), 0)).toBeNull();
+  });
+
+  it("strips a tier bracket for the guard only when nothing but the threshold's noun comes before the condition", () => {
+    expect(withoutTierScope("Check printing (4+ items)", 2)).toBe("Check printing");
+    expect(withoutTierScope("Cashier's check (amount under $1,500)", 3)).toBe("Cashier's check");
+    for (const name of [
+      "Outgoing wire (international over $1,000)",
+      "Outgoing wire (foreign over $1,000)",
+      "Wire transfer (incoming over $1,000)",
+      "Overdraft fee (continuous over $5)",
+      "Overdraft fee (sustained daily over $5)",
+      "Overdraft fee (transfer from savings over $5)",
+      "Overdraft fee (annual over $5)",
+      "Overdraft fee (returned item over $5)",
+      "NSF fee (paid overdraft items over $5)",
+      "Coin counting ($100 or more, 5% minimum)",
+    ]) expect(withoutTierScope(name, 30)).toBe(name);
+  });
+});
