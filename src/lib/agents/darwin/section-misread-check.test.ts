@@ -157,8 +157,12 @@ describe("Darwin's section misread re-check (Knox v177)", () => {
       // Under the heading, but the bank prices its name only once (no candidate): kept.
       { ...row(137448, 27658, "check_image", "Copy of a Check", 1), source_line: 'excerpt="Copy of a Check | FREE"', audience_candidate: false },
     ];
+    // An account category (Knox reads no audience product there) and a stored line the text never prints: not judged.
+    rows.push({ ...row(5, 27658, "monthly_maintenance", "Monthly fee", 0), source_line: 'excerpt="Fax Service | FREE"', audience_candidate: true });
+    rows.push({ ...row(6, 27658, "document_reproduction", "Notary", 0), source_line: 'excerpt="Notary | FREE"', audience_candidate: true });
     const found = findSectionMisreads(rows, new Map([[27658, midwest]]));
     expect(found.matches.map((fee) => [fee.feePublishedId, fee.kind])).toEqual([[137483, "audience_section_untagged"]]);
+    expect(found.audienceUnplaced).toBe(1);
     expect(found.matches[0].reason).toContain("Senior Perks (60 & Over)");
     expect(new RegExp(AUDIENCE_TEXT_SQL, "i").test("Senior Perks (60 & Over)")).toBe(true);
     expect(new RegExp(AUDIENCE_TEXT_SQL, "i").test("Members 18 years and under")).toBe(true);

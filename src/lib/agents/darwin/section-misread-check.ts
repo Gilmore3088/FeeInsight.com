@@ -7,7 +7,8 @@ import { accountlessMonthlyExcerpt, accountlessMonthlyOnPage } from "@/lib/agent
 import { excerptOf } from "@/lib/agents/hamilton/frequency-fill";
 import { frontMatterName } from "@/lib/agents/knox/specialists";
 import { iraSectionClosingFee } from "@/lib/custom-report/ira-section-fee";
-import { audienceSectionHeading } from "@/lib/agents/knox/audience-section";
+import { audienceRowLineCount, audienceSectionHeading } from "@/lib/agents/knox/audience-section";
+import { ACCOUNT_PRODUCT_CATEGORIES } from "@/lib/agents/knox/lineup";
 
 type SqlTag = typeof sql;
 
@@ -56,6 +57,8 @@ type SqlTag = typeof sql;
  *   audience (`audienceSectionHeading` on the text Knox read: "Senior Perks (60 & Over)" over "Fax Service | FREE"),
  *   while the bank has a live fee of the same name with no product at another price (Midwest Members FCU's $1 fax,
  *   #162230). The audience's price reads as the general fee's; Knox v179 reads it under the heading as its product.
+ *   Only in a category that takes no account as its product (`ACCOUNT_PRODUCT_CATEGORIES`, as Knox); a stored line
+ *   that no single line of the text holds is not judged (`audienceUnplaced`, step detail `audience_unplaced`).
  *
  * Each verify step reads the live flat fees each rule could match (`sectionMisreadRowsSql`: the name pre-filters,
  * and for the IRA rule a text that names an IRA). An admin-corrected fee is never read; an IRA or monthly sentence
@@ -136,6 +139,8 @@ export interface SectionMisreadFindings {
   noText: number;
   /** Version 3: live $0 candidates whose stored line is missing or cut: not judged. */
   cut: number;
+  /** Version 3: untagged audience candidates whose stored line no single line of the text holds: not judged. */
+  audienceUnplaced: number;
   matched: number;
   byKind: Record<SectionMisreadKind, number>;
   institutions: number;
@@ -159,6 +164,14 @@ function num(value: number | string | null | undefined): number | null {
 
 function emptyKinds(): Record<SectionMisreadKind, number> {
   return { waiver_column_name: 0, front_matter_name: 0, wire_subscription: 0, ira_section_closing: 0, returned_item_service: 0, accountless_monthly_sentence: 0, zero_not_printed: 0, audience_section_untagged: 0 };
+}
+
+/**
+ * Version 3: an untagged fee whose bank prices its name otherwise, in a category that takes no account as its product
+ * (Knox reads an audience heading as the product only there: `withLineupFromText`, `ACCOUNT_PRODUCT_CATEGORIES`).
+ */
+function audienceCandidate(row: SectionMisreadRow): boolean {
+  return !!row.audience_candidate && !ACCOUNT_PRODUCT_CATEGORIES.has(row.canonical_fee_key ?? "");
 }
 
 /** Version 3: a live $0 whose stored line prints no free price, judged on its text. */
@@ -219,6 +232,7 @@ export function findSectionMisreads(
   const seen = new Set<number>();
   let noText = 0;
   let cut = 0;
+  let audienceUnplaced = 0;
   for (const row of [...rows].sort((a, b) => Number(a.fee_published_id) - Number(b.fee_published_id))) {
     const feeId = Number(row.fee_published_id);
     if (seen.has(feeId)) continue;
@@ -254,12 +268,14 @@ export function findSectionMisreads(
       continue;
     }
     if (stored === "cut") cut += 1;
-    if (row.audience_candidate) {
+    if (audienceCandidate(row)) {
       const artifactId = num(row.artifact_id);
       const text = artifactId == null ? undefined : texts.get(artifactId);
       const line = excerptOf(row.source_line);
       if (!text) noText += 1;
-      else if (line) {
+      // A stored line no line of the text holds, or more than one does, cannot be placed under a heading: unjudged.
+      else if (!line || audienceRowLineCount(text, line) !== 1) audienceUnplaced += 1;
+      else {
         const heading = audienceSectionHeading(text, line);
         if (heading) {
           matches.push({ ...base, kind: AUDIENCE_SECTION_UNTAGGED_REASON, reason: `${AUDIENCE_SECTION_UNTAGGED_REASON}: "${heading.slice(0, 60)}" over "${line.slice(0, 60)}"` });
@@ -299,6 +315,7 @@ export function findSectionMisreads(
     checked: seen.size,
     noText,
     cut,
+    audienceUnplaced,
     matched: matches.length,
     byKind,
     institutions: new Set(matches.map((fee) => fee.institutionId)).size,
@@ -356,6 +373,7 @@ export function sectionMisreadRowsSql(db: SqlTag, options: { institutionId?: num
       SELECT live.* FROM live
         JOIN agent_source_texts a ON a.id = live.artifact_id
        WHERE live.audience_candidate
+         AND NOT (COALESCE(live.canonical_fee_key, '') = ANY(${[...ACCOUNT_PRODUCT_CATEGORIES]}::text[]))
          AND live.source_line ~ ${STORED_LINE_SQL}
          AND a.normalized_text ~* ${AUDIENCE_TEXT_SQL}
     )
@@ -384,7 +402,7 @@ export async function sectionMisreadTexts(db: SqlTag, artifactIds: readonly numb
 }
 
 function emptyResult(live: boolean, dryRun: boolean, scoped: boolean): SectionMisreadResult {
-  return { live, dryRun, scoped, checked: 0, noText: 0, cut: 0, matched: 0, byKind: emptyKinds(), institutions: 0, samples: [], flagged: 0, waiting: 0, takenDown: [] };
+  return { live, dryRun, scoped, checked: 0, noText: 0, cut: 0, audienceUnplaced: 0, matched: 0, byKind: emptyKinds(), institutions: 0, samples: [], flagged: 0, waiting: 0, takenDown: [] };
 }
 
 /** One step's re-check (see the module note). Never throws: a failed read reports nothing, and a failed write leaves the fees as they were. */
@@ -401,7 +419,7 @@ export async function recheckSectionMisreads(
     rows = await inSavepoint(db, (scope) => sectionMisreadRowsSql(scope, { institutionId: options.institutionId, limit: options.limit }));
     const artifactIds = rows
       .filter((row) => !nameMisreadKind((row.fee_name ?? "").trim(), row.canonical_fee_key, row.frequency) &&
-        (row.canonical_fee_key === "early_closure" || zeroLineCandidate(row) || row.audience_candidate ||
+        (row.canonical_fee_key === "early_closure" || zeroLineCandidate(row) || audienceCandidate(row) ||
           (row.canonical_fee_key === "monthly_maintenance" && accountlessMonthlyExcerpt(excerptOf(row.source_line)) != null)))
       .map((row) => num(row.artifact_id))
       .filter((id): id is number => id != null);
@@ -527,6 +545,7 @@ export function sectionMisreadDetail(result: SectionMisreadResult) {
     checked: result.checked,
     no_text: result.noText,
     cut_line: result.cut,
+    audience_unplaced: result.audienceUnplaced,
     matched: result.matched,
     by_kind: result.byKind,
     institutions: result.institutions,
