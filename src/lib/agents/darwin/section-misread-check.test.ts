@@ -13,6 +13,9 @@ import {
   storedLineMisreadKind,
   STORED_LINE_SQL,
   AUDIENCE_TEXT_SQL,
+  STOP_PAYMENT_VARIANT_NAME_SQL,
+  STOP_PAYMENT_TEXT_SQL,
+  FEE_CARD_TEXT_SQL,
   type SectionMisreadRow,
 } from "@/lib/agents/darwin/section-misread-check";
 
@@ -70,7 +73,7 @@ describe("Darwin's section misread re-check (Knox v177)", () => {
     ]);
     expect(found.checked).toBe(10);
     expect(found.noText).toBe(1);
-    expect(found.byKind).toEqual({ waiver_column_name: 2, front_matter_name: 1, wire_subscription: 1, ira_section_closing: 1, returned_item_service: 0, accountless_monthly_sentence: 0, zero_not_printed: 0, audience_section_untagged: 0 });
+    expect(found.byKind).toEqual({ waiver_column_name: 2, front_matter_name: 1, wire_subscription: 1, ira_section_closing: 1, returned_item_service: 0, accountless_monthly_sentence: 0, zero_not_printed: 0, audience_section_untagged: 0, stop_payment_variant: 0, deposited_card_return: 0 });
     expect(found.matches[1].reason).toBe('waiver_column_name: "Verification of Deposits is account_verification, not bill_pay"');
   });
 
@@ -166,6 +169,51 @@ describe("Darwin's section misread re-check (Knox v177)", () => {
     expect(found.matches[0].reason).toContain("Senior Perks (60 & Over)");
     expect(new RegExp(AUDIENCE_TEXT_SQL, "i").test("Senior Perks (60 & Over)")).toBe(true);
     expect(new RegExp(AUDIENCE_TEXT_SQL, "i").test("Members 18 years and under")).toBe(true);
+  });
+
+  it("version 4 (Knox v181): matches a stop payment variant filed as another fee and a deposited item's card filed NSF", () => {
+    // St. Louis Community FCU, text 372 (the text Knox read for live 40324), lines as printed.
+    const stLouis = [
+      "Statement Copy Fee | $5.00",
+      "• Early Withdrawal (per withdrawal) | $25.00",
+      "Save to Prosper4 | Stop Payment Fee – Check or ACH (per item): | $20.00",
+      "• Save to Prosper Withdrawal Fee | $25.00 | Check series | $25.00",
+      "Savings accounts | • Corporate Check | $15.00",
+      "• More than 6 teller-assisted withdrawals per quarter | Telephone Transfer Fee | $2.00",
+    ].join("\n");
+    // A bullet list of different fees (#75973): no parent introduces it, kept.
+    const list = "• Check Stop Payment Fee Per Item | $30.00\n• Certified Checks | $10.00";
+    // ESL FCU, text 11542 (live 68629): the returned item card says the member deposited or cashed it.
+    const esl = "Fee TypeReturned Item Fee\n\nDescriptionFor each item you deposit or cash that is returned unpaid. This usually occurs because the person who wrote you the check doesn’t have enough funds in their account to cover the amount.\n\nFee$10.00\n\nFee TypeCourtesy Pay Overdraft Fee\n\nDescriptionCoverage of insufficient or uncollectable funds (from your checks) are paid by ESL.\n\nFee$5.00";
+    // A card for the member's own item: kept.
+    const own = "Fee TypeNSF Fee\n\nDescriptionCharged when an item you write is returned because your account does not have enough funds.\n\nFee$30.00";
+    const rows: SectionMisreadRow[] = [
+      { ...row(40324, 372, "cashiers_check", "Corporate Check", 15), source_line: 'excerpt="• Corporate Check $15.00"' },
+      // Already a stop payment: kept.
+      { ...row(40325, 372, "stop_payment", "Check series", 25), source_line: 'excerpt="Check series | $25.00"' },
+      // At another price than the variant's: kept.
+      { ...row(40326, 372, "cashiers_check", "Corporate Check", 10), source_line: 'excerpt="• Corporate Check $10.00"' },
+      { ...row(75973, 9, "certified_check", "Certified Checks", 10), source_line: 'excerpt="• Certified Checks | $10.00"' },
+      { ...row(68629, 11542, "nsf", "Returned Item Fee", 10), source_line: 'excerpt="Returned Item Fee | $10.00"' },
+      { ...row(68630, 12, "nsf", "NSF Fee", 30), source_line: 'excerpt="NSF Fee | $30.00"' },
+    ];
+    const found = findSectionMisreads(rows, new Map([[372, stLouis], [9, list], [11542, esl], [12, own]]));
+    expect(found.matches.map((fee) => [fee.feePublishedId, fee.kind])).toEqual([[40324, "stop_payment_variant"], [68629, "deposited_card_return"]]);
+    expect(found.matches[0].reason).toContain("Stop Payment Fee – Check or ACH (per item): Corporate Check");
+    expect(found.byKind).toMatchObject({ stop_payment_variant: 1, deposited_card_return: 1 });
+    expect(new RegExp(STOP_PAYMENT_VARIANT_NAME_SQL, "i").test("Corporate Check")).toBe(true);
+    expect(new RegExp(STOP_PAYMENT_TEXT_SQL, "i").test(stLouis)).toBe(true);
+    expect(new RegExp(FEE_CARD_TEXT_SQL, "i").test(`Fees\n${esl}`)).toBe(true);
+  });
+
+  it("version 4: finds a stored line with or without OCR leader noise in either text (review of #2979)", () => {
+    const noisy = "Overdraft Transfer\n$0\nTransfer Fee. ....... iii eeeeeeaaeeeeaaaaaaaa.. per transfer";
+    const rows: SectionMisreadRow[] = [
+      // Stored before v181, with its noise; and since, without it. Both find the bare $0 cell above.
+      { ...row(1, 1, "overdraft_transfer", "Transfer Fee", 0), source_line: 'excerpt="Transfer Fee. ....... iii eeeeeeaaeeeeaaaaaaaa.. per transfer"' },
+      { ...row(2, 1, "overdraft_transfer", "Transfer Fee", 0), source_line: 'excerpt="Transfer Fee. .......                         .. per transfer"' },
+    ];
+    expect(findSectionMisreads(rows, new Map([[1, noisy]])).matches).toEqual([]);
   });
 
   it("selects the rows by Postgres pre-filters wide enough for each rule", () => {

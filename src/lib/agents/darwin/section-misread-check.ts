@@ -5,7 +5,9 @@ import { secondLook } from "@/lib/agents/hamilton/second-look";
 import { classifyFeeText, returnedItemServiceName, waiverAdviceName, waiverAdvicePrefix, wireServiceSubscription, zeroPrintedForRead, zeroPrintedOnLine } from "@/lib/agents/knox/rules";
 import { accountlessMonthlyExcerpt, accountlessMonthlyOnPage } from "@/lib/agents/knox/accountless-monthly";
 import { excerptOf } from "@/lib/agents/hamilton/frequency-fill";
-import { frontMatterName } from "@/lib/agents/knox/specialists";
+import { depositedCardReturnRead, frontMatterName } from "@/lib/agents/knox/specialists";
+import { withoutOcrLeaderNoise } from "@/lib/agents/knox/ocr-leader-noise";
+import { STOP_PAYMENT_VARIANT, stopPaymentVariantFor, stopPaymentVariantName } from "@/lib/custom-report/stop-payment-variant";
 import { iraSectionClosingFee } from "@/lib/custom-report/ira-section-fee";
 import { audienceRowLineCount, audienceSectionHeading } from "@/lib/agents/knox/audience-section";
 import { ACCOUNT_PRODUCT_CATEGORIES } from "@/lib/agents/knox/lineup";
@@ -60,6 +62,22 @@ type SqlTag = typeof sql;
  *   Only in a category that takes no account as its product (`ACCOUNT_PRODUCT_CATEGORIES`, as Knox); a stored line
  *   that no single line of the text holds is not judged (`audienceUnplaced`, step detail `audience_unplaced`).
  *
+ * Version 4 (Knox v181, re-read backlog dry run 12, Nov 3; review of #2979) adds two rules Knox v181 re-files new
+ * reads by, judged on the text Knox read with the same shared functions:
+ *
+ * - `stop_payment_variant`: a live fee not filed as stop_payment that is a bulleted variant under a stop payment row
+ *   printing its own price (`stopPaymentVariantFor`, `custom-report/stop-payment-variant.ts`): St. Louis Community
+ *   FCU's "• Corporate Check | $15.00" under "Stop Payment Fee – Check or ACH (per item): | $20.00", live as a $15
+ *   cashier's check (40324). Knox v181 reads it as "Stop Payment Fee – Check or ACH (per item): Corporate Check".
+ * - `deposited_card_return`: a live NSF fee whose labeled fee card's own description says the member deposited or
+ *   cashed the returned item (`depositedCardReturnRead`, `labeledFeeCardDescription`): ESL FCU's "Returned Item
+ *   Fee" $10, "For each item you deposit or cash that is returned unpaid" (68629). Knox v181 files it as the
+ *   deposited item return.
+ *
+ * Without this check a re-read would publish the right fee beside the live wrong one: Darwin's re-read category
+ * check (`reread-category-check.ts`) judges only fees with a settled Knox re-read request, and these have none.
+ * Version 4 also compares a stored line and the text with OCR leader noise blanked in both (`ocrComparable`).
+ *
  * Each verify step reads the live flat fees each rule could match (`sectionMisreadRowsSql`: the name pre-filters,
  * and for the IRA rule a text that names an IRA). An admin-corrected fee is never read; an IRA or monthly sentence
  * candidate whose text is gone is not judged. An institution-scoped run reads that institution's only. Switched on
@@ -72,7 +90,7 @@ type SqlTag = typeof sql;
  * Dry run, prod read-only, 2026-11-03: see docs/project/findings/2026-11-03-knox-backlog-dry-run-8-misreads.md.
  */
 export const SECTION_MISREAD_CHECK = "darwin.section_misread";
-export const SECTION_MISREAD_CHECK_VERSION = 3;
+export const SECTION_MISREAD_CHECK_VERSION = 4;
 /** The switch: off, the step only reports; on, matches come down after the second look. */
 export const SECTION_MISREAD_TAKEDOWN_LIVE = false;
 export const WAIVER_COLUMN_NAME_REASON = "waiver_column_name";
@@ -83,7 +101,9 @@ export const RETURNED_ITEM_SERVICE_REASON = "returned_item_service";
 export const ACCOUNTLESS_MONTHLY_REASON = "accountless_monthly_sentence";
 export const ZERO_NOT_PRINTED_REASON = "zero_not_printed";
 export const AUDIENCE_SECTION_UNTAGGED_REASON = "audience_section_untagged";
-export const SECTION_MISREAD_REASONS = [WAIVER_COLUMN_NAME_REASON, FRONT_MATTER_NAME_REASON, WIRE_SUBSCRIPTION_REASON, IRA_SECTION_CLOSING_REASON, RETURNED_ITEM_SERVICE_REASON, ACCOUNTLESS_MONTHLY_REASON, ZERO_NOT_PRINTED_REASON, AUDIENCE_SECTION_UNTAGGED_REASON] as const;
+export const STOP_PAYMENT_VARIANT_REASON = "stop_payment_variant";
+export const DEPOSITED_CARD_RETURN_REASON = "deposited_card_return";
+export const SECTION_MISREAD_REASONS = [WAIVER_COLUMN_NAME_REASON, FRONT_MATTER_NAME_REASON, WIRE_SUBSCRIPTION_REASON, IRA_SECTION_CLOSING_REASON, RETURNED_ITEM_SERVICE_REASON, ACCOUNTLESS_MONTHLY_REASON, ZERO_NOT_PRINTED_REASON, AUDIENCE_SECTION_UNTAGGED_REASON, STOP_PAYMENT_VARIANT_REASON, DEPOSITED_CARD_RETURN_REASON] as const;
 export type SectionMisreadKind = (typeof SECTION_MISREAD_REASONS)[number];
 export const SECTION_MISREAD_LIMIT = 10_000;
 export const SECTION_MISREAD_SAMPLES = 20;
@@ -101,6 +121,13 @@ export const ACCOUNTLESS_MONTHLY_LINE_SQL = String.raw`excerpt="?\W*(waived|no|f
 export const STORED_LINE_SQL = String.raw`excerpt=`;
 /** Version 3: a text that could head a section by an audience (a superset of `audienceSectionHeading`'s words). */
 export const AUDIENCE_TEXT_SQL = String.raw`(senior|retiree|youth|junior|teen|minor|young\s+adult|[0-9]{2}\s*(\+|&)|[0-9]{2}\s*(years?|yrs\.?)?\s*(of\s+age\s+|old\s+)?(and|or)\s|ages?\s+[0-9]{2}|(over|under)\s+(the\s+)?age|(over|under)\s+[0-9]{2})`;
+/** Version 4: a name that could be a stop payment variant's label (a superset of `STOP_PAYMENT_VARIANT`'s ends). */
+export const STOP_PAYMENT_VARIANT_NAME_SQL = String.raw`(checks?|series|range|drafts?|orders?|ach|debits?|items?|payments?)\W*$`;
+/** Version 4: a text with a bullet and a stop payment label (`stopPaymentVariantRows` reads no other). */
+export const STOP_PAYMENT_TEXT_SQL = String.raw`stop\s*-?\s*pay`;
+/** Version 4: a text with a labeled fee card ("Fee TypeReturned Item Fee") that says deposit or cash. */
+export const FEE_CARD_TEXT_SQL = String.raw`(^|\n)\s*fee\s*(type|name)`;
+export const DEPOSIT_OR_CASH_TEXT_SQL = String.raw`(deposit|cash)`;
 /** Knox stores at most 180 characters of a held read's line, and a cut line can end in its dot leader. */
 const STORED_LINE_CUT = 180;
 const DOT_LEADER_END = /(?:(?:\.\s?){2,}|…)\s*$/;
@@ -135,7 +162,7 @@ export interface SectionMisreadMatch {
 
 export interface SectionMisreadFindings {
   checked: number;
-  /** IRA, monthly sentence and version 3 $0 candidates whose text is gone: not judged. */
+  /** IRA, monthly sentence and version 3 $0 candidates whose text is gone: not judged (a version 4 candidate whose text is gone is not counted: its rule needs the text to select it). */
   noText: number;
   /** Version 3: live $0 candidates whose stored line is missing or cut: not judged. */
   cut: number;
@@ -163,7 +190,7 @@ function num(value: number | string | null | undefined): number | null {
 }
 
 function emptyKinds(): Record<SectionMisreadKind, number> {
-  return { waiver_column_name: 0, front_matter_name: 0, wire_subscription: 0, ira_section_closing: 0, returned_item_service: 0, accountless_monthly_sentence: 0, zero_not_printed: 0, audience_section_untagged: 0 };
+  return { waiver_column_name: 0, front_matter_name: 0, wire_subscription: 0, ira_section_closing: 0, returned_item_service: 0, accountless_monthly_sentence: 0, zero_not_printed: 0, audience_section_untagged: 0, stop_payment_variant: 0, deposited_card_return: 0 };
 }
 
 /**
@@ -172,6 +199,35 @@ function emptyKinds(): Record<SectionMisreadKind, number> {
  */
 function audienceCandidate(row: SectionMisreadRow): boolean {
   return !!row.audience_candidate && !ACCOUNT_PRODUCT_CATEGORIES.has(row.canonical_fee_key ?? "");
+}
+
+/** Version 4: a live fee not filed as stop_payment whose name could be a stop payment variant's label, with a stored line. */
+function variantCandidate(row: SectionMisreadRow): boolean {
+  return row.canonical_fee_key !== "stop_payment" && (num(row.amount) ?? 0) > 0 && STOP_PAYMENT_VARIANT.test((row.fee_name ?? "").replace(/\s+/g, " ").trim()) && !!excerptOf(row.source_line);
+}
+
+/** Version 4: a live NSF fee, judged by its labeled fee card's description. */
+function cardCandidate(row: SectionMisreadRow): boolean {
+  return row.canonical_fee_key === "nsf";
+}
+
+/**
+ * Pure, version 4: the Knox v181 rule a live fee matches on the text Knox read (OCR leader noise blanked, as Knox
+ * reads it), or null.
+ */
+export function textMisreadKind(row: SectionMisreadRow, text: string): { kind: SectionMisreadKind; evidence: string } | null {
+  const name = (row.fee_name ?? "").trim();
+  const amount = num(row.amount) ?? 0;
+  const read = withoutOcrLeaderNoise(text);
+  if (variantCandidate(row)) {
+    const variant = stopPaymentVariantFor(read, name, amount, excerptOf(row.source_line));
+    if (variant) return { kind: STOP_PAYMENT_VARIANT_REASON, evidence: `${stopPaymentVariantName(variant).slice(0, 80)}, not ${row.canonical_fee_key ?? "none"}` };
+  }
+  if (cardCandidate(row)) {
+    const filed = depositedCardReturnRead({ canonicalHint: "nsf", feeName: name, amount }, read);
+    if (filed.canonicalHint !== "nsf") return { kind: DEPOSITED_CARD_RETURN_REASON, evidence: `${name.slice(0, 60)} is ${filed.canonicalHint} by its card` };
+  }
+  return null;
 }
 
 /** Version 3: a live $0 whose stored line prints no free price, judged on its text. */
@@ -253,6 +309,15 @@ export function findSectionMisreads(
       matches.push({ ...base, kind: named.kind, reason: `${named.kind}: "${named.evidence}"` });
       continue;
     }
+    if (variantCandidate(row) || cardCandidate(row)) {
+      const artifactId = num(row.artifact_id);
+      const text = artifactId == null ? undefined : texts.get(artifactId);
+      const judged = text ? textMisreadKind(row, text) : null;
+      if (judged) {
+        matches.push({ ...base, kind: judged.kind, reason: `${judged.kind}: "${judged.evidence}"` });
+        continue;
+      }
+    }
     const stored = storedLineMisreadKind(row.source_line, amount);
     if (stored && stored !== "cut") {
       if (stored.kind === ZERO_NOT_PRINTED_REASON) {
@@ -326,8 +391,10 @@ export function findSectionMisreads(
 
 /**
  * Read-only: every live flat fee whose name a rule above could match, every live flat early closure fee whose text
- * names an IRA, every live $0 with a stored line, and every live fee with no product whose bank prices its name
- * otherwise and whose text could name an audience, with the artifact Knox read.
+ * names an IRA, every live $0 with a stored line, every live fee with no product whose bank prices its name
+ * otherwise and whose text could name an audience, and (version 4) every live fee whose name could be a stop
+ * payment variant on a bulleted stop payment page and every live NSF fee on a fee card page, with the artifact Knox
+ * read.
  */
 export function sectionMisreadRowsSql(db: SqlTag, options: { institutionId?: number; limit?: number } = {}) {
   const ids = options.institutionId != null ? [options.institutionId] : null;
@@ -376,12 +443,28 @@ export function sectionMisreadRowsSql(db: SqlTag, options: { institutionId?: num
          AND NOT (COALESCE(live.canonical_fee_key, '') = ANY(${[...ACCOUNT_PRODUCT_CATEGORIES]}::text[]))
          AND live.source_line ~ ${STORED_LINE_SQL}
          AND a.normalized_text ~* ${AUDIENCE_TEXT_SQL}
+    ),
+    retextured AS (
+      -- Version 4: a stop payment variant on a bulleted stop payment page, or an NSF fee on a fee card page.
+      SELECT live.* FROM live
+        JOIN agent_source_texts a ON a.id = live.artifact_id
+       WHERE (COALESCE(live.canonical_fee_key, '') <> 'stop_payment'
+              AND live.amount > 0
+              AND live.fee_name ~* ${STOP_PAYMENT_VARIANT_NAME_SQL}
+              AND live.source_line ~ ${STORED_LINE_SQL}
+              AND position('•' in a.normalized_text) > 0
+              AND a.normalized_text ~* ${STOP_PAYMENT_TEXT_SQL})
+          OR (live.canonical_fee_key = 'nsf'
+              AND a.normalized_text ~* ${FEE_CARD_TEXT_SQL}
+              AND a.normalized_text ~* ${DEPOSIT_OR_CASH_TEXT_SQL})
     )
     SELECT * FROM named
     UNION
     SELECT * FROM closing
     UNION
     SELECT * FROM audience
+    UNION
+    SELECT * FROM retextured
      ORDER BY fee_published_id
      LIMIT ${limit}::int
   `;
@@ -419,7 +502,7 @@ export async function recheckSectionMisreads(
     rows = await inSavepoint(db, (scope) => sectionMisreadRowsSql(scope, { institutionId: options.institutionId, limit: options.limit }));
     const artifactIds = rows
       .filter((row) => !nameMisreadKind((row.fee_name ?? "").trim(), row.canonical_fee_key, row.frequency) &&
-        (row.canonical_fee_key === "early_closure" || zeroLineCandidate(row) || audienceCandidate(row) ||
+        (row.canonical_fee_key === "early_closure" || zeroLineCandidate(row) || audienceCandidate(row) || variantCandidate(row) || cardCandidate(row) ||
           (row.canonical_fee_key === "monthly_maintenance" && accountlessMonthlyExcerpt(excerptOf(row.source_line)) != null)))
       .map((row) => num(row.artifact_id))
       .filter((id): id is number => id != null);

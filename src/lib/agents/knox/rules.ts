@@ -1,4 +1,5 @@
-import { stopPaymentVariantName, stopPaymentVariantRows } from "@/lib/custom-report/stop-payment-variant";
+import { stopPaymentVariantFor, stopPaymentVariantName } from "@/lib/custom-report/stop-payment-variant";
+import { ocrComparable } from "@/lib/agents/knox/ocr-leader-noise";
 import { IRA_SECTION_TARGET, iraSectionClosingFee } from "@/lib/custom-report/ira-section-fee";
 import { scopedFeeStatements, type FeeApplicability } from "@/lib/fee-audience";
 import { CELL_SEPARATOR } from "@/lib/agents/rosetta/html-dom";
@@ -1583,13 +1584,13 @@ export function zeroPrintedOnLine(line: string | null | undefined): boolean {
  * must be a price and nothing else ("$0", "Free", "None", "N/C", "No charge", "Waived"): another perk's label above
  * ("Free Statement Copies", "Free eStatements") prints no price for this read.
  */
-const squashLine = (line: string) => line.replace(/\s+/g, " ").trim();
 const PRICE_ONLY_ZERO_CELL = /^\W*(?:\$\s?0(?:\.0{1,2})?|free|none|n\/c|no[-\s]?charge|waived)\W*$/i;
 export function zeroPrintedForRead(excerpt: string | null | undefined, text: string | null | undefined): boolean {
   if (zeroPrintedOnLine(excerpt)) return true;
-  const own = squashLine(excerpt ?? "");
+  // Line and text compared with OCR leader noise blanked in both (`ocrComparable`, review of #2979).
+  const own = ocrComparable(excerpt);
   if (!text || own.length < 6) return false;
-  const lines = text.split(/\n+/).map(squashLine).filter(Boolean);
+  const lines = text.split(/\n+/).map(ocrComparable).filter(Boolean);
   const at = lines.findIndex((line) => line.includes(own));
   return at >= 1 && PRICE_ONLY_ZERO_CELL.test(lines[at - 1]);
 }
@@ -1756,12 +1757,9 @@ export function stopPaymentListRead(candidate: ExtractedFeeCandidate, text: stri
  */
 export function stopPaymentVariantRead(candidate: ExtractedFeeCandidate, text: string): ExtractedFeeCandidate {
   if (candidate.canonicalHint === "stop_payment" || !candidate.excerpt) return candidate;
-  const name = normalizeSegment(candidate.feeName).toLowerCase();
-  const excerpt = candidate.excerpt.replace(/\s+/g, " ").trim();
-  const rows = stopPaymentVariantRows(text).filter((row) =>
-    row.variant.toLowerCase() === name && Math.abs(row.amount - candidate.amount) < 0.005 && (row.row.includes(excerpt) || excerpt.includes(row.row)));
-  if (rows.length !== 1) return candidate;
-  const filed = stopPaymentVariantName(rows[0]);
+  const row = stopPaymentVariantFor(text, normalizeSegment(candidate.feeName), candidate.amount, candidate.excerpt);
+  if (!row) return candidate;
+  const filed = stopPaymentVariantName(row);
   return passesDarwinChecks("stop_payment", filed, candidate.amount) ? { ...candidate, canonicalHint: "stop_payment", feeName: filed } : candidate;
 }
 

@@ -2735,10 +2735,12 @@ description says the member deposited or cashed the item is the deposited item r
 cards are unchanged. (3) OCR noise on a dot leader (single letters, runs of a few repeated letters) is blanked before
 any reader runs (`withoutOcrLeaderNoise`): First Bank & Trust Co.'s "Paid Item Charge c" is "Paid Item Charge", the
 same fee as live #107178. (4) When two lines carry as many of a name's stems, the source check's line for a priced fee is
-the one whose label opens with the name (San Francisco FCU's "Maintenance Fee | $5.00/month", not its par value
-sentence). Synergy's "Returned Check Fee - Same Party Check" stays nsf: the page never says the check was deposited,
+the one whose label prints the whole name, then one that opens with its first word (San Francisco FCU's
+"Maintenance Fee | $5.00/month", not its par value sentence; "Wire | Incoming Wire Fee", not "Incoming Wire Return
+Fee"). The checks that find a stored line in a text blank OCR leader noise in both (`ocrComparable`). Darwin's section
+misread check v4 re-checks rules (1) and (2) on live fees (switch off; Nov 3: #40324 and #68629 match). Synergy's "Returned Check Fee - Same Party Check" stays nsf: the page never says the check was deposited,
 and banks use "same party" and "two-party" both ways. Harnesses rb to rb12 (v180 vs v181): live fees not reproduced
-456 to 456; no right read lost. The stale-read floor stays at v97.
+456 to 456; no right read lost; 74 source lines change, 0 verdicts. The stale-read floor stays at v97.
 
 v180 (eleventh Knox re-read backlog dry run, Nov 3; 40 backlog texts at v179, 4 wrong and 9 doubtful of 67 changed
 rows, each against the bank's own line): (1) "Additional withdrawals (per withdrawal over 3 per month)" is the excess

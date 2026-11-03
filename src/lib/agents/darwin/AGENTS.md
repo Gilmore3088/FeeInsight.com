@@ -1948,6 +1948,17 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   that could name an audience, 3 sit under an audience heading: Midwest Members FCU's 137448, 137449 and 137483
   under "Senior Perks (60 & Over)"; about 217 stored lines are not printed once in their text (by a literal SQL
   match: 132 absent, 85 repeated) and go unjudged. The check reports 19 live fees, switch off.
+  Version 4 (Knox v181, backlog dry run 12, review of #2979) adds the live re-check of Knox v181's two re-filing
+  rules, on the text Knox read with the same shared functions. `stop_payment_variant`: a live fee not filed as
+  stop_payment that is a bulleted variant under a stop payment row printing its own price, at the variant's price,
+  its stored line on that row (`stopPaymentVariantFor`; St. Louis Community FCU's "• Corporate Check | $15.00" live as
+  a cashier's check, 40324). `deposited_card_return`: a live NSF fee whose labeled fee card says the member deposited
+  or cashed the returned item (`depositedCardReturnRead`, `labeledFeeCardDescription`; ESL FCU's "Returned Item
+  Fee" $10, 68629). The re-read category check does not cover them (no Knox re-read request), so without this a
+  re-read would publish the right fee beside the wrong one. Stored lines and texts are compared with OCR leader
+  noise blanked in both (`ocrComparable`). Dry run Nov 3 (prod, read-only, the 1,800 texts Knox read): of 7,279
+  candidates, 1,685 selected by the new pre-filters, the new rules match exactly 40324 and 68629; the check reports
+  23 live fees at 20 institutions (the v3 rules' 21 on today's rows, the same with v3's code), switch off.
 - A monthly maintenance fee whose row sits under a service's heading (`service-maintenance-check.ts`,
   #1092, state key 5608): River City Bank's "Consumer Online Banking Services and Mobile Banking Fees" over
   "Monthly Maintenance Fee | No charge" is the online banking service's fee; published as the account's
@@ -3033,7 +3044,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `FREE_LIST_ITEM_CHECK_VERSION` | `darwin.free_list_item` | v1 | `darwin/free-list-item-check.ts` |
 | `NOT_ACCOUNT_FEE_LINE_CHECK_VERSION` | `darwin.not_account_fee_line` | v1 | `darwin/not-account-fee-line-check.ts` |
 | `CREDIT_CARD_SECTION_CHECK_VERSION` | `darwin.credit_card_section` | v2 | `darwin/credit-card-section-check.ts` |
-| `SECTION_MISREAD_CHECK_VERSION` | `darwin.section_misread` | v3 | `darwin/section-misread-check.ts` |
+| `SECTION_MISREAD_CHECK_VERSION` | `darwin.section_misread` | v4 | `darwin/section-misread-check.ts` |
 | `SERVICE_MAINTENANCE_CHECK_VERSION` | `darwin.service_maintenance_heading` | v1 | `darwin/service-maintenance-check.ts` |
 | `CARD_PROGRAM_SECTION_CHECK_VERSION` | `darwin.card_program_section` | v1 | `darwin/card-program-section-check.ts` |
 | `LOAN_SECTION_CHECK_VERSION` | `darwin.loan_section` | v1 | `darwin/loan-section-check.ts` |
