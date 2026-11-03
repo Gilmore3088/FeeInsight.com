@@ -87,6 +87,7 @@ export const NOT_REPLAYABLE_REASONS: Readonly<Record<string, string>> = {
   RANGE_BAND_SET_ASIDE_LIVE: `sets aside rate and balance bands in Knox's held queue; ${DATABASE("the held queue")}`,
   REDIRECT_WEBSITE_PROOF_LIVE: "Magellan's proof before a redirect landing replaces an institution's website; upstream of extraction, and the golden set's documents are frozen text",
   REG_WIRE_SUMMARIES_LIVE: `Magellan's regulatory wire summaries (shadow mode, no model call); ${SYSTEM}`,
+  REREAD_CATEGORY_MOVE_LIVE: `supersedes a live fee with a later read of its printed line filed under another category (publish supersedes; Darwin takes the earlier read down); ${ONE_DOCUMENT}; measured instead by the re-read backlog scan (482 texts, Nov 3: of 37 lines read twice, 15 right moves, 1 either-way and 4 of Knox's wrong re-reads would be superseded, none of the 8 overdraft/NSF combined lines, and none of 21 different-fee pairs) and a read-only pass over every live pair on prod (Nov 3, off: 101 fees at 96 institutions would come down)`,
   REREAD_CATEGORY_RECHECK_LIVE: `acts only on fees another check asked Knox to re-read (\`fragment_name\`); ${DATABASE("the re-read request")}`,
   RESEARCH_SPLIT_LIVE: "read once into the fold's split table at module load (`SPLIT_CATEGORIES`); no override reaches it without changing `fee-fold.ts`",
   RETENTION_LIVE: `Atlas's ledger retention; ${SYSTEM}`,
