@@ -11,6 +11,7 @@ import { normalizeStateCode } from "@/lib/agents/state-lane-memory";
 import { confidenceFor, type DroppedLineReason, type ExtractedFeeCandidate, type HeldFeeCandidate } from "@/lib/agents/knox/rules";
 import type { RateFeeCandidate } from "@/lib/agents/knox/percent";
 import { ACCOUNT_PRODUCT_CATEGORIES, groundLineup, LINEUP_CATEGORY, withLineupFromText } from "@/lib/agents/knox/lineup";
+import { audienceSectionHeading } from "@/lib/agents/knox/audience-section";
 import { storedOwnExcerpt } from "@/lib/agents/knox/own-cells";
 import { ANCILLARY_PRODUCT_FLAG, withAncillaryProduct } from "./ancillary-product";
 import {
@@ -1748,6 +1749,10 @@ export async function insertHeldCandidate(
     `canonical_hint=${held.canonicalHint ?? "none"}; text_hash=${options.row.text_hash ?? "unknown"}; ` +
     (held.ownedPolicy && held.linkedConditions ? `linked_conditions="${held.linkedConditions}"; ` : "") +
     `excerpt="${held.ownedPolicy ? held.excerpt : held.ownCondition ?? held.ownUnit?.sourceLine ?? held.excerpt.slice(0, 180)}"`;
+  // v179 (backlog dry run 10): a free row of an audience's own section ("Senior Perks (60 & Over)" / "Fax Service |
+  // FREE") records that audience as its product, so it never replaces the general fee's live price.
+  const audienceSection = held.canonicalHint && !ACCOUNT_PRODUCT_CATEGORIES.has(held.canonicalHint) && options.row.normalized_text
+    ? audienceSectionHeading(options.row.normalized_text, held.excerpt) : null;
   const write = async (scope: SqlTag): Promise<boolean> => {
     const inserted = await scope`
     INSERT INTO raw_fee_observations AS fr (
@@ -1762,7 +1767,7 @@ export async function insertHeldCandidate(
       frequency,
       extraction_note,
       outlier_flags,
-      source, fee_audience, audience_evidence, fee_treatment, line_share, conditions
+      source, fee_audience, audience_evidence, fee_treatment, line_share, conditions, product_name
     )
     VALUES (
       ${Number(options.row.institution_id)},
@@ -1777,7 +1782,8 @@ export async function insertHeldCandidate(
       ${conditions},
       ${JSON.stringify(flags)}::jsonb,
       'knox', ${applicability.feeAudience}, ${applicability.audienceEvidence}, ${applicability.feeTreatment},
-      ${held.lineShare ?? ""}, ${held.ownedPolicy || held.ownUnit || held.ownCondition ? [held.ownedPolicy ? held.excerpt : held.ownCondition ?? held.ownUnit?.sourceLine, held.linkedConditions].filter(Boolean).join(" ") : null}
+      ${held.lineShare ?? ""}, ${held.ownedPolicy || held.ownUnit || held.ownCondition ? [held.ownedPolicy ? held.excerpt : held.ownCondition ?? held.ownUnit?.sourceLine, held.linkedConditions].filter(Boolean).join(" ") : null},
+      ${audienceSection}
     )
     ON CONFLICT DO NOTHING
     RETURNING fee_raw_id

@@ -1930,6 +1930,24 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   "$10 or $0 | Monthly Fee | $0", so it stays. The review of #2973's IRA follow-up (the IRA's own distribution, transfer-out and
   IRA-named rows no longer end its section) adds no IRA match: 2 more candidates (158072, 165843), neither
   matching. So the check reports 15 live fees, switch still off.
+  Version 3 (Knox v179, backlog dry run 10) adds two rules. `zero_not_printed`: a live $0 whose stored line prints
+  no free price, or offers one against a price ("Monthly Maintenance Fee: $0 or $4.95"), judged on the text Knox
+  read as Knox judges it (`zeroPrintedForRead`: a price-only cell right above the line on a stacked page, "$0",
+  "Free", "None", "N/C", "No charge" or "Waived", keeps it; another perk's label such as "Free eStatements" does not).
+  An unconditional waiver prints the free price ("Waived Annual IRA Fee", "Waived Non-QCBT ATM Transactions", "ATM
+  fees waived"); one on a condition ("... waived when minimum account balance requirement is met") does not. A cut
+  or missing stored line, or a gone text, is not judged. `audience_section_untagged`: a live fee with no product
+  whose stored line sits under an audience section heading (`audienceSectionHeading`, Knox's own function, on the
+  text Knox read), while the bank has a live fee of the same name with no product at another price, only in a
+  category that takes no account as its product (as Knox); a stored line no single line of the text holds is
+  counted as unjudged (`audience_unplaced`). Dry run Nov 3
+  (prod, read-only, review of #2977): of 3,381 live $0s with a stored line, 3 stored lines print no free price
+  (36427 and 36428 sit under a bare "$0" cell and stay; 141225 matches), and 134219 and 140028 print an
+  unconditional waiver and stay, so `zero_not_printed` matches 1 (a waiver scoped by for, on, in, first, only or
+  except stays conditional). Of 1,171 untagged non-account fees whose bank prices their name otherwise, on 481 texts
+  that could name an audience, 3 sit under an audience heading: Midwest Members FCU's 137448, 137449 and 137483
+  under "Senior Perks (60 & Over)"; about 217 stored lines are not printed once in their text (by a literal SQL
+  match: 132 absent, 85 repeated) and go unjudged. The check reports 19 live fees, switch off.
 - A monthly maintenance fee whose row sits under a service's heading (`service-maintenance-check.ts`,
   #1092, state key 5608): River City Bank's "Consumer Online Banking Services and Mobile Banking Fees" over
   "Monthly Maintenance Fee | No charge" is the online banking service's fee; published as the account's
@@ -3015,7 +3033,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `FREE_LIST_ITEM_CHECK_VERSION` | `darwin.free_list_item` | v1 | `darwin/free-list-item-check.ts` |
 | `NOT_ACCOUNT_FEE_LINE_CHECK_VERSION` | `darwin.not_account_fee_line` | v1 | `darwin/not-account-fee-line-check.ts` |
 | `CREDIT_CARD_SECTION_CHECK_VERSION` | `darwin.credit_card_section` | v2 | `darwin/credit-card-section-check.ts` |
-| `SECTION_MISREAD_CHECK_VERSION` | `darwin.section_misread` | v2 | `darwin/section-misread-check.ts` |
+| `SECTION_MISREAD_CHECK_VERSION` | `darwin.section_misread` | v3 | `darwin/section-misread-check.ts` |
 | `SERVICE_MAINTENANCE_CHECK_VERSION` | `darwin.service_maintenance_heading` | v1 | `darwin/service-maintenance-check.ts` |
 | `CARD_PROGRAM_SECTION_CHECK_VERSION` | `darwin.card_program_section` | v1 | `darwin/card-program-section-check.ts` |
 | `LOAN_SECTION_CHECK_VERSION` | `darwin.loan_section` | v1 | `darwin/loan-section-check.ts` |

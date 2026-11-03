@@ -10,6 +10,9 @@ import {
   WIRE_SUBSCRIPTION_NAME_SQL,
   RETURNED_ITEM_SERVICE_NAME_SQL,
   ACCOUNTLESS_MONTHLY_LINE_SQL,
+  storedLineMisreadKind,
+  STORED_LINE_SQL,
+  AUDIENCE_TEXT_SQL,
   type SectionMisreadRow,
 } from "@/lib/agents/darwin/section-misread-check";
 
@@ -67,7 +70,7 @@ describe("Darwin's section misread re-check (Knox v177)", () => {
     ]);
     expect(found.checked).toBe(10);
     expect(found.noText).toBe(1);
-    expect(found.byKind).toEqual({ waiver_column_name: 2, front_matter_name: 1, wire_subscription: 1, ira_section_closing: 1, returned_item_service: 0, accountless_monthly_sentence: 0 });
+    expect(found.byKind).toEqual({ waiver_column_name: 2, front_matter_name: 1, wire_subscription: 1, ira_section_closing: 1, returned_item_service: 0, accountless_monthly_sentence: 0, zero_not_printed: 0, audience_section_untagged: 0 });
     expect(found.matches[1].reason).toBe('waiver_column_name: "Verification of Deposits is account_verification, not bill_pay"');
   });
 
@@ -105,6 +108,64 @@ describe("Darwin's section misread re-check (Knox v177)", () => {
     expect(found.noText).toBe(1);
     expect(new RegExp(RETURNED_ITEM_SERVICE_NAME_SQL, "i").test("Returned Item Special Handling Item")).toBe(true);
     expect(new RegExp(ACCOUNTLESS_MONTHLY_LINE_SQL, "i").test('excerpt="Waived $10 monthly maintenance fee"')).toBe(true);
+  });
+
+  it("version 3 (Knox v179): matches a live $0 whose line prints no free price, judged on its text", () => {
+    const rows: SectionMisreadRow[] = [
+      // North State Bank's waiver footnote, read as a free monthly fee.
+      { ...row(1, 11, "monthly_maintenance", "Monthly maintenance fee", 0), source_line: 'excerpt="4 Monthly maintenance fee waived when minimum account balance requirement is met."' },
+      // Live 141225: a $0 offered against a price.
+      { ...row(141225, 12, "monthly_maintenance", "Monthly Maintenance Fee", 0), source_line: 'excerpt="Monthly Maintenance Fee: $0 or $4.95"' },
+      // Live 36427: the unit line under a bare "$0" cell on a stacked page: kept.
+      { ...row(36427, 13, "od_protection_transfer", "Overdraft Protection transfers or advances", 0), source_line: 'excerpt="per transfer/advance from your eligible linked savings account or credit card or line of credit"' },
+      // Prints its free price: kept.
+      { ...row(4, 11, "document_reproduction", "Fax Service", 0), source_line: 'excerpt="Fax Service | FREE"' },
+      { ...row(142558, 11, "monthly_maintenance", "Monthly service fee", 0), source_line: 'excerpt="Enjoy all these benefits without any monthly service fees."' },
+      // A cut line (its dot leader, the price past the cut) and a missing line: not judged.
+      { ...row(6, 11, "notary_fee", "Notary Fee", 0), source_line: 'excerpt="Notary Fee............................"' },
+      { ...row(7, 11, "notary_fee", "Notary Fee", 0), source_line: null },
+      // Its text is gone: not judged.
+      { ...row(8, 404, "monthly_maintenance", "Monthly maintenance fee", 0), source_line: 'excerpt="Monthly maintenance fee waived with direct deposit."' },
+      // Live 140028 and 134219: an unconditional waiver on a card's perk list prints the free price: kept.
+      { ...row(140028, 14, "atm_non_network", "Waived Non-QCBT ATM Transactions", 0), source_line: 'excerpt="Waived Non-QCBT ATM Transactions"' },
+      { ...row(134219, 15, "ira_annual", "Waived Annual IRA Fee", 0), source_line: 'excerpt="Waived Annual IRA Fee"' },
+      // A perk's label above is no price cell: matched.
+      { ...row(9, 16, "statement_copy", "Statement copies", 0), source_line: 'excerpt="Statement copies by mail on request"' },
+    ];
+    const texts = new Map([
+      [11, "Footnotes\n4 Monthly maintenance fee waived when minimum account balance requirement is met."],
+      [12, "Freedom\nMonthly Maintenance Fee: $0 or $4.95\nMinimum Daily Balance (To Avoid Monthly Maintenance Fee): $500"],
+      [13, "Overdraft Protection transfers or advances\n\n$0\n\nper transfer/advance from your eligible linked savings account or credit card or line of credit"],
+      [14, "Visa® Debit Card\nWaived Non-QCBT ATM Transactions"],
+      [15, "IRA Benefits\nFree eStatements\nWaived Annual IRA Fee"],
+      [16, "Rewards\nFree eStatements\nStatement copies by mail on request"],
+    ]);
+    const found = findSectionMisreads(rows, texts);
+    expect(found.matches.map((fee) => [fee.feePublishedId, fee.kind])).toEqual([[1, "zero_not_printed"], [9, "zero_not_printed"], [141225, "zero_not_printed"]]);
+    expect(found.cut).toBe(2);
+    expect(found.noText).toBe(1);
+    expect(storedLineMisreadKind('excerpt="Fax Service | $1 per page"', 1)).toBeNull();
+    expect(new RegExp(STORED_LINE_SQL).test('artifact #1; excerpt="x"')).toBe(true);
+  });
+
+  it("version 3 (Knox v179): matches an audience section's untagged row whose name the bank prices otherwise", () => {
+    const midwest = "Replacement of Lost Key - Safe Box Key Fee | $20\n\nSenior Perks (60 & Over)\n\nCopy of a Check | FREE\n\nFax Service | FREE\n\nFees effective as of 10/01/2025.";
+    const rows: SectionMisreadRow[] = [
+      { ...row(137483, 27658, "document_reproduction", "Fax Service", 0), source_line: 'excerpt="Fax Service | FREE"', audience_candidate: true },
+      // The general row itself: no section over it, kept.
+      { ...row(162230, 27658, "document_reproduction", "Replacement of Lost Key - Safe Box Key Fee", 20), source_line: 'excerpt="Replacement of Lost Key - Safe Box Key Fee | $20"', audience_candidate: true },
+      // Under the heading, but the bank prices its name only once (no candidate): kept.
+      { ...row(137448, 27658, "check_image", "Copy of a Check", 1), source_line: 'excerpt="Copy of a Check | FREE"', audience_candidate: false },
+    ];
+    // An account category (Knox reads no audience product there) and a stored line the text never prints: not judged.
+    rows.push({ ...row(5, 27658, "monthly_maintenance", "Monthly fee", 0), source_line: 'excerpt="Fax Service | FREE"', audience_candidate: true });
+    rows.push({ ...row(6, 27658, "document_reproduction", "Notary", 0), source_line: 'excerpt="Notary | FREE"', audience_candidate: true });
+    const found = findSectionMisreads(rows, new Map([[27658, midwest]]));
+    expect(found.matches.map((fee) => [fee.feePublishedId, fee.kind])).toEqual([[137483, "audience_section_untagged"]]);
+    expect(found.audienceUnplaced).toBe(1);
+    expect(found.matches[0].reason).toContain("Senior Perks (60 & Over)");
+    expect(new RegExp(AUDIENCE_TEXT_SQL, "i").test("Senior Perks (60 & Over)")).toBe(true);
+    expect(new RegExp(AUDIENCE_TEXT_SQL, "i").test("Members 18 years and under")).toBe(true);
   });
 
   it("selects the rows by Postgres pre-filters wide enough for each rule", () => {

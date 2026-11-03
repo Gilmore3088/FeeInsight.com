@@ -86,6 +86,8 @@ export interface ExtractedFeeCandidate extends Partial<FeeApplicability> {
   lineup?: AccountLineup | null;
   /** Explicit primary-document ownership, independent of monthly balance/waiver fields. */
   ancillaryProduct?: AncillaryProduct;
+  /** v179: the audience section the row sits in ("Senior Perks (60 & Over)"), written as its product (`audience-section.ts`). */
+  audienceSection?: string;
   /** v82: the second fee a shared priced line carries (`twin:nsf`), part of the raw dedupe key. */
   lineShare?: string;
   /** Complete bounded own-bullet evidence; retain its conditions beyond the legacy excerpt cap. */
@@ -549,7 +551,7 @@ export const FEE_PATTERNS: FeePattern[] = [
   },
   {
     key: "od_protection_transfer",
-    pattern: /\b(overdraft protection|OD protection).{0,40}\b(transfer|from (savings|shares?))\b|\b(overdraft|OD)\b.{0,15}\b(transfer|sweep|from (savings|shares?))\b|\b(?:overdraft|OD)\s+(?:transfers|sweeps)\b(?![^|]*\b(?:limit|max(?:imum)?|per day|daily|paid|items?|NSF)\b)|^\W*(?:auto(?:matic)?\s+)?transfers?\s+(?:overdrafts?|OD)\b(?!\s*(?:fees?|items?|charges?|paid)\b)(?![^|]*\b(?:limit|max(?:imum)?|per day|daily)\b)|^\W*overdraft protection\W*(?:\([^)]*\))?\W*$|\b(?:insufficient|non[-\s]?sufficient) funds? transfers?\b|\b(?:account|savings|deposit)[-\s]link(?:ed)?\b.{0,25}\boverdraft protection\b|\blinked (?:account|savings)\b.{0,25}\boverdraft protection\b|\b(?:overdrafts?|OD)\b.{0,30}\bcovered by\b.{0,25}\btransfers?\b|\bcourtesy transfers?\b|\btransfers?\s+(?:from|to cover)\s+(?:an?\s+|the\s+|your\s+)?(?:overdrafts?|OD)\b/i,
+    pattern: /\b(overdraft protection|OD protection).{0,40}\b(transfer|from (savings|shares?))\b|\b(overdraft|OD)\b.{0,15}\b(transfer|sweep|from (savings|shares?))\b|\boverdrafttransfer(?:s|red)?\b(?![^|]*\b(?:limit|max(?:imum)?|per day|daily|paid|items?|NSF)\b)|\b(?:overdraft|OD)\s+(?:transfers|sweeps)\b(?![^|]*\b(?:limit|max(?:imum)?|per day|daily|paid|items?|NSF)\b)|^\W*(?:auto(?:matic)?\s+)?transfers?\s+(?:overdrafts?|OD)\b(?!\s*(?:fees?|items?|charges?|paid)\b)(?![^|]*\b(?:limit|max(?:imum)?|per day|daily)\b)|^\W*overdraft protection\W*(?:\([^)]*\))?\W*$|\b(?:insufficient|non[-\s]?sufficient) funds? transfers?\b|\b(?:account|savings|deposit)[-\s]link(?:ed)?\b.{0,25}\boverdraft protection\b|\blinked (?:account|savings)\b.{0,25}\boverdraft protection\b|\b(?:overdrafts?|OD)\b.{0,30}\bcovered by\b.{0,25}\btransfers?\b|\bcourtesy transfers?\b|\btransfers?\s+(?:from|to cover)\s+(?:an?\s+|the\s+|your\s+)?(?:overdrafts?|OD)\b/i,
     // v150: the plural right after the overdraft word ("Overdraft Transfers | $2.00", Alcose CU 7356) and
     // a name that opens with the transfer ("Auto Transfer Overdraft Per Trans. | $2", institution 5678;
     // "Transfer Overdraft- Line of Credit | $5.00", institution 8402) are the transfer too: both read as
@@ -1535,7 +1537,65 @@ const WIRE_ROW_LABEL = /^(?:(?:USD|U\.?S\.?\s+Dollars?|Foreign\s+Currency|FX)\s+
 /** v80: footnote numbers printed onto a row's label before its dot leader ("Incoming1,2 ....$15.00"). */
 const GLUED_LABEL_FOOTNOTES = /(?!(?<=\d\s?)[xX×])([A-Za-z’')])\d{1,2}(?:,\d{1,2})*(?=\s*(?:\.{2,}|…))/;
 
+/**
+ * v179 (backlog dry run 10, MassMutual FCU text 11896, line 34): a line that lists the channels a fee covers
+ * ("Includeschecks,ACH,ATM,debitwithdrawals(peritem)", the NSF row's note) names no fee of its own, so it never
+ * chooses the category of the row under it: MassMutual's "Overdrafttransfer(from shareaccount).....$3" was read
+ * as an ATM fee through its "ATM". A line that opens "Includes"/"Including", or lists three or more channels
+ * separated by commas, is such a list.
+ */
+const CHANNEL_WORD = String.raw`(?:checks?|ACH|ATM|debit(?:\s*card)?|POS|withdrawals?|transfers?|online|electronic|bill\s*pay|drafts?|cards?)`;
+const CHANNEL_LIST_HEADING = new RegExp(String.raw`^\W*includ(?:es|ing)|(?:^|,)\s*${CHANNEL_WORD}\w*\s*,\s*${CHANNEL_WORD}\w*\s*,`, "i");
+/** v179: a $0 offered against a price ("$0 or $4", "$0/$5"): the price applies unless a condition is met. */
+const ZERO_OR_PRICE = /\$\s?0(?:\.00)?\s*(?:or|\/)\s*\$\s?(?:\d*[1-9]\d*(?:\.\d{1,2})?|\d+\.\d*[1-9]\d*)/i;
+
+/** v179: the line itself prints a free price, and offers no price against it (see `ZERO_OR_PRICE`). */
+const ZERO_WORDS = /\$\s?0(?:\.0{1,2})?(?![\d.,]*[1-9])|\b(?:free|none|no[-\s]?charge|n\/c|no\s+(?:[a-z]+\s+){0,3}?(?:fees?|costs?|charges?)|without\s+(?:a\s+|any\s+)?(?:[a-z]+\s+){0,3}?(?:fees?|charges?)|(?:do|does|will)\s+not\s+(?:[a-z]+ly\s+)?(?:charge|assess)|not\s+be\s+(?:assessed|charged)|eliminated|complimentary|included|unlimited|0\.00)\b/i;
+/**
+ * An unconditional waiver printed as the fee's price: a line that opens "Waived <fee>" ("Waived Annual IRA Fee",
+ * "Waived Non-QCBT ATM Transactions" on a card's perk list) or closes "<fee> waived" ("ATM fees waived"), or a cell
+ * that says only "Waived" ("Check Cashing Fee - Members | Waived"). A waiver on a condition ("Monthly maintenance fee
+ * waived when minimum account balance requirement is met.", "Waived with direct deposit") prints no free price.
+ */
+const WAIVED_CELL = /(?:^|\|)\s*waived\s*(?:\||$)/i;
+const WAIVED_OPENS = /^\W*(?:\d{1,2}\s+)?waived\s+[a-z]/i;
+const WAIVED_CLOSES = /\bwaived\s*[.!]?\s*$/i;
+// Review of #2977: "for", "on", "in", "first", "only" and "except" scope a waiver too ("Waived for seniors", "Waived on
+// e-Statement accounts", "Waived in the first 12 months", "Waived Monthly Fee - Premier members only").
+const WAIVER_CONDITION = /\b(?:when|if|unless|provided|with|after|until|once|while|by|upon|for|on|in|first|only|except|as\s+long\s+as)\b/i;
+function unconditionalWaiver(text: string): boolean {
+  if (WAIVED_CELL.test(text)) return true;
+  if (!WAIVED_OPENS.test(text) && !WAIVED_CLOSES.test(text)) return false;
+  return !WAIVER_CONDITION.test(text);
+}
+export function zeroPrintedOnLine(line: string | null | undefined): boolean {
+  const text = line ?? "";
+  return (ZERO_WORDS.test(text) || unconditionalWaiver(text)) && !ZERO_OR_PRICE.test(text);
+}
+/**
+ * v179: the free price printed for a read, on its own line or as the bare price cell right above it. A stacked page
+ * prints each cell on its own line ("Overdraft Protection transfers or advances" / "$0" / "per transfer/advance from
+ * your eligible linked savings account ..."), and the read's line is then the unit under the price. The cell above
+ * must be a price and nothing else ("$0", "Free", "None", "N/C", "No charge", "Waived"): another perk's label above
+ * ("Free Statement Copies", "Free eStatements") prints no price for this read.
+ */
+const squashLine = (line: string) => line.replace(/\s+/g, " ").trim();
+const PRICE_ONLY_ZERO_CELL = /^\W*(?:\$\s?0(?:\.0{1,2})?|free|none|n\/c|no[-\s]?charge|waived)\W*$/i;
+export function zeroPrintedForRead(excerpt: string | null | undefined, text: string | null | undefined): boolean {
+  if (zeroPrintedOnLine(excerpt)) return true;
+  const own = squashLine(excerpt ?? "");
+  if (!text || own.length < 6) return false;
+  const lines = text.split(/\n+/).map(squashLine).filter(Boolean);
+  const at = lines.findIndex((line) => line.includes(own));
+  return at >= 1 && PRICE_ONLY_ZERO_CELL.test(lines[at - 1]);
+}
+
+export function channelListHeading(heading: string): boolean {
+  return CHANNEL_LIST_HEADING.test(heading);
+}
+
 export function readUnderHeading(segment: string, heading: string): ExtractedFeeCandidate[] {
+  if (channelListHeading(heading)) return [];
   const line = normalizeSegment(segment).replace(GLUED_LABEL_FOOTNOTES, "$1");
   const amounts = amountsIn(line);
   if (amounts.length !== 1 || line.split(" ").length > MAX_HEADED_LINE_WORDS || PERCENT_PATTERN.test(line)) return [];
@@ -3282,6 +3342,9 @@ function readPlainSegment(segment: string): ExtractionRulesResult {
     }
     return result;
   }
+  // v179 (backlog dry run 10, North State Bank text 13544, line 214): "$0 or $4" is a price waived on a condition,
+  // never a free fee: "Monthly Fee | $0 or $44 | $0 or $64 | ..." (footnote 4 glued to each price) is no $0.
+  if (hint && firstAmount?.value === 0 && ZERO_OR_PRICE.test(segment)) return result;
   if (hint && firstAmount?.value === 0 && usableName(name) && !notAZeroPrice(hint, name)) {
     result.held.push({ shape: "zero", feeName: name, amount: 0, amountMax: null, percent: null, frequency, canonicalHint: hint, excerpt: segment });
     return result;

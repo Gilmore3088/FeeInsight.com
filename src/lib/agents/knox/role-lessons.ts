@@ -1454,4 +1454,14 @@ export const KNOX_LESSONS: AgentLesson[] = [
     appliesTo: ["extract"],
     since: "2026-11-03",
   },
+  {
+    id: "backlog-dry-run-10-2026-11-03-the-line-must-say-it",
+    agent: "knox",
+    stage: "extract",
+    lesson: "Read a price only from words the page prints for it. A heading that names an audience by age or stage of life (\"Senior Perks (60 & Over)\", \"Members 65+\") makes its rows that audience's prices, so carry the heading as the product and never let the audience's price stand for the general one; a note that exempts an audience, a quantity (\"Over 10,000\", \"Over 12 Months\") and an account's own title (\"Student Checking\", \"Kids Club\") are not such headings. A line that lists the channels a fee covers (\"Includes checks, ACH, ATM ...\") names no fee, so it never chooses the category of the row under it. A dollar figure joined to a percentage by its bound words (\"2% minimum or $2\") is the rate's minimum or maximum, never a flat fee. A $0 needs its own line, or a price-only cell right above it, to print it (\"$0\", \"None\", \"Free\", \"No charge\", an unconditional \"Waived Annual IRA Fee\"); a waiver on a condition (\"waived when the minimum balance is met\"), another perk's label above, or a \"$0 or $4.95\" offer is no free price. A marketing sentence about an account is not the account's title, and a label full of control characters is no title at all. Before keeping a read, find the words on the page that say this price, for this fee, for this customer.",
+    why: "The tenth dry run for KNOX_REREAD_BACKLOG_LIVE (40 backlog texts, Nov 3, Knox v178) found 4 wrong and 8 doubtful reads of 124 changed rows: Midwest Members' seniors' free fax would have replaced the bank's live $1 fax (#162230), MassMutual's \"Overdrafttransfer\" $3 filed as an ATM fee through the NSF row's channel note, Oklahoma Educators' \"2% minimum or $2\" read as a flat $2, North State Bank's waiver footnote read as a $0, and LifeStore's, Meridia's and Blackhawk's product or name misreads. Knox v179 reads each right with no right read lost across rb to rb10. Live: the section misread re-check reports 1 more $0 (141225, \"$0 or $4.95\") and Midwest's 3 untagged seniors' $0s (137448, 137449, 137483), switch off, while unconditional waivers (134219, 140028) stay; the widened rate bound matches no live fee.",
+    evidence: { issues: [1026], prs: [], files: ["src/lib/agents/knox/audience-section.ts", "src/lib/agents/knox/rules.ts", "src/lib/agents/knox/specialists.ts", "src/lib/agents/knox/lineup.ts", "src/lib/agents/knox/layout.ts", "src/lib/agents/knox/percent.ts", "src/lib/rate-bound.ts", "src/lib/agents/darwin/section-misread-check.ts", "src/lib/agents/knox/backlog-dry-run-10.test.ts", "docs/project/findings/2026-11-03-knox-backlog-dry-run-10-reads.md"] },
+    appliesTo: ["extract"],
+    since: "2026-11-03",
+  },
 ];

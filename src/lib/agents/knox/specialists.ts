@@ -21,6 +21,7 @@ import {
   type HeldFeeCandidate,
   wireServiceSubscription,
   returnedItemServiceName,
+  zeroPrintedForRead,
 } from "@/lib/agents/knox/rules";
 import { withoutGluedPricePairs } from "@/lib/custom-report/glued-price-pair";
 import { heldWireClausePrices } from "@/lib/custom-report/wire-clause-prices";
@@ -894,7 +895,17 @@ import { onlineServiceMonthlyFee } from "@/lib/service-monthly-charge";
 // (`accountlessMonthlyOnPage`, unless the page prints that fee at that price as a row or names the account right above), and a FAQ's second sentence about one free service is one $0 (`tailTwinRead`). (6) Review of #2973: the IRA's
 // own distribution, transfer-out and IRA-named rows no longer end its section, and waiver choices that each file
 // under the name's type are that fee ("Use Non-Network ATM or Foreign ATM"). The stale-read floor stays at v97.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 178 } as const;
+// v179 (tenth re-read backlog dry run, Nov 3; 40 texts at v178, 4 wrong and 8 doubtful of 124 changed rows): (1) A row
+// of a section headed by an audience ("Senior Perks (60 & Over)", `audienceSectionHeading`) takes the heading as its
+// product, so the audience's price never replaces the general one: Midwest Members' seniors' free fax over its $1. (2)
+// "Overdrafttransfer" reads as the overdraft protection transfer, and a line listing the channels a fee covers
+// ("Includes checks, ACH, ATM ...") never chooses the category of the row under it (`channelListHeading`): MassMutual.
+// (3) "2% minimum or $2" is the rate's minimum (`rateBoundOf` v2), never a flat $2: Oklahoma Educators. (4) A $0 is read
+// only when its own line, or the bare price cell right above it, prints it (`zeroPrintedForRead`): North State's
+// waiver footnote. (5) Doubtful reads: a marketing sentence no longer ends the account lookback (LifeStore), a label
+// with control characters names no account (Meridia), and "This account contains a ..." leaves the fee's name
+// (Blackhawk). The stale-read floor stays at v97.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 179 } as const;
 
 export interface SpecialistRun {
   strategy: string;
@@ -1815,6 +1826,17 @@ function readFreeText(sourceText: string, discontinuedRows: DiscontinuedTableFla
     const asRead = { ...row, amount: 0, canonicalHint: row.canonicalHint } as unknown as ExtractedFeeCandidate;
     const earlier = [...candidates, ...stillHeld.slice(0, at).filter((prior) => prior.shape === "zero" && prior.canonicalHint)] as unknown as ExtractedFeeCandidate[];
     if (earlier.some((prior) => tailTwinRead({ ...prior, feeAudience: asRead.feeAudience }, asRead))) stillHeld.splice(at, 1);
+  }
+  // v179 (backlog dry run 10, North State Bank text 13544): a $0 is read only from a line that prints it ("$0",
+  // "None", "Free", "No charge", "no fee", or a bare "$0" cell right above it on a stacked page), never offered
+  // against a price ("$0 or $4") and never from a waiver ("Monthly maintenance fee waived when minimum account balance requirement is met.").
+  for (let at = stillHeld.length - 1; at >= 0; at--) {
+    const row = stillHeld[at];
+    // A no-charge sentence the NSF reader already judged (`statedNoCharge`) is its own witness.
+    if (row.amount === 0 && !row.statedNoCharge && !zeroPrintedForRead(row.excerpt, sourceText)) stillHeld.splice(at, 1);
+  }
+  for (let at = candidates.length - 1; at >= 0; at--) {
+    if (candidates[at].amount === 0 && !zeroPrintedForRead(candidates[at].excerpt, sourceText)) candidates.splice(at, 1);
   }
   const unitHolds = stillHeld.map(row => row.shape === "zero" && row.canonicalHint && row.amount != null
     ? withOwnFeeUnit({ ...row, amount: row.amount, canonicalHint: row.canonicalHint }, sourceText) : row);

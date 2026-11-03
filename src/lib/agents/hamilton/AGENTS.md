@@ -1632,7 +1632,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `CURRENT_COPY_REPOINT_STRATEGY` | `hamilton.current_copy_repoint` | v2 | `hamilton/current-copy-repoint.ts` |
 | `RULES_RECHECK_STRATEGY` | `hamilton.rules_recheck` | v4 | `hamilton/rules-recheck.ts` |
 | `SAME_LINE_DUPLICATE_RESTORE_VERSION` | `hamilton.same_line_duplicate` | v2 | `hamilton/same-line-duplicates.ts` |
-| `SOURCE_CHECK_STRATEGY` | `hamilton.source_check` | v30 | `hamilton/source-check.ts` |
+| `SOURCE_CHECK_STRATEGY` | `hamilton.source_check` | v31 | `hamilton/source-check.ts` |
 | `SOURCE_LINK_VERSION` | `hamilton.source_link` | v2 | `hamilton/source-link.ts` |
 | `SOURCE_LINK_DRIFT_VERSION` | `hamilton.source_link_drift` | v1 | `hamilton/source-link.ts` |
 | `FEE_DEPENDENCE_VERSION` | — | v1 | `hamilton/studies/fee-dependence.ts` |
