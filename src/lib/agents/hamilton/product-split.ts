@@ -231,13 +231,17 @@ export function namesBothProducts(one: string | null | undefined, two: string | 
   const lines = text.split(/\r?\n/).filter((each) => each.trim() !== "");
   const at = lines.findIndex((each) => lineFold(each) === lineFold(excerpt));
   if (at < 0) return false;
-  // Looser than an account heading for the winner: any short priceless label naming either product, so
-  // "Checking and Savings Account Fees", a long list of account names and a table header row
-  // ("| | Basic Checking | Student Checking |") count. Wrongly keeping two rows is the safe side.
+  // Looser than an account heading for the winner: any priceless line naming both products keeps
+  // two rows ("Checking and Savings Account Fees", "These fees apply to Basic Checking and Student
+  // Checking accounts:", a table header row). The scan stops at a short label naming only one; a
+  // sentence naming one ("Basic Checking: no minimum balance") is passed over. Wrongly keeping two
+  // rows is the safe side.
   for (let index = at - 1; index >= Math.max(0, at - PRODUCT_HEADING_WINDOW); index -= 1) {
     const above = lines[index];
-    if (/\$/.test(above) || ANY_PRICE.test(above) || !headingShaped(above)) continue;
-    if (productPrintedOnLine(one, above) || productPrintedOnLine(two, above)) return both(above);
+    if (/\$/.test(above) || ANY_PRICE.test(above)) continue;
+    if (!productPrintedOnLine(one, above) && !productPrintedOnLine(two, above)) continue;
+    if (both(above)) return true;
+    if (headingShaped(above)) return false;
   }
   return false;
 }

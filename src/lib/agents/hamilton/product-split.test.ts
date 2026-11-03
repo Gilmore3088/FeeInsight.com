@@ -183,4 +183,18 @@ describe("one printed line under two products", () => {
     const five = "Monthly fee | $5.00";
     expect(namesBothProducts("Basic Checking", "Student Checking", ["Basic Checking & Student Checking", "Basic Checking: no minimum balance", five].join("\n"), five)).toBe(true);
   });
+
+  it("fourth review of #2964: a sentence or a long header naming both products keeps two rows", () => {
+    const line = "Paper Statement Fee $2.00";
+    const both = (a: string, b: string, ...above: string[]) => namesBothProducts(a, b, [...above, line].join("\n"), line);
+    expect(both("Basic Checking", "Student Checking", "Fees below apply to Basic Checking and Student Checking.")).toBe(true);
+    expect(both("Basic Checking", "Student Checking", "Applies to: Basic Checking, Student Checking")).toBe(true);
+    const long = "The following fees apply to Basic Checking, Student Checking and Senior Checking accounts:";
+    expect(both("Basic Checking", "Senior Checking", long)).toBe(true);
+    expect(both("Basic Checking", "Senior Checking", "Basic Checking", long)).toBe(true);
+    const row = "| Paper Statement | $2.00 |";
+    const header = "| Fee | Basic Checking | Student Checking | Senior Checking | Premier Checking | Rewards Checking | Business Checking | Club Account |";
+    expect(namesBothProducts("Basic Checking", "Student Checking", [header, row].join("\n"), row)).toBe(true);
+    expect(readsOneLineTwoProducts(read("Basic Checking", line), live("Student Checking", line), ["Fees below apply to Basic Checking and Student Checking.", line].join("\n"), 2)).toBe(false);
+  });
 });
