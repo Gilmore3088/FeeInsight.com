@@ -4,6 +4,7 @@ import {
   stopPaymentListRead,
   boxSectionLateFeeRead,
   loanSectionFeeRead,
+  iraSectionClosingRead,
   payeeReturnedBillPayRead,
   checkingNamePriceAmbiguous,
   extractCandidatesFromText,
@@ -18,6 +19,7 @@ import {
   type ExtractedFeeCandidate,
   type ExtractionRulesResult,
   type HeldFeeCandidate,
+  wireServiceSubscription,
 } from "@/lib/agents/knox/rules";
 import { withoutGluedPricePairs } from "@/lib/custom-report/glued-price-pair";
 import { heldWireClausePrices } from "@/lib/custom-report/wire-clause-prices";
@@ -866,7 +868,20 @@ import { onlineServiceMonthlyFee } from "@/lib/service-monthly-charge";
 // (`maintenanceFromProse`, `priceFirstClauseName`), never the whole line with its figures deleted; its pages are
 // read again once (`KNOX_PRICE_FIRST_NAME_READ_BELOW_VERSION`, extract.ts). The shared check is unchanged. The
 // stale-read floor stays at v97.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 176 } as const;
+// v177 (Knox re-read backlog dry run 8, Nov 3; five wrong and twelve doubtful reads of 40 stored texts). (1) A
+// later price on a line that runs on into a waiver column and the other column's bullet item is named from the
+// last bullet cell after the earlier price (`laterPriceOwnWords`), and a price named only by a waiver column's
+// advice ("Use Online BillPay, HonorPay or Account-To-Account Transfers | $50.00") is held (`waiverAdviceName`;
+// the family expert skips it too): Honor FCU. (2) An early closure read printed only in an IRA's own section is the
+// IRA's closing fee, ira_termination (`iraSectionClosingRead`, `custom-report/ira-section-fee.ts`): Mattel FCU.
+// (3) A page's front-matter meta and canonical lines are blanked before any reader runs (`withoutFrontMatterLines`):
+// Citizens National Bank of Crosbyton's cashier check cap read from the run-together meta description. (4) A wire
+// service's monthly module or package is held, no wire's price (`wireServiceSubscription`): First-Citizens. (5)
+// Doubtful reads: prose from the next column after the last price sets no frequency (`withoutTrailingProse`); a product card's
+// marketing label ("BEST FOR", "STANDOUT BENEFIT") no longer ends the account lookback and a product tab list's last
+// entry is no account (lineup.ts). (6) A sentence stating the minimum balance gives no price unless its clause names
+// a charge (`minimumBalanceStated`; golden-set case wrong_amount:17477). The shared check is unchanged. The stale-read floor stays at v97.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 177 } as const;
 
 export interface SpecialistRun {
   strategy: string;
@@ -1130,7 +1145,39 @@ interface FreeSpecialistOptions {
   dashListRows?: boolean;
 }
 
-export function runFreeSpecialists(storedText: string, options: FreeSpecialistOptions = {}): FreeExtractionResult {
+/**
+ * v177 (backlog dry run 8, Citizens National Bank of Crosbyton, text 40702): a page's front matter ("---" /
+ * "canonical: ..." / "meta-description: Know What You Pay ... Cashier Checks (Non-Banclub Member to $10.00 ..."
+ * / "---") repeats the page's words run together, with no cells or line breaks, so a price there takes the
+ * wrong words ("Cashier Checks (Non-Banclub Member" $10, the rate's cap). Its meta and canonical lines are
+ * blanked before any reader sees the text, so every fee is read from the page body. The line count is kept.
+ */
+const FRONT_MATTER_KEY = /^\s*(?:meta-[\w.:-]*|canonical)\s*:/i;
+const FRONT_MATTER_LINES = 200;
+/** v177: a fee name read from a front-matter line ("meta-fb:pages: meta-generator: WordPress ...", "canonical: https://..."). */
+export function frontMatterName(name: string): boolean {
+  return FRONT_MATTER_KEY.test(name);
+}
+export function withoutFrontMatterLines(text: string): string {
+  if (!/^\s*---\s*\n/.test(text)) return text;
+  const lines = text.split("\n");
+  const open = lines.findIndex((line) => line.trim() === "---");
+  let close = -1;
+  for (let index = open + 1; index < Math.min(lines.length, open + FRONT_MATTER_LINES); index += 1) {
+    if (lines[index].trim() === "---") { close = index; break; }
+  }
+  if (close < 0) return text;
+  let changed = false;
+  for (let index = open + 1; index < close; index += 1) {
+    if (!FRONT_MATTER_KEY.test(lines[index])) continue;
+    lines[index] = "";
+    changed = true;
+  }
+  return changed ? lines.join("\n") : text;
+}
+
+export function runFreeSpecialists(rawText: string, options: FreeSpecialistOptions = {}): FreeExtractionResult {
+  const storedText = withoutFrontMatterLines(rawText);
   // #2070: a discontinued account's table is flagged before any specialist reads the text
   // (`flagDiscontinuedTables`); with the switch on its rows are left out, so none is read or held.
   const discontinued = flagDiscontinuedTables(storedText, options.withoutDiscontinuedTables ?? discontinuedTablesLive());
@@ -1268,6 +1315,8 @@ function readFreeText(sourceText: string, discontinuedRows: DiscontinuedTableFla
     // (`boxSectionLateFeeRead`), read on the self-check's text.
     // v123 (#1905): every specialist's deposit-category read printed in a loan section is the loan's
     // (`loanSectionFeeRead`), read on the same text.
+    // v177 (backlog dry run 8): every specialist's early closure read printed in an IRA's own section is the
+    // IRA's closing fee (`iraSectionClosingRead`), read on the same text.
     // v135 (#1912): a wire price whose channel is printed after it on its own line keeps that channel
     // in its name (`withWireChannelReads`), so statistics rule 11 can tell it from the general price.
     // v164 (live-source audit, Nov 2): a bullet item in a later cell is named by its own cell, never by the
@@ -1278,7 +1327,7 @@ function readFreeText(sourceText: string, discontinuedRows: DiscontinuedTableFla
     // debit card's (`creditCardSectionRead`: "CREDIT CARD CHARGES" over "Card Replacement ...... Free", Greylock FCU).
     // v168: no specialist reads a box table's late-fee column as the box's rent (`boxLateColumnRead`:
     // "BOX SIZE | ANNUALLY | LATE FEE" over "3” x 10” x 24” | $35.00 | $6.00", Eglin FCU 5451).
-    const found = { ...run, candidates: withWireChannelReads(checkText, run.candidates.map((read) => { const next = billPayByHeading(read); return next && carryColumnHeadingCell(read, next); }).filter((read): read is ExtractedFeeCandidate => read != null).map((read) => stopPaymentListRead(bulletItemRead(payeeReturnedBillPayRead(loanSectionFeeRead(boxSectionLateFeeRead(read, checkText), checkText), checkText)), checkText))
+    const found = { ...run, candidates: withWireChannelReads(checkText, run.candidates.map((read) => { const next = billPayByHeading(read); return next && carryColumnHeadingCell(read, next); }).filter((read): read is ExtractedFeeCandidate => read != null).map((read) => stopPaymentListRead(bulletItemRead(payeeReturnedBillPayRead(iraSectionClosingRead(loanSectionFeeRead(boxSectionLateFeeRead(read, checkText), checkText), checkText), checkText)), checkText))
       .filter((read) => !boxLateColumnRead(read, boxLatePrices) && !creditCardSectionRead(read, checkText, creditCardColumns))),
       held: run.held.filter((read) => !creditCardSectionRead(read, checkText, creditCardColumns)) };
     // v176 (backlog dry run 7): a statement fee its own name gives to a credit card is not the deposit
@@ -1322,6 +1371,18 @@ function readFreeText(sourceText: string, discontinuedRows: DiscontinuedTableFla
       // business heading names the commercial lockbox service, is no safe deposit box and no type of
       // the 50: held unclassified for review, never filed (`custom-report/commercial-lockbox.ts`).
       if (read.canonicalHint === "safe_deposit_box" && (commercialLockboxName(feeName) || commercialLockboxOnLine(checkText, feeName, read.amount))) {
+        const row: HeldFeeCandidate = { shape: "unclassified", feeName, amount: read.amount, amountMax: null, percent: null, frequency: read.frequency, canonicalHint: null, excerpt: read.excerpt };
+        const key = heldKey(row);
+        if (!seenHeld.has(key) && held.filter(prior => !unpricedHalf(prior)).length < MAX_HELD_PER_DOCUMENT) {
+          seenHeld.add(key);
+          held.push(row);
+        }
+        continue;
+      }
+      // v177 (backlog dry run 8, First-Citizens text 40703): a wire service's monthly module or package ("Domestic
+      // wire transfer base module (per month)D | $20.00") is no wire's price and no type of the 50: held
+      // unclassified for review, as its international module already is (`wireServiceSubscription`).
+      if (read.canonicalHint?.startsWith("wire_") && wireServiceSubscription(feeName)) {
         const row: HeldFeeCandidate = { shape: "unclassified", feeName, amount: read.amount, amountMax: null, percent: null, frequency: read.frequency, canonicalHint: null, excerpt: read.excerpt };
         const key = heldKey(row);
         if (!seenHeld.has(key) && held.filter(prior => !unpricedHalf(prior)).length < MAX_HELD_PER_DOCUMENT) {

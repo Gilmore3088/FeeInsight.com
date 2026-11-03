@@ -117,6 +117,7 @@ const SWEEP_PROBES: Record<string, () => SweepProbe> = {
   // Peninsula Community FCU (live 73916): a rate disclosure's balance threshold read as a $5 minimum balance fee.
   NOT_ACCOUNT_FEE_LINE_TAKEDOWN_LIVE: () => one([pub("minimum_balance", "If your average daily balance is below", 500, "If your average daily balance is below $100.00 ($5.00 for accounts held by those under 18 years of age), no dividends are earned")]),
   // Knox v175 review (PR #2967): a card replacement under a credit card title, before the bank's own debit card fees.
+  SECTION_MISREAD_TAKEDOWN_LIVE: () => one([pub("wire_intl_outgoing", "International Wire Module", 2000, "International Wire Module | $20.00 | Per Month")]),
   CREDIT_CARD_SECTION_TAKEDOWN_LIVE: () => one([pub("card_replacement", "Card Replacement", 1000, "Card Replacement | $10.00"), pub("card_replacement", "Card Replacement", 500, "Card Replacement | $5.00")],
     ["VISA CREDIT CARD", "Late Payment | $25.00", "Card Replacement | $10.00", "2. Debit Card Fees", "Card Replacement | $5.00"].join("\n")),
   // State key 5608 (River City Bank) as a table read pairs its rows: the online banking service's $0 monthly fee.

@@ -2723,6 +2723,31 @@ holds. Darwin's verify refuses the same reads (`service_maintenance_heading`) an
 is live (`SERVICE_MAINTENANCE_TAKEDOWN_LIVE`, off). The shared check is unchanged. The stale-read floor stays at
 v97.
 
+v177 (eighth Knox re-read backlog dry run, Nov 3; 40 backlog texts at v176, 5 wrong and 12 doubtful rows of 112
+changed, each against the bank's own line, each named or filed by words outside the fee's own row): (1) A later
+price on a line that runs on into a waiver column and the other column's bullet item takes its words from the last
+bullet cell after the earlier price (`laterPriceOwnWords` in `rules.ts`), and a price named only by advice on
+avoiding a fee ("Use Online BillPay, HonorPay or Account-To-Account Transfers | $50.00") is held unclassified
+(`waiverAdviceName`; the family expert skips such a name): Honor FCU 4644's "Verification of Deposits" $25 and
+"Account Reconciliation" $30. (2) An early closure read printed only in an IRA's own section is the IRA's closing
+fee, ira_termination (`iraSectionClosingRead`, `custom-report/ira-section-fee.ts`): Mattel FCU 12602's "Early
+Closure Fee (if <59 1/2 ) | $ 30" under "Individual Retirement Account (IRA) Fees | Elite". (3) A page's
+front-matter meta and canonical lines are blanked before any reader runs (`withoutFrontMatterLines` in
+`specialists.ts`): Crosbyton 40702's cashier check rate cap read as a flat $10 from its meta description. (4) A wire
+service's monthly module or package is no wire's price and is held (`wireServiceSubscription`): First-Citizens
+40703's "Domestic wire transfer base module (per month)D". (5) Doubtful reads: prose from the next column after the last price
+sets no frequency (`withoutTrailingProse`); a product card's marketing label ("BEST FOR", "STANDOUT BENEFIT") no
+longer ends the product lookback, and the last entry of a product tab list is no account (`inProductTabList`,
+lineup.ts). (6) Found by the golden-set gate: a sentence stating the minimum balance ("Minimum balance is
+$500.00") gives no price unless its clause names a charge (`minimumBalanceStated`; "Penalty for falling below the
+minimum balance is $8.00", live 137774, still read). Left: business-section rows with unknown audience (audience lessons, `KNOX_AUDIENCE_LESSONS_LIVE`),
+First-Citizens' QuickBooks/Quicken bundles and ACH modules, its held $45 USD wire origination ("origination"
+as outgoing would publish a golden-set known-wrong cash management wire), and Crosbyton's minimum-or-percent rate with a cap
+(not read). Live (SELECT, Nov 3): Darwin's section misread re-check (`darwin.section_misread`, switch off) reports
+12 live fees: 2 waiver column names, 2 front-matter names, 2 wire modules and 6 IRA section closings. Harnesses rb
+to rb8 (v176 vs v177): live fees not reproduced 313 to 313, no right read lost. The guard is unchanged (v108). The
+stale-read floor stays at v97.
+
 v176 (seventh Knox re-read backlog dry run, Nov 3; 40 backlog texts at v175, one wrong row, four doubtful and
 one duplicate, each against the bank's own line): (1) "Employment Verification", "Verification of Employment"
 and income verification are filed other lending (a loan's underwriting cost), never account verification
@@ -3412,7 +3437,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v3 | `knox/paid-extract.ts` |
 | `KNOX_PAID_FIND_MISS_VERSION` | — | v1 | `knox/paid-find-misses.ts` |
 | `TWO_READ_AGREEMENT_STRATEGY` | `knox.two_read_agreement` | v2 | `knox/two-read-agreement.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v176 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v177 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v13 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v2 | `knox/takedown-lessons.ts` |

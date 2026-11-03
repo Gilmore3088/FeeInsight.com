@@ -1218,6 +1218,23 @@
    "refused_by": {
     "knox": "not_read"
    }
+  },
+  {
+   "case_key": "wrong_amount:17477",
+   "family": "fee_in_sentence",
+   "takedown": "wrong_amount",
+   "fee_published_id": 17477,
+   "canonical_fee_key": "early_closure",
+   "fee_name": "if closed within two years. Minimum balance is",
+   "amount": "500.00",
+   "source_document_id": 15565,
+   "agent_source_text_id": 3740,
+   "text_hash": "bd26f1d8b7bf10a5ac236cbf2c39d561a5446c0c4c85c30f4a393ee83b703851",
+   "excerpt": "IRA Closing Fee | $50.00 if closed within two years. Minimum balance is $500.00 if not",
+   "text": "Bulk Coin | $8.00 per box\n\nIRA Accounts\n\nIRA Closing Fee | $50.00 if closed within two years. Minimum balance is $500.00 if not on direct deposit.\n\nCredit Union Membership",
+   "refused_by": {
+    "knox": "not_read"
+   }
   }
  ],
  "known_misses": [
@@ -1332,20 +1349,6 @@
    "text_hash": "e7e63530dbafa8bafa659f7e4d0ce6fdd0b0a38ba5c8729b2b4d313fb25d18d3",
    "excerpt": "Money Orders (Non-Customer) $3.00",
    "text": "IRA Termination Fee $40.00\nLevy/Garnishment Processing $40.00\nLoan Coupon Book Replacement $5.00\nMoney Orders (Customer) $2.00\nMoney Orders (Non-Customer) $3.00\nNotary Fee (Customer) No Charge\nNotary Fee (Non-Customer) $1.00"
-  },
-  {
-   "case_key": "wrong_amount:17477",
-   "family": "fee_in_sentence",
-   "takedown": "wrong_amount",
-   "fee_published_id": 17477,
-   "canonical_fee_key": "early_closure",
-   "fee_name": "if closed within two years. Minimum balance is",
-   "amount": "500.00",
-   "source_document_id": 15565,
-   "agent_source_text_id": 3740,
-   "text_hash": "bd26f1d8b7bf10a5ac236cbf2c39d561a5446c0c4c85c30f4a393ee83b703851",
-   "excerpt": "IRA Closing Fee | $50.00 if closed within two years. Minimum balance is $500.00 if not",
-   "text": "Bulk Coin | $8.00 per box\n\nIRA Accounts\n\nIRA Closing Fee | $50.00 if closed within two years. Minimum balance is $500.00 if not on direct deposit.\n\nCredit Union Membership"
   }
  ]
 }

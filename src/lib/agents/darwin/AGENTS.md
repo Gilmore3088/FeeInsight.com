@@ -1892,6 +1892,25 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   FCU's "Visa Monthly Paper Statement Fee" $1.25 stood in for its $3.00 deposit fee), needing only the fee's
   artifact. Dry run Nov 3 (prod, read-only): 2 such candidates, 2 match (94693 "Credit Card Monthly Paper
   Statement Fee" $3, 135781 "Credit Card Paper Statements" $2), with the switch off.
+- Fees named or filed by another part of the page (`section-misread-check.ts`, Knox v177, eighth re-read
+  backlog dry run, Nov 3). Four rules, each the one Knox v177 applies: a name that is a waiver column's advice,
+  alone or composed with the next column's item, live under another category than its own words file
+  (`waiverAdviceName`, `waiverAdvicePrefix`; Honor FCU's "Use Online BillPay, HonorPay or Account-To-Account
+  Transfers: Verification of Deposits" $25 live as bill_pay, 77750); a name read from a page's front matter
+  (`frontMatterName`; Citizens Bank's "meta-fb:pages: meta-generator: WordPress ..." $30, 167014); a wire
+  service's monthly module or package filed as a wire (`wireServiceSubscription`; "International Wire Module |
+  $20.00 | Per Month", 152355); and an early closure fee printed only in an IRA's own section, the IRA's closing
+  fee (`iraSectionClosingFee`, `custom-report/ira-section-fee.ts`; Progressions CU's "INDIVIDUAL RETIREMENT
+  ACCOUNT (IRA) FEES" / "Account Closure Fee $25.00", 94053). A long name whose last words still file under the
+  live category ("... Transfers Verification of Deposits" live as account_verification, 18786) stays. Each verify
+  step reads the live flat fees each rule's name pre-filter selects, and every live flat early closure fee on a
+  text that names an IRA (admin-corrected fees never). Dry run Nov 3 (prod, read-only): 6 of 31 name candidates
+  match (77750, 68504, 167014, 101378, 152355, 85500) and 6 IRA section closings (63736, 94053, 136541, 156197,
+  159259, 159533) among the 1,069 live early closure fees on a text that names an IRA. The switch
+  (`SECTION_MISREAD_TAKEDOWN_LIVE`, code, off) waits for James's yes; on, a match goes through the 12-hour second
+  look (`darwin.section_misread`) and is archived with its reason (verified row rejected with the reason's flag);
+  the bank's next read files the row by Knox v177. Step detail `section_misread_check`. Golden-set replay: the
+  `darwin.section_misread` sweep.
 - A monthly maintenance fee whose row sits under a service's heading (`service-maintenance-check.ts`,
   #1092, state key 5608): River City Bank's "Consumer Online Banking Services and Mobile Banking Fees" over
   "Monthly Maintenance Fee | No charge" is the online banking service's fee; published as the account's
@@ -2972,6 +2991,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `FREE_LIST_ITEM_CHECK_VERSION` | `darwin.free_list_item` | v1 | `darwin/free-list-item-check.ts` |
 | `NOT_ACCOUNT_FEE_LINE_CHECK_VERSION` | `darwin.not_account_fee_line` | v1 | `darwin/not-account-fee-line-check.ts` |
 | `CREDIT_CARD_SECTION_CHECK_VERSION` | `darwin.credit_card_section` | v2 | `darwin/credit-card-section-check.ts` |
+| `SECTION_MISREAD_CHECK_VERSION` | `darwin.section_misread` | v1 | `darwin/section-misread-check.ts` |
 | `SERVICE_MAINTENANCE_CHECK_VERSION` | `darwin.service_maintenance_heading` | v1 | `darwin/service-maintenance-check.ts` |
 | `CARD_PROGRAM_SECTION_CHECK_VERSION` | `darwin.card_program_section` | v1 | `darwin/card-program-section-check.ts` |
 | `LOAN_SECTION_CHECK_VERSION` | `darwin.loan_section` | v1 | `darwin/loan-section-check.ts` |
