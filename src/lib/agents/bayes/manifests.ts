@@ -766,6 +766,16 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
     // rows are gone (two re-filed right, four dropped) and the other 93 changed rows are unchanged; rb, rb3 and
     // rb4 do not change; rb2 re-files three already-stored "Service charge (Minimum Balance Fee)" reads to
     // minimum_balance. No Darwin re-check (no guard rule). No replay. Floor stays v97.
+    // v173 (sixth re-read backlog dry run, Nov 3): a bullet list's heading shared with another column's
+    // priced row still heads its bullets (`listHeadingOf`), and an item bulleted under a stop payment heading
+    // is the stop payment (`stopPaymentListRead`); a card replacement under a credit card title in its own
+    // column is left out (`creditCardSectionRead`); a labelled clause's price takes its audience, misspelt
+    // "accoutns" included (fee-audience.ts); a two-column free row is held once (`sameFreeCellName`). rb6
+    // (v172 vs v173): the wrong row is re-filed, a $0 credit card replacement is not read, the other 95 changed
+    // rows are unchanged; rb, rb4 and rb5 stop reading four credit card section replacements; rb2 and rb3 do
+    // not change. 42 live credit card section replacements would not be read again (they stay live). Review
+    // of v172 folded in (`GENERIC_FEE_NAME`, `LOW_BALANCE_CHARGE`, `ITEM_INSUFFICIENT` narrowed; no harness read
+    // changes). No Darwin re-check (no guard rule). No replay. Floor stays v97.
     {
       key: "knox.rules",
       owner: "knox",

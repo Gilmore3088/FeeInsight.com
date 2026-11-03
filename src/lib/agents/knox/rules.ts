@@ -468,8 +468,11 @@ export function checkingNamePriceAmbiguous(excerpt: string | null | undefined, f
 /**
  * v171 (backlog dry run 4): an ACH, check, item, draft or debit named insufficient, with no "funds"
  * ("ACH - Insufficient", "Check - Insufficient", "Insufficient Item"): the NSF row.
+ * v173 (review of v172): not a deposited or cashed item returned for insufficient funds ("Deposited Item -
+ * Insufficient", "Cashed Item Insufficient": the deposited item return), and not an item the bank pays
+ * ("Insufficient Debit Paid": a paid item is the overdraft's, never the NSF row's).
  */
-export const ITEM_INSUFFICIENT = /\b(?:ACH|checks?|items?|drafts?|debits?)\s*[-–:/]?\s*insufficient\b(?!\s*(?:funds?|balances?|deposits?|collateral)\b)|\binsufficient\s*[-–:/]?\s*(?:ACH|checks?|items?|drafts?|debits?)\b/i;
+export const ITEM_INSUFFICIENT = /^(?![^|]*\b(?:deposited|cashed|deposit)\s+(?:items?|checks?|drafts?)\b)(?![^|]*\b(?:paid|honou?red)\b)[^|]*?(?:\b(?:ACH|checks?|items?|drafts?|debits?)\s*[-–:/]?\s*insufficient\b(?!\s*(?:funds?|balances?|deposits?|collateral)\b)|\binsufficient\s*[-–:/]?\s*(?:ACH|checks?|items?|drafts?|debits?)\b)/i;
 
 /**
  * v171 (backlog dry run 4): the held-name rule's short stop payment ("Stop Pay", "Stop-Pay", "Stop Pmt"),
@@ -483,8 +486,11 @@ export const STOP_PAY_SHORT: FeePattern = { key: "stop_payment", pattern: /\bsto
  * charge rule. A minimum balance that only avoids another fee ("minimum balance to avoid the monthly
  * service charge") is not one: the charge word must follow the balance words. Nor is a name that offers
  * both ("Monthly or Minimum Balance Service Charge"): the monthly service charge rule keeps it.
+ * v173 (review of v172): nor a name that offers the monthly fee, named in full, and the minimum balance
+ * fee as one charge ("Monthly Maintenance Fee / Minimum Balance Fee", "Monthly Service Charge or Minimum
+ * Balance Fee", "No monthly service charge or minimum balance fee").
  */
-export const LOW_BALANCE_CHARGE = /(?<!\bmonthly\s+(?:or|and|\/)\s+)\b(?:low|minimum|min\.?)[- ]balance\s+(?:service\s+)?(?:fees?|charges?)\b/i;
+export const LOW_BALANCE_CHARGE = /(?<!\bmonthly(?:\s+(?:maintenance|service))?(?:\s+(?:fees?|charges?))?\s*(?:or|and|\/|&)\s*)\b(?:low|minimum|min\.?)[- ]balance\s+(?:service\s+)?(?:fees?|charges?)\b/i;
 
 export const FEE_PATTERNS: FeePattern[] = [
   // A copy of something is a copy fee, whatever it copies ("Photocopy of paid item",
@@ -1244,6 +1250,12 @@ export function freeRowName(line: string): string | null {
 }
 
 /** One cell that is a whole free row on its own: a dot leader or a colon to the free word, or a sentence. */
+/** v173: one zero name opens the other word for word ("Paper Statement or Paperless" in "Paper Statement or Paperless Online Statement"). */
+function sameFreeCellName(a: string, b: string): boolean {
+  const [short, long] = [a, b].map((name) => name.toLowerCase().replace(/\s+/g, " ").trim()).sort((x, y) => x.length - y.length);
+  return short.split(" ").length >= 2 && long.startsWith(short) && (long.length === short.length || /\W/.test(long[short.length]));
+}
+
 function freeCellName(row: string): string | null {
   const leader = row.match(FREE_LEADER_ROW)?.[1]?.trim() ?? row.match(FREE_COLON_ROW)?.[1]?.trim();
   if (leader) return leader;
@@ -1391,6 +1403,26 @@ interface HeadedSegment {
   section: number;
   /** v160: the segment is a sentence of a worked example (`inWorkedExample`). */
   workedExample: boolean;
+}
+
+/** v173: a list item's bullet at the start of a line. */
+const LIST_BULLET = /^[•●▪‣]\s*/;
+
+/**
+ * v173 (backlog dry run 6): the heading of a bullet list on a two-column page, printed on one line
+ * with the other column's priced row ("Stop Payment | Cashier’s Check | $5.00" over "• Money Order |
+ * $30.00 | Positive Pay Checks | $50.00/mo", Navigant FCU doc 2007). The line is priced, so it never
+ * read as a heading and the bullets under it lost it. Only when the next line opens with a bullet, the
+ * first cell is a heading on its own (`headingName`) and the cells after it are another row's name and
+ * price. Null otherwise.
+ */
+export function listHeadingOf(line: string, next: string | undefined): string | null {
+  if (!next || !LIST_BULLET.test(next.trim()) || LIST_BULLET.test(line)) return null;
+  const plain = headingName(line);
+  if (plain !== undefined) return plain;
+  const cells = line.split(CELL_SEPARATOR).map((cell) => cell.trim());
+  if (cells.length < 3 || amountsIn(cells[1]).length > 0 || !/[a-z]{3,}/i.test(cells[1]) || amountsIn(cells.slice(2).join(" ")).length === 0) return null;
+  return headingName(cells[0]) || null;
 }
 
 function candidateSegments(text: string): HeadedSegment[] {
@@ -1551,6 +1583,44 @@ export function billPayByHeading(candidate: ExtractedFeeCandidate, heading?: str
   const headed = heading ? overdraftOrNsf(heading) : null;
   if (headed) return refile(headed, `${heading!.replace(/\s*:\s*$/, "")}: ${candidate.feeName}`);
   return candidate;
+}
+
+/**
+ * v173 (backlog dry run 6): an item bulleted under a stop payment heading ("Stop Payment" over
+ * "• Money Order | $30.00", "• Official Check | $30.00", "• Bill Payment | $30.00", Navigant FCU doc
+ * 2007) is the stop payment's price for that item. The item's own words file it as the item's fee
+ * (bill pay, money order, official check), so "Bill Payment" $30 went to Darwin as bill pay. The
+ * read's line is found on the page; the bullets above it are walked up to the list's heading
+ * (`listHeadingOf`). A read whose whole name is its bullet's own label at the bullet's own price, where
+ * the label names an item a stop payment is placed on (`STOP_PAYMENT_ITEM`), is filed as the stop
+ * payment and named under the heading ("Stop Payment: Bill Payment"), when that passes Darwin's
+ * checks. Another column's read on the same line, a label that names a fee of its own, or a read
+ * whose line the page prints under more than one heading passes through unchanged. Pure.
+ */
+const STOP_PAYMENT_ITEM = /^(?:(?:personal|official|cashier['’]?s|teller['’]?s|counter|certified|electronic|recurring|pre-?authori[sz]ed|share|business)\s+)*(?:checks?|drafts?|share\s+drafts?|money\s+orders?|ach(?:\s+(?:debits?|items?|payments?))?|bill\s*pay(?:ments?)?|debits?|items?|payments?)$/i;
+const MAX_LIST_ITEMS = 12;
+
+export function stopPaymentListRead(candidate: ExtractedFeeCandidate, text: string): ExtractedFeeCandidate {
+  if (candidate.canonicalHint === "stop_payment" || !candidate.excerpt || !text.includes("•")) return candidate;
+  const excerpt = candidate.excerpt.replace(/\s+/g, " ").trim();
+  const lines = text.split("\n").map((line) => line.replace(/\s+/g, " ").trim());
+  const headings = new Set<string>();
+  let label = "";
+  for (const [index, line] of lines.entries()) {
+    if (!LIST_BULLET.test(line) || !(line.includes(excerpt) || excerpt.includes(line))) continue;
+    const item = line.replace(LIST_BULLET, "");
+    const price = amountsIn(item)[0];
+    if (!price || Math.abs(price.value - candidate.amount) >= 0.005) continue;
+    label = normalizeSegment(item.slice(0, price.start).replace(/(?:\.{2,}|…)[.…]*/g, " "));
+    let at = index - 1;
+    while (at >= 0 && index - at <= MAX_LIST_ITEMS && LIST_BULLET.test(lines[at])) at -= 1;
+    headings.add(at >= 0 ? listHeadingOf(lines[at], lines[at + 1]) ?? "" : "");
+  }
+  const [heading] = [...headings];
+  if (headings.size !== 1 || !heading || classifyPatternKey(heading) !== "stop_payment") return candidate;
+  if (!label || label.includes("|") || label.toLowerCase() !== normalizeSegment(candidate.feeName).toLowerCase() || !STOP_PAYMENT_ITEM.test(label)) return candidate;
+  const name = `${heading.replace(/\s*:\s*$/, "")}: ${label}`;
+  return passesDarwinChecks("stop_payment", name, candidate.amount) ? { ...candidate, canonicalHint: "stop_payment", feeName: name } : candidate;
 }
 
 /**
@@ -2934,7 +3004,8 @@ function readPlainSegment(segment: string): ExtractionRulesResult {
       const free = freeCellName(cell);
       const zeroName = free ? nameFrom(free) : "";
       const zeroHint = usableName(zeroName) ? unpricedRowCategory(zeroName) : null;
-      if (zeroHint && !notAZeroPrice(zeroHint, `${zeroName} ${cell}`) && !result.held.some((held) => held.feeName === zeroName)) {
+      // v173: the same free cell in the next column cut shorter is the same fee (`sameFreeCellName`).
+      if (zeroHint && !notAZeroPrice(zeroHint, `${zeroName} ${cell}`) && !result.held.some((held) => held.feeName === zeroName || (held.canonicalHint === zeroHint && sameFreeCellName(held.feeName, zeroName)))) {
         result.held.push({ shape: "zero", feeName: zeroName, amount: 0, amountMax: null, percent: null, frequency, canonicalHint: zeroHint, excerpt: segment });
       }
     }
@@ -3012,7 +3083,10 @@ function readPlainSegment(segment: string): ExtractionRulesResult {
     if (!free) continue;
     const zeroName = nameFrom(free);
     const zeroHint = usableName(zeroName) ? unpricedRowCategory(zeroName) : null;
-    if (zeroHint && !notAZeroPrice(zeroHint, zeroName) && !result.held.some((held) => held.feeName === zeroName)) {
+    // v173 (backlog dry run 6): the same free cell in a second account column, cut shorter ("No charge for
+    // Paper Statement or Paperless Online Statement | No charge for Paper Statement or Paperless", Truist),
+    // is the same fee: a zero name one of the row's zero names opens with, word for word, is not held twice.
+    if (zeroHint && !notAZeroPrice(zeroHint, zeroName) && !result.held.some((held) => held.feeName === zeroName || (held.canonicalHint === zeroHint && sameFreeCellName(held.feeName, zeroName)))) {
       result.held.push({ shape: "zero", feeName: zeroName, amount: 0, amountMax: null, percent: null, frequency: null, canonicalHint: zeroHint, excerpt: segment });
     }
   }
