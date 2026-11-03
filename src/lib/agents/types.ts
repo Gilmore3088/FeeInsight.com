@@ -163,6 +163,8 @@ export const PAUSE_EXEMPT_STEP_KEYS: readonly string[] = [
   "deming-knox-misses",
   "deming-monthly-review",
   "deming-playbook-check",
+  // Reads fees and texts and writes run events only (deming/reconcile/run.ts).
+  "deming-reconcile",
   "deming-regression",
   "deming-source-health",
   "deming-sunday-maintenance",
