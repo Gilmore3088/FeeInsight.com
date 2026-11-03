@@ -65,7 +65,9 @@ import { FREE_ROW_CONTINUES } from "@/lib/custom-report/source-check";
 // is held as unclassified, as the rules pass holds one, so the held-name relabel and the scorecards see
 // it; any other such row is counted (`table_row_no_category`). So is a row Darwin's checks refuse
 // (`table_row_guard_refused`), unless only its heading filed it: then its bare name is held.
-export const KNOX_TABLE_STRATEGY = { strategy: "extract.table", version: 12 } as const;
+// v13 (Knox rules v171, backlog dry run 4): a list of free items, one per line, is no stacked table: a
+// free word that opens an item never prices the line above (`freeItemList`).
+export const KNOX_TABLE_STRATEGY = { strategy: "extract.table", version: 13 } as const;
 
 export interface KnoxTableRow {
   cells: string[];
@@ -134,6 +136,13 @@ export function tableRowsFromText(text: string): KnoxTableRow[] {
       }
     }
 
+    // v13 (Knox rules v171, backlog dry run 4): a list of free items, one per line ("Free Bill Pay" /
+    // "Free Online Statements and Check Images" / "Special Rates on one Safe Deposit Box" / "Free
+    // Photocopies (limits may apply)", O'Bannon Banking Co, doc 42058), is no stacked table: each free
+    // word opens its own item and never prices the line above (`freeItemList`).
+    if (lead && pendingName && freeItemList(line, pendingName, next)) {
+      pendingName = null;
+    }
     if (lead && pendingName) {
       const rest = line.slice(lead[0].length);
       const qualifier = rest.match(QUALIFIER)?.[0] ?? "";
@@ -201,7 +210,8 @@ export function tableRowsFromText(text: string): KnoxTableRow[] {
       continue;
     }
 
-    const priceFollows = LEADING_VALUE.test(next) || (qualifiesName(next) && LEADING_VALUE.test(lines[index + 2] ?? ""));
+    const priceFollows = (LEADING_VALUE.test(next) && !freeItemList(next, line, lines[index + 2] ?? "")) ||
+      (qualifiesName(next) && LEADING_VALUE.test(lines[index + 2] ?? ""));
     if (priceFollows && line.length <= MAX_NAME_LINE_CHARS && /[a-z]/i.test(line) && !qualifiesName(line)) {
       pendingName = line;
       pendingHeading = heading;
@@ -213,6 +223,25 @@ export function tableRowsFromText(text: string): KnoxTableRow[] {
   }
   // v102: added after every row read above, so no earlier read changes.
   return [...rows, ...columnHeadingRows(lines)].slice(0, MAX_ROWS);
+}
+
+/**
+ * v13: a line that opens with a free word and goes on to name an item ("Free Online Statements and Check
+ * Images", "Free Photocopies (limits may apply)") is a free item of its own. The free word never prices
+ * the line above when that line or the next is one too (a list of free items). A note after the free
+ * word ("Free with eStatements", "Free (members)", "free per month") still does, and so does a lone
+ * "Incoming Wire" / "Free Outgoing Wire" / "$25.00": no free item beside it.
+ */
+function freeItem(line: string): boolean {
+  const lead = line.match(LEADING_VALUE);
+  if (!lead || /^\(?\s*\$/.test(lead[0])) return false;
+  const tail = line.slice(lead[0].length).replace(QUALIFIER, "").trim();
+  return /^[A-Za-z“"'‘]/.test(tail) && /[a-z]{3,}/i.test(tail)
+    && !/^(?:for|if|when|after|plus|per|each|up to|max|min|or|and|with|waived|to|of|on|at|in|until|through|thru|first|then|unless|except)\b/i.test(tail);
+}
+
+function freeItemList(line: string, above: string, below: string): boolean {
+  return freeItem(line) && (freeItem(above) || freeItem(below));
 }
 
 /** Prose running on from another column: opens lowercase, or with a footnote number ("1. "). */
