@@ -570,9 +570,9 @@ describe("Hamilton agentic publish", () => {
     expect(result.publishedFees).toBe(1);
     expect(result.results[0]).toMatchObject({ status: "published", feePublishedId: null });
     // The selection, the edition-hold read (#1915), the depth read, the three sweep-rule reads
-    // (#1069 step 2), the document-owner verdict read, the product-split line read and the
-    // same-line read (#1876), all SELECTs.
-    expect(db.unsafe.mock.calls.filter(([query]) => /SELECT|WITH/.test(query))).toHaveLength(9);
+    // (#1069 step 2), the document-owner verdict read, the product-split line read, the re-read
+    // category move's line read and the same-line read (#1876), all SELECTs.
+    expect(db.unsafe.mock.calls.filter(([query]) => /SELECT|WITH/.test(query))).toHaveLength(10);
     expect(writes(db)).toEqual([]);
   });
 
@@ -823,6 +823,46 @@ describe("Hamilton agentic publish", () => {
     const counted = await run("Gold Checking");
     expect(counted.result.results[0]).toMatchObject({ status: "published", supersededFeePublishedId: null, productSplitOf: { feePublishedId: 141419, winner: "live" } });
     expect(counted.result.productSplitCheck).toMatchObject({ live: false, matched: 1, liveWins: 1 });
+  });
+
+  it("supersedes the live fee of a line a later read files under another category, instead of adding a second row (reread-category-move.ts)", async () => {
+    // Intercredit Bank (#64789): "Late Payment Fee .... $15.00" in the safe deposit box list, live as a
+    // loan late payment fee; the re-read files the same line as a safe deposit box fee.
+    const line = "‐Late Payment Fee .................................................................. $15.00";
+    const text = `Safe Deposit Box Fees\n‐5” x 10” .............. $75.00\n${line}\n‐Drilling Fee ........ $150.00`;
+    const row = { ...verifiedFee, canonical_fee_key: "safe_deposit_box", fee_name: "‐Late Payment Fee", amount: "15.00", frequency: null, source_document_id: 7822 };
+    const live = (over: Record<string, unknown> = {}) => ({
+      fee_published_id: 64789, amount: 15, fee_name: "‐Late Payment Fee", published_at: "2026-10-06T00:00:00.000Z", canonical_fee_key: "late_payment",
+      frequency: null, source_document_id: 7822, product_name: null, read_at: "2026-10-06T00:00:00.000Z", document_crawled_at: "2026-10-01T00:00:00.000Z",
+      document_url: "https://www.intercreditbank.example/fees.pdf", excerpt: line, published_state: "{}", identity_raw_id: 1, identity_product: "", ...over,
+    });
+    const run = async (liveRow: Record<string, unknown>, options: { rereadCategoryMoveLive?: boolean; dryRun?: boolean } = {}) => {
+      const db = createDbMock([row]);
+      const base = db.unsafe.getMockImplementation()!;
+      db.unsafe.mockImplementation((query: string, params: unknown[]) => (
+        query.includes("AS read_at FROM raw_fee_observations fr WHERE") ? Promise.resolve([{ excerpt: line, read_at: "2026-11-03T00:00:00.000Z" }])
+          : query.includes("fp.canonical_fee_key <> $2") ? Promise.resolve([liveRow])
+            : query.includes("SELECT DISTINCT ON (source_document_id) source_document_id, normalized_text") ? Promise.resolve([{ source_document_id: 7822, normalized_text: text }])
+              : base(query, params)) as Promise<unknown[]>);
+      return { db, result: await runHamiltonPublish({ runId: 154, db: asPublishDb(db), ...options }) };
+    };
+
+    const replaced = await run(live(), { rereadCategoryMoveLive: true, dryRun: true });
+    expect(replaced.result.results[0]).toMatchObject({ status: "published", supersededFeePublishedId: 64789, rereadCategoryMoveOf: 64789, amountDelta: null });
+    expect(replaced.result.rereadCategoryMoveCheck).toMatchObject({ live: true, matched: 1, superseded: 0 });
+
+    // Switch off (the default): counted, published beside the live fee as before.
+    const counted = await run(live());
+    expect(counted.result.results[0]).toMatchObject({ status: "published", supersededFeePublishedId: null, rereadCategoryMoveOf: 64789 });
+    expect(counted.result.rereadCategoryMoveCheck).toMatchObject({ live: false, matched: 1, superseded: 0 });
+
+    // An overdraft/NSF combined line is never moved (#1513), and a different fee at the price is never merged.
+    const combined = "NSF/Overdraft/Reg D Fees | $15.00";
+    const odNsf = await run(live({ canonical_fee_key: "overdraft", fee_name: "NSF/Overdraft/Reg D Fees", excerpt: combined }), { rereadCategoryMoveLive: true, dryRun: true });
+    expect(odNsf.result.results[0]).toMatchObject({ supersededFeePublishedId: null });
+    expect(odNsf.result.results[0].rereadCategoryMoveOf).toBeUndefined();
+    const other = await run(live({ fee_name: "Night Deposit Lost Key Fee", excerpt: "Night Deposit Lost Key Fee | $15.00" }), { rereadCategoryMoveLive: true, dryRun: true });
+    expect(other.result.results[0]).toMatchObject({ supersededFeePublishedId: null });
   });
 
   it("defers the wide same-line prerequisite instead of deciding from a failed reselect", async () => {
