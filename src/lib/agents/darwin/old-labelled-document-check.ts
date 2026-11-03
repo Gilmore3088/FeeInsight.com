@@ -320,7 +320,7 @@ export function oldLabelledDocumentRowsSql(db: SqlTag, options: { institutionId?
       SELECT keyed.institution_id, keyed.current_link,
              COALESCE(fetched.source_document_id, by_address.id) AS link_document_id
         FROM keyed
-        -- The link's own fetch: the newest plain fetch that asked for the link (the remembered address is the link).
+        -- The link's own fetch: the newest plain fetch that asked for today's link (the remembered address is the link).
         LEFT JOIN LATERAL (
           SELECT pa.source_document_id
             FROM pipeline_attempts pa
@@ -331,6 +331,9 @@ export function oldLabelledDocumentRowsSql(db: SqlTag, options: { institutionId?
              AND pa.source_document_id IS NOT NULL
              AND keyed.current_link IS NOT NULL
              AND keyed.asked_key = keyed.link_key
+             -- The attempt asked for today's link, not one the bank had before it (review of #2968). Older
+             -- attempts carry no detail.link; they never count, which errs toward keeping the fee.
+             AND btrim(pa.detail->>'link') = keyed.current_link
            ORDER BY pa.id DESC
            LIMIT 1
         ) fetched ON TRUE

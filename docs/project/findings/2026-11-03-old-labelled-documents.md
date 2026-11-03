@@ -71,7 +71,10 @@ audit checks the page a fee cites, and an old page still prints its old prices.
   - A fee stays live in any of these cases:
     - It has no amount or no name (`not_judged`).
     - The bank has no link.
-    - The link is this old document, or the link's own fetch landed on and stored it (Westreet).
+    - The link is this old document, or the link's own fetch landed on and stored it (Westreet). A
+      fetch counts as the link's own only when its attempt names today's link (`detail.link`), so a
+      copy fetched for a link the bank had before never stands for it. Westreet's Oct fetches predate
+      `detail.link`; until its next fetch it is kept as "no stored copy".
     - The link is itself old-labelled.
     - The current link has no stored copy.
     - The copy is not a fee schedule (a landing or product page).
