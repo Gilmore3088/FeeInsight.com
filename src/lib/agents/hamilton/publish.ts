@@ -75,6 +75,13 @@ import {
   selectLiveFeeOnLine,
   selectSameLineReadOf,
 } from "@/lib/agents/hamilton/same-line-read";
+import {
+  PRODUCT_SPLIT_MERGE_LIVE,
+  PRODUCT_SPLIT_REFUSE_REASON_SUFFIX,
+  PUBLISH_PRODUCT_SPLIT_REFUSE_REASON_PREFIX,
+  selectProductSplitTwin,
+  type ProductSplitMatch,
+} from "@/lib/agents/hamilton/product-split";
 import { vocabularyOnlyName } from "@/lib/agents/knox/held-vocabulary-read";
 import {
   PublicationEvidenceUnavailable,
@@ -217,6 +224,8 @@ export interface HamiltonPublishResult {
   pageCopyOf?: number | null;
   /** #1876: the live fee this row would repeat as a second read of its printed line (rows about to publish only). */
   sameLineReadOf?: number | null;
+  /** The live fee of this row's printed line under another product, and whose product wins (product-split.ts). */
+  productSplitOf?: { feePublishedId: number; winner: "read" | "live" } | null;
 }
 
 export interface RunHamiltonPublishOptions {
@@ -238,6 +247,8 @@ export interface RunHamiltonPublishOptions {
   refusePageCopiesLive?: boolean;
   /** Refuse a second read of a live fee's printed line (#1876); defaults to `PUBLISH_REFUSE_SAME_LINE_READS_LIVE`. */
   refuseSameLineReadsLive?: boolean;
+  /** Merge a re-read of a live fee's line under another product (product-split.ts); defaults to `PRODUCT_SPLIT_MERGE_LIVE`. */
+  productSplitLive?: boolean;
   /**
    * Epoch ms after which the row loop stops (after `PUBLISH_MIN_ROWS_PER_STEP` rows), so the step
    * ends inside the tick (2026-10-17 finding).
@@ -253,6 +264,17 @@ export interface PublishPageCopyCheck {
   wouldRefuse: number;
   refused: number;
   samples: Array<{ fee_verified_id: number; fee_published_id: number | null; kept_fee_published_id: number; fee_name: string; amount: number | null }>;
+}
+
+export interface PublishProductSplitCheck {
+  /** True when the step merges the pair: supersedes the live row, or refuses the row when the live one wins. */
+  live: boolean;
+  matched: number;
+  /** The row's product wins: it supersedes the live row. */
+  readWins: number;
+  /** The live row's product wins: the row is refused. */
+  liveWins: number;
+  samples: Array<{ fee_verified_id: number; fee_published_id: number | null; live_fee_published_id: number; winner: "read" | "live"; fee_name: string; amount: number | null }>;
 }
 
 export interface HeldThinInstitution {
@@ -299,6 +321,8 @@ export interface RunHamiltonPublishResult {
   pageCopyCheck: PublishPageCopyCheck;
   /** #1876: rows that are a second read of a live fee's printed line (same-line-read.ts). */
   sameLineReadCheck: PublishPageCopyCheck;
+  /** Rows that re-read a live fee's line under another product (product-split.ts): superseded or refused when live. */
+  productSplitCheck: PublishProductSplitCheck;
   evidenceCheck?: PublishEvidenceCheck;
   /** Where each fee this step published is printed in our stored copy of the bank's fee schedule (publish-location.ts); null when none published. */
   locationCheck?: PublishLocationCheck | null;
@@ -2008,6 +2032,8 @@ async function supersedePriorFee(
   if (closed.length === 0) return { superseded: false, changeRecorded: false };
   // fee_change_records holds dollar amounts only; a rate change is not written there.
   if (isPercentFee(options.row)) return { superseded: true, changeRecorded: false };
+  // A re-read of the same line under another product (product-split.ts) replaces the row, not the price.
+  if (previousAmount != null && newAmount != null && Math.abs(previousAmount - newAmount) < 0.005) return { superseded: true, changeRecorded: false };
 
   // Same vocabulary as FeeChangeEvent in data-store/fee-changes.ts.
   const changeType = newAmount != null && previousAmount != null && newAmount < previousAmount ? "decrease" : "increase";
@@ -2449,6 +2475,7 @@ export async function runHamiltonPublish(
   const refuseSweepRulesLive = options.refuseSweepRulesLive ?? PUBLISH_REFUSE_SWEEP_RULES_LIVE;
   const refusePageCopiesLive = options.refusePageCopiesLive ?? PUBLISH_REFUSE_PAGE_COPIES_LIVE;
   const refuseSameLineReadsLive = options.refuseSameLineReadsLive ?? PUBLISH_REFUSE_SAME_LINE_READS_LIVE;
+  const productSplitLive = options.productSplitLive ?? PRODUCT_SPLIT_MERGE_LIVE;
   const learning = !dryRun && (await learningSchemaReady(db));
   const batchId = `agentic-run-${options.runId}`;
   const selected = await selectVerifiedFees(
@@ -2623,11 +2650,27 @@ export async function runHamiltonPublish(
       priorReadsAvailable = false;
       unavailable(error.check, true);
     }
+    // One printed line re-read under another product (product-split.ts): the row would otherwise go
+    // live as a new fee beside the live row of its own line. On, the winner's product stays.
+    let productSplit: ProductSplitMatch | null = null;
+    if (!skipReason && priorReadsAvailable && (decision?.kind === "new" || decision?.kind === "additional_line") &&
+        row.fee_raw_id != null && row.source_document_id != null && !isPercentFee(row) && normalizedAmount(row.amount) != null) {
+      const read = await selectProductSplitTwin(db, {
+        feeRawId: Number(row.fee_raw_id), institutionId: Number(row.institution_id), canonicalFeeKey: row.canonical_fee_key,
+        variantType: row.variant_type, amount: normalizedAmount(row.amount)!, productName: row.product_name ?? null,
+        frequency: row.frequency, sourceDocumentId: Number(row.source_document_id), documentUrl: row.document_url,
+        sourceUrl: row.source_url, documentStream: row.document_stream, documentCrawledAt: row.document_crawled_at,
+      });
+      if (read.state === "available") productSplit = read.value;
+      else unavailable(read.check, productSplitLive);
+      if (productSplitLive && productSplit?.winner === "read") decision = { kind: "supersede", prior: productSplit.prior };
+    }
+    const productSplitRefused = productSplitLive && productSplit?.winner === "live";
     const priorPublishedFee = decision?.kind === "supersede" ? decision.prior : null;
     let exactDuplicate: ExactDuplicateDecision = { kind: "none" };
     const line = collapseLineOf(row);
     const lineKey = collapseLineKey(line);
-    const needsGate = !skipReason && decision?.kind !== "identical" && decision?.kind !== "older_document";
+    const needsGate = !skipReason && decision?.kind !== "identical" && decision?.kind !== "older_document" && !productSplitRefused;
     if (needsGate && priorReadsAvailable) {
       // In-step copies remain evidence even when the external read is unavailable.
       const inStep = stepCopies.get(lineKey) ?? [];
@@ -2702,6 +2745,14 @@ export async function runHamiltonPublish(
         ...base,
         status: "skipped",
         reason: OLDER_DOCUMENT_REASON,
+        feePublishedId: null,
+        ...NO_MOVEMENT,
+      };
+    } else if (productSplitRefused && productSplit) {
+      result = {
+        ...base,
+        status: "skipped",
+        reason: `${PUBLISH_PRODUCT_SPLIT_REFUSE_REASON_PREFIX}${Number(productSplit.prior.fee_published_id)}${PRODUCT_SPLIT_REFUSE_REASON_SUFFIX}`,
         feePublishedId: null,
         ...NO_MOVEMENT,
       };
@@ -2849,6 +2900,7 @@ export async function runHamiltonPublish(
     if (sweepRule) result.sweepRule = sweepRule;
     if (pageCopyOf != null) result.pageCopyOf = pageCopyOf;
     if (sameLineReadOf != null) result.sameLineReadOf = sameLineReadOf;
+    if (productSplit) result.productSplitOf = { feePublishedId: Number(productSplit.prior.fee_published_id), winner: productSplit.winner };
     if (result.status === "published") {
       stepCopies.set(lineKey, [
         ...(stepCopies.get(lineKey) ?? []),
@@ -2893,6 +2945,7 @@ export async function runHamiltonPublish(
           ...(result.sweepRule ? { sweep_rule: result.sweepRule } : {}),
           ...(result.pageCopyOf != null ? { page_copy_of: result.pageCopyOf } : {}),
           ...(result.sameLineReadOf != null ? { same_line_read_of: result.sameLineReadOf } : {}),
+          ...(result.productSplitOf ? { product_split_of: result.productSplitOf } : {}),
         },
       });
     }
@@ -2982,6 +3035,21 @@ export async function runHamiltonPublish(
       amount: result.amount,
     })),
   };
+  const productSplitHits = results.filter((result) => result.productSplitOf != null);
+  const productSplitCheck: PublishProductSplitCheck = {
+    live: productSplitLive,
+    matched: productSplitHits.length,
+    readWins: productSplitHits.filter((result) => result.productSplitOf!.winner === "read").length,
+    liveWins: productSplitHits.filter((result) => result.productSplitOf!.winner === "live").length,
+    samples: productSplitHits.slice(0, 10).map((result) => ({
+      fee_verified_id: result.feeVerifiedId,
+      fee_published_id: result.feePublishedId,
+      live_fee_published_id: result.productSplitOf!.feePublishedId,
+      winner: result.productSplitOf!.winner,
+      fee_name: result.feeName,
+      amount: result.amount,
+    })),
+  };
   const unavailableByCheck: PublishEvidenceCheck["unavailableByCheck"] = {};
   for (const result of results) {
     for (const check of result.unavailableEvidence ?? []) {
@@ -3037,6 +3105,7 @@ export async function runHamiltonPublish(
     sweepCheck,
     pageCopyCheck,
     sameLineReadCheck,
+    productSplitCheck,
     evidenceCheck,
     locationCheck,
     timeBox: { stopped: rowsLeft > 0, rowsLeft, topUpSkipped },

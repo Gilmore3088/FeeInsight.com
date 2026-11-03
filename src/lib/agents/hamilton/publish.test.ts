@@ -570,8 +570,9 @@ describe("Hamilton agentic publish", () => {
     expect(result.publishedFees).toBe(1);
     expect(result.results[0]).toMatchObject({ status: "published", feePublishedId: null });
     // The selection, the edition-hold read (#1915), the depth read, the three sweep-rule reads
-    // (#1069 step 2), the document-owner verdict read and the same-line read (#1876), all SELECTs.
-    expect(db.unsafe.mock.calls.filter(([query]) => /SELECT|WITH/.test(query))).toHaveLength(8);
+    // (#1069 step 2), the document-owner verdict read, the product-split line read and the
+    // same-line read (#1876), all SELECTs.
+    expect(db.unsafe.mock.calls.filter(([query]) => /SELECT|WITH/.test(query))).toHaveLength(9);
     expect(writes(db)).toEqual([]);
   });
 
@@ -787,6 +788,41 @@ describe("Hamilton agentic publish", () => {
     const failed = await run(() => Promise.reject(new Error("private read failure")));
     expect(failed.result.results[0]).toMatchObject({ evidenceDeferred: true, unavailableEvidence: ["same_line_read"] });
     expect(failed.result.publishedFees).toBe(0);
+  });
+
+  it("merges a re-read of a live fee's line under another product instead of adding a second row (product-split.ts)", async () => {
+    const line = "Overdraft fee | $35.00 per item";
+    const text = `Gold Checking\n\n${line}\n\nDemand Deposit Rates`;
+    const live = (product: string | null) => ({
+      fee_published_id: 141419, amount: 35, fee_name: "Overdraft fee", published_at: "2026-07-01T00:00:00.000Z", frequency: "per_item",
+      source_document_id: 77, product_name: product, document_crawled_at: "2026-10-01T00:00:00.000Z", document_url: "https://testbank.example/fees",
+      excerpt: line, published_state: "{}", identity_raw_id: 1, identity_product: (product ?? "").toLowerCase(),
+    });
+    const run = async (product: string | null, options: { productSplitLive?: boolean; dryRun?: boolean } = {}) => {
+      const db = createDbMock([verifiedFee]);
+      const base = db.unsafe.getMockImplementation()!;
+      db.unsafe.mockImplementation((query: string, params: unknown[]) => (
+        query.includes("AS excerpt FROM raw_fee_observations fr WHERE") ? Promise.resolve([{ excerpt: line }])
+          : query.includes("fr.fee_raw_id <> $5::bigint") ? Promise.resolve([live(product)])
+            : query.includes("SELECT DISTINCT ON (source_document_id) source_document_id, normalized_text") ? Promise.resolve([{ source_document_id: 77, normalized_text: text }])
+              : base(query, params)) as Promise<unknown[]>);
+      return { db, result: await runHamiltonPublish({ runId: 153, db: asPublishDb(db), ...options }) };
+    };
+
+    // The live row's product is a heading below the line: the re-read's product (none) wins and supersedes it.
+    const replaced = await run("Demand Deposit Account", { productSplitLive: true, dryRun: true });
+    expect(replaced.result.results[0]).toMatchObject({ status: "published", supersededFeePublishedId: 141419, productSplitOf: { feePublishedId: 141419, winner: "read" } });
+    expect(replaced.result.productSplitCheck).toMatchObject({ live: true, matched: 1, readWins: 1, liveWins: 0 });
+
+    // The live row's product heads the line: it stays, and the re-read is refused.
+    const kept = await run("Gold Checking", { productSplitLive: true });
+    expect(kept.result.results[0]).toMatchObject({ status: "skipped", reason: "Same printed line as live fee #141419 under another product" });
+    expect(writes(kept.db).join("\n")).not.toContain("INSERT INTO published_fee_records");
+
+    // Switch off (the default): counted, published as before.
+    const counted = await run("Gold Checking");
+    expect(counted.result.results[0]).toMatchObject({ status: "published", supersededFeePublishedId: null, productSplitOf: { feePublishedId: 141419, winner: "live" } });
+    expect(counted.result.productSplitCheck).toMatchObject({ live: false, matched: 1, liveWins: 1 });
   });
 
   it("defers the wide same-line prerequisite instead of deciding from a failed reselect", async () => {

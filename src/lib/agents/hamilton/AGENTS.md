@@ -1323,6 +1323,22 @@ one name's words are all in the other's (`namesShareReading`). Counted in the st
 line as live fee #<id>`); an enabled unavailable read leaves the row pending. This takes nothing
 down; Darwin's `same-line-read-check.ts` re-checks what is already live.
 
+**One printed line under two products, at publish (Nov 3, off).** Every identity check compares the
+product exactly, so a Knox re-read that names a line's product differently (or not at all) than the
+live row of that line went live beside it (re-read dry runs 3 and 4: Polish & Slavic #94866, #49397,
+#49398; Cvph #141419; MutualOne #73214). A dollar row that would be new is read against the live rows
+of its institution, category, variant and amount under other products (`selectProductSplitTwin`,
+`product-split.ts`). They are one line read twice (`readsOneLineTwoProducts`) when they come from one
+page (one document, or copies of one page in one stream), their stored lines fold to the same words,
+the newer copy's text prints that line once with its price once, and the frequencies do not differ.
+A line printed once per account stays two rows. Whose product stays (`productSplitWinner`): never an
+older copy's read over a newer copy's live row; then the product named on the line or on the nearest
+short heading above it (no price or table cell, within 12 non-blank lines); then the newer read. When
+the row wins it supersedes the live row (a same-amount supersede records no price change); when the
+live row wins the row is skipped (`Same printed line as live fee #<id> under another product`). Counted
+in `product_split_check`; acts only while `PRODUCT_SPLIT_MERGE_LIVE` is on. Darwin's
+`product-split-check.ts` re-checks the pairs already live with the same rule.
+
 ## Rules Re-check
 
 In state-lane (or single-institution) publish steps, `rules-recheck.ts` re-runs Knox's
