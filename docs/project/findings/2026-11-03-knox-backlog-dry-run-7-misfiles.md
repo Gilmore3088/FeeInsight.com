@@ -51,7 +51,9 @@ duplicate, plus GTE FCU's future-dated schedule (its own finding,
   and document_reproduction accepts "copy of a paper/mailed/printed statement".
 - lineup.ts `distinctAccountName`: a qualifier after a dash that names no account, audience, fee or rate is
   dropped and the name before it is tried. Review of PR #2969: an age qualifier ("Under 18", "Over 55", "62+",
-  "Seniors") stays in the name, so "Premier Savings - Under 18" and "Premier Savings - Over 55" are two products.
+  "Seniors") stays in the name, so "Premier Savings - Under 18" and "Premier Savings - Over 55" are two products;
+  a count, balance or purchase number ("Under 25 Transactions", "Over 25,000") is no age and leaves the bare
+  account name.
 - Review of PR #2967, folded in: `ITEM_INSUFFICIENT_PAID` reads an insufficient item the bank pays, naming
   no return ("Insufficient Check Paid", "Item Insufficient - Paid", "Insufficient Debit Paid"), as overdraft,
   ahead of the NSF rule; "Insufficient Funds Check Paid" and "Insufficient Items Paid" stay overdraft.

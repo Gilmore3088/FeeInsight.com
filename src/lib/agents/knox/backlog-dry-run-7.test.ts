@@ -248,5 +248,29 @@ describe("review of PR #2969", () => {
     const over = accountHeadingAbove(text("Premier Savings - Over 55"), "Minimum balance of $100 required to avoid a monthly service charge of $3.00.");
     expect(under).toBe("Premier Savings - Under 18");
     expect(over).toBe("Premier Savings - Over 55");
+    const heading = (account: string) => accountHeadingAbove(text(account), "Minimum balance of $100 required to avoid a monthly service charge of $3.00.");
+    expect(heading("Premier Savings - 62+")).toBe("Premier Savings - 62+");
+    expect(heading("Premier Savings - Ages 13 to 17")).toBe("Premier Savings - Ages 13 to 17");
+    expect(heading("Premier Savings - Under 18 years old")).toBe("Premier Savings - Under 18 years old");
+  });
+
+  it("keeps only a real age: a count, a balance or a purchase number leaves the bare account name", () => {
+    const line = "Minimum balance of $100 required to avoid a monthly service charge of $3.00.";
+    const heading = (account: string) => accountHeadingAbove(`Accounts\n${account}\n${line}`, line);
+    expect(heading("Gold Checking - Under 25 Transactions")).toBe("Gold Checking");
+    expect(heading("Premium Checking - Over 25,000")).toBe("Premium Checking");
+    expect(heading("Rewards Checking - Over 5 Debit Purchases")).toBe("Rewards Checking");
+  });
+
+  it("keeps a bracketed price for some customers as a note (\"($6 for e-statement customers)\")", () => {
+    const run = runFreeSpecialists("$12 monthly fee ($6 for e-statement customers)");
+    expect([...run.candidates, ...run.held].map((read) => [read.feeName, read.amount])).toEqual([["Monthly fee", 12]]);
+  });
+
+  it("never emits a name that ends in an open bracket (\"$25 NSF fee ($35 after 5th occurrence in 12 months)\")", () => {
+    const run = runFreeSpecialists("$25 NSF fee ($35 after 5th occurrence in 12 months)");
+    const names = [...run.candidates, ...run.held].map((read) => read.feeName);
+    expect(names.some((name) => /\(\s*$/.test(name))).toBe(false);
+    expect(names).toContain("NSF fee");
   });
 });

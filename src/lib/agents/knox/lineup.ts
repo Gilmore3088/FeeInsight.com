@@ -175,9 +175,11 @@ function numberedLine(value: string): NumberedLine | null {
 const DASH_QUALIFIER = /^(.+?)\s+[-–]\s+([^-–]+)$/;
 /**
  * Review of PR #2969: an age or eligibility qualifier ("Premier Savings - Under 18", "- Over 55", "- 62+",
- * "- Seniors", "- Youth") names a product of its own, so two accounts that differ only by it stay apart.
+ * "- Seniors", "- Youth") names a product of its own, so two accounts that differ only by it stay apart. Only a
+ * real age: a figure with no money comma or $, followed by nothing or "years (old)"/"yrs" ("Under 25
+ * Transactions", "Over 25,000", "Over 5 Debit Purchases" are not ages and leave the bare account name).
  */
-const AGE_QUALIFIER = /\b(?:under|over|ages?|aged)\s+\d+|\b\d+\s*(?:\+|and\s+(?:over|older|up|under|younger))|\b(?:seniors?|youth|minors?|juniors?|kids?|teens?|students?)\b/i;
+const AGE_QUALIFIER = /(?<![$\d])\b(?:(?:under|over|ages?|aged)\s+\d{1,3}(?:\s*(?:to|-|–)\s*\d{1,3})?(?![\d,.])(?:\s*(?:years?(?:\s+old)?|yrs?)\b|(?!\s*[a-z]))|\d{1,3}\s*(?:\+|and\s+(?:over|older|up|under|younger)\b))|\b(?:seniors?|youth|minors?|juniors?|kids?|teens?|students?)\b/i;
 const QUALIFIER_NAMES_OTHER = /\b(?:checking|savings|money market|share|club|account|certificates?|cds?|iras?|personal|consumer|business|commercial|student|youth|senior|teen|kids?|fees?|charges?|balance|minimum|maintenance|service|monthly|rates?|apy|dividends?|interest)\b/i;
 
 /** A name that says which account: an account word plus a word of its own, 2 to 6 words. */

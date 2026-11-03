@@ -48,7 +48,10 @@ Worth/City of Fort Worth Retirement direct deposit totaling $500 or more". The a
   ($2 paper statement fee if no e-statements)", "$30.00 NSF fee ($30.00 overdraft fee)", "($50.00 drilling
   fee)") or another category ("($35 for international wires)") is read under the bracket's own words, never as
   "NSF fee ("; a tier of the same fee ("($35 after the 3rd item)") keeps the earlier fee's name. The first
-  read's name drops the emptied bracket too ("Monthly fee", not "monthly fee ( paper statement fee ...)").
+  read's name drops the emptied bracket too ("Monthly fee", not "monthly fee ( paper statement fee ...)"). A
+  price "for" some customers, members or accounts ("($6 for e-statement customers)") is an eligibility note
+  too. The overdraft/NSF family expert no longer emits a name that ends in an open bracket (it held "NSF fee
+  (" $35 from "$25 NSF fee ($35 after 5th occurrence in 12 months)", a path older than v176).
 - Review of PR #2969: the name cut also ends at "after", "until", "once", "while" and "whenever" ("$30 -
   Dormant Account Fee after 12 months, waived ..." is "Dormant Account Fee").
 - Re-read: a current copy with a live Knox fee whose stored line opens with its price and prints a second

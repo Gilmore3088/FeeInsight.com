@@ -2958,12 +2958,12 @@ export function priceFirstClauseName(segment: string, amounts: readonly AmountMa
 /**
  * v176 (review of PR #2969): a later price that opens a bracket on a price-first line, read by the words in
  * that bracket. "note" when they price the same fee for an age, membership or other eligibility ("($6 if age
- * 55+)", "($8 for members 62 and older)") or name nothing; a fee of their own (a fee word and a category:
+ * 55+)", "($8 for members 62 and older)", "($6 for e-statement customers)") or name nothing; a fee of their own (a fee word and a category:
  * "($2 paper statement fee if no e-statements)", "($30.00 overdraft fee)", "($50.00 drilling fee)") or another
  * category ("($35 for international wires)") is read under the bracket's own words; a tier of the earlier fee
  * ("($35 after the 3rd item)", "each additional") keeps the earlier fee's words without the open bracket.
  */
-const BRACKET_ELIGIBILITY_NOTE = /\b(?:age[sd]?|years?|yrs?|older|younger|seniors?|members?|military|students?|youth|minors?|juniors?|employees?|veterans?)\b|\d+\s*\+|[<>]\s*\d+|\b(?:over|under)\s+\d+/i;
+const BRACKET_ELIGIBILITY_NOTE = /\b(?:age[sd]?|years?|yrs?|older|younger|seniors?|members?|military|students?|youth|minors?|juniors?|employees?|veterans?)\b|\d+\s*\+|[<>]\s*\d+|\b(?:over|under)\s+\d+|\bfor\s+(?:[\w-]+\s+){0,3}(?:customers?|members?|accounts?|account\s*holders?|households?)\b/i;
 const BRACKET_TIER = /^\s*(?:after|beyond|over|above|for\s+each\s+additional|each\s+additional|per\s+additional|thereafter|starting|beginning)\b/i;
 
 export function bracketedLaterRead(segment: string, amount: AmountMatch, earlierWords: string, earlierHint: string): "note" | { name: string; hint: string } {
