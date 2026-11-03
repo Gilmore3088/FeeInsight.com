@@ -1,0 +1,73 @@
+import { it } from "vitest";
+import { layoutPageResult, type PdfTextItem } from "@/lib/agents/rosetta/pdf-layout";
+import { currentVariant as v } from "@/lib/agents/deming/shadow-lab/variants";
+const S = 8;
+function publish(text: string) {
+  const ex = v.extract(text); const live: any[] = [];
+  for (const f of ex.passed) { const ver = v.verify(f, text); if (!ver.ok) continue; const d = v.publishGate(ver.fee, text, live); if (d.publish) live.push(ver.fee); }
+  return live.map((f) => `${f.canonicalFeeKey}:${f.amountCents} (${f.feeName})`).sort();
+}
+const ROWS: [string, string, string][] = [
+  ["Overdraft fee (per item)", "$30.00", "Daily maximum $150"], ["Returned item (NSF)", "$30.00", "Daily maximum $150"],
+  ["Outgoing domestic wire", "$25.00", "International wire $45"], ["Incoming wire", "$10.00", "International incoming $15"],
+  ["Stop payment", "$25.00", "Online request $15"], ["Account research", "$25.00", "Minimum charge $10"],
+  ["Cashier's check", "$8.00", "Members only"], ["Money order", "$3.00", "Limit 5 per day"],
+  ["Statement copy", "$5.00", "Online statements free"], ["Debit card replacement", "$10.00", "Rush delivery $50"],
+  ["Dormant account", "$5.00", "After 12 months"], ["Account closing", "$25.00", "Within 90 days"],
+  ["Garnishment / levy", "$100.00", "Per order"], ["Coin counting", "$3.00", "Non-members 5% of total"],
+  ["Safe deposit box 3x5", "$30.00", "Late payment $10"], ["Check printing", "Varies", "Depends on style"],
+];
+// a: notes with two own fee rows (gap inside)
+const run = (str: string, x: number, y: number, size = S): PdfTextItem => ({ str, transform: [size, 0, 0, size, x, y], width: str.length * size / 2, height: size });
+let PITCH = 12;
+const Y = (r: number) => 700 - r * PITCH;
+const cases: Record<string, () => PdfTextItem[]> = {};
+const notesTable = (price: (p: string, r: number) => string, note: (n: string, r: number) => string = (n) => n, header = false, ns = S, nx = 270) => () => [
+  ...(header ? [run("Service", 40, Y(-1)), run("Fee", 180, Y(-1)), run("Notes", nx, Y(-1), ns)] : []),
+  ...ROWS.flatMap(([l, p, n], r) => [run(l, 40, Y(r)), run(price(p, r), 180, Y(r)), run(note(n, r), nx, Y(r), ns)])];
+const tight = (f: () => PdfTextItem[]) => () => { PITCH = 9; try { return f(); } finally { PITCH = 12; } };
+const split = (n: string) => { const m = /^(.*?)\s*(\$[\d.,]+)\s*(.*)$/.exec(n); return m ? [m[1] + (m[3] ? " " + m[3] : ""), m[2]] : null; };
+const NOTES2: [string, string][] = [["Daily max", "$150"], ["Daily max", "$150"], ["International", "$45"], ["International", "$15"], ["Online request", "$15"], ["Minimum charge", "$10"], ["Non-member", "$10"], ["Non-member", "$5"], ["Paper statement", "$2"], ["Rush delivery", "$50"], ["After 24 months", "$10"], ["Within 30 days", "$50"], ["Each additional", "$25"], ["Non-member", "$5"], ["Late payment", "$10"], ["Custom style", "$40"]];
+// (c) notes are label | price rows -> 4-col table
+const c4 = (nx: number, px: number) => () => ROWS.flatMap(([l, p], r) => [run(l, 40, Y(r)), run(p, 180, Y(r)), run(NOTES2[r][0], nx, Y(r)), run(NOTES2[r][1], px, Y(r))]);
+// (a) notes offset beyond half pitch
+// (a) notes with own leading: 2-line wrapped notes at 9pt pitch beside 12pt-pitch rows? notes pitch 8 starting at row baseline
+// (b) wide notes table, centred gutter, page numbers both halves
+const wide = () => ROWS.flatMap(([l, p, n], r) => [run(l, 40, Y(r)), run(p, 200, Y(r)), run(n + " applies", 300, Y(r)), run("per account", 420, Y(r))]);
+const NOTES3: [string,string][] = ROWS.map(([, , n]) => { const m = /^(.*?) (\$[\d.]+)$/.exec(n); return m ? [m[1], m[2]] : [n, "N/A"]; });
+const tier = (lx: number, px: number, nx: number, npx: number) => ROWS.flatMap(([l, p], r) => [run(l, lx, Y(r)), run(p, px, Y(r)), run("Non-members", nx, Y(r)), run(p.replace("$", "$1"), npx, Y(r))]);
+const four = (nx: number, npx: number) => ROWS.flatMap(([l, p], r) => [run(l, 40, Y(r)), run(p, 180, Y(r)), run(NOTES3[r][0], nx, Y(r)), run(NOTES3[r][1], npx, Y(r))]);
+const pn = (a: string, b: string, ax: number, bx: number, row = 17) => [run(a, ax, Y(row)), run(b, bx, Y(row))];
+// centred gutter: left spans 40..~208, right starts 270..~ (280+..)  make right side end ~ 440 so centre ~240
+cases.tierPN = () => [...tier(40, 180, 270, 380), ...pn("12", "13", 120, 360)];
+cases.tierPNcentre = () => [...tier(40, 190, 250, 400), ...pn("12", "13", 120, 330)];
+cases.tierHeads = () => [...pn("FEE SCHEDULE", "MEMBER SERVICES", 40, 250, -2), ...tier(40, 190, 250, 400)];
+cases.tierPagePN = () => [...tier(40, 190, 250, 400), ...pn("Page 3", "Page 4", 100, 320)];
+cases.fourPN = () => [...four(250, 400), ...pn("12", "13", 120, 330)];
+cases.fourPNa = () => [...ROWS.flatMap(([l, p], r) => [run(l, 40, Y(r)), run(p, 190, Y(r)), run(NOTES3[r][0], 250, Y(r)), run(NOTES3[r][1], 400, Y(r))]), ...pn("- 7 -", "- 8 -", 110, 320)];
+cases.notesPN = () => [...ROWS.flatMap(([l, p, n], r) => [run(l, 40, Y(r)), run(p, 190, Y(r)), run(n, 250, Y(r))]), ...pn("12", "13", 110, 300)];
+// 2-up landscape: same schedule twice row-aligned, each with page number
+cases.twoUp = () => [...ROWS.flatMap(([l, p], r) => [run(l, 40, Y(r)), run(p, 220, Y(r)), run(l, 420, Y(r)), run(p, 600, Y(r))]), ...pn("1", "2", 130, 510)];
+cases.twoUpDiff = () => [...ROWS.slice(0, 8).flatMap(([l, p], r) => [run(l, 40, Y(r)), run(p, 220, Y(r))]), ...ROWS.slice(8).flatMap(([l, p], r) => [run(l, 420, Y(r)), run(p, 600, Y(r))]), ...ROWS.slice(0, 8).flatMap(([l, , n], r) => [run(n, 40, Y(r + 8))]), ...ROWS.slice(8).flatMap(([, , n], r) => [run(n, 420, Y(r + 8))]), ...pn("1", "2", 130, 510)];
+// single wide table, footer Page 3 left, rev date right
+cases.wideFooter = () => [...ROWS.flatMap(([l, p, n], r) => [run(l, 40, Y(r)), run(p, 190, Y(r)), run(n, 250, Y(r)), run("All accounts", 400, Y(r))]), ...pn("Page 3", "Rev. 10/2026", 100, 320)];
+cases.wideFooterTier = () => [...tier(40, 190, 250, 400), ...pn("Page 3", "Rev. 10/2026", 100, 320)];
+cases.tierFootnotes = () => [...tier(40, 190, 250, 400), run("* Waived for seniors", 40, Y(17)), run("** Applies to non-members only", 250, Y(17) - 5)];
+cases.tierHeadersOffset = () => [run("Member Fees", 40, Y(-1)), run("Non-member Fees", 250, Y(-1) + 5), ...tier(40, 190, 250, 400)];
+cases.tierBoth = () => [run("Member Fees", 40, Y(-1)), run("Non-member Fees", 250, Y(-1) + 5), ...tier(40, 190, 250, 400), run("* Waived for seniors", 40, Y(17)), run("** Applies to non-members only", 250, Y(17) - 5)];
+cases.tierFoot8 = () => [...tier(40, 190, 250, 400), run("* Waived for seniors", 40, Y(17)), run("** Applies to non-members only", 250, Y(17) - 8)];
+cases.tierFootOneSide = () => [...tier(40, 190, 250, 400), run("* Waived for seniors", 40, Y(17)), run("** Applies to non-members only", 250, Y(18))];
+cases.tierHead8 = () => [run("MEMBER", 40, Y(-1)), run("NON-MEMBER", 250, Y(-1) + 8), ...tier(40, 190, 250, 400)];
+cases.tierFootStack = () => [...tier(40, 190, 250, 400), run("* Waived for seniors", 40, Y(17)), run("** Non-members only", 250, Y(18)), run("Rev. 10/2026", 250, Y(19))];
+it("adv7", () => {
+  for (const [name, f] of Object.entries(cases)) {
+    const items = f();
+    const a = layoutPageResult(items, { columnReading: true }).text, b = layoutPageResult(items, { columnReading: false }).text;
+    console.log(`=== ${name}: ${a === b ? "UNCHANGED" : "SPLIT"}`);
+    if (a === b) continue;
+    console.log(a.split("\n").slice(14, 20).join("\n"), "\n...");
+    const pa = publish(a), pb = publish(b);
+    console.log("ON only:", pa.filter((x) => !pb.includes(x)));
+    console.log("OFF only:", pb.filter((x) => !pa.includes(x)));
+  }
+});

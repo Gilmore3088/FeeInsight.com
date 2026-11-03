@@ -116,6 +116,9 @@ const SWEEP_PROBES: Record<string, () => SweepProbe> = {
     "Mailed paper | $1.00\nstatement | Instant Issue | Other Free Services: Anytime, Notary\n$10.00 | Service, Signature Guarantee, Unlimited\nDebit Card\nMembership Fee $3.00 | Check Writing, Balance Inquiries,\nMoney market | Fax Service\n$5.00\nexcess check\nMoney Orders $.75 ea."),
   // Peninsula Community FCU (live 73916): a rate disclosure's balance threshold read as a $5 minimum balance fee.
   NOT_ACCOUNT_FEE_LINE_TAKEDOWN_LIVE: () => one([pub("minimum_balance", "If your average daily balance is below", 500, "If your average daily balance is below $100.00 ($5.00 for accounts held by those under 18 years of age), no dividends are earned")]),
+  // Knox v175 review (PR #2967): a card replacement under a credit card title, before the bank's own debit card fees.
+  CREDIT_CARD_SECTION_TAKEDOWN_LIVE: () => one([pub("card_replacement", "Card Replacement", 1000, "Card Replacement | $10.00"), pub("card_replacement", "Card Replacement", 500, "Card Replacement | $5.00")],
+    ["VISA CREDIT CARD", "Late Payment | $25.00", "Card Replacement | $10.00", "2. Debit Card Fees", "Card Replacement | $5.00"].join("\n")),
   // State key 5608 (River City Bank) as a table read pairs its rows: the online banking service's $0 monthly fee.
   SERVICE_MAINTENANCE_TAKEDOWN_LIVE: () => one([pub("monthly_maintenance", "Monthly Maintenance Fee", 0, "Monthly Maintenance Fee | No charge")],
     "Consumer Online Banking Services and Mobile Banking Fees\n\nSet Up Fee | No charge\n\nMonthly Maintenance Fee | No charge"),

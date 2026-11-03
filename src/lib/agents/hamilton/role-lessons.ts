@@ -1126,4 +1126,14 @@ export const HAMILTON_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-11-03",
   },
+  {
+    id: "backlog-dry-run-7-closing-edition-line",
+    agent: "hamilton",
+    stage: "publish",
+    lesson: "A schedule can state its edition on its last line, after its footnotes, as well as in its heading or under its title: \"Effective Date 01/05/2027.\" closing a fee schedule dates the whole schedule. Read an edition-only line (no other word before \"effective\", nothing after the date but punctuation or a footnote mark) as the schedule's edition when no price follows it to the end of the text and no short heading sits right above it, and only when the whole text is in view, so a later price cannot hide past the window. A schedule not yet in effect never supersedes the prices in force today: hold its rows until that day. When the date reader changes, measure on prod which documents it now dates as not yet in effect and read each one before it ships.",
+    why: "Re-read backlog dry run 7 (Nov 3, findings/2026-11-03-closing-edition-line-missed.md): GTE FCU's new copy of its 'Member Schedule of Current Charges' (doc 42265, text 40659) ends 'Effective Date 01/05/2027.' under a long footnote. The late-edition reader took only a line naming the schedule or one under a short schedule title, so nothing held it, and its 2027 prices would have superseded 16 correct live fees on the same page (overdraft transfer $7 to $8, NSF $35 to $37, mailed statements $7 to $9 and 13 more). Across 690 short stored texts with a recent effective line past the heading, the fixed reader dates 2 more documents as not yet in effect (GTE, and Solon/Chagrin Falls FCU's December 1, 2026 schedule with 7 live fees) and adds no other hold or takeover.",
+    evidence: { issues: [1915, 1026], prs: [], files: ["src/lib/agents/hamilton/schedule-edition.ts", "src/lib/agents/hamilton/schedule-edition-late.test.ts", "src/lib/agents/hamilton/edition-hold.ts", "docs/project/findings/2026-11-03-closing-edition-line-missed.md"] },
+    appliesTo: "all",
+    since: "2026-11-03",
+  },
 ];
