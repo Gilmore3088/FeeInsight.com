@@ -312,6 +312,61 @@ describe("near misses: rows main reads, and rows with no single price", () => {
   });
 });
 
+describe("review of #2972: a heading lends only to the block directly under it", () => {
+  it("should_not_lend_to_a_list_a_plain_paragraph_label_titles", () => {
+    const html = `<main><h2>Check Services</h2><h3>Counter Checks</h3><ul><li>Per sheet: $2</li></ul><h3>Cashier's Check</h3><ul><li>Customer: $5</li><li>Non-customer: $10</li></ul><p>Printing</p><ul><li>Starter set: $15</li></ul></main>`;
+    expect(added(html).filter((r) => r.includes("Starter set"))).toEqual([]);
+  });
+
+  it("should_not_lend_past_a_styled_div_label_to_rows_after_it", () => {
+    const html = `<main><h2>ATM Services</h2><p>Foreign ATM: $2.00</p><div class="section-title">Coin Machine</div><p>Non-members: $10.00</p><p>Per bag: $2.00</p></main>`;
+    expect(added(html)).toEqual([]);
+  });
+
+  it("should_not_lend_past_a_strong_label", () => {
+    const html = page(`<h2>Night Depository</h2><p>Bag Replacement: $25.00 each</p><strong>Coin Machine</strong><p>Per bag: $2.00</p>`);
+    expect(added(html).filter((r) => r.includes("Per bag"))).toEqual([]);
+  });
+
+  it("should_not_lend_past_a_bold_label_inside_a_paragraph", () => {
+    const html = page(`<h2>Night Depository</h2><p>Bag Replacement: $25.00 each</p><p><b>Coin Machine</b></p><p>Per bag: $2.00</p>`);
+    expect(added(html).filter((r) => r.includes("Per bag"))).toEqual([]);
+  });
+
+  it("should_not_lend_past_a_label_between_two_tables", () => {
+    // Main already reads the first table's row under the heading line above it; only additions are checked.
+    const html = page(`<h2>Night Depository</h2>${table([["Bag Replacement", "$25.00"]])}<p>Coin Machine</p>${table([["Per bag", "$2.00"]])}`);
+    expect(added(html)).toEqual([]);
+  });
+
+  it("should_not_lend_to_a_second_table_under_the_same_heading_even_with_no_label", () => {
+    // Decided: a heading lends to its first block only. A second table may be a section the page titles
+    // by layout alone, so it is refused, not guessed.
+    const html = page(`<h2>Night Depository</h2>${table([["Bag Replacement", "$25.00"]])}${table([["Per bag", "$2.00"]])}`);
+    expect(added(html)).toEqual([]);
+  });
+
+  it("should_not_lend_to_a_second_list_under_the_same_heading", () => {
+    const html = page(`<h2>Night Depository</h2>${list("Bag Replacement: $25.00 each")}${list("Per bag: $2.00")}`);
+    expect(added(html)).toEqual(["night_deposit 25 Night Depository - Bag Replacement"]);
+  });
+
+  it("should_not_lend_to_rows_after_a_paragraph_under_the_heading", () => {
+    const html = page(`<h2>Night Depository</h2><p>Bags are available at each branch.</p>${list("Bag Replacement: $25.00 each")}`);
+    expect(added(html)).toEqual([]);
+  });
+
+  it("should_still_read_a_row_after_a_free_row_in_the_same_table", () => {
+    const html = page(`<table><tr><td colspan="2"><h2>ATM Service</h2></td></tr><tr><td>CO-OP Network Transactions</td><td>Free</td></tr><tr><td>All Other Transactions</td><td>$3.00</td></tr></table>`);
+    expect(added(html)).toEqual(["atm_non_network 3 ATM Service - All Other Transactions"]);
+  });
+
+  it("should_give_each_nested_heading_its_own_first_block", () => {
+    const html = page(`<h2>Services</h2><h3>Night Depository</h3>${list("Bag Replacement: $25.00 each")}<h3>ATM Service</h3>${list("All Other Transactions: $3.00")}`);
+    expect(added(html)).toEqual(["night_deposit 25 Night Depository - Bag Replacement", "atm_non_network 3 ATM Service - All Other Transactions"]);
+  });
+});
+
 describe("the trailer", () => {
   it("should_be_ignored_when_its_hash_does_not_match_the_text", () => {
     const text = stored(page(`<h2>Night Depository</h2>${list("Bag Replacement: $25.00 each")}`));

@@ -49,6 +49,7 @@ const HIDDEN_CLASS =
   /^(?:sr-only|sr-only-focusable|visually-hidden|visuallyhidden|screen-reader-text|screen-reader-only|element-invisible|hidden|hide|invisible|d-none|is-hidden|u-hidden|offscreen)$/i;
 const HIDDEN_STYLE = /(?:^|;)\s*(?:display\s*:\s*none|visibility\s*:\s*hidden)\b/i;
 const HEADING_TAG = /^h([1-6])$/;
+const LIST_TAGS = new Set(["ul", "ol"]);
 /** A heading this long is a sentence or a block of text, not a name. */
 const MAX_HEADING_CHARS = 120;
 
@@ -95,6 +96,8 @@ interface Frame {
   blocking: boolean;
   /** A heading element: pushed onto the stack when it closes. */
   heading?: { id: number | null; level: number };
+  /** A `<ul>` or `<ol>`: the first block under a heading, which ends the heading's lending when it closes. */
+  list?: boolean;
 }
 
 export interface ScopeToken {
@@ -112,6 +115,7 @@ export class HeadingScope {
   private readonly frames: Frame[] = [];
   private boundaries = 0;
   private blockingDepth = 0;
+  private listDepth = 0;
 
   private register(entry: Registered): number {
     this.registered.push(entry);
@@ -157,11 +161,13 @@ export class HeadingScope {
     }
     const boundary = BOUNDARY_TAGS.has(element.name) || excluded;
     const blocking = hidden || excluded;
-    if (!boundary && !blocking) return null;
-    const frame: Frame = { boundary, blocking };
+    const list = LIST_TAGS.has(element.name);
+    if (!boundary && !blocking && !list) return null;
+    const frame: Frame = { boundary, blocking, list };
     this.frames.push(frame);
     if (boundary) this.boundaries += 1;
     if (blocking) this.blockingDepth += 1;
+    if (list) this.listDepth += 1;
     return { token: { frame }, before: "" };
   }
 
@@ -170,6 +176,10 @@ export class HeadingScope {
     const frame = this.frames.pop();
     if (frame !== token.frame) throw new Error("heading scope: frames closed out of order");
     if (frame.blocking) this.blockingDepth -= 1;
+    if (frame.list) {
+      this.listDepth -= 1;
+      this.endBlock();
+    }
     if (frame.heading) {
       const { id, level } = frame.heading;
       // The outline: a heading closes every open heading of its rank or lower in its own boundary.
@@ -182,6 +192,19 @@ export class HeadingScope {
       while (this.stack.length && this.stack[this.stack.length - 1].boundary === this.boundaries) this.stack.pop();
       this.boundaries -= 1;
     }
+    return this.contextMark();
+  }
+
+  /**
+   * Review of #2972: a heading lends its type only to the first block under it. When an outermost list,
+   * a data table or a definition list closes, the open heading lends nothing more, so a later block
+   * titled by a plain label ("<p>Printing</p>", a styled div) never inherits it. A heading of the same
+   * or a higher rank still closes it as before; a lower one nested under it opens its own first block.
+   */
+  endBlock(): string {
+    if (this.listDepth > 0) return "";
+    const top = this.stack[this.stack.length - 1];
+    if (top && top.id != null) top.id = null;
     return this.contextMark();
   }
 

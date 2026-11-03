@@ -2733,7 +2733,10 @@ Which heading a line sits under comes only from the heading-context trailer Rose
 `runFreeSpecialists` reads the text without the trailer first, so main's reads are kept whole and in order,
 then reads each candidate row once more with its heading in front of its name, in the document around it, and
 admits it only when that read is exactly one fee of the heading's family at the row's own price and the shared
-check traces it. Refused: a row main reads or holds with a category, a row whose own name files, a row with
+check traces it. A heading lends only to the block directly under it: Rosetta ends it after its first list
+or table, and every line between the heading and the row must be a row (review of #2972: "<p>Printing</p>"
+under "Cashier's Check" is another section). At most `MAX_HEADING_REREADS_PER_DOCUMENT` (40) rows a document
+are read again. Refused: a row main reads or holds with a category, a row whose own name files, a row with
 two prices or $0, a heading with a figure, a list ("and", "&", "/", ","), an account or product word
 ("Premier Checking", "Business Checking Fees"), or the monthly maintenance type, and every hidden heading or
 heading in a nav, header, footer, aside, form or dialog. A text with no trailer, or one whose line count or

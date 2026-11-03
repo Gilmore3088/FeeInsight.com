@@ -180,6 +180,7 @@ function walk(nodes: DomNode[], out: TextWriter): void {
     }
     if (name === "dl") {
       writeDefinitionList(node, out);
+      if (out.scope) out.mark(out.scope.endBlock());
       continue;
     }
     if (out.pairRows) {
@@ -398,7 +399,8 @@ function writeTable(table: DomElement, out: TextWriter): void {
     });
   }
   out.break();
-  if (out.scope) out.mark(out.scope.contextMark());
+  // The table is the heading's first block: once it ends, the heading above it lends nothing more.
+  if (out.scope) out.mark(out.scope.endBlock() || out.scope.contextMark());
 }
 
 function firstHeading(element: DomElement): DomElement | null {

@@ -20,11 +20,19 @@ import type { LineHeading } from "@/lib/heading-context-trailer";
  *  - Knox reads the row, with its heading before its name, as exactly one fee of that type's family
  *    at the row's own price, with the rest of the document around it (so every document-level read
  *    rule, a business-only footnote or a discontinued table included, still applies);
+ *  - every line between the heading and the row is itself a row (a table row, or a line with a price
+ *    or a free word), so an unpriced label, a paragraph or a styled div between them ends the heading's
+ *    reach (review of #2972: "<p>Printing</p>" under "Cashier's Check" is another section). Rosetta also
+ *    ends it after the heading's first list or table (`endBlock`);
  *  - and the shared source check traces that fee to the stored text.
  * Anything else is left as main read it. Pure.
  */
 
 const MAX_HEADING_CHARS = 60;
+/** Each candidate row costs one more whole-document read; a schedule never needs more than this. */
+export const MAX_HEADING_REREADS_PER_DOCUMENT = 40;
+/** A cell or line ending in a free word is a priced row too ("CO-OP Network Transactions | Free"). */
+const FREE_END = /(?:^|[\s|:])(?:free|none|no charge|n\/c|n\/a)\W*$/i;
 const MAX_HEADING_WORDS = 6;
 /** A heading that lists things names more than one fee, or names none of them alone. */
 const LIST_WORDS = /\b(?:and|or|plus|with|vs)\b|[&/,;+|]/i;
@@ -53,6 +61,20 @@ export function headingCategory(heading: string): string | null {
 export function rowName(line: string): string {
   const first = line.includes(" | ") ? line.split(" | ")[0] : line.split(/\$\s?\d/)[0];
   return first.replace(/[\s:–—.…-]+$/, "").trim();
+}
+
+/** A row of the heading's block: a table row, or a line that prints a price or a free word. */
+function isRowLine(line: string): boolean {
+  return line.includes(" | ") || amountsIn(line).length > 0 || FREE_END.test(line);
+}
+
+/** Every line from just under the heading to just above the row is a row: the row is in the heading's unbroken run. */
+function inUnbrokenRun(lines: string[], headingLine: number, index: number): boolean {
+  for (let at = headingLine + 1; at < index; at += 1) {
+    const line = (lines[at] ?? "").replace(/\s+/g, " ").trim();
+    if (line && !isRowLine(line)) return false;
+  }
+  return true;
 }
 
 function sameLine(excerpt: string | null | undefined, line: string): boolean {
@@ -99,6 +121,7 @@ export function withHeadingCategoryReads<
 >(base: T, text: string, headings: ReadonlyMap<number, LineHeading>, options: HeadingCategoryOptions): T {
   const lines = text.split("\n");
   const admitted: Admitted[] = [];
+  let rereads = 0;
   for (const [index, at] of [...headings.entries()].sort((a, b) => a[0] - b[0])) {
     const line = (lines[index] ?? "").replace(/\s+/g, " ").trim();
     if (!line) continue;
@@ -111,6 +134,9 @@ export function withHeadingCategoryReads<
     if (base.candidates.some((c) => sameLine(c.excerpt, line))) continue;
     if ((base.rates ?? []).some((r) => sameLine(r.excerpt, line))) continue;
     if (base.held.some((h) => sameLine(h.excerpt, line) && (h.shape !== "unclassified" || h.canonicalHint))) continue;
+    if (!inUnbrokenRun(lines, at.headingLine, index)) continue;
+    if (rereads >= MAX_HEADING_REREADS_PER_DOCUMENT) break;
+    rereads += 1;
     const fee = readUnderHeading(lines, index, at.heading, hint, options);
     if (!fee) continue;
     if (!checkFeeAgainstSource(text, fee.feeName, fee.amount, ".", fee.canonicalHint).ok) continue;

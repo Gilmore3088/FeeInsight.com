@@ -34,13 +34,24 @@ under "Cashier's Check" and state:8085 "Outgoing (Online) USD | $ 35.00" under "
   admitted only as exactly one fee of that type's family at the row's own price that the shared check
   traces. Refused: a row with two prices or $0, a heading with a figure, a list ("and", "&", "/", ","),
   an account or product word, or the monthly maintenance type. Admit-only: main's reads stay whole and
-  in order, and a held unclassified row it reads leaves the held list.
+  in order, and a held unclassified row it reads leaves the held list. At most 40 candidate rows a
+  document are read again (`MAX_HEADING_REREADS_PER_DOCUMENT`).
+- **A heading lends only to the block directly under it** (review round 1 of #2972). The outline alone
+  let a later section titled by a plain label inherit the heading: "Cashier's Check" (h3) over "<p>Printing</p>"
+  and its "Starter set: $15" list, or "ATM Services" over a `<div class="section-title">Coin Machine</div>`
+  and its "Per bag: $2.00". Now Rosetta ends a heading's lending when its first outermost list, data table
+  or definition list closes (`endBlock`), and Knox reads a row only when every line between the heading
+  and the row is itself a row (a table row, or a line with a price or a free word): any unpriced label,
+  paragraph, `<strong>` or `<b>` label or styled div in between ends it. Decided: a second table or list
+  under the same heading with no label between is refused too, since the page may title it by layout alone.
 
-**Near-miss tests first:** 64 in `knox/heading-category-rows.test.ts` (an account heading over
+**Near-miss tests first:** 74 in `knox/heading-category-rows.test.ts` (an account heading over
 unrelated fees, "Fees", "Other Services", "Miscellaneous", two types in one heading, a th naming
 "Amount", a th row naming columns, nested headings, a nearer heading naming nothing, a section's end,
 hidden headings five ways, a heading in a nav, footer, header, aside and navigation landmark, bold
-paragraphs and full-width bold cells, a `<br>` inside a heading, tampered trailers), and 8 in
+paragraphs and full-width bold cells, a `<br>` inside a heading, tampered trailers, and the review's two
+repros with `<strong>`, `<b>`, a label between two tables, a second table or list, and a paragraph
+before the list), and 8 in
 `rosetta/html-heading-scope.test.ts`.
 
 **Measured** on the source replay (`source-replay.test.ts`, experiments `html-heading-context` and
@@ -86,9 +97,17 @@ sides):
 1. `HTML_READ_VERSION` moves with it (base plus one per HTML reader switch on; `reader-replay.test.ts`
    fails otherwise). Row pairing has v2 reserved; whichever flips first takes v2, the second v3.
 2. James runs the switch dry-run audit, section 11: the current HTML documents and live fees a flip
-   would reach once re-read (exposure only: the audit has no bytes). A live fee the paid read took from a
-   line the free read now names in another category would be a re-file candidate for Darwin's re-read
-   category check; the audit cannot count those.
+   would reach once re-read (exposure only: the audit has no bytes).
+3. The trailer reaches consumers that do not strip it, and each must strip it or be shown harmless before
+   the flip: `rosetta/read.ts` (`looksLikeJsShell`, `scoreFeePage`, `acceptableFeeText`, `rowsInText` and
+   `hashText` on the HTML read paths), Darwin's line checks that read the stored text directly, the
+   fee-evidence snippets, Magellan's stated-date reader, and the paid read's prompt. Only Knox's free
+   read (`runFreeSpecialists`) and the shared source check (`checkFeeAgainstSource`) strip it today.
+4. The flip changes the hash of every HTML text it re-reads (the trailer is part of the stored text), so
+   each re-read stores a new text and Knox reads it again.
+5. The re-file exposure through Darwin's re-read category check (`REREAD_CATEGORY_RECHECK_LIVE`) must be
+   counted first: a live fee the paid read took from a line the free read now names under its heading in
+   another category becomes a re-file candidate, which the audit cannot count without the bytes.
 
 **Lesson:** read a page's structure from its markup, record it beside the text without changing the
 text, and let a later stage act on it only where the markup is positive evidence; refuse every other

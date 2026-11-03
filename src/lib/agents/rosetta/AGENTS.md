@@ -55,7 +55,9 @@ Rosetta owns source text normalization.
   `role="heading"` element, a table's header row (one cell heads the rows; a wider row by its cell over
   the rows' names), or a heading alone in a one-cell table row. Scope is the HTML outline's (the next
   heading of the same or a higher rank, or the end of a sectioning element or a layout table's cell); a
-  table's own header wins inside it. Hidden headings and headings in a nav, header, footer, aside, form or
+  table's own header wins inside it. A heading lends only to its first block: when its first outermost list,
+  data table or definition list closes, the lines after it sit under no heading (`endBlock`, review of
+  #2972). Hidden headings and headings in a nav, header, footer, aside, form or
   dialog are refused and block the heading above. Nothing is guessed from a line's shape. The record is a
   trailer line after the unchanged text (`src/lib/heading-context-trailer.ts`: line count, FNV-1a hash,
   spans; digits and punctuation only), written by `read.html_dom` only (not the JavaScript fallback), and
