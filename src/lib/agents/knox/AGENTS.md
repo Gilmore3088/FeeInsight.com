@@ -2696,6 +2696,31 @@ Darwin's verify refuses (2) and (3), and its live re-check (`darwin.not_account_
 `NOT_ACCOUNT_FEE_LINE_TAKEDOWN_LIVE` off) reports the live ones (73916, 152003). The guard is unchanged
 (v108). The stale-read floor stays at v97.
 
+v172 (fifth Knox re-read backlog dry run, Nov 3; 40 backlog texts at v171, six wrong rows of 99 changed,
+each against the bank's own line): (1) a statement's copy priced per item is document reproduction: the
+copy-of-item check_image rule at the top of `FEE_PATTERNS` no longer takes a copy a statement word opens
+when it ends on "item" (Epb Employees FCU's "Statement Copies Per Item | $1", 7157, doc 40771); a copy that
+names checks or drafts still files there. (2) A charge named for the low or minimum balance is the minimum
+balance fee, tried ahead of the "service charge" rule (`LOW_BALANCE_CHARGE`): Citizens Bank of Ada's "A low
+balance service charge of $7.50 will be assessed if the average daily balance ... falls below $1,500.00"
+(2345, doc 41229) was read as monthly maintenance by the rules pass and minimum balance by the account
+expert, so one line went live twice. A minimum balance that only avoids the monthly charge, and "Monthly or
+Minimum Balance Service Charge", stay monthly maintenance. (3) In the family experts a label whose price is
+followed by the fee's own name ("Account Fees: $4.95 Monthly Service Charge.") never borrows the heading
+above (`feeNamedAfterPrice` in `families.ts`): the perk line "Monthly Statements with Check Images" had
+made the account's $4.95 monthly charge a check image fee. (4) A free word that goes on to name its own item
+("No Charge on First Visa Debit Card.") never prices the line above (`freeWordOnItem`, the family experts'
+twin of table v13's `freeItemList`): the same perk took the debit card's "No Charge" as a $0 check image.
+A note on when the line above is free ("Free on the first 3 withdrawals") still prices it. (5) The cashier's
+check rule reads a short note between its words ("Cashier's (Counter) Check | $3.00", Community Powered
+FCU, 6026, doc 42174), so the row files by its own label and the section heading "Money Orders/ Cashier's
+Checks" is never copied into its name (that name had filed money_order). Re-run: on the 40 rb5 texts the six
+wrong rows are gone (two re-filed right, four dropped) and the other 93 changed rows are unchanged; the rb,
+rb3 and rb4 texts do not change; on rb2 three already-stored "Service charge (Minimum Balance Fee)" reads
+(First National Bank of Kansas) re-file from monthly maintenance to minimum balance, as the page says ("A
+minimum balance fee will be imposed every month if the balance ... falls below"). The guard is unchanged
+(v108); no Darwin re-check (no guard rule). The stale-read floor stays at v97.
+
 v171 (fourth Knox re-read backlog dry run, Nov 3; 40 backlog texts at v170, two wrong and four doubtful
 reads, each against the bank's own line): (1) a short "Stop Pay" is the stop payment ahead of the check,
 money order and draft rules (`STOP_PAY_SHORT` in `rules.ts`, tried in `FEE_PATTERNS` right after "stop
@@ -3282,7 +3307,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v3 | `knox/paid-extract.ts` |
 | `KNOX_PAID_FIND_MISS_VERSION` | — | v1 | `knox/paid-find-misses.ts` |
 | `TWO_READ_AGREEMENT_STRATEGY` | `knox.two_read_agreement` | v2 | `knox/two-read-agreement.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v171 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v172 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v13 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v2 | `knox/takedown-lessons.ts` |

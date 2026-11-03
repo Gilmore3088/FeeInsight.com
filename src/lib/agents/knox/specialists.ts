@@ -816,7 +816,19 @@ import { onlineServiceMonthlyFee } from "@/lib/service-monthly-charge";
 // Darwin's account-benefit re-check v2 reads the two new benefit shapes (DARWIN_ACCOUNT_BENEFIT_ZERO_LIVE
 // off; Nov 3 dry run: 308 candidates, the same 12 matches as v1, none new). The shared check is unchanged.
 // The stale-read floor stays at v97.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 171 } as const;
+// v172 (Knox re-read backlog dry run 5, Nov 3; six wrong reads of 40 stored texts, each against the bank's
+// own line). (1) A statement's copy priced per item is document reproduction (rules.ts, the copy-of-item
+// check_image rule skips a copy a statement word opens): Epb Employees FCU's "Statement Copies Per Item | $1".
+// (2) A charge named for the low or minimum balance is the minimum balance fee ahead of the "service charge"
+// rule (`LOW_BALANCE_CHARGE`): Citizens Bank of Ada's "A low balance service charge of $7.50" went live as
+// monthly maintenance and as minimum balance from one line. (3) A label whose price is followed by the fee's
+// own name ("Account Fees: $4.95 Monthly Service Charge.") never borrows the heading above in the family
+// experts (families.ts, `feeNamedAfterPrice`). (4) A free word that goes on to name its own item ("No Charge
+// on First Visa Debit Card.") never prices the line above (`freeWordOnItem`, the family experts' twin of
+// table v13's `freeItemList`). (5) "Cashier's (Counter) Check" files by its own label as the cashier's check,
+// so the section heading "Money Orders/ Cashier's Checks" is never copied into its name. The shared check is
+// unchanged. The stale-read floor stays at v97.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 172 } as const;
 
 export interface SpecialistRun {
   strategy: string;

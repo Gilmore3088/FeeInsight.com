@@ -1384,4 +1384,14 @@ export const KNOX_LESSONS: AgentLesson[] = [
     appliesTo: ["extract"],
     since: "2026-11-03",
   },
+  {
+    id: "backlog-dry-run-5-2026-11-03-own-words-before-neighbours",
+    agent: "knox",
+    stage: "extract",
+    lesson: "Name and file a price by its own row's words before any word around it. A statement's copy priced per item (\"Statement Copies Per Item\") is a statement copy, not a copy of an item. A charge named for the low or minimum balance (\"low balance service charge\") is the minimum balance fee, though \"service charge\" also names the monthly fee: try the narrower name first, so one line never files under two categories. A label whose price is followed by the fee's own name (\"Account Fees: $4.95 Monthly Service Charge.\") is named by the words after the price, never by a heading or perk line above. A free word that goes on to name its own item (\"No Charge on First Visa Debit Card.\") prices that item, never the line above. And a row whose own label names the fee (\"Cashier's (Counter) Check\") keeps that label: read short notes inside a name rather than falling back to the section heading.",
+    why: "The fifth dry run for KNOX_REREAD_BACKLOG_LIVE (40 backlog texts, Nov 3, Knox v171) found six wrong rows of 99 changed: Epb Employees FCU's \"Statement Copies Per Item\" $1 as check_image (the copy-of-item rule came first), Citizens Bank of Ada's two low balance service charges as monthly maintenance beside the account expert's minimum balance reads of the same lines, its $4.95 monthly service charge named after the perk \"Monthly Statements with Check Images\" and filed check_image, a $0 check image made of that perk and the debit card's \"No Charge\", and Community Powered FCU's \"Cashier's (Counter) Check\" $3 named under its section heading and filed money_order. Knox v172 reads none of them wrong, leaves the other 93 changed rows and the rb, rb3 and rb4 texts unchanged, and re-files three stored \"Service charge (Minimum Balance Fee)\" reads on rb2 to minimum_balance, as that page says.",
+    evidence: { issues: [1026], prs: [], files: ["src/lib/agents/knox/rules.ts", "src/lib/agents/knox/families.ts", "src/lib/agents/knox/backlog-dry-run-5.test.ts", "docs/project/findings/2026-11-03-knox-backlog-dry-run-5-misfiles.md"] },
+    appliesTo: ["extract"],
+    since: "2026-11-03",
+  },
 ];

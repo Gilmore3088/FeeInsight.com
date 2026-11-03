@@ -477,12 +477,24 @@ export const ITEM_INSUFFICIENT = /\b(?:ACH|checks?|items?|drafts?|debits?)\s*[-â
  */
 export const STOP_PAY_SHORT: FeePattern = { key: "stop_payment", pattern: /\bstop[- ]?pay\b(?![- ]?ments?)|\bstop p(?:y)?mts?\b/i };
 
+/**
+ * v172 (backlog dry run 5): a charge the name ties to the low or minimum balance ("low balance service
+ * charge", "Minimum Balance Fee", "Below Minimum Balance Charge"), read ahead of the monthly service
+ * charge rule. A minimum balance that only avoids another fee ("minimum balance to avoid the monthly
+ * service charge") is not one: the charge word must follow the balance words. Nor is a name that offers
+ * both ("Monthly or Minimum Balance Service Charge"): the monthly service charge rule keeps it.
+ */
+export const LOW_BALANCE_CHARGE = /(?<!\bmonthly\s+(?:or|and|\/)\s+)\b(?:low|minimum|min\.?)[- ]balance\s+(?:service\s+)?(?:fees?|charges?)\b/i;
+
 export const FEE_PATTERNS: FeePattern[] = [
   // A copy of something is a copy fee, whatever it copies ("Photocopy of paid item",
   // "Reproduction of cashier's checks", "ATM card supporting documents photocopy").
+  // v172 (backlog dry run 5): a statement's copy is no copy of an item, though the copy is priced per
+  // item (one that names checks or drafts still files here): Epb Employees FCU's "Statement Copies Per
+  // Item | $1" (doc 40771) filed check_image here, ahead of the statement-copy rule below.
   {
     key: "check_image",
-    pattern: /\b(?:photo|fax )?cop(?:y|ies)\b.{0,20}\b(?:paid |cancell?ed |cleared )?(?:checks?|drafts?|items?)\b|\b(?:check|draft)s?\b[\s/()a-z]{0,12}\b(?:photo)?cop(?:y|ies)\b/i,
+    pattern: /\b(?:photo|fax )?cop(?:y|ies)\b.{0,20}\b(?:paid |cancell?ed |cleared )?(?:checks?|drafts?)\b|(?<!\bstatements?\s{1,3})\b(?:photo|fax )?cop(?:y|ies)\b.{0,20}\b(?:paid |cancell?ed |cleared )?items?\b|\b(?:check|draft)s?\b[\s/()a-z]{0,12}\b(?:photo)?cop(?:y|ies)\b/i,
   },
   { key: "document_reproduction", pattern: /\b(?:reproduction|supporting documents?)\b/i },
   // A box size with three dimensions ("3"X10"X 21"") is a safe deposit box anywhere on the line.
@@ -614,7 +626,10 @@ export const FEE_PATTERNS: FeePattern[] = [
   { key: "money_order", pattern: /\bmoney orders?\b/i },
   {
     key: "cashiers_check",
-    pattern: /\b(cashier'?s?\s+checks?|official checks?|certified checks?|bank checks?|teller'?s?\s+checks?|corporate checks?|treasurer'?s?\s+checks?)\b/i,
+    // v172 (backlog dry run 5): a short note may sit between the words ("Cashier's (Counter) Check | $3.00",
+    // Community Powered FCU, doc 42174), so the row's own label files it and never takes the section
+    // heading "Money Orders/ Cashier's Checks" into its name (money_order, tried first).
+    pattern: /\b(cashier'?s?\s+(?:\([^()]{1,20}\)\s*)?checks?|official checks?|certified checks?|bank checks?|teller'?s?\s+checks?|corporate checks?|treasurer'?s?\s+checks?)\b/i,
   },
   { key: "counter_check", pattern: /\b(counter|temporary|starter) checks?\b/i },
   // v16: "Checkbook Balancing" is account research, not check printing.
@@ -681,6 +696,12 @@ export const FEE_PATTERNS: FeePattern[] = [
   // v54: a copy charged by the page is document reproduction, even under research (`PER_PAGE_COPY`).
   { key: "document_reproduction", pattern: PER_PAGE_COPY },
   { key: "account_research", pattern: /\b(account research|research fee|reconciliation|account balancing)\b/i },
+  // v172 (backlog dry run 5): a charge named for the low or minimum balance is the minimum balance fee,
+  // though it is called a service charge: Citizens Bank of Ada's "A low balance service charge of $7.50
+  // will be assessed if the average daily balance ... falls below $1,500.00" (doc 41229) filed as monthly
+  // maintenance by the "service charge" rule below, while the account expert read the same line as
+  // minimum_balance, so one line went live under both.
+  { key: "minimum_balance", pattern: LOW_BALANCE_CHARGE },
   {
     key: "monthly_maintenance",
     pattern: /\b(monthly (service|maintenance)|maintenance (fee|charge)|monthly (fee|charge)|account service (fee|charge)|service charge)\b/i,

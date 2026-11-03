@@ -758,6 +758,14 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
     // lost; rb3 gains one right row; on 60 fresh random texts (main vs head) six crossed-over perk reads go and
     // one NSF read is added. Darwin's account-benefit re-check v2 (switch off) matches no new live fee. No
     // replay. Floor stays v97.
+    // v172 (fifth re-read backlog dry run, Nov 3): a statement's copy priced per item is document
+    // reproduction; a low or minimum balance charge is minimum_balance ahead of "service charge"
+    // (`LOW_BALANCE_CHARGE`); a label priced before the fee's own name never borrows a heading
+    // (`feeNamedAfterPrice`); a free word naming its own item never prices the line above (`freeWordOnItem`);
+    // "Cashier's (Counter) Check" files by its own label. On the 40 rb5 texts (v171 vs v172) the six wrong
+    // rows are gone (two re-filed right, four dropped) and the other 93 changed rows are unchanged; rb, rb3 and
+    // rb4 do not change; rb2 re-files three already-stored "Service charge (Minimum Balance Fee)" reads to
+    // minimum_balance. No Darwin re-check (no guard rule). No replay. Floor stays v97.
     {
       key: "knox.rules",
       owner: "knox",
