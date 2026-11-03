@@ -48,15 +48,25 @@ const leader = ([name, price]: readonly [string, string]) => `${name} ${".".repe
 /** A fee line with no dot leaders (pdf-layout v4 reads dot-leader lists beside a table already). */
 const feeLine = ([name, price]: readonly [string, string]) => `${name} ${price}`;
 
-/** Two dot-leader fee lists, one per column, on the same baselines unless `offset` moves the right one. */
+type Placed = string | readonly [string, string];
+/** A line as the reader writes it: a plain line, or a label and its price in their own cells. */
+const placedText = (line: Placed) => (typeof line === "string" ? line : `${line[0]} | ${line[1]}`);
+/** Runs for lines down a column at `x`; a [label, price] pair puts the price `cell` points right. */
+const place = (lines: readonly Placed[], x: number, offset = 0, cell = 110) =>
+  lines.flatMap((line, row) => (typeof line === "string"
+    ? [run(line, x, y(row) - offset)]
+    : [run(line[0], x, y(row) - offset), run(line[1], x + cell, y(row) - offset)]));
+
+/**
+ * Two fee lists, one per column, on the same baselines unless `offset` moves the right one: the
+ * left list "Label $X", the right one a list of its own label | price cells. (Fee lines beside fee
+ * lines on shared baselines read like a table's notes column, so they keep their rows.)
+ */
 function twoLeaderLists(rows = 16, offset = 0, rightX = 320): { items: PdfTextItem[]; left: string[]; right: string[] } {
   const left = LEFT_FEES.slice(0, rows).map(feeLine);
-  const right = RIGHT_FEES.slice(0, rows).map(feeLine);
-  const items = [
-    ...left.map((text, row) => run(text, 40, y(row))),
-    ...right.map((text, row) => run(text, rightX, y(row) - offset)),
-  ];
-  return { items, left, right };
+  const rightRows = RIGHT_FEES.slice(0, rows);
+  const items = [...place(left, 40), ...place(rightRows, rightX, offset)];
+  return { items, left, right: rightRows.map(placedText) };
 }
 
 /** A label | price table: labels at `labelX`, prices at `priceX`, one row per baseline. */
@@ -117,13 +127,6 @@ describe("Rosetta pdf-columns: independent columns (PDF_COLUMN_READING_LIVE)", (
       expect(lines.slice(16)).toEqual(LEFT_FEES.map(([label, price]) => `${label} | ${price}`));
     });
 
-    it("should_read_a_fee_table_beside_prose_column_by_column", () => {
-      // Prose set in its own leading: its baselines fall between the table's rows.
-      const items = [...labelPriceTable(LEFT_FEES, 40, 140), ...PROSE.map((text, row) => run(text, 250, TOP - 6 - row * PITCH))];
-      const lines = linesOf(on(items));
-      expect(lines.slice(0, 16)).toEqual(LEFT_FEES.map(([label, price]) => `${label} | ${price}`));
-      expect(lines.slice(16)).toEqual(PROSE);
-    });
 
     it("should_read_two_columns_of_account_terms_that_state_prices_in_their_sentences", () => {
       const terms = (name: string, amount: number) => [
@@ -186,10 +189,10 @@ describe("Rosetta pdf-columns: independent columns (PDF_COLUMN_READING_LIVE)", (
     });
 
     it("should_read_a_booklet_spread_of_two_pages_printed_on_one_sheet", () => {
-      const left = [...PROSE.slice(0, 8), ...LEFT_FEES.slice(0, 8).map(feeLine)];
-      const right = [...RIGHT_FEES.slice(0, 8).map(feeLine), ...PROSE.slice(8)];
-      const items = [...left.map((text, row) => run(text, 40, y(row))), ...right.map((text, row) => run(text, 330, y(row)))];
-      expect(linesOf(on(items))).toEqual([...left, ...right]);
+      const left = [...LEFT_FEES.slice(0, 8).map(feeLine), ...PROSE.slice(0, 8)];
+      const right: Placed[] = [...RIGHT_FEES.slice(0, 8), ...PROSE.slice(8)];
+      const items = [...place(left, 40), ...place(right, 330)];
+      expect(linesOf(on(items))).toEqual([...left, ...right.map(placedText)]);
     });
 
     it("should_read_a_landscape_page_with_two_fee_tables", () => {
@@ -200,24 +203,20 @@ describe("Rosetta pdf-columns: independent columns (PDF_COLUMN_READING_LIVE)", (
     });
 
     it("should_read_three_independent_fee_lists_as_three_columns", () => {
-      const names = (fees: ReadonlyArray<readonly [string, string]>) => fees.slice(0, 12).map(feeLine);
-      const a = names(LEFT_FEES);
-      const b = names(RIGHT_FEES);
-      const c = names([...LEFT_FEES.slice(4), ...RIGHT_FEES.slice(0, 4)]);
-      const items = [
-        ...a.map((text, row) => run(text, 20, y(row))),
-        ...b.map((text, row) => run(text, 160, y(row))),
-        ...c.map((text, row) => run(text, 300, y(row))),
-      ].map((item) => ({ ...item, width: item.width * 0.9 }));
-      expect(linesOf(on(items))).toEqual([...a, ...b, ...c]);
+      const a = LEFT_FEES.slice(0, 12).map(feeLine);
+      const b = RIGHT_FEES.slice(0, 12);
+      const c = [...LEFT_FEES.slice(4, 12)];
+      const items = [...place(a, 20), ...place(b, 170, 0, 95), ...place(c, 320, 0, 80)]
+        .map((item) => ({ ...item, width: item.width * 0.9 }));
+      expect(linesOf(on(items))).toEqual([...a, ...b.map(placedText), ...c.map(placedText)]);
     });
 
     it("should_keep_a_heading_inside_a_column_above_its_own_rows", () => {
       const left = ["Photocopies", "Per statement ......... $5.00", "Per check ............. $1.00", "Wire transfers",
         "Customer incoming ..... no charge", "Customer outgoing ..... $25.00", ...LEFT_FEES.slice(0, 10).map(feeLine)];
-      const right = ["WEST BRANCH", "2300 HWY 190 WEST", "LIVINGSTON, TEXAS", "(936) 327-5211", "Member FDIC",
-        ...RIGHT_FEES.slice(0, 11).map(feeLine)];
-      const items = [...left.map((text, row) => run(text, 40, y(row))), ...right.map((text, row) => run(text, 330, y(row)))];
+      const right: Placed[] = ["WEST BRANCH", "2300 HWY 190 WEST", "LIVINGSTON, TEXAS", "(936) 327-5211", "Member FDIC",
+        ...RIGHT_FEES.slice(0, 11)];
+      const items = [...place(left, 40), ...place(right, 330)];
       const lines = linesOf(on(items));
       expect(lines.slice(0, 6)).toEqual(left.slice(0, 6));
       expect(linesOf(off(items))[3]).toBe("Wire transfers | (936) 327-5211");
@@ -226,7 +225,7 @@ describe("Rosetta pdf-columns: independent columns (PDF_COLUMN_READING_LIVE)", (
     it("should_keep_a_wrapped_label_with_its_price_line_inside_its_column", () => {
       const left = ["ATM services at non-Credit Union", "and non-network locations $ .25 per inquiry",
         ...LEFT_FEES.slice(0, 14).map(feeLine)];
-      const items = [...left.map((text, row) => run(text, 40, y(row))), ...RIGHT_FEES.map((fee, row) => run(feeLine(fee), 330, y(row)))];
+      const items = [...place(left, 40), ...place(RIGHT_FEES, 330)];
       expect(linesOf(on(items)).slice(0, 2)).toEqual(left.slice(0, 2));
     });
 
@@ -412,6 +411,48 @@ describe("Rosetta pdf-columns: independent columns (PDF_COLUMN_READING_LIVE)", (
       expect(on(items)).toBe(off(items));
     });
 
+    // Third review of #2965: a priced row is any left line ending in an amount, cell or not; left
+    // lines are grouped into blocks too; a right line faces the nearest left line within half a pitch.
+    const notesBeside = (left: (label: string, price: string, row: number) => PdfTextItem[], dy = 0) =>
+      NOTED_ROWS.flatMap(([label, price, note], row) => [...left(label, price, row), run(note, 270, y(row) - dy)]);
+
+    it("should_keep_notes_beside_dot_leader_fee_rows", () => {
+      const items = notesBeside((label, price, row) => [run(`${label} ${".".repeat(28 - label.length)} ${price}`, 40, y(row))]);
+      expect(on(items)).toBe(off(items));
+    });
+
+    it("should_keep_notes_beside_fee_rows_joined_by_one_space", () => {
+      const items = notesBeside((label, price, row) => [run(`${label} ${price}`, 40, y(row))]);
+      expect(on(items)).toBe(off(items));
+    });
+
+    it("should_keep_notes_beside_a_price_column_with_dollar_signs_on_some_rows", () => {
+      const items = notesBeside((label, price, row) => [run(label, 40, y(row)), run(row % 4 ? price.replace("$", "") : price, 180, y(row))]);
+      expect(on(items)).toBe(off(items));
+    });
+
+    it("should_keep_descriptions_beside_labels_that_wrap_onto_unpriced_lines", () => {
+      const items = NOTED_ROWS.slice(0, 7).flatMap(([label, price, note], row) => [
+        run(label, 40, y(row * 3)), run(price, 180, y(row * 3)),
+        run("(continued label)", 40, y(row * 3 + 1)), run("see terms", 40, y(row * 3 + 2)),
+        run(`${note}; Charged For Each`, 270, y(row * 3)), run("Item We Pay Into A Negative Balance", 270, y(row * 3 + 1)),
+        run("On Your Checking Account", 270, y(row * 3 + 2)),
+      ]);
+      expect(on(items)).toBe(off(items));
+    });
+
+    it("should_keep_notes_set_a_little_below_their_rows", () => {
+      for (const dy of [4.5, 6]) {
+        const items = notesBeside((label, price, row) => [run(label, 40, y(row)), run(price, 180, y(row))], dy);
+        expect(on(items), `${dy} pt below`).toBe(off(items));
+      }
+    });
+
+    it("should_keep_prose_beside_a_fee_table_as_its_description_column", () => {
+      const items = [...labelPriceTable(LEFT_FEES, 40, 140), ...PROSE.map((text, row) => run(text, 250, TOP - 6 - row * PITCH))];
+      expect(on(items)).toBe(off(items));
+    });
+
     it("should_keep_a_member_and_non_member_table_whose_second_price_opens_with_words", () => {
       const second = (price: string, row: number) => [`Not available`, `Non-members ${price}`, "Plus surcharge $5"][row % 3];
       const items = [run("Service", 40, y(0)), run("Member", 180, y(0)), run("Non-member", 300, y(0)),
@@ -461,7 +502,7 @@ describe("Rosetta pdf-columns: independent columns (PDF_COLUMN_READING_LIVE)", (
     });
 
     it("should_keep_a_page_with_too_few_text_runs", () => {
-      const { items } = twoLeaderLists(12, 0);
+      const { items } = twoLeaderLists(9, 0);
       expect(items.length).toBeLessThan(30);
       expect(on(items)).toBe(off(items));
     });

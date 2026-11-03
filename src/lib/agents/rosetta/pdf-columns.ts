@@ -98,41 +98,79 @@ function rowCrossesGutter(items: PositionedItem[], middle: number): boolean {
 }
 
 /**
- * At least this share of the right side's blocks starting on a left table row marks one table.
- * Measured on the 27 splits of the 18 replay PDFs (#1092): the share is 0.00 on 17 of them and
- * at most 0.32 (Buffalo Metropolitan); a table's notes or description column starts nearly every
- * block on its row (16 of 17 in a Service | Fee | Notes table, its header the 17th).
+ * At least this share of the right side's blocks starting on a left priced row marks one table.
+ * Measured on the 27 splits of the 18 replay PDFs (#1092): see `findings/2026-11-02-pdf-columns-read-across.md`.
  */
 const MIN_ROW_START_SHARE = 0.5;
 const LEADER = /\.{4,}/;
+/**
+ * A line ending in an amount: "$30.00", "$ | 3.00", a bare "30.00", or a word that stands for a
+ * price, with at most a unit after it ("$30.00 each", "$5 per month").
+ */
+const AMOUNT_END =
+  /(?:\$\s?\.?\d[\d,]*(?:\.\d+)?|\b\d[\d,]*\.\d{2}|\bfree|\bno (?:charge|fee|cost)|\bn\/a|\bvaries)(?:\s+(?:each|per\s+\w+|monthly|annually|daily))?\W*$/i;
+/** A line that goes on with the block above: a wrapped sentence or label, or a parenthetical. */
+const CONTINUES = /^[a-z(]/;
+
+interface SideLine {
+  y: number;
+  /** The line with its cell breaks read as spaces. */
+  text: string;
+  cells: string[];
+}
+
+function sideLines(items: PositionedItem[]): SideLine[] {
+  return baselineLines(items.filter((item) => item.text.trim().length > 0)).map((line) => ({
+    y: line[0].y,
+    text: textOf(line).replaceAll(CELL_SEPARATOR, " "),
+    cells: textOf(line).split(CELL_SEPARATOR).map((cell) => cell.trim()),
+  }));
+}
 
 /**
- * True when the right side reads as one more column of a table on the left: its blocks start on
- * the table's rows. The right side's lines are grouped into blocks first: a line goes on with the
- * block above it when it starts in lower case or has no left cell on its baseline, so a wrapped
- * note or description is one block. A block starts on a row when the left side on its first
- * line's baseline is a table row ending in a price cell ("Overdraft fee | $30.00") and the right
- * side there is not a fee row of its own ("Stop payment | $35.00", a dot-leader line). A fee
- * table's notes, descriptions and second prices start on their rows; independent columns start
- * their blocks wherever their own text runs, and a table beside another table starts its own rows.
+ * The share of the right side's blocks that start on a left priced row (#2965 reviews). Both
+ * sides' lines are grouped into blocks: a left line starting in lower case or with "(" goes on
+ * with the left block above (a wrapped label), and a right line goes on with the right block above
+ * when it starts that way or when the left line it faces is not a left block's start (a wrapped
+ * note beside a wrapped label). A right line faces the left line nearest its baseline within half
+ * the line pitch, so notes set a little below their rows still face them. A left block is a priced
+ * row when one of its lines ends in an amount, in its own cell or not. A right block start that is
+ * a fee row of its own (a cell row with a price, a dot-leader line) does not count as on a row.
  */
-function extendsTableRows(items: PositionedItem[], middle: number): boolean {
-  const separator = CELL_SEPARATOR.trim();
+export function rowStartShare(items: PositionedItem[], middle: number): number {
+  const left = sideLines(items.filter((item) => item.end <= middle));
+  const right = sideLines(items.filter((item) => item.x >= middle));
+  if (left.length === 0 || right.length === 0) return 0;
+  const gaps = left.slice(1).map((line, index) => left[index].y - line.y).filter((gap) => gap > 0);
+  const halfPitch = (gaps.length ? median(gaps) : Math.max(...items.map((item) => item.size))) / 2;
+  const blockOf: number[] = [];
+  const priced: boolean[] = [];
+  left.forEach((line, index) => {
+    const start = index === 0 || !CONTINUES.test(line.text);
+    if (start) priced.push(false);
+    blockOf.push(priced.length - 1);
+    if (AMOUNT_END.test(line.text)) priced[priced.length - 1] = true;
+  });
+  const isStart = left.map((_, index) => index === 0 || blockOf[index] !== blockOf[index - 1]);
   let blocks = 0;
   let onRows = 0;
-  for (const line of baselineLines(items)) {
-    const rightText = textOf(line.filter((item) => item.x >= middle));
-    if (!rightText) continue;
-    const leftText = textOf(line.filter((item) => item.end <= middle));
-    if (blocks > 0 && (/^[a-z]/.test(rightText) || !leftText)) continue;
+  for (const line of right) {
+    let nearest = -1;
+    left.forEach((other, index) => {
+      const distance = Math.abs(other.y - line.y);
+      if (distance <= halfPitch && (nearest < 0 || distance < Math.abs(left[nearest].y - line.y))) nearest = index;
+    });
+    if (blocks > 0 && (CONTINUES.test(line.text) || nearest < 0 || !isStart[nearest])) continue;
     blocks += 1;
-    const cells = leftText.split(separator).map((cell) => cell.trim());
-    const leftRow = cells.length > 1 && VALUE_START.test(cells[cells.length - 1]);
-    const rightCells = rightText.split(separator).map((cell) => cell.trim());
-    const rightRow = LEADER.test(rightText) || (rightCells.length > 1 && rightCells.slice(1).some((cell) => VALUE_START.test(cell)));
-    if (leftRow && !rightRow) onRows += 1;
+    const ownRow = LEADER.test(line.text) || (line.cells.length > 1 && line.cells.slice(1).some((cell) => VALUE_START.test(cell)));
+    if (nearest >= 0 && isStart[nearest] && priced[blockOf[nearest]] && !ownRow) onRows += 1;
   }
-  return blocks > 0 && onRows >= blocks * MIN_ROW_START_SHARE;
+  return blocks > 0 ? onRows / blocks : 0;
+}
+
+/** True when the right side reads as one more column of a table on the left (`rowStartShare`). */
+function extendsTableRows(items: PositionedItem[], middle: number): boolean {
+  return rowStartShare(items, middle) >= MIN_ROW_START_SHARE;
 }
 
 /** True when the page may be split into two independent sides at `middle`. */
