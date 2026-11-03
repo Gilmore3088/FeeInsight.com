@@ -229,7 +229,7 @@ describe("switch dry runs: one pass over every pending count", () => {
     expect(text).toContain("cannot re-read a page or say how many stored texts would change");
     expect(text).toContain("EXPOSED: 7 current HTML documents (5 with live fees) carry 61 live fees");
     expect(text).toContain("Legacy texts with no reader recorded (format unknown): 2 documents, 9 live fees.");
-    expect(text).toContain("## 9. SERVICE_MAINTENANCE_TAKEDOWN_LIVE (#1092, Knox v171)");
+    expect(text).toContain("## 9. SERVICE_MAINTENANCE_TAKEDOWN_LIVE (#1092, Knox v173)");
     expect(text).toContain("LIVE TAKEDOWN: switched on, 1 of 2 selected live monthly maintenance fees at 1 institutions would come down");
     expect(text).toContain("1 live monthly maintenance fees past the row cap were left unjudged (re-run with a higher --row-cap)");
     expect(text).toContain("## 10. Live accuracy");

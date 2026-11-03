@@ -2088,7 +2088,7 @@ export async function runDarwinVerify(
           && [excerptOf(row.conditions), tracedLine].some((line) => onlineServiceMonthlyFee(row.fee_name, line, sourceText) !== null)) {
           reasonCode = "online_service_monthly";
         }
-        // #1092 (Knox v171 holds new ones): and a monthly maintenance fee, $0 or priced, whose row sits
+        // #1092 (Knox v173 holds new ones): and a monthly maintenance fee, $0 or priced, whose row sits
         // under a service's heading, read on Knox's line and the line the shared check traces it to
         // (`serviceMaintenanceRead`).
         if (!reasonCode && serviceMaintenanceRead({ excerpt: excerptOf(row.conditions), tracedLine, canonicalFeeKey, documentText: sourceText })) {

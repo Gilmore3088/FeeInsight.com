@@ -11,7 +11,8 @@ export type PublicationEvidenceCheck =
   | "page_copy_live"
   | "page_copy_document"
   | "page_copy_text"
-  | "same_line_read";
+  | "same_line_read"
+  | "product_split";
 
 export type PublicationEvidence<T> =
   | { state: "available"; value: T }

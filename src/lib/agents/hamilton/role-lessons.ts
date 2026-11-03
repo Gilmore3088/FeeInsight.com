@@ -1116,4 +1116,14 @@ export const HAMILTON_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-11-02",
   },
+  {
+    id: "publish-product-is-not-line-identity",
+    agent: "hamilton",
+    stage: "publish",
+    lesson: "A product name is the extraction's reading of a line, not part of the line's identity. When a row and a live fee are one printed line (same institution, category, variant and amount, the same page, the same stored line once its punctuation is folded away, printed once in the newer copy's text with its price once, frequencies not differing), they are one fee whatever product each carries: publish keeps one row, never adds a second. Decide whose product stays from the bank's page: the product named on the line, or on the nearest short heading above it (no price, no table cell, within 12 non-blank lines), wins; a product named nowhere above the line counts as none; a tie goes to the newer read, and an older copy's read never replaces a newer copy's live row. A line the page prints once per account is a real per-product price and stays two rows. Every identity check that compares the product exactly (the live-line read, the exact and page-copy collapses, the same-line read, the live stale-copy twin re-check) needs this pairing beside it, or a re-read that names a product differently goes live twice.",
+    why: "Re-read backlog dry runs 3 and 4 (Nov 3, findings/2026-11-03-publish-product-split-duplicates.md): Polish & Slavic FCU (#94866, #49397, #49398), Cvph Employees FCU (#141419) and MutualOne Bank (#73214) would each have shown one bank line twice, because the re-read named a product (or none) the live row did not and decidePriorFee filtered the live rows by product before comparing. On prod 119 live pairs had the shape; 65 fees at 49 institutions fail the rule. 'The newer read wins' alone was wrong on 2 of 5 sampled pairs (a re-read lost 'Bank of Commerce Super NOW Account' and 'Infinity Checking', the headings right above the line).",
+    evidence: { issues: [1026], prs: [], files: ["src/lib/agents/hamilton/product-split.ts", "src/lib/agents/hamilton/publish.ts", "src/lib/agents/darwin/product-split-check.ts", "docs/project/findings/2026-11-03-publish-product-split-duplicates.md"] },
+    appliesTo: "all",
+    since: "2026-11-03",
+  },
 ];

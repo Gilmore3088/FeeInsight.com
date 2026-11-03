@@ -11,7 +11,7 @@ type SqlTag = typeof sql;
 /**
  * Darwin's live re-check of monthly maintenance fees read from a row under a service's heading
  * (#1092, state key 5608; decision 2026-10-15, "Darwin re-checks every live fee against today's
- * rules"). Knox v171 holds such a read for review and Darwin's verify refuses it
+ * rules"). Knox v173 holds such a read for review and Darwin's verify refuses it
  * (`service_maintenance_heading`), both through `@/lib/service-maintenance-heading`; the ones read
  * before stay live. River City Bank's "Consumer Online Banking Services and Mobile Banking Fees" over
  * "Monthly Maintenance Fee | No charge" is the online banking service's fee: published as the

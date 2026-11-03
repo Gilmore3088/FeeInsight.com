@@ -1602,6 +1602,18 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   them Knox v99's "Safe Deposit Box <size>" beside the older annual read; 6 overdraft), and 16
   groups stay. A seeded sample of 10 plus Access FCU, each read against its stored text, was one
   line read twice in all 11 (finding 2026-10-26-one-line-read-twice).
+- One printed line live under two products (`product-split-check.ts`, v1, Nov 3). A Knox re-read
+  that names a line's product differently than the live row of that line went live beside it, since
+  every identity check compares the product exactly (re-read dry runs 3 and 4). Each step reads the
+  pairs of live dollar fees of one institution, category, variant and amount under different products
+  whose stored lines fold to the same words, on one document or on an older copy and its current copy
+  (`PRODUCT_SPLIT_ROWS_SQL`), and judges each with Hamilton's rule (`readsOneLineTwoProducts`,
+  `productSplitWinner` in `hamilton/product-split.ts`) against the newer document's current text. The
+  loser comes down on its second look (check `darwin.product_split`) as `same_line_duplicate: live fee
+  #<kept>` (batch `darwin-product-split-<run>`, verified row rejected with the `same_line_duplicate`
+  flag), never behind a fee the same pass takes down. `PRODUCT_SPLIT_MERGE_LIVE` is off: the step only
+  reports (`product_split_check`). Dry run 2026-11-03 (prod, read-only): 119 pairs, 65 live fees at 49
+  institutions would come down.
 - Schedule editions (`edition-effective-check.ts`, #1915). Avidia's schedule "Effective December 1,
   2026" went live beside its March 2024 one, so the page showed next year's $35 overdraft. Each
   step reads the edition each document's heading states (`editionStarts` in
@@ -1760,6 +1772,17 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   Nov 1: 16 of 142 live free-item $0s at 5 institutions; in the core categories 3 incoming wires
   (100941 at 6914, 152991 at 8495, 159066 at 550), each traced to its list line by `checkFeeAgainstSource`. Re-count Nov 2 after the reviews of #2894:
   12 at 4 institutions, all 3 incoming wires; 56942, 56943, 141651, 141652 stay live as known misses.
+  v2 (Knox v171, fourth backlog dry run, Nov 3): two more shapes from O'Bannon Banking Co (2415): an item
+  under "This account also includes:" (`account_waivers`, the account the nearest name above the lead), and
+  `account_column`, a perk an account's own cell of a comparison table names and prices free ("Checks | 1st
+  order of starter checks FREE ... (FREE Checking)" under a header row of two accounts or more), when the
+  cells cannot be lined up with the accounts or another account's cell differs. The query also selects a
+  live $0 whose stored line has a free word in a cell after the row's label on a text with a line naming
+  two accounts in neighbouring cells, and reads 1,500 characters before the line
+  (`ACCOUNT_COLUMN_LOOKBACK_CHARS`; the list walk still reaches 450). Dry run Nov 3 (prod, read-only): 308
+  candidates (143 free-item lines, 165 cell rows); v1 and v2 each match the same 12, v2 none more. A first
+  `account_column` matched 5 more (62793, 91112, 98245, 124983, 165162: a bare free word or "None" under an
+  account, two account pages side by side, junk header rows) and was narrowed before merge.
 - A $0 whose own line is no priced row (`zero-waiver-row-check.ts`, #1092, shadow lab Nov 2): "No Fee
   for Cashier's Checks" and "No Fee for Stop Payments" in an account's list of free items, and "Minimum
   Balance required to avoid a Service Charge / FREE" (an account table's balance row, the next heading's
@@ -1833,7 +1856,7 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   #1092, state key 5608): River City Bank's "Consumer Online Banking Services and Mobile Banking Fees" over
   "Monthly Maintenance Fee | No charge" is the online banking service's fee; published as the account's
   monthly maintenance it would say the bank has free checking. The row names no service, so the name rule
-  (`SERVICE_MONTHLY_CHARGE_NAME`, guard v102) cannot see it. Knox v171 holds such a read, $0 or priced, and
+  (`SERVICE_MONTHLY_CHARGE_NAME`, guard v102) cannot see it. Knox v173 holds such a read, $0 or priced, and
   verify refuses it (`service_maintenance_heading`, needs review), both through
   `src/lib/service-maintenance-heading.ts`: the nearest heading-shaped line above the row that is not a
   stacked row's label names only services (online, mobile, internet or text banking, bill pay, e-statements,
@@ -2893,6 +2916,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `HOLD_SOURCE_REREAD_STRATEGY` | `verify.hold_source_reread` | v2 | `darwin/hold-source-reread-switch.ts` |
 | `SAME_LINE_REPLACEMENT_CHECK_VERSION` | `darwin.same_line_replacement` | v1 | `darwin/same-line-replacement-check.ts` |
 | `SAME_LINE_READ_CHECK_VERSION` | `darwin.same_line_read` | v1 | `darwin/same-line-read-check.ts` |
+| `PRODUCT_SPLIT_CHECK_VERSION` | `darwin.product_split` | v1 | `darwin/product-split-check.ts` |
 | `CANADIAN_DOCUMENT_CHECK_VERSION` | `darwin.canadian_document` | v1 | `darwin/canadian-document-check.ts` |
 | `LATE_CHARGE_BOUND_CHECK_VERSION` | `darwin.late_charge_bound` | v1 | `darwin/late-charge-bound-check.ts` |
 | `RATE_FLOOR_CHECK_VERSION` | `darwin.rate_floor` | v1 | `darwin/rate-floor-check.ts` |
@@ -2902,7 +2926,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `LOAN_PAYMENT_NSF_REFILE_CHECK_VERSION` | `darwin.loan_payment_nsf_refile` | v1 | `darwin/loan-payment-nsf-refile-check.ts` |
 | `INTERNATIONAL_DIRECTION_CHECK_VERSION` | `darwin.international_direction` | v4 | `darwin/international-direction-check.ts` |
 | `BANDED_ZERO_CHECK_VERSION` | `darwin.banded_zero` | v1 | `darwin/banded-zero-check.ts` |
-| `ACCOUNT_BENEFIT_ZERO_CHECK_VERSION` | `darwin.account_benefit_zero` | v1 | `darwin/account-benefit-zero-check.ts` |
+| `ACCOUNT_BENEFIT_ZERO_CHECK_VERSION` | `darwin.account_benefit_zero` | v2 | `darwin/account-benefit-zero-check.ts` |
 | `ZERO_WAIVER_ROW_CHECK_VERSION` | `darwin.zero_waiver_row` | v2 | `darwin/zero-waiver-row-check.ts` |
 | `FREE_LIST_ITEM_CHECK_VERSION` | `darwin.free_list_item` | v1 | `darwin/free-list-item-check.ts` |
 | `NOT_ACCOUNT_FEE_LINE_CHECK_VERSION` | `darwin.not_account_fee_line` | v1 | `darwin/not-account-fee-line-check.ts` |

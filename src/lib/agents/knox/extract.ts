@@ -234,7 +234,7 @@ export const ACCOUNT_BENEFIT_ZERO_HOLD_FLAG = "knox_account_benefit_zero";
 /** v163 (#1092): a $0 held because its own line is a no-fee sentence or a waiver requirement row (`zeroWaiverRowOf`), with its kind after a colon. */
 export const ZERO_WAIVER_ROW_HOLD_FLAG = "knox_zero_waiver_row";
 /**
- * v171 (#1092): a monthly maintenance read held because its row sits under a service's heading
+ * v173 (#1092): a monthly maintenance read held because its row sits under a service's heading
  * (`serviceMaintenanceOf`), with the services the heading names after a colon ("online_banking+mobile_banking").
  */
 export const SERVICE_MAINTENANCE_HOLD_FLAG = "knox_service_maintenance";
@@ -1251,7 +1251,7 @@ export async function insertFreePathLessonHold(db: SqlTag, options: CandidateIns
 }
 
 /**
- * v171 (#1092): a priced monthly maintenance read whose row sits under a service's heading ("Online
+ * v173 (#1092): a priced monthly maintenance read whose row sits under a service's heading ("Online
  * Banking" over "Monthly Maintenance Fee | $3.00") is that service's own fee, not the account's: held as
  * a range for review, never sent to Darwin. The $0 read is held the same way in `insertHeldCandidate`.
  * Null when the rule does not apply; the read then takes its usual path.
@@ -1667,7 +1667,7 @@ export async function insertHeldCandidate(
   const waiverRow = held.shape === "zero" && held.amount === 0 ? zeroWaiverRowOf({ line: held.excerpt, amount: 0,
     documentText: sourceRow.normalized_text ?? options.row.normalized_text ?? null }) : null;
   if (waiverRow) held = { ...held, shape: "range", amountMax: null };
-  // v171 (#1092): a $0 monthly maintenance read whose row sits under a service's heading ("Consumer
+  // v173 (#1092): a $0 monthly maintenance read whose row sits under a service's heading ("Consumer
   // Online Banking Services and Mobile Banking Fees" over "Monthly Maintenance Fee | No charge") is that
   // service's fee, not free checking: held as a range for review, never sent to Darwin. A priced one is
   // held in `holdServiceMaintenanceCandidate`; Darwin's verify and live re-check apply the same test.

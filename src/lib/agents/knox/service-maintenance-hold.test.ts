@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { insertCandidate, insertHeldCandidate, SERVICE_MAINTENANCE_HOLD_FLAG, type KnoxTextRow } from "./extract";
 
 /**
- * Knox v171 (#1092, state key 5608): a monthly maintenance read whose row sits under a service's
+ * Knox v173 (#1092, state key 5608): a monthly maintenance read whose row sits under a service's
  * heading is written held as a range for review, $0 and priced alike, never flagged for Darwin. The
  * account's own row beside it takes its usual path. No database: the fake records each statement.
  */
@@ -51,7 +51,7 @@ const candidate = (name: string, amount: number, excerpt: string) => ({
   feeName: name, amount, canonicalHint: "monthly_maintenance", excerpt, frequency: "monthly", confidence: 0.9, waivable: false,
 });
 
-describe("Knox v171: a monthly maintenance read under a service's heading is held (#1092)", () => {
+describe("Knox v173: a monthly maintenance read under a service's heading is held (#1092)", () => {
   it("holds the $0 read as a range, never for Darwin", async () => {
     const calls: Call[] = [];
     await insertHeldCandidate(fakeDb(calls), { runId: 1, row: textRow(RIVER_CITY), held: {
