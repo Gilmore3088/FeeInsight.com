@@ -313,6 +313,7 @@ export const TAKEDOWN_REASON_CHECKS: Readonly<Record<string, string>> = {
   online_service_monthly: "darwin.not_account_fee_line",
   service_maintenance_heading: "darwin.service_maintenance_heading",
   canadian_document: "darwin.canadian_document",
+  old_labelled_document: "darwin.old_labelled_document",
   card_program_section: "darwin.card_program_section",
   document_owner: "darwin.document_owner",
   international_direction: "darwin.international_direction",

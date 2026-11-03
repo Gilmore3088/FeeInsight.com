@@ -23,6 +23,7 @@ import {
 } from "./read";
 import { ROSETTA_OCR_VERSION } from "./ocr";
 import { ROSETTA_TABLE_ROWS_VERSION } from "./table-rows";
+import { HTML_READ_VERSION } from "./reader-versions";
 import { DROPPED_LIGATURE_DUE_PATTERN, DROPPED_LIGATURE_READER, GLYPH_REPAIR_DUE_PATTERN, GLYPH_REPAIR_VERSION } from "./glyph-repair";
 import { isLikelyScannedPdf } from "../learning/format";
 import { DOCUMENT_KIND_VERSION } from "../learning/document-kind";
@@ -85,6 +86,10 @@ describe("linkedFeePageCompanion (a schedule behind a link is stored as the bank
     expect(linkedFeePageCompanion("https://www.tucsonfcu.com/wp-content/uploads/2026/09/October-2026-Loan-Rates.pdf", null)).toBeNull();
     expect(linkedFeePageCompanion("https://www.goldmarkfcu.com/wp-content/themes/goldmark/pdf/2026-privacy-policy.pdf", null)).toBeNull();
     expect(linkedFeePageCompanion("not a url", null)).toBeNull();
+    // #1026, #1455 class: an old or archived copy is never pointed at as the bank's document.
+    expect(linkedFeePageCompanion("https://westreet.org/wp-content/uploads/2021/06/Fee-Schedule-Old.pdf", "https://westreet.org/fees")).toBeNull();
+    expect(linkedFeePageCompanion("https://www.clackamascountybank.com/archive-2021/personal-checking.php", null)).toBeNull();
+    expect(linkedFeePageCompanion("https://www.oldnational.com/fee-schedule.pdf", null)).toMatchObject({ documentType: "pdf" });
     // A payment page is not the bank's schedule (review of #2940).
     expect(linkedFeePageCompanion("https://www.matagordaccu.com/online-payment", "https://www.matagordaccu.com/fees")).toBeNull();
   });
@@ -701,6 +706,20 @@ describe("Rosetta agentic read", () => {
 
       const detail = attemptValues(db)[0].find((value) => typeof value === "string" && value.startsWith("{"));
       expect(JSON.parse(String(detail))).toMatchObject({ reader: "read.html_dom", glyph_repair: GLYPH_REPAIR_VERSION });
+    });
+
+    it("records the HTML reader version on an HTML read and on no other reader's", async () => {
+      const readDetail = async (candidate: typeof htmlCandidate, body: string, contentType: string) => {
+        const db = learningDb([candidate]);
+        await runRosettaRead({ runId: 319, db: asReadDb(db), fetchImpl: vi.fn().mockResolvedValueOnce(response(body, contentType)) });
+        return JSON.parse(String(attemptValues(db)[0].find((value) => typeof value === "string" && value.startsWith("{"))));
+      };
+      const html = await readDetail(htmlCandidate, "<main><h1>Schedule of Fees</h1><p>Overdraft fee $35</p></main>", "text/html");
+      expect(html).toMatchObject({ reader: "read.html_dom", html_read: HTML_READ_VERSION });
+      const plain = await readDetail({ ...htmlCandidate, document_url: "https://testbank.example/fees.txt" },
+        "Schedule of Fees\nOverdraft fee $35\nStop payment fee $30", "text/plain");
+      expect(plain).toMatchObject({ reader: "read.plain_text" });
+      expect(plain).not.toHaveProperty("html_read");
     });
 
     it("binds every candidate-SQL placeholder to a parameter of the type it is used as", async () => {

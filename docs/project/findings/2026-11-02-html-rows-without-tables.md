@@ -77,11 +77,11 @@ reproduced documents, same keys, today's pipeline on both sides):
    bill pay merges. The wrong publication is a heading problem: a `<table>` row with the same words
    publishes it the same way today.
 2. The source replay with the switch on shows 0 wrong publications.
-3. HTML gets its own reader version. Flipping the switch alone re-reads nothing; only pages read
-   after it get the new text. A `ROSETTA_READ_VERSION` bump would replay every primary-reader
-   current copy, PDFs included (`reader-replay.ts`), at 4 a run. An HTML-only version needs the
-   read attempt to record it and the replay lane's due test to read it. That is a live change to the
-   read selection SQL, with database tests, so it is not in this PR.
+3. Done (`2026-11-02-html-reader-version.md`): HTML has its own reader version,
+   `HTML_READ_VERSION`. The PR that flips the switch bumps it from 1 to 2 in the same change
+   (`reader-replay.test.ts` fails otherwise), so the flip replays current `read.html_dom` and
+   `read.js_fallback` copies once and no PDF. Flipping the switch without the bump would re-read
+   nothing; a `ROSETTA_READ_VERSION` bump instead would replay every primary-reader copy.
 4. James runs the switch dry-run audit, section 8 (9 if the Knox PR's own section 8 lands first;
    whichever lands second renumbers). It counts current HTML documents
    (`read.html_dom`, `read.js_fallback`) and the live fees on them, as exposure. It cannot count

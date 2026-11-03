@@ -704,3 +704,13 @@ describe("article, learning and advice pages are never companions (#1774)", () =
     ]);
   });
 });
+
+describe("an old or archived copy is never a companion (#1026, #1455 class)", () => {
+  it("skips links whose address or label calls the document old", () => {
+    const site = new URL("https://westreet.org/");
+    const link = (url: string, label: string) => classifyCompanionLink({ url, label }, site);
+    expect(link("https://westreet.org/wp-content/uploads/2021/06/Fee-Schedule-Old.pdf", "Fee Schedule")).toBeNull();
+    expect(link("https://westreet.org/documents/fee-schedule.pdf", "Old Fee Schedule")).toBeNull();
+    expect(link("https://westreet.org/documents/fee-schedule.pdf", "Fee Schedule")?.kind).toBe("fee_document");
+  });
+});

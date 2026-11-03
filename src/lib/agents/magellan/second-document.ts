@@ -11,6 +11,7 @@ import { fetchWithTimeout, looksLikePdfUrl, mainContentText, MAX_PDF_CHECK_BYTES
 import { loadSharedNameIds, websiteOwnedElsewhereSql } from "./other-bank-host";
 import { loadMissedSchedules, MISSED_SCHEDULE_BANKS_PER_STEP, MISSED_SECOND_SCHEDULE_KIND } from "./missed-schedules";
 import { legacyLinkWords } from "./legacy-page";
+import { oldLabelledLink } from "./old-labelled-link";
 import {
   BUSINESS_PATH_SQL,
   CONSUMER_PATH_SQL,
@@ -240,6 +241,8 @@ export function classifyCompanionLink(link: PageLink, site: URL, foundOn: string
   // #2070: a legacy or discontinued accounts page prices accounts a customer can no longer open
   // ("Legacy Accounts Fee Schedule", "/accounts-no-longer-offered"); it is never a companion.
   if (legacyLinkWords(lower)) return null;
+  // #1026, #1455 class (Nov 3): an old or archived copy ("Fee-Schedule-Old.pdf", "/archive-2021/") is never a companion.
+  if (oldLabelledLink(link.url, link.label)) return null;
   const source: LinkSource = "homepage_link";
   const strong = STRONG_FEE_DOCUMENT.exec(lower);
   const medium = MEDIUM_FEE_DOCUMENT.exec(lower);

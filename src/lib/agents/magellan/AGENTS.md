@@ -52,6 +52,28 @@ Magellan owns institution source discovery and source fetching.
   homepage) clears the fee link, records the URL in `rejected_source_urls`, and marks the bank
   `rescue_status = 'pending'` (`failure_reason = 'magellan_dead_link'`) so discovery searches it
   again. A locked correction is kept; a 403 is retried, since a bot block can pass.
+- Old or archived documents are never the fee link (#1026, #1455 class, Nov 3,
+  `old-labelled-link.ts`). The rule reads the address the bank links to, never where a redirect
+  lands, and never the host (Old National, Old Second, Old Point). A path is old when it carries
+  "superseded", "obsolete" or "outdated"; when a segment is or starts with "archive(s/d)"
+  ("/archive-2021/", not "/DocumentArchive/"); when "expired" ends a segment; or when "old",
+  "previous" or "prior" ends a segment or comes before a document or site word. So "/prior-notice",
+  "/older-adults-checking", "/lost-or-expired-card-fees" and "Compliance-Folder" stay current. A link
+  label is old when such a word stands beside a document word ("Old Fee Schedule").
+  - Discovery: such a candidate scores 0 in `scoreLink`, is refused before it is opened
+    (`old_labelled`, on the linked address only), and is never a companion.
+  - Rosetta's `linkedFeePageCompanion` never points a link at one.
+  - The fetch step (`oldLabelledFetchAction`) acts before anything is downloaded or stored:
+    - An old saved link goes back to discovery (`failure_reason = 'magellan_old_labelled_link'`, the
+      URL in `rejected_source_urls`, the remembered address dropped). This happens whatever address
+      the profile remembers.
+    - An old remembered address beside a current saved link is set aside, and the saved link is
+      fetched.
+    - A locked correction is never moved.
+  - On Nov 3 five saved links matched: Citizens Bank & Trust 3767, Central Jersey Police & Fire 4740,
+    WinSouth 8661, Cleo State Bank 3642 and Access FCU 7235. Westreet 6933 keeps its current link,
+    which redirects to "Fee-Schedule-Old.pdf". Darwin's `old-labelled-document-check.ts` settles the
+    fees already live.
 - Schedules found by hand (`operator-schedules.ts`, strategy `discover.operator_schedule`): a
   checked-in list of consumer fee schedules James gave for banks Magellan had not found (Chase,
   Citi). Just before companion fetch, each listed schedule the bank does not hold yet is added

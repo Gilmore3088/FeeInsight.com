@@ -187,6 +187,16 @@ export const ROSETTA_LESSONS: AgentLesson[] = [
     since: "2026-11-02",
   },
   {
+    id: "issue-1092-version-what-a-change-rereads",
+    agent: "rosetta",
+    stage: "read",
+    lesson: "Give each reader a version that covers only what it reads, and record it on every read it makes, so a change to one reader re-reads only that reader's documents. A change to how HTML pages are read moves the HTML reader version, which replays HTML-read pages only; it never moves the shared reader version, which would replay every PDF too. Move the version in the same change that turns the new reading on, and keep the selection exactly as it was while the version has not moved.",
+    why: "HTML row pairing (HTML_ROW_PAIRING_LIVE) changed only how read.html_dom writes a page, but HTML had no version of its own: flipping the switch re-read nothing, and the only way to replay the pages already read was a ROSETTA_READ_VERSION bump, which reader replay would spend on every primary-reader current copy, PDFs included, at 4 a run (#1092).",
+    evidence: { issues: [1092], prs: [], files: ["docs/project/findings/2026-11-02-html-reader-version.md", "src/lib/agents/rosetta/reader-replay.ts", "src/lib/agents/rosetta/reader-versions.ts"] },
+    appliesTo: ["read"],
+    since: "2026-11-02",
+  },
+  {
     id: "page-starts-2026-11-02",
     agent: "rosetta",
     stage: "read",

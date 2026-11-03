@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { beatsOldPage, isReplacedLink, namesPaymentPage, pageIdentity, urlIdentity } from "./finders";
+import { beatsOldPage, feeCandidates, isReplacedLink, MIN_LINK_SCORE, namesPaymentPage, pageIdentity, scoreLink, urlIdentity } from "./finders";
 
 describe("namesPaymentPage (site crawl, Oct 6-15)", () => {
   it("names the loan payment pages the crawl took as fee pages", () => {
@@ -63,5 +63,25 @@ describe("beatsOldPage (barren-link search)", () => {
 
   it("is false when the page's text was not read", () => {
     expect(beatsOldPage({ replaceFeeLines: 0 }, null, "https://bank.example/fees.pdf")).toBe(false);
+  });
+});
+
+describe("an old or archived link is never chosen (#1026, #1455 class, Nov 3)", () => {
+  it("scores a link whose address or label calls it old at zero", () => {
+    const old = scoreLink("https://westreet.org/wp-content/uploads/2021/06/Fee-Schedule-Old.pdf", "Fee Schedule", "homepage_link");
+    expect(old.score).toBe(0);
+    expect(old.reasons).toContain("old_labelled:old");
+    expect(scoreLink("https://bank.example/fee-schedule.pdf", "Fee Schedule (Archived)", "homepage_link").score).toBe(0);
+    expect(scoreLink("https://www.clackamascountybank.com/archive-2021/personal-checking.php", "Fee Schedule", "crawl_link").score).toBe(0);
+  });
+
+  it("keeps the current link beside it, and banks named Old", () => {
+    const links = [
+      { url: "https://westreet.org/wp-content/uploads/2021/06/Fee-Schedule-Old.pdf", label: "Fee Schedule (old)" },
+      { url: "https://westreet.org/documents/fee-schedule.pdf", label: "Fee Schedule" },
+    ];
+    expect(feeCandidates(links, "homepage_link", "https://westreet.org/").map((candidate) => candidate.url)).toEqual(["https://westreet.org/documents/fee-schedule.pdf"]);
+    expect(scoreLink("https://www.oldnational.com/fee-schedule.pdf", "Old National Fee Schedule", "homepage_link").score).toBeGreaterThanOrEqual(MIN_LINK_SCORE);
+    expect(scoreLink("https://bank.example/prior-notice-fee-schedule.pdf", "Fee Schedule", "homepage_link").score).toBeGreaterThanOrEqual(MIN_LINK_SCORE);
   });
 });

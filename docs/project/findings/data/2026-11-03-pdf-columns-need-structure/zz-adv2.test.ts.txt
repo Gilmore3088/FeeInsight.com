@@ -1,0 +1,44 @@
+import { it } from "vitest";
+import { layoutPageResult, type PdfTextItem } from "@/lib/agents/rosetta/pdf-layout";
+import { currentVariant as v } from "@/lib/agents/deming/shadow-lab/variants";
+const S = 8;
+const run = (str: string, x: number, y: number): PdfTextItem => ({ str, transform: [S, 0, 0, S, x, y], width: str.length * 4, height: S });
+const Y = (r: number) => 700 - r * 12;
+function publish(text: string) {
+  const ex = v.extract(text); const live: any[] = [];
+  for (const f of ex.passed) { const ver = v.verify(f, text); if (!ver.ok) continue; const d = v.publishGate(ver.fee, text, live); if (d.publish) live.push(ver.fee); }
+  return live.map((f) => `${f.canonicalFeeKey}:${f.amountCents} (${f.feeName})`).sort();
+}
+const ROWS: [string, string, string][] = [
+  ["Overdraft fee (per item)", "$30.00", "Daily maximum $150"],
+  ["Returned item (NSF)", "$30.00", "Daily maximum $150"],
+  ["Outgoing domestic wire", "$25.00", "International wire $45"],
+  ["Incoming wire", "$10.00", "International incoming $15"],
+  ["Stop payment", "$25.00", "Online request $15"],
+  ["Account research", "$25.00", "Minimum charge $10"],
+  ["Cashier's check", "$8.00", "Members only"],
+  ["Money order", "$3.00", "Limit 5 per day"],
+  ["Statement copy", "$5.00", "Online statements free"],
+  ["Debit card replacement", "$10.00", "Rush delivery $50"],
+  ["Dormant account", "$5.00", "After 12 months"],
+  ["Account closing", "$25.00", "Within 90 days"],
+  ["Garnishment / levy", "$100.00", "Per order"],
+  ["Coin counting", "$3.00", "Non-members 5% of total"],
+  ["Safe deposit box 3x5", "$30.00", "Late payment $10"],
+  ["Check printing", "Varies", "Depends on style"],
+];
+const cases: Record<string, PdfTextItem[]> = {
+  notes: [run("Service", 40, Y(0)), run("Fee", 180, Y(0)), run("Notes", 270, Y(0)), ...ROWS.flatMap(([l, p, n], r) => [run(l, 40, Y(r + 1)), run(p, 180, Y(r + 1)), run(n, 270, Y(r + 1))])],
+  memberNon: [run("Service", 40, Y(0)), run("Member", 180, Y(0)), run("Non-member", 300, Y(0)), ...ROWS.flatMap(([l, p], r) => [run(l, 40, Y(r + 1)), run(p, 180, Y(r + 1)), run(r % 3 === 0 ? "Not available" : r % 3 === 1 ? `Non-members ${p}` : `Plus surcharge $5`, 300, Y(r + 1))])],
+};
+it("adv2", () => {
+  for (const [name, items] of Object.entries(cases)) {
+    const a = layoutPageResult(items, { columnReading: true }).text, b = layoutPageResult(items, { columnReading: false }).text;
+    console.log(`=== ${name}: ${a === b ? "UNCHANGED" : "SPLIT"}`);
+    if (a === b) continue;
+    console.log(a);
+    const pa = publish(a), pb = publish(b);
+    console.log("ON only:", pa.filter((x) => !pb.includes(x)));
+    console.log("OFF only:", pb.filter((x) => !pa.includes(x)));
+  }
+});

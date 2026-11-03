@@ -6,6 +6,7 @@
  *   PDF_LAYOUT_VERSION           pdf-layout.ts
  *   ROSETTA_OCR_VERSION          ocr.ts
  *   ROSETTA_JS_FALLBACK_VERSION  js-fallback.ts
+ *   HTML_READ_VERSION            html-dom.ts and html-row-pairing.ts (read.html_dom, read.js_fallback)
  *   ROSETTA_TABLE_ROWS_VERSION   table-rows.ts
  *   PDF_READER_AGREEMENT_VERSION pdf-reader-agreement.ts
  *   GLYPH_REPAIR_VERSION         glyph-repair.ts
@@ -30,6 +31,24 @@ export const PDF_STACKED_REPAIR_VERSION = 1;
  */
 export const ROSETTA_OCR_VERSION = 3;
 export const ROSETTA_JS_FALLBACK_VERSION = 3;
+/**
+ * The HTML readers' own version (#1092): what `read.html_dom` (and the JavaScript fallback, which
+ * reads its rendered page through the same DOM reader) writes as text. Every read attempt whose
+ * reader is one of HTML_READ_READERS records it as `detail.html_read`; an attempt without it (every
+ * read before Nov 2) counts as HTML_READ_BASE_VERSION.
+ *
+ * Above its base, reader replay (reader-replay.ts) reads once more every current completed text an
+ * HTML reader wrote with no read of its bytes at this version, and no other reader's text. At its
+ * base the replay selection is exactly what it was before this version existed.
+ *
+ * v2 is `HTML_ROW_PAIRING_LIVE` (html-row-pairing.ts): flipping that switch must move this to 2 in
+ * the same PR (reader-replay.test.ts fails otherwise), so turning row pairing on re-reads HTML pages
+ * and no PDF. Kept as a literal so this module stays free of imports.
+ */
+export const HTML_READ_BASE_VERSION: number = 1;
+export const HTML_READ_VERSION: number = 1;
+/** Readers whose text HTML_READ_VERSION versions. Equal to read.ts's HTML reader and JS_FALLBACK_STRATEGY. */
+export const HTML_READ_READERS: readonly string[] = ["read.html_dom", "read.js_fallback"];
 /**
  * v2 (#1912): HTML table rows keep each cell's grid column (`columns`, `line`; table-rows.ts).
  * Nothing selects a stored text by this version, so the bump re-reads nothing: a page's new
