@@ -27,6 +27,13 @@
         "timeoutMs": 60000
       },
       "bytesKept": "the main document's response body as the server sent it (response.body()), not the rendered DOM"
+    },
+    "archive": {
+      "client": "curl 8.7.1, its default user-agent, -L (follow redirects), no cookies",
+      "index": "CDX API, https://web.archive.org/cdx/search/cdx?url=<sourceUrl>&output=json; matchType=domain with collapse=urlkey to look for other spellings of the page",
+      "capture": "the raw form https://web.archive.org/web/<timestamp>id_/<sourceUrl>: the bytes the bank's server sent the archive's crawler, without the Wayback toolbar",
+      "check": "each capture's SHA-1 (base32) equals the CDX digest recorded as cdxDigest",
+      "choice": "captures closest to and not after the key was made (knox-hand-key-states-2026-10-06) first; accepted only through the same sameDocument test, thresholds unchanged"
     }
   },
   "accepted": [
@@ -699,6 +706,37 @@
       }
     },
     {
+      "caseKey": "missed_fees:state:11477",
+      "institution": "4Front Federal Credit Union",
+      "file": "state-11477.html.gz",
+      "sha256": "f154c2b2694415a67bb9e413836442e77fdf889daf7fed8bb2933c99f8083d00",
+      "bytes": 61822,
+      "sourceUrl": "https://www.4frontcu.com/personal/personal-rates",
+      "finalUrl": "https://www.4frontcu.com/personal/personal-rates",
+      "urlFrom": "answer-key seed migration 20270110000018 (stored text 11477); the live page has changed, so the bytes are the Internet Archive's capture of that URL",
+      "contentType": "text/html; charset=utf-8",
+      "fetchedAt": "2026-11-03T07:22:36Z",
+      "fetchedWith": "archive",
+      "reader": "read.html_dom",
+      "similarity": {
+        "tokens": 0.9954,
+        "numbers": 1,
+        "dollarsEqual": true
+      },
+      "archive": {
+        "captureUrl": "https://web.archive.org/web/20260901195205id_/https://www.4frontcu.com/personal/personal-rates",
+        "timestamp": "20260901195205",
+        "cdxDigest": "GDJNKPIRFGGLXNH3YHNHIMMO2R5NYLJR",
+        "sha256": "f154c2b2694415a67bb9e413836442e77fdf889daf7fed8bb2933c99f8083d00",
+        "similarity": {
+          "tokens": 0.9954,
+          "numbers": 1,
+          "dollarsEqual": true
+        }
+      },
+      "note": "An Internet Archive capture of the bank's own page, taken 2026-09-01 19:52:05 UTC. It is not the stored copy the key was made from (the seed's sha256 differs). Every price is the same; only a promotional banner differs (frozen: 'Board of Directors application, Apply now'; capture: 'Get a home equity line of credit'). The 2026-06-11 capture also passes (token 0.9897, number 0.9927); the later one, closest before the key was made, is kept."
+    },
+    {
       "caseKey": "missed_fees:texas:2429",
       "institution": "Texhillco School Employees FCU",
       "file": "texas-2429.pdf.gz",
@@ -766,7 +804,21 @@
         "tokens": 0.8181,
         "numbers": 0.9535,
         "dollarsEqual": false
-      }
+      },
+      "archiveTried": [
+        {
+          "captureUrl": "https://web.archive.org/web/20260317094415id_/https://gucu.org/docs/default-source/account-disclosures/truth-in-savings.pdf?sfvrsn=b34b0591_413",
+          "timestamp": "20260317094415",
+          "cdxDigest": "BIMOXJVWYBQDDOHLUQ4C5WZTSTTI2BPL",
+          "sha256": "3896c6fcf369417a4fefa8ba111f079e29d88009d5afb05bb3f25b3d1af0f811",
+          "similarity": {
+            "tokens": 0.8181,
+            "numbers": 0.9535,
+            "dollarsEqual": false
+          }
+        }
+      ],
+      "archiveNote": "The 2026-03-17 capture's sha256 equals the seed's sha256 for this key, so these are the bytes the key was made from (the 2026-07-11 capture of version _419 has the same CDX digest). The test still fails: today's pdf_layout read joins words the frozen text keeps apart ('averagebalance', 'withdrawalaccount'). The document did not change; the reader's output did. The test is not changed, and the case stays out."
     },
     {
       "caseKey": "missed_fees:state:11477",
@@ -788,7 +840,32 @@
         "tokens": 0.9871,
         "numbers": 0.9164,
         "dollarsEqual": false
-      }
+      },
+      "archiveTried": [
+        {
+          "captureUrl": "https://web.archive.org/web/20250209151414id_/https://scfcu.org/rates-fees",
+          "timestamp": "20250209151414",
+          "cdxDigest": "LM5LOQGLVNWH5OWBJX4ENOGT5INQ6NN7",
+          "sha256": "350c3ad587019b3ef97984a610453ea2c011c5362a150568bf69d309204e5522",
+          "similarity": {
+            "tokens": 0.901,
+            "numbers": 0.7724,
+            "dollarsEqual": false
+          }
+        },
+        {
+          "captureUrl": "https://web.archive.org/web/20230730094037id_/https://scfcu.org/rates-fees",
+          "timestamp": "20230730094037",
+          "cdxDigest": "VMAPDT6KQYR3BKEIRELW7V4CIGEQE3QQ",
+          "sha256": "bbab788b531e5aab410d27b5cb4958a8867295c8de3deb5379d09866220d5b55",
+          "similarity": {
+            "tokens": 0.6674,
+            "numbers": 0.5582,
+            "dollarsEqual": false
+          }
+        }
+      ],
+      "archiveNote": "The archive lists two 200 captures of this URL (2023-07-30 and 2025-02-09) and none later, and no other spelling of the page. Both print other rates and other dollar amounts; neither is the seed's sha256."
     },
     {
       "caseKey": "missed_fees:state:8240",
