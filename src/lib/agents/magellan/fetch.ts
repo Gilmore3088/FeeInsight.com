@@ -29,6 +29,7 @@ import type { BrowserFetchResult } from "./browser-fetch";
 import { runCompanionFetch, type RunCompanionFetchResult } from "./companion-fetch";
 import { addOperatorSchedules, OPERATOR_SCHEDULE_STRATEGY, OPERATOR_SCHEDULES, type OperatorScheduleResult } from "./operator-schedules";
 import { isArticleLink, isErrorPageLink } from "./link-coverage";
+import { oldLabelledAddress } from "./old-labelled-link";
 import { normalizeDocumentUrl } from "@/lib/agents/answer-key-score";
 
 type SqlTag = typeof sql;
@@ -242,9 +243,13 @@ function linkIsGone(result: FetchResult): boolean {
     result.attemptOutcome === "http_404" ||
     result.attemptOutcome === "http_410" ||
     result.redirectedHome === true ||
-    isErrorPageLink(result.sourceUrl)
+    isErrorPageLink(result.sourceUrl) ||
+    oldLabelledAddress(result.sourceUrl) != null
   );
 }
+
+/** The failure reason a link sent back to discovery because its address calls it old or archived carries (#1026, #1455 class; written in `sendGoneLinkToDiscovery`). */
+export const OLD_LABELLED_LINK_FAILURE = "magellan_old_labelled_link";
 
 function sha256(bytes: Uint8Array): string {
   return createHash("sha256").update(bytes).digest("hex");
@@ -879,14 +884,15 @@ async function recordFetchResult(db: SqlTag, result: FetchResult, learning: bool
 }
 
 /**
- * A gone link (404/410, or redirected to the homepage) is never going to work again, so
+ * A gone link (404/410, or redirected to the homepage; or, Nov 3, an address that calls it old
+ * or archived, `old-labelled-link.ts`) is never going to work again, so
  * the bank goes back to discovery the way Rosetta sends back a dead link it reads:
  * remember the URL as rejected, drop the fetch address, clear the fee link while it is
  * still the one fetched, and mark the bank due a search. Before this, the bank kept the
  * dead link and was re-fetched every week, and discovery (which only searches banks
  * with no link) never looked for its new page. A person's locked correction is kept.
  */
-async function sendGoneLinkToDiscovery(db: SqlTag, result: FetchResult, feeScheduleUrl: string | null): Promise<boolean> {
+async function sendGoneLinkToDiscovery(db: SqlTag, result: FetchResult, feeScheduleUrl: string | null, oldLabelled = false): Promise<boolean> {
   const rejected = JSON.stringify([{ url: result.sourceUrl, reason: result.reason, at: new Date().toISOString() }]);
   await db`
     UPDATE institution_source_profiles
@@ -903,7 +909,7 @@ async function sendGoneLinkToDiscovery(db: SqlTag, result: FetchResult, feeSched
     UPDATE institution_sources inst
        SET fee_schedule_url = NULL,
            rescue_status = 'pending',
-           failure_reason = 'magellan_dead_link',
+           failure_reason = CASE WHEN ${oldLabelled}::boolean THEN 'magellan_old_labelled_link' ELSE 'magellan_dead_link' END,
            failure_reason_note = ${result.reason},
            failure_reason_updated_at = NOW()
      WHERE inst.id = ${result.institutionId}
@@ -995,7 +1001,11 @@ export async function fetchAndRecordLink(
   }
   if (!ctx.keepRemembered && linkIsGone(result)) {
     if (isErrorPageLink(result.sourceUrl)) result.reason = "Link is the site's error page, not a fee schedule";
-    result.sentBackToDiscovery = await sendGoneLinkToDiscovery(db, result, row.fee_schedule_url);
+    // #1026, #1455 class (Nov 3): a stored link whose address calls it old or archived
+    // ("Fee-Schedule-Old.pdf", "/schedule-of-fees-old") goes back to discovery, which never takes one again.
+    const oldWord = oldLabelledAddress(result.sourceUrl);
+    if (oldWord) result.reason = `Link's address labels it old or archived ("${oldWord}"), not the current fee schedule`;
+    result.sentBackToDiscovery = await sendGoneLinkToDiscovery(db, result, row.fee_schedule_url, oldWord != null);
   }
   // New content is always stored; an unchanged document is stored once if it predates the vault.
   if (vaultOn && (result.outcome === "success" || (result.outcome === "unchanged" && !previous?.vaultKey))) {

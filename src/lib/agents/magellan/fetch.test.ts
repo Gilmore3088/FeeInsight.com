@@ -246,7 +246,7 @@ describe("Magellan agentic fetch", () => {
     const sqlText = db.mock.calls.map((call) => templateText(call[0])).join("\n");
     expect(sqlText).toContain("rejected_source_urls");
     expect(sqlText).toContain("rescue_status = 'pending'");
-    expect(sqlText).toContain("failure_reason = 'magellan_dead_link'");
+    expect(sqlText).toContain("ELSE 'magellan_dead_link' END");
     expect(sqlText).toContain("locked_by_correction IS TRUE");
   });
 
@@ -268,7 +268,47 @@ describe("Magellan agentic fetch", () => {
     expect(result.results[0]).toMatchObject({ outcome: "failed", reason: "Link is the site's error page, not a fee schedule" });
     const sqlText = db.mock.calls.map((call) => templateText(call[0])).join("\n");
     expect(sqlText).toContain("rejected_source_urls");
-    expect(sqlText).toContain("failure_reason = 'magellan_dead_link'");
+    expect(sqlText).toContain("ELSE 'magellan_dead_link' END");
+  });
+
+  it("sends a bank whose stored fee link calls itself old back to discovery (#1026, #1455 class)", async () => {
+    const db = createDbMock([
+      {
+        id: 3767,
+        institution_name: "Citizens Bank & Trust Co.",
+        fee_schedule_url: "https://www.cbt-co.com/deposit-accounts/schedule-of-fees-old",
+        asset_size: "500",
+        last_crawl_at: null,
+        consecutive_failures: 0,
+      },
+    ]);
+    const fetchImpl = vi.fn().mockResolvedValueOnce(response("<html><h1>Schedule of Fees</h1><p>Overdraft $30.00</p></html>"));
+
+    const result = await runMagellanFetch({ runId: 107, db: asFetchDb(db), fetchImpl });
+
+    expect(result.results[0]?.reason).toContain("labels it old or archived");
+    const sqlText = db.mock.calls.map((call) => templateText(call[0])).join("\n");
+    expect(sqlText).toContain("rejected_source_urls");
+    expect(sqlText).toContain("'magellan_old_labelled_link'");
+  });
+
+  it("keeps a stored link at a bank named Old (the host is never read)", async () => {
+    const db = createDbMock([
+      {
+        id: 49,
+        institution_name: "Old Point National Bank",
+        fee_schedule_url: "https://www.oldpoint.com/personal/fee-schedule",
+        asset_size: "500",
+        last_crawl_at: null,
+        consecutive_failures: 0,
+      },
+    ]);
+    const fetchImpl = vi.fn().mockResolvedValueOnce(response("<html><h1>Schedule of Fees</h1><p>Overdraft $30.00</p></html>"));
+
+    await runMagellanFetch({ runId: 108, db: asFetchDb(db), fetchImpl });
+
+    const sqlText = db.mock.calls.map((call) => templateText(call[0])).join("\n");
+    expect(sqlText).not.toContain("magellan_old_labelled_link");
   });
 
   it("treats a fee link that redirects to the homepage as gone", async () => {
@@ -296,7 +336,7 @@ describe("Magellan agentic fetch", () => {
     });
     const sqlText = db.mock.calls.map((call) => templateText(call[0])).join("\n");
     expect(sqlText).not.toContain("last_success_at = NOW()");
-    expect(sqlText).toContain("failure_reason = 'magellan_dead_link'");
+    expect(sqlText).toContain("ELSE 'magellan_dead_link' END");
   });
 
   it("keeps the link on a block (403), which can pass", async () => {

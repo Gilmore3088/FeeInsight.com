@@ -6,6 +6,7 @@ import { unconfirmedDocumentHost } from "./other-bank-host";
 import { looksLikeJsShell } from "@/lib/agents/rosetta/js-fallback";
 import { creditTermsOpening, documentOpeningKind } from "@/lib/non-deposit-document";
 import { legacyAddress, legacyOpening } from "./legacy-page";
+import { oldLabelledAddress } from "./old-labelled-link";
 
 /**
  * The fee-page check every Magellan finder (free and paid) runs before a link is
@@ -103,6 +104,7 @@ export type CandidateVerdict =
   | "youth_account_document"
   | "card_rate_table_document"
   | "legacy_page"
+  | "old_labelled"
   | "non_fee_document"
   | "unconfirmed_host"
   | "unreadable_pdf_weak_label"
@@ -267,6 +269,11 @@ function rejectedAddress(candidate: FeeCandidate): CandidateValidation | null {
   }
   if (legacyAddress(candidate.url)) {
     return rejected("legacy_page", "Candidate address names a legacy or discontinued accounts page, not the current fee schedule", null, candidate.score);
+  }
+  // #1026, #1455 class (Nov 3): the address calls the document old or archived ("Fee-Schedule-Old.pdf", "/archive-2021/").
+  const oldWord = oldLabelledAddress(candidate.url);
+  if (oldWord) {
+    return rejected("old_labelled", `Candidate address labels the document old or archived ("${oldWord}"), not the current fee schedule`, null, candidate.score);
   }
   if (isArticleLink(candidate.url)) {
     return rejected("article_page", "Candidate is an article, blog post or news item, not a fee schedule", null, candidate.score);

@@ -7,6 +7,16 @@ import type { AgentLesson } from "@/lib/agents/learning/lesson-types";
  */
 export const MAGELLAN_LESSONS: AgentLesson[] = [
   {
+    id: "issue-1455-an-old-labelled-document-is-not-the-fee-link",
+    agent: "magellan",
+    stage: "discover",
+    lesson: "Read a candidate's address and link words for its age before you take it. A bank that posts a new schedule often leaves the old one online and says so in the file name or folder (\"Fee-Schedule-Old.pdf\", \"...SCHED.716.OLD.pdf\", \"/schedule-of-fees-old\", \"/old-web-site/\", \"/archive-2021/\", a label \"Fee Schedule (Archived)\"). Such a document is never the bank's fee link or a companion, and a stored link like that goes back to discovery to find the current one. Judge the path and the label, never the host (Old National, Old Second and Old Point are banks), and count \"old\", \"previous\" or \"prior\" only as a segment's last word or beside a document word, so \"/prior-notice\", \"/older-adults-checking\" and a folder like \"Compliance-Folder\" stay current.",
+    why: "On Nov 3 (prod, read-only) 86 live fees at 5 banks came from documents whose own address called them old or archived, Westreet FCU's 32 from \"/wp-content/uploads/2021/06/Fee-Schedule-Old.pdf\" (fee 43316 among them); three of those banks still had the old document as their stored fee link, and Westreet's current link was never captured. The live-site audit checks only the page a fee cites, and an old page still prints its old prices, so nothing caught them.",
+    evidence: { issues: [1026, 1455], prs: [], files: ["src/lib/agents/magellan/old-labelled-link.ts", "src/lib/agents/magellan/find-validate.ts", "src/lib/agents/magellan/finders.ts", "src/lib/agents/magellan/fetch.ts", "docs/project/findings/2026-11-03-old-labelled-documents.md"] },
+    appliesTo: ["discover"],
+    since: "2026-11-03",
+  },
+  {
     id: "crawl-2026-11-02-a-payment-page-is-not-the-fee-page",
     agent: "magellan",
     stage: "discover",

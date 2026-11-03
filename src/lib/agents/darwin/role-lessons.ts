@@ -7,6 +7,16 @@ import type { AgentLesson } from "@/lib/agents/learning/lesson-types";
  */
 export const DARWIN_LESSONS: AgentLesson[] = [
   {
+    id: "issue-1455-an-old-label-needs-a-newer-schedule-to-take-down",
+    agent: "darwin",
+    stage: "verify",
+    lesson: "A live fee read from a document whose own address calls it old or archived is suspect, not wrong. Take it down only when the bank's current fee link is a different address that is not old itself, a stored copy of that link exists, and its newest text does not state the fee at its amount (the shared source check). Keep it while the bank has no link, while the link is the old document or another old one, while the current link was never captured, or while the current text still prints the same price: nothing then proves a newer schedule exists, and an old page's price can still be today's.",
+    why: "On Nov 3 (prod, read-only) 86 live fees at 5 banks came from old-labelled documents (Westreet FCU's \"Fee-Schedule-Old.pdf\", 32 fees). Taking every one down would have left three banks whose only link is the old document with no fees, cut Westreet on the strength of a current link no fetch has ever opened, and removed Clackamas County Bank's Regular Checking $7.00 and NOW $8.50, which its current page still prints.",
+    evidence: { issues: [1026, 1455], prs: [], files: ["src/lib/agents/darwin/old-labelled-document-check.ts", "src/lib/agents/magellan/old-labelled-link.ts", "docs/project/findings/2026-11-03-old-labelled-documents.md"] },
+    appliesTo: "all",
+    since: "2026-11-03",
+  },
+  {
     id: "dropped-line-proven-by-the-page-not-by-the-newest-reader",
     agent: "darwin",
     stage: "verify",

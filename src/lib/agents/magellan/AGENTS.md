@@ -52,6 +52,20 @@ Magellan owns institution source discovery and source fetching.
   homepage) clears the fee link, records the URL in `rejected_source_urls`, and marks the bank
   `rescue_status = 'pending'` (`failure_reason = 'magellan_dead_link'`) so discovery searches it
   again. A locked correction is kept; a 403 is retried, since a bot block can pass.
+- Old or archived documents are never the fee link (#1026, #1455 class, Nov 3,
+  `old-labelled-link.ts`). A document whose path calls it old or archived ("Fee-Schedule-Old.pdf",
+  "...716.OLD.pdf", "/schedule-of-fees-old", "/old-web-site/", "/archive-2021/") or whose link label
+  does ("Old Fee Schedule", "Fee Schedule (Archived)") scores 0 in `scoreLink`, is refused by the
+  address check before it is opened (`old_labelled`, also where a candidate redirects to), and is
+  never a companion. A stored link like that is sent back to discovery on its next fetch, the way a
+  dead link is (`failure_reason = 'magellan_old_labelled_link'`, the URL in `rejected_source_urls`).
+  The rule reads path segments and filename words, never the host (Old National, Old Second, Old
+  Point); "archive", "superseded", "expired", "obsolete" and "outdated" count anywhere, but "old",
+  "previous" and "prior" only at a segment's end or before a document or site word, so
+  "/prior-notice", "/older-adults-checking" and "Compliance-Folder" are not old. On Nov 3 five stored
+  links matched (Citizens Bank & Trust 3767, Central Jersey Police & Fire 4740, WinSouth 8661, Cleo
+  State Bank 3642, Access FCU 7235). Darwin's `old-labelled-document-check.ts` settles the fees
+  already live.
 - Schedules found by hand (`operator-schedules.ts`, strategy `discover.operator_schedule`): a
   checked-in list of consumer fee schedules James gave for banks Magellan had not found (Chase,
   Citi). Just before companion fetch, each listed schedule the bank does not hold yet is added

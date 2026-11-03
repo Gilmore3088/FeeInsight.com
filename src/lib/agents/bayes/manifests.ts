@@ -436,6 +436,8 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   SAME_LINE_REPLACEMENT_CHECK_VERSION: "First version: each verify step re-reads every live fee after a confirmed same-line takedown (no cursor, a few dozen rows); its switch is on (Oct 26), so matches come down after the second look; nothing older to replay.",
   // v1 (#1876): two live reads of one printed line (same document, line, category and amount).
   SAME_LINE_READ_CHECK_VERSION: "First version: each verify step re-reads every live fee that shares its stored source line with another (no cursor, a few hundred rows); its switch is on (Oct 26), so matches come down after the second look; nothing older to replay.",
+  // v1 (Nov 3): live fees read from a document whose address calls it old or archived (old-labelled-document-check.ts).
+  OLD_LABELLED_DOCUMENT_CHECK_VERSION: "First version: a verify step re-reads every live fee whose document's path passes the old-or-archived pre-filter (no cursor, at most hourly, 238 candidates and 86 old-labelled on Nov 3); its switch (OLD_LABELLED_DOCUMENT_TAKEDOWN_LIVE) is off, so it only reports; nothing older to replay.",
   // v1 (Nov 3): one printed line live under two products (product-split-check.ts).
   PRODUCT_SPLIT_CHECK_VERSION: "First version: each verify step re-reads every pair of live dollar fees of one institution, category, variant and amount under different products whose stored lines fold to the same words, on one document or an older copy and its current copy (no cursor, 119 pairs on Nov 3); its switch (PRODUCT_SPLIT_MERGE_LIVE) is off, so it only reports; nothing older to replay.",
   // v1 (#1882): a live $0 overdraft that is only the smallest band of a priced cell or row.
