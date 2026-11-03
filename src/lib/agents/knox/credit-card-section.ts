@@ -1,7 +1,7 @@
 import { CELL_SEPARATOR } from "@/lib/agents/rosetta/html-dom";
 
 /**
- * Knox v173 (backlog dry run 6): a card replacement printed in a credit card section is the credit
+ * Knox v175 (backlog dry run 6): a card replacement printed in a credit card section is the credit
  * card's, never the debit card's `card_replacement` or `rush_card`. Greylock FCU (doc 20487) prints,
  * in its right column, "CREDIT CARD CHARGES" over "Balance Transfer ...", "Card Replacement ......
  * Free" and "Card Replacement (Emergency/Rush Delivery) ...... $35.00", while its own debit card
@@ -16,7 +16,7 @@ import { CELL_SEPARATOR } from "@/lib/agents/rosetta/html-dom";
  * ATM or check card ("ATMs, Check & Credit Cards" heads both kinds), and a price follows it within
  * `CREDIT_TITLE_PRICE_LINES` lines (a site menu's "Credit Card" heads nothing); a short heading naming a
  * debit card, ATM or deposit account ("Automated Teller Machines (ATMs)") ends it; any other title (a card, deposit or service heading) ends it. A full-width title (a line
- * with no cells) heads the left column and ends the right one's. Review of v173 (PR #2967): a debit card or
+ * with no cells) heads the left column and ends the right one's. Review of v175 (PR #2967): a debit card or
  * ATM heading ends it in any form, numbered or with a note ("2. Debit Card Fees", "Debit Card Fees (effective
  * 1/1/2026)") or as a sentence that opens a list ("The following fees apply to all debit cards:"), and so does
  * any other title-case heading that names a section of the schedule ("Miscellaneous", "Wire Transfers",
@@ -44,7 +44,7 @@ const PRICED_CELL = /^(?:up to\s+)?\$?\s?\d|^(?:free|none|no charge|no fee|varie
  * "Debit Cards", "Checking Accounts") starts another section in its column, in whatever case it is printed.
  */
 const DEPOSIT_HEADING = /\b(?:debit|atms?|automated teller|checking|savings|shares?|deposits?|accounts?)\b/i;
-/** Review of v173: a heading naming a debit card or ATM ends a credit card section in any form ("2. Debit Card Fees"). */
+/** Review of v175: a heading naming a debit card or ATM ends a credit card section in any form ("2. Debit Card Fees"). */
 const DEBIT_HEADING = /\b(?:debit|atms?|automated teller|check\s*cards?)\b/i;
 /** Words of a sentence about a fee ("This fee applies to any debit card ..."), never a heading's. */
 const SENTENCE_WORDS = /\b(?:applies|apply|is|are|will|may|charged|assessed|if|when|made)\b/i;
@@ -92,7 +92,7 @@ function title(cell: string, next: string | undefined): Title | null {
   if (!credit && DEPOSIT_HEADING.test(text)) return { credit: false, plain: false };
   // A title is in capitals, or ends on a section word ("Credit Card Fees", "Visa Credit Card").
   if ((/^[A-Z][A-Z&/,'’® .-]+$/.test(text) && /[A-Z]{3}/.test(text)) || /\b(?:fees|charges|services|cards?)$/i.test(text)) return { credit: creditOnly, plain: false };
-  // Review of v173: any other heading in title case that names a section ("Miscellaneous", "Wire Transfers", "Collection Items").
+  // Review of v175: any other heading in title case that names a section ("Miscellaneous", "Wire Transfers", "Collection Items").
   if (titleCase && SECTION_NOUN.test(text)) return { credit: false, plain: true };
   return null;
 }
@@ -148,7 +148,7 @@ function cellPrices(cell: string, amount: number): boolean {
 /**
  * True when `read` is a card replacement whose every printed row sits under a credit card title in its
  * own column (`creditCardSectionColumns` of the same text). The row is a line holding the read's
- * excerpt (or held in it); its column is the cell that holds the read's own name. Review of v173: when
+ * excerpt (or held in it); its column is the cell that holds the read's own name. Review of v175: when
  * more than one cell holds the name ("Card Replacement .... $5.00 | Card Replacement .... Free"), the
  * cells that print the read's own price are its own; when that still leaves more than one, every one
  * must sit in the credit card section.

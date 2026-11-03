@@ -830,7 +830,15 @@ import { onlineServiceMonthlyFee } from "@/lib/service-monthly-charge";
 // table v13's `freeItemList`). (5) "Cashier's (Counter) Check" files by its own label as the cashier's check,
 // so the section heading "Money Orders/ Cashier's Checks" is never copied into its name. The shared check is
 // unchanged. The stale-read floor stays at v97.
-// v173 (Knox re-read backlog dry run 6, Nov 3; one wrong and five doubtful reads of 40 stored texts). (1) A
+// v174 (#1092, state key 5608, Nov 2; v164-v172 are on main, #2967 ships as v175): a monthly maintenance read, $0 or priced, whose row sits under a
+// heading that names a service rather than an account is held as a range for review, never sent to
+// Darwin as the account's fee (`serviceMaintenanceOf` in `@/lib/service-maintenance-heading`, flag
+// `knox_service_maintenance:<services>`): River City's "Consumer Online Banking Services and Mobile
+// Banking Fees" over "Monthly Maintenance Fee | No charge" is the online banking service's fee, not free
+// checking. An account heading, an account's list of features and a heading in doubt are refused, not
+// matched. Darwin's verify refuses it and its live re-check reads what is already live. Reads are
+// unchanged; the shared check is unchanged. The stale-read floor stays at v97.
+// v175 (Knox re-read backlog dry run 6, Nov 3; renumbered from v173 when merging after #2953; one wrong and five doubtful reads of 40 stored texts). (1) A
 // bullet list's heading shared with the other column's priced row still heads its bullets (`listHeadingOf`),
 // and an item bulleted under a stop payment heading is the stop payment's price (`stopPaymentListRead`):
 // Navigant FCU's "• Bill Payment | $30.00" was filed bill pay. (2) A card replacement printed under a credit
@@ -842,7 +850,7 @@ import { onlineServiceMonthlyFee } from "@/lib/service-monthly-charge";
 // `LOW_BALANCE_CHARGE` leaves "Monthly Service Charge or Minimum Balance Fee" to monthly maintenance, and
 // `ITEM_INSUFFICIENT` skips deposited, cashed and paid items. The shared check is unchanged. The stale-read
 // floor stays at v97.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 173 } as const;
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 175 } as const;
 
 export interface SpecialistRun {
   strategy: string;
@@ -1171,7 +1179,7 @@ function readFreeText(sourceText: string, discontinuedRows: DiscontinuedTableFla
   const text = withoutNetworkTableRows(withTierColumnRows(checkText));
   // v168 (second re-read backlog dry run, Nov 2): a box table's late-fee column is no rent (`boxLateColumnRead`).
   const boxLatePrices = boxLateColumnPrices(checkText);
-  // v173 (backlog dry run 6): a card replacement under a credit card title in its own column is the credit card's.
+  // v175 (backlog dry run 6): a card replacement under a credit card title in its own column is the credit card's.
   const creditCardColumns = creditCardSectionColumns(checkText);
   // v138 (#2285): a declined wire line's direction prices are the rules pass's held rows, each named
   // by its own clause; no price window reads the line, so none takes the clause before it.
@@ -1248,9 +1256,9 @@ function readFreeText(sourceText: string, discontinuedRows: DiscontinuedTableFla
     // in its name (`withWireChannelReads`), so statistics rule 11 can tell it from the general price.
     // v164 (live-source audit, Nov 2): a bullet item in a later cell is named by its own cell, never by the
     // other column's cells before it (`bulletItemRead`; 54298 at 6230). A rename only: no line moves.
-    // v173 (backlog dry run 6): an item bulleted under a stop payment heading is that stop payment's price
+    // v175 (backlog dry run 6): an item bulleted under a stop payment heading is that stop payment's price
     // (`stopPaymentListRead`: "Stop Payment" over "• Bill Payment | $30.00", Navigant FCU doc 2007).
-    // v173: no specialist files a card replacement printed under a credit card title in its own column as the
+    // v175: no specialist files a card replacement printed under a credit card title in its own column as the
     // debit card's (`creditCardSectionRead`: "CREDIT CARD CHARGES" over "Card Replacement ...... Free", Greylock FCU).
     // v168: no specialist reads a box table's late-fee column as the box's rent (`boxLateColumnRead`:
     // "BOX SIZE | ANNUALLY | LATE FEE" over "3” x 10” x 24” | $35.00 | $6.00", Eglin FCU 5451).

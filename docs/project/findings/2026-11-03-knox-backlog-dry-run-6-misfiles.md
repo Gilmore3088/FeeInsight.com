@@ -32,7 +32,7 @@ down and no right live fee is lost.
   reach ends at the first bullet that reads as another fee. Live #143685 "Stop Payment: Cashier’s Check" $5
   is the same layout read the other way: an October read (raw 123835, Oct 5) glued the heading cell onto the
   other column's priced cell ("Stop Payment | Cashier’s Check"), and the name then filed it stop_payment.
-  v172 already reads that cell as "Cashier’s Check" cashiers_check; v173 does not change it.
+  v172 already reads that cell as "Cashier’s Check" cashiers_check; v175 does not change it.
 - Greylock: a free cell is held at $0 by its own words, and nothing read the section. The name check that
   keeps a credit card's replacement out of `card_replacement` (`passesDarwinChecks`) sees only the name,
   which names no card.
@@ -41,7 +41,7 @@ down and no right live fee is lost.
 - Truist paper statement: the v76 side-by-side free cells (rules.ts) dedupe zero reads by exact name, and the
   second column's cell is cut short by the page's wrap.
 
-**Fix (Knox v173; table and guard unchanged, v13 and v108):**
+**Fix (Knox v175; table and guard unchanged, v13 and v108):**
 
 - rules.ts `listHeadingOf` and `stopPaymentListRead` (applied to every specialist's reads in
   specialists.ts): the heading of a bullet list is read from an unpriced heading line, or from a line whose
@@ -94,7 +94,7 @@ down and no right live fee is lost.
 - Stop payment list: 58 live fees named only as an item (money order, cashier's/official check, counter
   check, bill payment) on a document whose latest text prints "• <name>" and a stop payment: none is re-filed
   by `stopPaymentListRead` (the only bullet run under a stop payment heading is Navigant's, where the live
-  "Money Order" $4 is the other column's). On Navigant v173 adds three stop_payment reads at $30.
+  "Money Order" $4 is the other column's). On Navigant v175 adds three stop_payment reads at $30.
 - Credit card section (recounted after the review of PR #2967, with the fixed reader): Darwin's new live
   re-check (`darwin/credit-card-section-check.ts`, its own rule) was run read-only on prod. Of 4,269 live flat
   card_replacement and rush_card fees (admin-corrected ones left out), 2,347 sit on 1,704 Knox texts that
@@ -111,7 +111,7 @@ down and no right live fee is lost.
   window and is replaced by this one. They stay live: the take-down is behind
   `CREDIT_CARD_SECTION_TAKEDOWN_LIVE` (off) and waits for James's yes.
 - Audience: the 12 live consumer or unknown fees whose Knox evidence names a business word keep their
-  audience under v173; LM's live business bill pay rows (46651, 125469) are already business.
+  audience under v175; LM's live business bill pay rows (46651, 125469) are already business.
 - Free cell: 2 live pairs of $0 fees on one document and category have one name opening the other
   (88726/88725, 161273/12134); whether either pair comes from one row was not checked.
 
@@ -132,7 +132,7 @@ down and no right live fee is lost.
   menu's "Credit Card" link 28 lines above; the credit card title now needs a price after it. The committed
   baseline is regenerated for this code.
 
-**Review of v173 (PR #2967), fixed in the same PR:**
+**Review of v175 (PR #2967), fixed in the same PR:**
 
 - Credit card section (`credit-card-section.ts`): the section did not end at a numbered debit heading ("2.
   Debit Card Fees"), a debit heading with a note ("Debit Card Fees (effective 1/1/2026)"), a sentence opening
@@ -141,12 +141,12 @@ down and no right live fee is lost.
   card or ATM heading ends it in any form, a title-case heading naming a section ends it, a fee's own label,
   a wrapped name's last word and a column header row ("Fee Type | Fee Amount") do not, and a row takes the
   cell that prints its own price.
-- `ITEM_INSUFFICIENT`: the v173 "paid" exclusion also dropped "Insufficient Check - Paid or Returned",
+- `ITEM_INSUFFICIENT`: the v175 "paid" exclusion also dropped "Insufficient Check - Paid or Returned",
   "Check - Insufficient (per item, paid or returned)" and "Insufficient Check (returned or paid)"; they read
   NSF again (only a paid item naming no return, "Insufficient Debit Paid", stays out). "Deposited Item -
   Insufficient" files as the deposited item return (`DEPOSITED_ITEM_INSUFFICIENT`). The shared guard (v108,
   unchanged) still refuses an NSF name that says "paid" ("NSF Paid or Returned" included), so these reads
-  are filed right by Knox but still not published; that guard rule is older than v173 and not changed here.
+  are filed right by Knox but still not published; that guard rule is older than v175 and not changed here.
 - Stop payment list (`listHeadingOf`, `stopPaymentListRead`): a priced heading row ("Stop Payment | per request
   | $30.00") is no list heading, and a bullet priced unlike most of the list ("• Money Order | $5.00" among
   $30 stop payments) keeps its own category.

@@ -8,9 +8,9 @@ import { creditCardSectionColumns, creditCardSectionRead } from "@/lib/agents/kn
 type SqlTag = typeof sql;
 
 /**
- * Darwin's live re-check of card replacements printed in a credit card section (Knox v173, backlog dry
+ * Darwin's live re-check of card replacements printed in a credit card section (Knox v175, backlog dry
  * run 6, and its review on PR #2967; decision 2026-10-15, "Darwin re-checks every live fee against
- * today's rules"). Knox v173 leaves such a read out (`creditCardSectionRead`, knox/credit-card-section.ts);
+ * today's rules"). Knox v175 leaves such a read out (`creditCardSectionRead`, knox/credit-card-section.ts);
  * the ones read before stay live. Greylock FCU's "Card Replacement (Emergency/Rush Delivery)" $35 (published
  * 73521, doc 20487), printed in the right column under "CREDIT CARD CHARGES", is live as the bank's rush
  * card fee beside its own $5 debit card replacement.

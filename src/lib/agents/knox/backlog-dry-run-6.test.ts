@@ -7,7 +7,7 @@ import { classifyFeeText, listHeadingOf, stopPaymentListRead } from "./rules";
 import { KNOX_RULES_STRATEGY, runFreeSpecialists } from "./specialists";
 
 /**
- * v173 (Knox re-read backlog dry run 6, Nov 3): the wrong and doubtful reads of 40 stored texts, with the
+ * v175 (Knox re-read backlog dry run 6, Nov 3): the wrong and doubtful reads of 40 stored texts, with the
  * banks' own lines (docs/project/findings/2026-11-03-knox-backlog-dry-run-6-misfiles.md).
  */
 const all = (text: string) => {
@@ -15,9 +15,9 @@ const all = (text: string) => {
   return [...run.candidates, ...run.held].map((read) => [read.feeName, read.amount, read.canonicalHint] as const);
 };
 
-describe("Knox v173 (backlog dry run 6)", () => {
-  it("is rules v173 or later", () => {
-    expect(KNOX_RULES_STRATEGY.version).toBeGreaterThanOrEqual(173);
+describe("Knox v175 (backlog dry run 6)", () => {
+  it("is rules v175 or later", () => {
+    expect(KNOX_RULES_STRATEGY.version).toBeGreaterThanOrEqual(175);
   });
 });
 
@@ -70,7 +70,7 @@ describe("an item bulleted under a stop payment heading is the stop payment (Nav
     expect(listHeadingOf("Stop Payments | $20.00 | Same Day ACH | $10.00", "• ACH | $30.00")).toBeNull();
   });
 
-  it("never reads a heading's own priced row as a list heading, nor re-files a bullet at another price (review of v173)", () => {
+  it("never reads a heading's own priced row as a list heading, nor re-files a bullet at another price (review of v175)", () => {
     expect(listHeadingOf("Stop Payment | per request | $30.00", "• Money Order | $30.00")).toBeNull();
     const priced = "Stop Payment | per request | $30.00\n• Money Order | $30.00";
     const money = { feeName: "Money Order", amount: 30, canonicalHint: "money_order", excerpt: "• Money Order | $30.00", confidence: 0.9, frequency: null, waivable: false } as never;
@@ -239,23 +239,23 @@ describe("review of v172: narrower names keep their own scope", () => {
     expect(classifyFeeText("Insufficient Item")).toBe("nsf");
   });
 
-  it("an insufficient item paid or returned stays the NSF row, and a deposited one is the deposited item return (review of v173)", () => {
+  it("an insufficient item paid or returned stays the NSF row, and a deposited one is the deposited item return (review of v175)", () => {
     expect(classifyFeeText("Insufficient Check - Paid or Returned")).toBe("nsf");
     expect(classifyFeeText("Check - Insufficient (per item, paid or returned)")).toBe("nsf");
     expect(classifyFeeText("Insufficient Check (returned or paid)")).toBe("nsf");
     expect(all("Insufficient Check - Paid or Returned | $30.00")).toContainEqual(["Insufficient Check - Paid or Returned", 30, "nsf"]);
     expect(classifyFeeText("Deposited Item - Insufficient")).toBe("deposited_item_return");
     expect(all("Deposited Item - Insufficient | $10.00")).toContainEqual(["Deposited Item - Insufficient", 10, "deposited_item_return"]);
-    // The v173 case stays fixed: a paid item that names no return is not the NSF row.
+    // The v175 case stays fixed: a paid item that names no return is not the NSF row.
     expect(classifyFeeText("Insufficient Debit Paid")).not.toBe("nsf");
   });
 });
 
-// Review of v173 (PR #2967): a credit card section ends at the next section, and a row's own column is the
+// Review of v175 (PR #2967): a credit card section ends at the next section, and a row's own column is the
 // cell that prints its own price.
 const creditThen = (heading: string) => ["VISA CREDIT CARD", "Late Payment | $25.00", "Card Replacement | $10.00", heading, "Card Replacement | $5.00"].join("\n");
 
-describe("a credit card section ends at the next section (review of v173)", () => {
+describe("a credit card section ends at the next section (review of v175)", () => {
   it.each([
     ["a numbered debit card heading", "2. Debit Card Fees"],
     ["a debit card heading with a note", "Debit Card Fees (effective 1/1/2026)"],

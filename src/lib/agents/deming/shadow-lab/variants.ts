@@ -20,6 +20,7 @@ import { zeroWaiverRowOf, zeroWaiverRowRead } from "@/lib/zero-waiver-row";
 import { freeListItemRead } from "@/lib/free-list-item";
 import { dividendThresholdSentence } from "@/lib/dividend-threshold";
 import { onlineServiceMonthlyFee } from "@/lib/service-monthly-charge";
+import { serviceMaintenanceOf, serviceMaintenanceRead } from "@/lib/service-maintenance-heading";
 import { foldContext } from "@/lib/fee-fold";
 import { withFootnotedAtmHeading } from "@/lib/fee-fold-atm-heading";
 import { isProductPage } from "@/lib/agents/hamilton/product-page";
@@ -84,6 +85,12 @@ export interface SwitchOverrides {
    * replays stored text and reads it identically either way.
    */
   htmlRowPairing?: boolean;
+  /**
+   * Knox v174's service-heading hold and Darwin's matching refusal (#1092, `service-maintenance-heading.ts`).
+   * Off is how main read before v174: the hold has no switch of its own, only its live re-check does
+   * (`SERVICE_MAINTENANCE_TAKEDOWN_LIVE`), so this override exists to measure what the hold changes.
+   */
+  serviceMaintenanceHold?: boolean;
   /** Category guard switches: the replay's re-file of Knox's hint and Hamilton's publish guard. */
   category?: Pick<CategoryGuardOptions, "borrowedDirection" | "nonCustomerCashiersCheck" | "intlAbbreviation" | "loanPaymentNsf">;
 }
@@ -123,6 +130,13 @@ export const EXPERIMENTS: Readonly<Record<string, ExperimentConfig>> = {
       "Every stage reads without Knox v161's held-name vocabulary, as main read and as the live-correction paths read while `HELD_VOCABULARY_RELABEL_LIVE` is off (Knox's re-read of Darwin's requests, Darwin's re-read category and re-file checks, the live name re-tidy, Hamilton's live name refresh). Current minus experimental is what the vocabulary adds to new reads; the relabel paths themselves are a database sweep the lab cannot replay (switch dry-run audit, section 6).",
     excerptAtPublish: false,
     switches: { heldNameVocabulary: false },
+  },
+  "service-maintenance-hold-off": {
+    id: "service-maintenance-hold-off",
+    description:
+      "Every stage reads without Knox v174's service-heading hold and Darwin's matching refusal, as main read before them: a monthly maintenance row under a heading that names a service (\"Consumer Online Banking Services and Mobile Banking Fees\") is read as the account's fee. Current minus experimental is what the hold changes on the frozen texts; the live re-check behind `SERVICE_MAINTENANCE_TAKEDOWN_LIVE` is a database sweep the lab cannot replay (switch dry-run audit, section 9).",
+    excerptAtPublish: false,
+    switches: { serviceMaintenanceHold: false },
   },
   "footnoted-atm-heading": {
     id: "footnoted-atm-heading",
@@ -175,15 +189,25 @@ function readText(text: string, dailyCapLines = false, dashListRows = false, swi
     ...(switches.noChargeSentences == null ? {} : { noChargeSentences: switches.noChargeSentences }),
     ...(switches.withoutDiscontinuedTables == null ? {} : { withoutDiscontinuedTables: switches.withoutDiscontinuedTables }),
   });
-  const passed: StageFee[] = result.candidates.map((candidate) => ({
-    canonicalFeeKey: filedAs(text, candidate.canonicalHint, candidate.feeName, candidate.amount, switches),
-    feeName: candidate.feeName,
-    amountCents: toCents(candidate.amount),
-    frequency: candidate.frequency ?? null,
-    excerpt: candidate.excerpt ?? null,
-    reason: null,
-  }));
+  const serviceHold = switches.serviceMaintenanceHold !== false;
+  // Knox v174 holds a monthly maintenance read under a service's heading for review, $0 or priced, on
+  // Knox's own hint (`extract.ts`): never sent to Darwin.
+  const serviceHeld = (hint: string | null, excerpt: string | null | undefined) =>
+    serviceHold ? serviceMaintenanceOf({ line: excerpt, canonicalFeeKey: hint, documentText: text }) : null;
+  const passed: StageFee[] = [];
   const dropped: StageFee[] = [];
+  for (const candidate of result.candidates) {
+    const fee: StageFee = {
+      canonicalFeeKey: filedAs(text, candidate.canonicalHint, candidate.feeName, candidate.amount, switches),
+      feeName: candidate.feeName,
+      amountCents: toCents(candidate.amount),
+      frequency: candidate.frequency ?? null,
+      excerpt: candidate.excerpt ?? null,
+      reason: null,
+    };
+    if (serviceHeld(candidate.canonicalHint, candidate.excerpt)) dropped.push({ ...fee, reason: "held:service_maintenance" });
+    else passed.push(fee);
+  }
   for (const held of result.held) {
     const fee: StageFee = {
       canonicalFeeKey: held.canonicalHint ? filedAs(text, held.canonicalHint, held.feeName, held.amount ?? 0, switches) : null,
@@ -197,6 +221,7 @@ function readText(text: string, dailyCapLines = false, dashListRows = false, swi
     // holds it because its own line is no priced row (`zeroWaiverRowOf`, as `extract.ts` persists it).
     const waiverRow = held.shape === "zero" && zeroWaiverRowOf({ line: held.excerpt, amount: 0, documentText: text });
     if (waiverRow) dropped.push({ ...fee, reason: `held:zero_waiver_row:${waiverRow.kind}` });
+    else if (held.shape === "zero" && serviceHeld(held.canonicalHint, held.excerpt)) dropped.push({ ...fee, reason: "held:service_maintenance" });
     else if (held.shape === "zero" && fee.canonicalFeeKey) passed.push({ ...fee, amountCents: 0 });
     else dropped.push({ ...fee, reason: `held:${held.shape}` });
   }
@@ -246,6 +271,9 @@ function verifyFee(fee: StageFee, text: string, dailyCapLines = false, switches:
   if (freeListItemRead({ feeName: name, amount, tracedLine: traced, documentText: text })) return { ok: false, reason: "free_list_item" };
   if (dividendThresholdSentence(fee.excerpt, amount)) return { ok: false, reason: "dividend_threshold" };
   if (key === "monthly_maintenance" && [fee.excerpt, traced].some((line) => onlineServiceMonthlyFee(name, line, text) !== null)) return { ok: false, reason: "online_service_monthly" };
+  if (switches.serviceMaintenanceHold !== false && serviceMaintenanceRead({ excerpt: fee.excerpt, tracedLine: traced, canonicalFeeKey: key, documentText: text })) {
+    return { ok: false, reason: "service_maintenance_heading" };
+  }
   // Darwin settles the frequency it verifies from Knox's own excerpt (insertCurrentVerifiedFee).
   return { ok: true, fee: { ...fee, frequency: verifiedFrequency(fee.excerpt, amount, fee.frequency ?? null, key) } };
 }

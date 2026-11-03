@@ -320,7 +320,7 @@ export function freeWordOnItem(line: string): boolean {
 }
 
 /**
- * v173 (review of v172): a bare fee word after the price ("Service Charge", "Charge", "Fee") names no fee
+ * v175 (review of v172): a bare fee word after the price ("Service Charge", "Charge", "Fee") names no fee
  * of its own, so the heading still names the price ("ATM Fees" / "Foreign: $1.00 Service Charge." is
  * "ATM Fees: Foreign").
  */

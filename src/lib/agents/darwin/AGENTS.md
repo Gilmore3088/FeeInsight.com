@@ -1852,10 +1852,10 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   a match goes through the 12-hour second look (`darwin.not_account_fee_line`) and is archived with its
   reason. Step detail `not_account_fee_line_check`. Golden-set replay: the `darwin.not_account_fee_line`
   sweep.
-- Card replacements in a credit card section (`credit-card-section-check.ts`, Knox v173, sixth re-read
+- Card replacements in a credit card section (`credit-card-section-check.ts`, Knox v175, sixth re-read
   backlog dry run and its review on PR #2967, Nov 3). A live flat `card_replacement` or `rush_card` fee whose
   every printed row (Knox's stored line, on the text Knox read) sits under a credit card title in its own
-  column is the credit card's (`creditCardSectionRead`, `knox/credit-card-section.ts`, the rule Knox v173
+  column is the credit card's (`creditCardSectionRead`, `knox/credit-card-section.ts`, the rule Knox v175
   applies; Greylock FCU's "Card Replacement (Emergency/Rush Delivery)" $35, live 73521). A debit card or ATM
   heading in any form and any other section heading end the section; a row two columns name belongs to the
   column printing its price. Each verify step reads every live candidate on a text that names a credit card
@@ -1864,6 +1864,26 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   through the 12-hour second look (`darwin.credit_card_section`) and is archived with `credit_card_section:
   "<name>" #<text>` (verified row rejected with the `credit_card_section` flag). Step detail
   `credit_card_section_check`. Golden-set replay: the `darwin.credit_card_section` sweep.
+- A monthly maintenance fee whose row sits under a service's heading (`service-maintenance-check.ts`,
+  #1092, state key 5608): River City Bank's "Consumer Online Banking Services and Mobile Banking Fees" over
+  "Monthly Maintenance Fee | No charge" is the online banking service's fee; published as the account's
+  monthly maintenance it would say the bank has free checking. The row names no service, so the name rule
+  (`SERVICE_MONTHLY_CHARGE_NAME`, guard v102) cannot see it. Knox v174 holds such a read, $0 or priced, and
+  verify refuses it (`service_maintenance_heading`, needs review), both through
+  `src/lib/service-maintenance-heading.ts`: the nearest heading-shaped line above the row that is not a
+  stacked row's label names only services (online, mobile, internet or text banking, bill pay, e-statements,
+  remote deposit, Zelle, treasury), opens its own section, and no note between names an account; the row's
+  label names no account and every printing passes. Verify and the re-check read both Knox's row and the
+  line `checkFeeAgainstSource` traces the fee to (`sourceLineFor`), so a name the shared check traces to an
+  account's row stays. Held, never re-filed: no category of the 50 holds a service's monthly fee. Each verify
+  step reads every live flat monthly maintenance fee (about 4,100 on Nov 1) and the text Knox read where it
+  prints a service's words (`SERVICE_MAINTENANCE_TEXT_PREFILTER`; admin-corrected fees never). The switch
+  (`SERVICE_MAINTENANCE_TAKEDOWN_LIVE`, code, off) waits for its dry-run count (`npm run
+  audit:switch-dry-runs`, section 9) and a clean sample; on, a match goes through the 12-hour second look
+  (`darwin.service_maintenance_heading`) and is archived with `service_maintenance_heading: <services>,
+  "<heading>"` (verified row rejected with the `service_maintenance_heading` flag; event
+  `darwin.service_maintenance_heading_takedown`). Step detail `service_maintenance_check`. Golden-set
+  replay: the `darwin.service_maintenance_heading` sweep.
 - Card program sections of a general schedule (`card-program-section-check.ts`, #1908, #1905). Navy
   Federal's fees page prints "Prepaid and Gift Cards" / "GO Prepaid Cards" sections after its deposit
   fees, and their "Lost/Stolen Card" $5 and Visa/PLUS ATM $1 rows went live as the account's fees on
@@ -2923,6 +2943,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `FREE_LIST_ITEM_CHECK_VERSION` | `darwin.free_list_item` | v1 | `darwin/free-list-item-check.ts` |
 | `NOT_ACCOUNT_FEE_LINE_CHECK_VERSION` | `darwin.not_account_fee_line` | v1 | `darwin/not-account-fee-line-check.ts` |
 | `CREDIT_CARD_SECTION_CHECK_VERSION` | `darwin.credit_card_section` | v1 | `darwin/credit-card-section-check.ts` |
+| `SERVICE_MAINTENANCE_CHECK_VERSION` | `darwin.service_maintenance_heading` | v1 | `darwin/service-maintenance-check.ts` |
 | `CARD_PROGRAM_SECTION_CHECK_VERSION` | `darwin.card_program_section` | v1 | `darwin/card-program-section-check.ts` |
 | `LOAN_SECTION_CHECK_VERSION` | `darwin.loan_section` | v1 | `darwin/loan-section-check.ts` |
 | `DOCUMENT_OWNER_STRATEGY` | `verify.document_owner` | v1 | `darwin/document-owner.ts` |

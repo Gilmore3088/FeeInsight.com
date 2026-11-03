@@ -442,9 +442,10 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   BANDED_ZERO_CHECK_VERSION: "First version: each verify step re-reads every live $0 overdraft, NSF and continuous overdraft fee (about 140 rows, no cursor); its switch is on (Oct 26), so matches come down after the second look; nothing older to replay.",
   // v1 (#1397): a live $0 that is an item in one named account's list of benefits (Knox rules v157 holds new ones).
   ACCOUNT_BENEFIT_ZERO_CHECK_VERSION: "First version: each verify step re-reads every live $0 fee whose stored line is a free item (no cursor, 142 rows on Nov 1); its switch (DARWIN_ACCOUNT_BENEFIT_ZERO_LIVE) is off, so it only reports; nothing older to replay. v2 (Nov 3, Knox v171): also reads an item under \"This account also includes:\" and a perk an account's own cell of a comparison table prices free, and selects live $0 cell rows on texts with an account header (308 candidates on Nov 3, the same 12 matches as v1, none new); still a report while the switch is off, re-read every step, nothing to replay.",
+  SERVICE_MAINTENANCE_CHECK_VERSION: "First version: each verify step re-reads every live flat monthly maintenance fee whose text prints a service's words (no cursor; not yet counted on prod); its switch (SERVICE_MAINTENANCE_TAKEDOWN_LIVE) is off, so it only reports; nothing older to replay.",
   NOT_ACCOUNT_FEE_LINE_CHECK_VERSION: "First version: each verify step re-reads every live flat fee whose Knox line says no dividend or interest is earned, and every live monthly maintenance fee on a text that prints an online services section title (no cursor; 493 rows on Nov 2, 2 matches, live 73916 and 152003); its switch (NOT_ACCOUNT_FEE_LINE_TAKEDOWN_LIVE) is off, so it only reports; nothing older to replay.",
   FREE_LIST_ITEM_CHECK_VERSION: "First version: each verify step re-reads every live flat priced fee whose Knox line joins a name line to a price line on a text that prints a free services list heading (no cursor; 39 rows on Nov 2, 1 match, live 159428); its switch (FREE_LIST_ITEM_TAKEDOWN_LIVE) is off, so it only reports; nothing older to replay.",
-  CREDIT_CARD_SECTION_CHECK_VERSION: "First version: each verify step re-reads every live flat card replacement and rush card fee on a text that names a credit card with Knox v173's credit card section reader (no cursor; 2,347 rows on Nov 3, 75 matches on 62 texts); its switch (CREDIT_CARD_SECTION_TAKEDOWN_LIVE) is off, so it only reports; nothing older to replay.",
+  CREDIT_CARD_SECTION_CHECK_VERSION: "First version: each verify step re-reads every live flat card replacement and rush card fee on a text that names a credit card with Knox v175's credit card section reader (no cursor; 2,347 rows on Nov 3, 75 matches on 62 texts); its switch (CREDIT_CARD_SECTION_TAKEDOWN_LIVE) is off, so it only reports; nothing older to replay.",
   ZERO_WAIVER_ROW_CHECK_VERSION: "First version: each verify step re-reads every live flat $0 fee whose stored line opens with a no-fee phrase or says \"to avoid / to waive\" (no cursor; not yet counted on prod); its switch (ZERO_WAIVER_ROW_TAKEDOWN_LIVE) is off, so it only reports; nothing older to replay. v2 (Nov 2, Knox v168): also reads a $0 whose free word is advice in a \"Ways to Avoid\" section (avoid_fee_advice); read-only on prod, 2 live fees match (89909, 105000 at Financial Health FCU), reported only while the switch is off.",
   // v2 (#1673): the same-line restore follows the older line's replacement before bringing a copy back.
   SAME_LINE_DUPLICATE_RESTORE_VERSION: "Each publish step re-reads every same-line takedown whose older line is down (no cursor), so v2's replacement check reaches every pending restore on the next step; the copies v1 already restored are read by Darwin's same-line replacement re-check.",
@@ -768,7 +769,12 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
     // rows are gone (two re-filed right, four dropped) and the other 93 changed rows are unchanged; rb, rb3 and
     // rb4 do not change; rb2 re-files three already-stored "Service charge (Minimum Balance Fee)" reads to
     // minimum_balance. No Darwin re-check (no guard rule). No replay. Floor stays v97.
-    // v173 (sixth re-read backlog dry run, Nov 3): a bullet list's heading shared with another column's
+    // v174 (#1092, Nov 2, state key 5608; v164-v172 are on main, #2967 ships as v175): a monthly maintenance read, $0 or priced, whose row sits under a
+    // heading that names a service rather than an account (`serviceMaintenanceOf`) is held as a range for
+    // review, never sent to Darwin. New reads only: on the 291 frozen texts no read changes. Darwin's live
+    // re-check (`darwin.service_maintenance_heading`, SERVICE_MAINTENANCE_TAKEDOWN_LIVE off) reports the
+    // live ones. No replay. Floor stays v97.
+    // v175 (sixth re-read backlog dry run, Nov 3; renumbered from v173 when merging after #2953): a bullet list's heading shared with another column's
     // priced row still heads its bullets (`listHeadingOf`), and an item bulleted under a stop payment heading
     // is the stop payment (`stopPaymentListRead`); a card replacement under a credit card title in its own
     // column is left out (`creditCardSectionRead`); a labelled clause's price takes its audience, misspelt
@@ -776,7 +782,7 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
     // (v172 vs v173): the wrong row is re-filed, a $0 credit card replacement is not read, the other 95 changed
     // rows are unchanged; rb, rb4 and rb5 stop reading four credit card section replacements; rb2 and rb3 do
     // not change. Review of v172 folded in (`GENERIC_FEE_NAME`, `LOW_BALANCE_CHARGE`, `ITEM_INSUFFICIENT`
-    // narrowed; no harness read changes). Review of v173 (PR #2967): the credit card section ends at any debit
+    // narrowed; no harness read changes). Review of v175 (PR #2967): the credit card section ends at any debit
     // card, ATM or other section heading and a row takes its priced column; `ITEM_INSUFFICIENT` keeps an item
     // "paid or returned" as NSF and files a deposited one as the deposited item return; the stop payment list
     // needs a named second cell and the list's own price. Darwin's live re-check (`darwin.credit_card_section`,

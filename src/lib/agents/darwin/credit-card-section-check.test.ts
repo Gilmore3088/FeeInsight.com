@@ -52,7 +52,7 @@ function fakeDb(calls: string[]) {
   }) as unknown as Parameters<typeof recheckCreditCardSectionFees>[0];
 }
 
-describe("Darwin's credit card section re-check (Knox v173, live 73521)", () => {
+describe("Darwin's credit card section re-check (Knox v175, live 73521)", () => {
   it("is off by default", () => {
     expect(CREDIT_CARD_SECTION_TAKEDOWN_LIVE).toBe(false);
   });

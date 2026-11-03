@@ -468,16 +468,16 @@ export function checkingNamePriceAmbiguous(excerpt: string | null | undefined, f
 /**
  * v171 (backlog dry run 4): an ACH, check, item, draft or debit named insufficient, with no "funds"
  * ("ACH - Insufficient", "Check - Insufficient", "Insufficient Item"): the NSF row.
- * v173 (review of v172): not a deposited or cashed item returned for insufficient funds ("Deposited Item -
+ * v175 (review of v172): not a deposited or cashed item returned for insufficient funds ("Deposited Item -
  * Insufficient", "Cashed Item Insufficient": the deposited item return), and not an item the bank pays
  * ("Insufficient Debit Paid": a paid item is the overdraft's, never the NSF row's).
- * Review of v173 (PR #2967): an item "paid or returned" ("Insufficient Check - Paid or Returned", "Check -
+ * Review of v175 (PR #2967): an item "paid or returned" ("Insufficient Check - Paid or Returned", "Check -
  * Insufficient (per item, paid or returned)") is still the NSF row: only a paid item that names no return
  * is left out. A deposited item named insufficient is the deposited item return (`DEPOSITED_ITEM_INSUFFICIENT`).
  */
 export const ITEM_INSUFFICIENT = /^(?![^|]*\b(?:deposited|cashed|deposit)\s+(?:items?|checks?|drafts?)\b)(?!(?![^|]*\breturn(?:ed)?\b)[^|]*\b(?:paid|honou?red)\b)[^|]*?(?:\b(?:ACH|checks?|items?|drafts?|debits?)\s*[-–:/]?\s*insufficient\b(?!\s*(?:funds?|balances?|deposits?|collateral)\b)|\binsufficient\s*[-–:/]?\s*(?:ACH|checks?|items?|drafts?|debits?)\b)/i;
 
-/** Review of v173 (PR #2967): a deposited item or check named insufficient ("Deposited Item - Insufficient") is the deposited item return. */
+/** Review of v175 (PR #2967): a deposited item or check named insufficient ("Deposited Item - Insufficient") is the deposited item return. */
 export const DEPOSITED_ITEM_INSUFFICIENT = /\bdeposit(?:ed)?\s+(?:items?|checks?)\s*[-–:/]?\s*insufficient\b/i;
 
 /**
@@ -492,7 +492,7 @@ export const STOP_PAY_SHORT: FeePattern = { key: "stop_payment", pattern: /\bsto
  * charge rule. A minimum balance that only avoids another fee ("minimum balance to avoid the monthly
  * service charge") is not one: the charge word must follow the balance words. Nor is a name that offers
  * both ("Monthly or Minimum Balance Service Charge"): the monthly service charge rule keeps it.
- * v173 (review of v172): nor a name that offers the monthly fee, named in full, and the minimum balance
+ * v175 (review of v172): nor a name that offers the monthly fee, named in full, and the minimum balance
  * fee as one charge ("Monthly Maintenance Fee / Minimum Balance Fee", "Monthly Service Charge or Minimum
  * Balance Fee", "No monthly service charge or minimum balance fee").
  */
@@ -552,7 +552,7 @@ export const FEE_PATTERNS: FeePattern[] = [
     key: "deposited_item_return",
     pattern: /\b(deposited items? return(ed)?|returned deposit(ed)?|deposit(ed)? (items?|checks?) return(ed)?|deposited checks? \([^)]{0,30}\) return(ed)?|return(ed)? deposit(ed)? (items?|checks?)|return(ed)? (check|item) deposits?|deposit return|third[- ]party return(ed)? items?|charge[- ]?backs?)\b/i,
   },
-  // Review of v173: "Deposited Item - Insufficient" is the deposited item return, never NSF (`DEPOSITED_ITEM_INSUFFICIENT`).
+  // Review of v175: "Deposited Item - Insufficient" is the deposited item return, never NSF (`DEPOSITED_ITEM_INSUFFICIENT`).
   { key: "deposited_item_return", pattern: DEPOSITED_ITEM_INSUFFICIENT },
   // v19: "Overdrafts Paid", "Overdrafts (OD)": the plural names the fee when it opens the
   // name or the fee follows it. Elsewhere ("transfer to cover overdrafts", "overdrafts up
@@ -1258,7 +1258,7 @@ export function freeRowName(line: string): string | null {
 }
 
 /** One cell that is a whole free row on its own: a dot leader or a colon to the free word, or a sentence. */
-/** v173: one zero name opens the other word for word ("Paper Statement or Paperless" in "Paper Statement or Paperless Online Statement"). */
+/** v175: one zero name opens the other word for word ("Paper Statement or Paperless" in "Paper Statement or Paperless Online Statement"). */
 function sameFreeCellName(a: string, b: string): boolean {
   const [short, long] = [a, b].map((name) => name.toLowerCase().replace(/\s+/g, " ").trim()).sort((x, y) => x.length - y.length);
   return short.split(" ").length >= 2 && long.startsWith(short) && (long.length === short.length || /\W/.test(long[short.length]));
@@ -1413,11 +1413,11 @@ interface HeadedSegment {
   workedExample: boolean;
 }
 
-/** v173: a list item's bullet at the start of a line. */
+/** v175: a list item's bullet at the start of a line. */
 const LIST_BULLET = /^[•●▪‣]\s*/;
 
 /**
- * v173 (backlog dry run 6): the heading of a bullet list on a two-column page, printed on one line
+ * v175 (backlog dry run 6): the heading of a bullet list on a two-column page, printed on one line
  * with the other column's priced row ("Stop Payment | Cashier’s Check | $5.00" over "• Money Order |
  * $30.00 | Positive Pay Checks | $50.00/mo", Navigant FCU doc 2007). The line is priced, so it never
  * read as a heading and the bullets under it lost it. Only when the next line opens with a bullet, the
@@ -1430,7 +1430,7 @@ export function listHeadingOf(line: string, next: string | undefined): string | 
   if (plain !== undefined) return plain;
   const cells = line.split(CELL_SEPARATOR).map((cell) => cell.trim());
   if (cells.length < 3 || amountsIn(cells[1]).length > 0 || !/[a-z]{3,}/i.test(cells[1]) || amountsIn(cells.slice(2).join(" ")).length === 0) return null;
-  // Review of v173 (PR #2967): the second cell must be another row's own name ("Cashier’s Check"), never the
+  // Review of v175 (PR #2967): the second cell must be another row's own name ("Cashier’s Check"), never the
   // heading's own unit or note ("Stop Payment | per request | $30.00" is the stop payment's priced row).
   if (!/^[A-Z]/.test(cells[1]) || /^(?:per|each|for|plus|up to|min(?:imum)?|max(?:imum)?)\b/i.test(cells[1]) || classifyPatternKey(cells[1]) == null) return null;
   return headingName(cells[0]) || null;
@@ -1597,7 +1597,7 @@ export function billPayByHeading(candidate: ExtractedFeeCandidate, heading?: str
 }
 
 /**
- * v173 (backlog dry run 6): an item bulleted under a stop payment heading ("Stop Payment" over
+ * v175 (backlog dry run 6): an item bulleted under a stop payment heading ("Stop Payment" over
  * "• Money Order | $30.00", "• Official Check | $30.00", "• Bill Payment | $30.00", Navigant FCU doc
  * 2007) is the stop payment's price for that item. The item's own words file it as the item's fee
  * (bill pay, money order, official check), so "Bill Payment" $30 went to Darwin as bill pay. The
@@ -1626,7 +1626,7 @@ export function stopPaymentListRead(candidate: ExtractedFeeCandidate, text: stri
     label = normalizeSegment(item.slice(0, price.start).replace(/(?:\.{2,}|…)[.…]*/g, " "));
     let at = index - 1;
     while (at >= 0 && index - at <= MAX_LIST_ITEMS && LIST_BULLET.test(lines[at])) at -= 1;
-    // Review of v173 (PR #2967): the bullet's price must be the list's own, the price most of its bullets
+    // Review of v175 (PR #2967): the bullet's price must be the list's own, the price most of its bullets
     // carry; a bullet at another price ("• Money Order | $5.00" among $30 stop payments) is a fee of its own.
     const run: number[] = [];
     for (let below = at + 1; below < lines.length && below - at <= MAX_LIST_ITEMS && LIST_BULLET.test(lines[below]); below += 1) {
@@ -3024,7 +3024,7 @@ function readPlainSegment(segment: string): ExtractionRulesResult {
       const free = freeCellName(cell);
       const zeroName = free ? nameFrom(free) : "";
       const zeroHint = usableName(zeroName) ? unpricedRowCategory(zeroName) : null;
-      // v173: the same free cell in the next column cut shorter is the same fee (`sameFreeCellName`).
+      // v175: the same free cell in the next column cut shorter is the same fee (`sameFreeCellName`).
       if (zeroHint && !notAZeroPrice(zeroHint, `${zeroName} ${cell}`) && !result.held.some((held) => held.feeName === zeroName || (held.canonicalHint === zeroHint && sameFreeCellName(held.feeName, zeroName)))) {
         result.held.push({ shape: "zero", feeName: zeroName, amount: 0, amountMax: null, percent: null, frequency, canonicalHint: zeroHint, excerpt: segment });
       }
@@ -3103,7 +3103,7 @@ function readPlainSegment(segment: string): ExtractionRulesResult {
     if (!free) continue;
     const zeroName = nameFrom(free);
     const zeroHint = usableName(zeroName) ? unpricedRowCategory(zeroName) : null;
-    // v173 (backlog dry run 6): the same free cell in a second account column, cut shorter ("No charge for
+    // v175 (backlog dry run 6): the same free cell in a second account column, cut shorter ("No charge for
     // Paper Statement or Paperless Online Statement | No charge for Paper Statement or Paperless", Truist),
     // is the same fee: a zero name one of the row's zero names opens with, word for word, is not held twice.
     if (zeroHint && !notAZeroPrice(zeroHint, zeroName) && !result.held.some((held) => held.feeName === zeroName || (held.canonicalHint === zeroHint && sameFreeCellName(held.feeName, zeroName)))) {

@@ -31,7 +31,7 @@ const BUSINESS = /\b(?:business|commercial|corporate)\s+(?:clients?|customers?|a
 const BOTH = /\b(?:all|both consumer and business|consumer and business|personal and business)\s+(?:clients?|customers?|accounts?)\b/i;
 
 /**
- * Knox v173 (backlog dry run 6): a misspelt "account" with the same letters ("accoutns", "acocunt",
+ * Knox v175 (backlog dry run 6): a misspelt "account" with the same letters ("accoutns", "acocunt",
  * "acconts" is not one) still names the account, so "Business accoutns:" is a business label (LM FCU,
  * doc 8108). Only a word of exactly the letters of "account" or "accounts" is read so.
  */
@@ -40,7 +40,7 @@ function withAccountSpelled(text: string): string {
   return text.replace(/\b[a-z]{7,8}\b/gi, (word) => (ACCOUNT_LETTERS.has([...word.toLowerCase()].sort().join("")) ? (word.length === 8 ? "accounts" : "account") : word));
 }
 /**
- * Knox v173: an audience label that opens its own clause ("Personal accounts: Internet Bill Pay Free
+ * Knox v175: an audience label that opens its own clause ("Personal accounts: Internet Bill Pay Free
  * Business accounts: Internet Bill Pay $4.95 per month"). The price belongs to the last label before it.
  */
 const AUDIENCE_LABEL = /\b(consumer|personal|business|commercial|corporate)\s+(?:clients?|customers?|accounts?|checking|savings)\s*:/gi;
@@ -124,7 +124,7 @@ export function feeApplicability(feeName: string, excerpt: string | null | undef
   const consumer = nameConsumer || (rowLocal && CONSUMER.test(evidence));
   const business = nameBusiness || (rowLocal && BUSINESS.test(evidence));
   const sameAudience = rowLocal && BOTH.test(clean(evidence)) && !/\b(?:except|only|whereas|but|eliminat\w*|waiv\w*)\b/i.test(evidence);
-  // Knox v173: both audiences in one row-local excerpt, each in its own labelled clause: the price's own.
+  // Knox v175: both audiences in one row-local excerpt, each in its own labelled clause: the price's own.
   const labelled = rowLocal && !nameConsumer && !nameBusiness && consumer && business ? labelledClauseAudience(feeName, evidence) : null;
   let feeAudience: FeeAudience = "unknown";
   if (/\b(?:except|whereas|but)\b/i.test(evidence)) feeAudience = "unknown";

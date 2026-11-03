@@ -1,6 +1,7 @@
 import type { FreshAuditResult } from "@/lib/agents/deming/fresh-audit";
 import type { DocumentText, LiveKnoxRow } from "@/lib/agents/hamilton/rules-recheck";
 import type { ZeroWaiverRowLiveRow } from "@/lib/agents/darwin/zero-waiver-row-check";
+import type { ServiceMaintenanceLiveRow } from "@/lib/agents/darwin/service-maintenance-check";
 
 /**
  * Types for the switch dry-run audit (#1092): one read-only pass that prints the production counts
@@ -189,6 +190,12 @@ export interface SwitchAuditReader {
   zeroWaiverRowRows(limit: number): Promise<ZeroWaiverRowLiveRow[]>;
   /** The texts Knox read, by artifact id (`zeroWaiverRowTexts`). */
   zeroWaiverRowTexts(artifactIds: number[]): Promise<Map<number, string>>;
+  /** The live monthly maintenance fees Darwin's service-heading re-check selects (`serviceMaintenanceRowsSql`), for the `SERVICE_MAINTENANCE_TAKEDOWN_LIVE` section. */
+  serviceMaintenanceRows(limit: number, afterId: number): Promise<ServiceMaintenanceLiveRow[]>;
+  /** How many such fees lie after `afterId`: the rows the section leaves unjudged past its cap (`serviceMaintenanceRemaining`). */
+  serviceMaintenanceRemaining(afterId: number): Promise<number>;
+  /** The texts Knox read that print a service's words, by artifact id (`serviceMaintenanceTexts`). */
+  serviceMaintenanceTexts(artifactIds: number[]): Promise<Map<number, string>>;
   /** Deming's fresh audit, as Atlas runs it daily, on a sample of this size. */
   freshAudit(sampleSize: number): Promise<FreshAuditResult>;
 }
@@ -206,7 +213,7 @@ export interface SwitchAuditOptions {
   chunkSize: number;
   /** Fees in the live accuracy sample. */
   accuracySample: number;
-  /** Only these institutions (sections 1 to 7), or every institution when null. */
+  /** Only these institutions (sections 1 to 7 and 9), or every institution when null. */
   institutionIds: number[] | null;
 }
 
