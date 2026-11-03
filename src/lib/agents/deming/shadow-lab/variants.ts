@@ -86,8 +86,8 @@ export interface SwitchOverrides {
    */
   htmlRowPairing?: boolean;
   /**
-   * Knox v173's service-heading hold and Darwin's matching refusal (#1092, `service-maintenance-heading.ts`).
-   * Off is how main read before v173: the hold has no switch of its own, only its live re-check does
+   * Knox v174's service-heading hold and Darwin's matching refusal (#1092, `service-maintenance-heading.ts`).
+   * Off is how main read before v174: the hold has no switch of its own, only its live re-check does
    * (`SERVICE_MAINTENANCE_TAKEDOWN_LIVE`), so this override exists to measure what the hold changes.
    */
   serviceMaintenanceHold?: boolean;
@@ -134,7 +134,7 @@ export const EXPERIMENTS: Readonly<Record<string, ExperimentConfig>> = {
   "service-maintenance-hold-off": {
     id: "service-maintenance-hold-off",
     description:
-      "Every stage reads without Knox v173's service-heading hold and Darwin's matching refusal, as main read before them: a monthly maintenance row under a heading that names a service (\"Consumer Online Banking Services and Mobile Banking Fees\") is read as the account's fee. Current minus experimental is what the hold changes on the frozen texts; the live re-check behind `SERVICE_MAINTENANCE_TAKEDOWN_LIVE` is a database sweep the lab cannot replay (switch dry-run audit, section 9).",
+      "Every stage reads without Knox v174's service-heading hold and Darwin's matching refusal, as main read before them: a monthly maintenance row under a heading that names a service (\"Consumer Online Banking Services and Mobile Banking Fees\") is read as the account's fee. Current minus experimental is what the hold changes on the frozen texts; the live re-check behind `SERVICE_MAINTENANCE_TAKEDOWN_LIVE` is a database sweep the lab cannot replay (switch dry-run audit, section 9).",
     excerptAtPublish: false,
     switches: { serviceMaintenanceHold: false },
   },
@@ -190,7 +190,7 @@ function readText(text: string, dailyCapLines = false, dashListRows = false, swi
     ...(switches.withoutDiscontinuedTables == null ? {} : { withoutDiscontinuedTables: switches.withoutDiscontinuedTables }),
   });
   const serviceHold = switches.serviceMaintenanceHold !== false;
-  // Knox v173 holds a monthly maintenance read under a service's heading for review, $0 or priced, on
+  // Knox v174 holds a monthly maintenance read under a service's heading for review, $0 or priced, on
   // Knox's own hint (`extract.ts`): never sent to Darwin.
   const serviceHeld = (hint: string | null, excerpt: string | null | undefined) =>
     serviceHold ? serviceMaintenanceOf({ line: excerpt, canonicalFeeKey: hint, documentText: text }) : null;

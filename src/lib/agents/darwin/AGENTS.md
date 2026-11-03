@@ -1856,7 +1856,7 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   #1092, state key 5608): River City Bank's "Consumer Online Banking Services and Mobile Banking Fees" over
   "Monthly Maintenance Fee | No charge" is the online banking service's fee; published as the account's
   monthly maintenance it would say the bank has free checking. The row names no service, so the name rule
-  (`SERVICE_MONTHLY_CHARGE_NAME`, guard v102) cannot see it. Knox v173 holds such a read, $0 or priced, and
+  (`SERVICE_MONTHLY_CHARGE_NAME`, guard v102) cannot see it. Knox v174 holds such a read, $0 or priced, and
   verify refuses it (`service_maintenance_heading`, needs review), both through
   `src/lib/service-maintenance-heading.ts`: the nearest heading-shaped line above the row that is not a
   stacked row's label names only services (online, mobile, internet or text banking, bill pay, e-statements,

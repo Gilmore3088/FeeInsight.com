@@ -828,7 +828,7 @@ import { onlineServiceMonthlyFee } from "@/lib/service-monthly-charge";
 // table v13's `freeItemList`). (5) "Cashier's (Counter) Check" files by its own label as the cashier's check,
 // so the section heading "Money Orders/ Cashier's Checks" is never copied into its name. The shared check is
 // unchanged. The stale-read floor stays at v97.
-// v173 (#1092, state key 5608, Nov 2; v164-v172 are on main): a monthly maintenance read, $0 or priced, whose row sits under a
+// v174 (#1092, state key 5608, Nov 2; v164-v172 are on main, v173 is #2967's): a monthly maintenance read, $0 or priced, whose row sits under a
 // heading that names a service rather than an account is held as a range for review, never sent to
 // Darwin as the account's fee (`serviceMaintenanceOf` in `@/lib/service-maintenance-heading`, flag
 // `knox_service_maintenance:<services>`): River City's "Consumer Online Banking Services and Mobile
@@ -836,7 +836,7 @@ import { onlineServiceMonthlyFee } from "@/lib/service-monthly-charge";
 // checking. An account heading, an account's list of features and a heading in doubt are refused, not
 // matched. Darwin's verify refuses it and its live re-check reads what is already live. Reads are
 // unchanged; the shared check is unchanged. The stale-read floor stays at v97.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 173 } as const;
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 174 } as const;
 
 export interface SpecialistRun {
   strategy: string;

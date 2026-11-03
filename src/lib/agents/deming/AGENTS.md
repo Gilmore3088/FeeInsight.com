@@ -574,7 +574,7 @@ DATABASE_URL=<prod URL> npm run audit:switch-dry-runs -- --json > switch-dry-run
   8. `HTML_ROW_PAIRING_LIVE` (#1092, #2951, Rosetta `read.html_dom`). Exposure only: the current HTML
      documents and the live fees on them that a flip would reach once re-read; the change itself is
      measured on the answer-key documents' bytes (shadow-lab experiment `html-row-pairing`).
-  9. `SERVICE_MAINTENANCE_TAKEDOWN_LIVE` (#1092, Knox v173, `service-maintenance-heading.ts`). Every
+  9. `SERVICE_MAINTENANCE_TAKEDOWN_LIVE` (#1092, Knox v174, `service-maintenance-heading.ts`). Every
      live flat monthly maintenance fee Darwin's service-heading re-check selects with its own SQL
      (`serviceMaintenanceRowsSql`), judged by the re-check's own function (`findServiceMaintenance`) on the
      text Knox read where it prints a service's words, a chunk of texts at a time: the count of live fees the

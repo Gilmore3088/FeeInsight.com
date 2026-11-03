@@ -38,7 +38,7 @@ v102 re-files by the fee's name, and a heading-only re-file would be a new rule 
   "Services", "Fees", "and"). It must open its own section: no heading-shaped line, colon lead or "includes /
   features / benefits / following / offers" line right above it.
 - The row's own label names no account.
-- Knox rules v173 (`knox/extract.ts`) holds a matching read as a range for review, $0 (in
+- Knox rules v174 (`knox/extract.ts`) holds a matching read as a range for review, $0 (in
   `insertHeldCandidate`) and priced (`holdServiceMaintenanceCandidate`, on the free, paid and re-read
   paths), flag `knox_service_maintenance:<services>`. Never sent to Darwin.
 - Darwin's verify refuses one as `service_maintenance_heading` (needs review) on Knox's row and the line
@@ -133,7 +133,7 @@ Banking Fees", a heading that names two services, nor bill pay, e-statements, re
 treasury headings: on main 53c80d54e the source replay with `HTML_ROW_PAIRING_LIVE` on still publishes
 5608's "Monthly Maintenance Fee" $0 as monthly maintenance (914 / 1,187, two publications outside the key).
 Both rules stay. Main's runs first (Knox drops the read; verify refuses `online_service_monthly` before
-`service_maintenance_heading`); this one holds what is left. The rules version became v171, then v173 after #2966 took v171 and v172.
+`service_maintenance_heading`); this one holds what is left. The rules version became v171, then v174 after #2966 took v171 and v172 and open #2967 claimed v173.
 
 Re-measured on the merged tree (main 53c80d54e against this branch): lab 973 / 1,302, all expected 1,341 /
 1,756 and false publication 31 / 160 on both; Texas 586 / 11 (held out 60 / 4) and seven-state 927 / 28 on

@@ -73,7 +73,7 @@ describe("shadow lab variants", () => {
     expect(verified.ok && verified.fee.frequency).toBe("hourly");
   });
 
-  it("should_hold_a_monthly_maintenance_row_under_a_service_heading_as_knox_v173_does", () => {
+  it("should_hold_a_monthly_maintenance_row_under_a_service_heading_as_knox_v174_does", () => {
     // State key 5608 (River City Bank) as a table read pairs its rows (#1092).
     const text = "Consumer Online Banking Services and Mobile Banking Fees\n\nSet Up Fee | No charge\n\nMonthly Maintenance Fee | No charge\n\nMonthly Statement Fee | $3.00";
     const read = currentVariant.extract(text);

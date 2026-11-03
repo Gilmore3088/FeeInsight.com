@@ -2695,7 +2695,7 @@ keep their thresholds, each now tracing, and none is added, held or dropped. Ans
 Darwin's verify refuses (2) and (3), and its live re-check (`darwin.not_account_fee_line`,
 `NOT_ACCOUNT_FEE_LINE_TAKEDOWN_LIVE` off) reports the live ones (73916, 152003). The guard is unchanged
 (v108). The stale-read floor stays at v97.
-v173 (#1092, state key 5608, Nov 2; v164-v172 are on main): a monthly maintenance read, $0 or priced, whose row sits under a heading
+v174 (#1092, state key 5608, Nov 2; v164-v172 are on main, v173 is #2967's): a monthly maintenance read, $0 or priced, whose row sits under a heading
 that names a service rather than an account is held as a range for review instead of going to Darwin as the
 account's fee (`serviceMaintenanceOf` in `@/lib/service-maintenance-heading`, flag
 `knox_service_maintenance:<services>`; the $0 read in `insertHeldCandidate`, the priced one in
@@ -3330,7 +3330,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v3 | `knox/paid-extract.ts` |
 | `KNOX_PAID_FIND_MISS_VERSION` | — | v1 | `knox/paid-find-misses.ts` |
 | `TWO_READ_AGREEMENT_STRATEGY` | `knox.two_read_agreement` | v2 | `knox/two-read-agreement.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v173 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v174 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v13 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v2 | `knox/takedown-lessons.ts` |

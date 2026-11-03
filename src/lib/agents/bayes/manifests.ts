@@ -767,7 +767,7 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
     // rows are gone (two re-filed right, four dropped) and the other 93 changed rows are unchanged; rb, rb3 and
     // rb4 do not change; rb2 re-files three already-stored "Service charge (Minimum Balance Fee)" reads to
     // minimum_balance. No Darwin re-check (no guard rule). No replay. Floor stays v97.
-    // v173 (#1092, Nov 2, state key 5608; v164-v172 are on main): a monthly maintenance read, $0 or priced, whose row sits under a
+    // v174 (#1092, Nov 2, state key 5608; v164-v172 are on main, v173 is #2967's): a monthly maintenance read, $0 or priced, whose row sits under a
     // heading that names a service rather than an account (`serviceMaintenanceOf`) is held as a range for
     // review, never sent to Darwin. New reads only: on the 291 frozen texts no read changes. Darwin's live
     // re-check (`darwin.service_maintenance_heading`, SERVICE_MAINTENANCE_TAKEDOWN_LIVE off) reports the
