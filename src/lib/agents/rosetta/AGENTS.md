@@ -92,7 +92,9 @@ Rosetta owns source text normalization.
   each a fifth of the text width and five lines tall, is read column by column. Any row reaching
   across refuses the split: a shared baseline whose right side opens at its own edge with a
   price, or is only price cells (a tier table's columns), or whose left side is a bare price
-  facing a label, or a label running into the gutter with its price just past it. Rotated text
+  facing a label, or a label running into the gutter with its price just past it; so does a right
+  side that is one more column of a left table (half its lines a single cell beside a row ending
+  in a price: Service | Fee | Notes, Member | Non-member), unless it is running prose. Rotated text
   refuses. When no gutter runs the whole page, the page is cut into regions at lines with one
   item half the text width wide (a title, footnotes) and each region is tried alone. On the
   answer-key documents' bytes it publishes 19 more keys and loses none; it joins layout 6 without

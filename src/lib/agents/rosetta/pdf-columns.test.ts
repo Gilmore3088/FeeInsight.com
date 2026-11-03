@@ -238,10 +238,10 @@ describe("Rosetta pdf-columns: independent columns (PDF_COLUMN_READING_LIVE)", (
       expect(lines[21]).toBe("7 x 10 | $ 50.00");
     });
 
-    it("should_split_rows_that_end_with_a_price_from_rows_that_open_with_a_label", () => {
-      const items = [...labelPriceTable(LEFT_FEES, 40, 180), ...RIGHT_FEES.map((fee, row) => run(feeLine(fee), 300, y(row)))];
-      expect(linesOf(off(items))[0]).toBe("Overdraft item | $35.00 | Debit card replacement $10.00");
+    it("should_split_table_rows_from_a_label_price_table_on_the_same_baselines", () => {
+      const items = [...labelPriceTable(LEFT_FEES, 40, 180), ...labelPriceTable(RIGHT_FEES, 300, 450)];
       expect(linesOf(on(items))[0]).toBe("Overdraft item | $35.00");
+      expect(linesOf(on(items))[16]).toBe("Debit card replacement | $10.00");
     });
   });
 
@@ -337,6 +337,46 @@ describe("Rosetta pdf-columns: independent columns (PDF_COLUMN_READING_LIVE)", (
       const right = LEFT_FEES.flatMap((_, row) => [run(`$${row}`, 300, y(row)), run(`$${row + 1}`, 340, y(row))]);
       const descriptions = PROSE.slice(0, 3).map((text, row) => run(text, 280, TOP + 40 + row * PITCH));
       expect(on([...left, ...right, ...descriptions])).toBe(off([...left, ...right, ...descriptions]));
+    });
+
+    // Review of #2965: a third column of notes is the table's own cell, though no note opens with a
+    // price and the notes, read alone, look like a list of their own ("Daily maximum $150").
+    const NOTED_ROWS = [
+      ["Overdraft fee (per item)", "$30.00", "Daily maximum $150"], ["Returned item (NSF)", "$30.00", "Daily maximum $150"],
+      ["Outgoing domestic wire", "$25.00", "International wire $45"], ["Incoming wire", "$10.00", "International incoming $15"],
+      ["Stop payment", "$25.00", "Online request $15"], ["Account research", "$25.00", "Minimum charge $10"],
+      ["Cashier's check", "$8.00", "Members only"], ["Money order", "$3.00", "Limit 5 per day"],
+      ["Statement copy", "$5.00", "Online statements free"], ["Debit card replacement", "$10.00", "Rush delivery $50"],
+      ["Dormant account", "$5.00", "After 12 months"], ["Account closing", "$25.00", "Within 90 days"],
+      ["Garnishment / levy", "$100.00", "Per order"], ["Coin counting", "$3.00", "Non-members 5% of total"],
+      ["Safe deposit box 3x5", "$30.00", "Late payment $10"], ["Check printing", "Varies", "Depends on style"],
+    ] as const;
+
+    it("should_keep_a_service_fee_and_notes_table_row_by_row", () => {
+      const items = [run("Service", 40, y(0)), run("Fee", 180, y(0)), run("Notes", 270, y(0)),
+        ...NOTED_ROWS.flatMap(([label, price, note], row) => [run(label, 40, y(row + 1)), run(price, 180, y(row + 1)), run(note, 270, y(row + 1))])];
+      expect(on(items)).toBe(off(items));
+      expect(linesOf(on(items))[1]).toBe("Overdraft fee (per item) | $30.00 | Daily maximum $150");
+    });
+
+    it("should_keep_table_rows_beside_single_cell_fee_lines_that_could_be_its_notes", () => {
+      // "Debit card replacement $10.00" beside "Overdraft item | $35.00" reads like a notes cell.
+      const items = [...labelPriceTable(LEFT_FEES, 40, 180), ...RIGHT_FEES.map((fee, row) => run(feeLine(fee), 300, y(row)))];
+      expect(on(items)).toBe(off(items));
+    });
+
+    it("should_keep_a_notes_column_whose_notes_are_long_lines", () => {
+      const note = (text: string) => `${text}; ask a banker for the full details today`.slice(0, 40);
+      const items = NOTED_ROWS.flatMap(([label, price, text], row) => [run(label, 40, y(row)), run(price, 180, y(row)), run(note(text), 240, y(row))]);
+      expect(on(items)).toBe(off(items));
+    });
+
+    it("should_keep_a_member_and_non_member_table_whose_second_price_opens_with_words", () => {
+      const second = (price: string, row: number) => [`Not available`, `Non-members ${price}`, "Plus surcharge $5"][row % 3];
+      const items = [run("Service", 40, y(0)), run("Member", 180, y(0)), run("Non-member", 300, y(0)),
+        ...NOTED_ROWS.flatMap(([label, price], row) => [run(label, 40, y(row + 1)), run(price, 180, y(row + 1)), run(second(price, row), 300, y(row + 1))])];
+      expect(on(items)).toBe(off(items));
+      expect(linesOf(on(items))[2]).toBe("Returned item (NSF) | $30.00 | Non-members $30.00");
     });
   });
 

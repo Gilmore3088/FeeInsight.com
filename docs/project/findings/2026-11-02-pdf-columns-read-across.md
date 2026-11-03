@@ -30,6 +30,15 @@ runs only when no earlier detector fires. A gutter splits the page only when:
 - no row reaches across it: no shared baseline whose right side opens at its own edge with a price,
   or is nothing but price cells ("$1 $1 $1 $1", "3 Free → $5"); none whose left side is a bare
   price facing a label; no label running into the gutter with its price just past it;
+- the right side is not one more column of a table on the left (review of #2965): on half or more
+  of its lines, the left side on the same baseline must not be a table row ending in a price cell
+  ("Overdraft fee | $30.00") beside a right side that is a single cell rather than a fee row of its
+  own ("Daily maximum $150", "Non-members $30.00", "Not available"). A Service | Fee | Notes or
+  Member | Non-member table keeps its rows. Running prose on the right (long lines that reach the
+  column's edge, and 30% or more go on in lower case) is not a cell column. Row alignment alone
+  could not tell them apart: the real splits share 36% to 100% of their baselines (texas:841's
+  facing pages 90-100%). On the 18 replay PDFs at most 19% of a split side's lines extend a row
+  this way (Buffalo Metropolitan), against 94% for the review's notes table;
 - each side stands on its own: running prose (median line 25 characters or more, few cells), or at
   least 3 lines that hold their own label and price;
 - each side is a fifth of the text width or more and holds 5 lines or more; text is upright.
@@ -39,7 +48,7 @@ strip of bullet glyphs joins its column (U.S. Century). When no gutter runs the 
 page is cut into regions at lines holding one item half the text width wide (a title, a footnote),
 and each region is tried alone; spanning lines are read whole.
 
-**Tests:** 45 near-miss tests on synthetic positioned runs (`pdf-columns.test.ts`): two fee lists,
+**Tests:** 49 near-miss tests on synthetic positioned runs (`pdf-columns.test.ts`): two fee lists,
 offset baselines, two side-by-side tables, prose beside a table both ways, account terms, full-width
 title, heading mid-page, spanning footnotes, title plus footnotes, bullet strip, booklet spread,
 landscape tables, three lists, headings and wrapped labels inside a column, box-size rows; and kept
@@ -49,7 +58,9 @@ labels, one crossing row, a bare price facing its label, a label running into th
 prices set in from the edge, a narrow sidebar (prose or prices), a column of footnote marks,
 two-column footnotes under a table, a rotated page, a wide landscape table, too few runs, short
 columns, labels beside descriptions, a mixed page whose table rows cross, a mixed page split only
-below its heading, and pages the earlier detectors already read. Switch tests: off by default, the
+below its heading, pages the earlier detectors already read, and from the review: a Service | Fee |
+Notes table, a notes column of long lines, a Member | Non-member table whose second price opens with
+words, and table rows beside single-cell fee lines (which read like notes, so they stay rows). Switch tests: off by default, the
 default read is the switch-off read (3 tests). `shadow-lab/pdf-column-reading-inert.test.ts` reads all 18
 replay PDFs with the switch off and at its default and checks each text's sha256 against main
 d5771aa66's (`__fixtures__/source-bytes/pdf-text-main-sha256.json`).
