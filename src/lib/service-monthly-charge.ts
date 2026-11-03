@@ -108,8 +108,14 @@ export function sectionAbove(documentText: string, line: string): string | null 
     const plain = lines[index].trim();
     if (!plain) continue;
     seen += 1;
-    if (plain.includes("|") || PRICE.test(plain) || NOT_A_SECTION_LINE.test(plain)) continue;
-    return plain;
+    // A line naming an account, a heading with a price ("Business Checking - $10.00 monthly") or a row,
+    // is nearer than any section title above it: the fee is that account's (#2963 review).
+    if (ACCOUNT_NAME.test(plain)) return plain;
+    // A heading printed as a one-cell table row ("| Checking Account Fees |") is a section title too.
+    const cells = plain.split("|").map((cell) => cell.trim()).filter(Boolean);
+    const heading = plain.includes("|") && cells.length === 1 && !/^[-:\s]+$/.test(cells[0]) ? cells[0] : plain;
+    if ((heading === plain && plain.includes("|")) || PRICE.test(heading) || NOT_A_SECTION_LINE.test(heading)) continue;
+    return heading;
   }
   return null;
 }

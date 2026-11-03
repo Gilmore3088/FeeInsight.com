@@ -210,3 +210,28 @@ describe("a name keeps the dollar threshold its own line ties to it (Morton Comm
     expect(withThresholdFigures("Copies up to", "Copies up to $5", 5)).toBe("Copies up to");
   });
 });
+
+describe("#2963 review: a priced fee beside a no-dividend note, and a nearer account heading, stay", () => {
+  it("keeps a fee priced per unit or cut off from the no-dividend note", () => {
+    for (const [line, amount] of [
+      ["Inactive account $5.00 per month after 12 months; no interest will be paid", 5],
+      ["Excess withdrawal $5.00 each; interest will not be paid for that month", 5],
+      ["Christmas Club early withdrawal $5.00 - no dividends are paid if closed early", 5],
+      ["Low balance $3.00/month when below $300; dividends will not be paid", 3],
+      ["Below minimum balance: $5.00 per month; no dividends are earned", 5],
+    ] as const) {
+      expect(dividendThresholdSentence(line, amount), line).toBeNull();
+    }
+    const peninsula = "If your average daily balance is below $100.00 ($5.00 for accounts held by those under 18 years of age), no dividends are earned";
+    expect(dividendThresholdSentence(peninsula, 5)).toBe(peninsula);
+  });
+
+  it("stops at an account heading with a price or printed as a one-cell row before an online section", () => {
+    const priced = ["Online Fees", "| Online Banking Monthly Service Fee | FREE |", "Business Checking - $10.00 monthly", "| Monthly Maintenance Fee | $10.00 |"].join("\n");
+    expect(onlineServiceMonthlyFee("Monthly Maintenance Fee", "| Monthly Maintenance Fee | $10.00 |", priced)).toBeNull();
+    const piped = ["Online Fees", "| Online Banking Monthly Service Fee | FREE |", "| Checking Account Fees |", "| Monthly Maintenance Fee | $10.00 |"].join("\n");
+    expect(onlineServiceMonthlyFee("Monthly Maintenance Fee", "| Monthly Maintenance Fee | $10.00 |", piped)).toBeNull();
+    const uva = ["Online Banking", "Personal Online Banking Fees", "| Monthly fee | No charge |", "| Bill Pay | No charge |"].join("\n");
+    expect(onlineServiceMonthlyFee("Monthly fee", "| Monthly fee | No charge |", uva)).toBe("Personal Online Banking Fees");
+  });
+});

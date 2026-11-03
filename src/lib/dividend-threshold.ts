@@ -13,16 +13,21 @@
  */
 const NO_EARNINGS =
   /\b(?:no|not|never)\s+(?:earn|receive|be\s+paid|pay|accrue)\w*\s+(?:a\s+|any\s+)?(?:dividends?|interest)\b|\bno\s+(?:dividends?|interest)\s+(?:is|are|will|shall|can)\b(?:\s+be)?\s+(?:earned|paid|credited|accrued?)\b|\b(?:dividends?|interest)\s+(?:is|are|will|shall)\s+not\s+(?:be\s+)?(?:earned|paid|credited|accrue)\w*|\bdoes\s+not\s+earn\s+(?:dividends?|interest)\b/i;
-const CHARGE_WORD = /\b(?:fees?|charges?|charged|assess\w*|impos\w*|penalt\w*|deduct\w*|debit\w*|cost)\b/i;
+// A price per unit of time or item is a charge too ("$5.00 per month", "$5.00 each", "$3.00/month"; #2963 review).
+const CHARGE_WORD = /\b(?:fees?|charges?|charged|assess\w*|impos\w*|penalt\w*|deduct\w*|debit\w*|cost)\b|\b(?:per|a)\s+(?:month|item|check|withdrawal|transaction|quarter|year)\b|\beach\b|\/\s*(?:mo|month|item|qtr|quarter|yr|year)\b/i;
 const AMOUNT = /\$\s*\d[\d,]*(?:\.\d{1,2})?|\b\d[\d,]*\.\d{2}\b/g;
 
 function amountsOf(text: string): number[] {
   return [...text.matchAll(AMOUNT)].map((match) => Number(match[0].replace(/[$,\s]/g, ""))).filter(Number.isFinite);
 }
 
-/** The sentences of a line ("." or ";" followed by a space; a cell break ends one too). */
+/**
+ * The sentences of a line: "." followed by a space and a capital, any ";", a spaced dash (" - ", " – "),
+ * or a cell break ends one, so a fee and the no-dividend note after it ("Christmas Club early withdrawal
+ * $5.00 - no dividends are paid if closed early") are judged apart.
+ */
 function sentences(line: string): string[] {
-  return line.split(/(?<=[.;!?])\s+(?=[A-Z(])|\s+\|\s+/).map((part) => part.trim()).filter(Boolean);
+  return line.split(/(?<=[.!?])\s+(?=[A-Z(])|;\s+|\s+[-–—]\s+|\s+\|\s+/).map((part) => part.trim()).filter(Boolean);
 }
 
 /**

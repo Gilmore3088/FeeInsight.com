@@ -92,7 +92,7 @@ reads were wrong against the bank's own stored text:
   - Morton's two rows keep their thresholds and now trace on their own lines.
   - The run now reproduces live 99652 and 122565 (River Town) and no longer reproduces 73916. No right
     read was lost.
-- 60 fresh random stored texts (seeded, rb3 texts excluded), main (v168) vs v170: 691 reads each. 5
+- 60 fresh random stored texts (seeded, rb3 texts excluded), main (Knox v168 when measured) vs v170: 691 reads each. 5
   reads are renamed only, each keeping a threshold (Hawaiian FFCU x2, Marquette Savings x3), and each now
   traces (src ok 685 -> 690). No read held, dropped or added; verify unchanged.
 - Answer-key gates: no read added or lost, renames only; the Texas, seven-state, golden and ratchet
@@ -104,3 +104,8 @@ that earns nothing is not a charge, and a service's monthly fee is not an accoun
 **Guard:** `src/lib/agents/knox/backlog-dry-run-3.test.ts` (Knox reads on the real lines for each class) and `src/lib/agents/darwin/not-account-fee-line-check.test.ts` (Darwin's verify refusals, live re-check and switch).
 **Agent lesson:** knox/backlog-dry-run-3-2026-11-02-label-dividend-online-threshold
 **Agent lesson (Darwin):** darwin/backlog-dry-run-3-2026-11-02-tiered-trace-not-proof
+
+**#2963 review fixes:**
+- The dividend rule now splits clauses at any ";" and at a spaced dash, and it counts a price per unit ("per month", "each", "/month") as a charge. A fee followed by a no-dividend note is no longer dropped.
+- The online-section scan now stops at a line naming an account, or at a heading printed as a one-cell row. An account's maintenance fee further down an online page stays.
+- Overlap with open #2953, which covers a similar service-monthly class with its own heading module: this PR covers only an online, electronic or digital section title. #2953 must reconcile with `onlineServiceMonthlyFee` when it is rebased (it is stale at Knox v165).
