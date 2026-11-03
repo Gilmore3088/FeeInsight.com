@@ -2723,6 +2723,24 @@ holds. Darwin's verify refuses the same reads (`service_maintenance_heading`) an
 is live (`SERVICE_MAINTENANCE_TAKEDOWN_LIVE`, off). The shared check is unchanged. The stale-read floor stays at
 v97.
 
+v182 (Knox slice dry run and cross-category scan, Nov 3; the live slice's 671 changed rows at v180 held 10 wrong
+fees and 9 wrong names, and 5 live fees were re-read into a wrong category, each against the bank's own line): every
+read gets a last name review (`withReviewedNames`, `read-name-review.ts`) for words another part of the page lent it:
+a heading or another column glued in front ("LOAN FEES: 3x10 Box"; an audience, a delivery speed, an account or a clause of other words stays), a
+font glyph against the price ("NSF FEE: g"), a box size's footnote digit ("3x103"), advice as a name (renamed only
+by the title right above), a deposit to open or join in the read's own words ("Only a $25 membership deposit"), an
+all-capitals label whose price is the next cell's own label, a box's late charge (by Hamilton's fold), and paper
+statements offered in a check image's name. A plain returned item beside an NSF fee printed free, or beside a
+deposited item return at its own price, is the deposited item return (`withReturnBesideNsf`: Live Oak, TXN);
+Parthenon's, beside its own deposited return at another price, stays NSF. A wire service's monthly charge filed as a
+monthly fee is held (`wireServiceMonthlyName`: Ameris). Two label cells over two price cells pair by column
+(`parallelColumnRows`; a wrapped label leaves the row whole); the stacked price window takes its own column's label
+(Advia); a wire name never borrows a non-wire heading (Crow Wing); a heading's code ("(S40)") is no price digit (St.
+Cloud); an account name that files as a fee is no account (Austin); a wrapped leader's parenthesis balance is its own
+cell's (Velocity). The source check reads a footnoted box size as the size it marks. Darwin's section misread check
+v5 re-checks the hold, drop and re-file rules on live fees (switch off; Nov 3: 1 match, #133756). Slice dry run (205 texts): 10 wrong and 9 wrong-name rows to 0, publish rows 671 to 660, live fees lost 0, simulated v3 score unchanged (P 135/152, R 146/213). Harnesses rb to rb12 (v181 vs v182): live fees not reproduced 456 to 453 (4 reproduced again, #63177, itself a misread, no longer). The
+stale-read floor stays at v97.
+
 v181 (twelfth Knox re-read backlog dry run, Nov 3; 40 backlog texts at v180, 2 wrong and 7 doubtful of 72 changed
 rows, each against the bank's own line): (1) A bulleted variant under a stop payment row that prints its own price,
 in the page's last column, is that stop payment's price for the variant (`stopPaymentVariantRead`,
@@ -3533,7 +3551,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v3 | `knox/paid-extract.ts` |
 | `KNOX_PAID_FIND_MISS_VERSION` | — | v1 | `knox/paid-find-misses.ts` |
 | `TWO_READ_AGREEMENT_STRATEGY` | `knox.two_read_agreement` | v2 | `knox/two-read-agreement.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v181 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v182 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v13 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v2 | `knox/takedown-lessons.ts` |

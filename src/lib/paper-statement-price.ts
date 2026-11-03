@@ -53,6 +53,12 @@ const ONLY_FOR_PAPER_AFTER = new RegExp(
 /** A paper statement fee's own label right before the price ("Paper statements:", "Paper (mailed) Statement Fee **** |"). */
 const LABEL_BEFORE = new RegExp(String.raw`(?:^|[|•·:;.]\s*|^\W*)${PAPER}\s+${STATEMENT}\s*(?:fees?|charges?)?\s*$`, "i");
 
+/**
+ * v182 (Knox slice dry run, Austin Bank text 25416): paper statements offered at the price, in the price's own cell
+ * ("Free eStatements (Paper statements without check images are available for a $3 monthly fee)").
+ */
+const OFFERED_BEFORE = new RegExp(String.raw`\b${PAPER}\s+${STATEMENT}[^|$]{0,40}?\b(?:are|is)\s+(?:also\s+)?available\s+(?:for|at)\s+(?:a|an)?\s*$`, "i");
+
 /** The account's own price for paper holders beside an electronic price ("$4 for paper statement or $3 for estatement"). */
 const ELECTRONIC_ALTERNATIVE = /^[^|$]{0,60}\b(?:or|;|,)\s*\$\s?\d[\d.,]*\s+(?:with|for|if)\s+(?:an?\s+)?(?:e-?statements?|electronic|online|paperless)/i;
 
@@ -103,6 +109,9 @@ export function paperStatementPriceOnLine(line: string | null | undefined, amoun
     const ownTail = tail.split(/\$|\|/)[0];
     const named = ownTail.match(NAMED_AFTER);
     if (named) return `${match[0]}${named[0]}`.trim();
+    const ownCell = text.slice(0, match.index).split("|").at(-1) ?? "";
+    const offered = ownCell.match(OFFERED_BEFORE);
+    if (offered) return `${offered[0].trim()} ${match[0]}`.trim();
     // Charged only for paper, or under a paper label: the account's tiered fee when the line also
     // prices an electronic alternative. A price named the paper statement fee stays that fee.
     if (tieredBesideElectronic(text, match.index, match.index + match[0].length)) continue;

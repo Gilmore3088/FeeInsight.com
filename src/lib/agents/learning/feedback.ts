@@ -321,6 +321,10 @@ export const TAKEDOWN_REASON_CHECKS: Readonly<Record<string, string>> = {
   audience_section_untagged: "darwin.section_misread",
   stop_payment_variant: "darwin.section_misread",
   deposited_card_return: "darwin.section_misread",
+  // v5 (Knox v182, live slice dry run and cross-category scan).
+  wire_service_monthly_fee: "darwin.section_misread",
+  read_name_review: "darwin.section_misread",
+  return_beside_nsf: "darwin.section_misread",
   service_maintenance_heading: "darwin.service_maintenance_heading",
   canadian_document: "darwin.canadian_document",
   old_labelled_document: "darwin.old_labelled_document",

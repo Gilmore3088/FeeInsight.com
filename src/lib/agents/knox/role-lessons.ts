@@ -1484,4 +1484,14 @@ export const KNOX_LESSONS: AgentLesson[] = [
     appliesTo: ["extract"],
     since: "2026-11-03",
   },
+  {
+    id: "backlog-cross-category-2026-11-03-name-a-read-by-its-own-row",
+    agent: "knox",
+    stage: "extract",
+    lesson: "Name and file a read by its own row. Before a read leaves Knox, ask whether any of its words came from another part of the page: a heading or another column glued in front (\"LOAN FEES: 3x10 Box\"), a font glyph against the price (\"NSF FEE: g\"), a footnote digit on a box size (\"3x103\"), advice instead of a name, a deposit to open or join, or the next cell's own label. A label beside a price in a two-column layout belongs to its own column. A wire service's monthly charge is no account's monthly fee. A box's late charge is the box's. Paper statements offered in a check image's line are the paper statement charge. A plain returned item is the deposited item return when the page prints its NSF fee free, or prints a deposited return at the plain return's own price; when the page prints its own deposited return at another price, the plain return is the member's item and stays NSF.",
+    why: "The live slice dry run (66 banks, 205 texts, Knox v180, Nov 3) found 10 wrong and 9 wrongly named rows of 671 changed, and the cross-category scan of rb to rb12 found 5 live fees v180 re-read into a wrong category (Cornerstone's Box Late Fee, TXN's and Live Oak's returned items). Each took its words from a heading, another column or another fee's line. Knox v182 reads them right; Parthenon's returned item stays NSF because its page prints its own deposited return at another price.",
+    evidence: { issues: [1026], prs: [], files: ["src/lib/agents/knox/read-name-review.ts", "src/lib/agents/knox/specialists.ts", "src/lib/agents/knox/rules.ts", "src/lib/agents/knox/table-rows.ts", "src/lib/agents/knox/families.ts", "src/lib/agents/knox/lineup.ts", "src/lib/paper-statement-price.ts", "src/lib/custom-report/source-check.ts", "src/lib/agents/darwin/section-misread-check.ts", "src/lib/agents/knox/cross-category-rereads.test.ts", "docs/project/findings/2026-11-03-knox-cross-category-rereads.md"] },
+    appliesTo: ["extract"],
+    since: "2026-11-03",
+  },
 ];

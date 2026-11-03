@@ -22,6 +22,7 @@ import {
   type ExtractionRulesResult,
   type HeldFeeCandidate,
   wireServiceSubscription,
+  wireServiceMonthlyName,
   returnedItemServiceName,
   zeroPrintedForRead,
 } from "@/lib/agents/knox/rules";
@@ -32,7 +33,7 @@ import { newestColumnText } from "@/lib/fee-change-columns";
 import { namesALimit, namesAWorkedExample, passesDarwinChecks, readsAMeasuredAmount, tidyFeeName } from "@/lib/agents/knox/layout";
 import { boxLateColumnPrices, boxLateColumnRead } from "@/lib/agents/knox/box-late-column";
 import { creditCardSectionColumns, creditCardSectionRead, creditCardStatementRead } from "@/lib/agents/knox/credit-card-section";
-import { checkFeeCategory, plainReturnBesideNsf, SCHEDULE_NSF_NAME } from "@/lib/fee-category-guard";
+import { checkFeeCategory, PLAIN_RETURNED_ITEM, plainReturnBesideNsf, SCHEDULE_NSF_NAME } from "@/lib/fee-category-guard";
 import { BOX_CATEGORY } from "@/lib/custom-report/box-size-name";
 import { carryColumnHeadingCell, columnHeadingCell, extractTableCandidates, KNOX_TABLE_STRATEGY } from "@/lib/agents/knox/table-rows";
 import { accountRowRivalRead, extractAccountTableCandidates, KNOX_ACCOUNT_TABLE_STRATEGY } from "@/lib/agents/knox/account-table";
@@ -64,6 +65,7 @@ import { rateFloorOf } from "@/lib/rate-floor";
 import { rateBoundOf } from "@/lib/rate-bound";
 import { rewardCreditOf } from "@/lib/reward-credit";
 import { DISPLAY_NAMES } from "@/lib/fee-taxonomy";
+import { withReviewedNames } from "./read-name-review";
 import { commercialLockboxName, commercialLockboxOnLine } from "@/lib/custom-report/commercial-lockbox";
 import { NO_CHARGE_SENTENCE_READ_LIVE, NSF_FAMILY_KEYS, chargesNsfFamily, readNoChargeNsf } from "@/lib/no-charge-statement";
 import { withWireChannelClause } from "./wire-channel-clause";
@@ -927,7 +929,18 @@ import { onlineServiceMonthlyFee } from "@/lib/service-monthly-charge";
 // "Paid Item Charge c". (4) On a stem tie, the source check's line for a priced fee is the row whose label opens with the name (San
 // Francisco FCU). Synergy's "Same Party Check" stays nsf: its page never says the check is deposited. The stale-read
 // floor stays at v97.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 181 } as const;
+// v182 (Knox slice dry run and cross-category scan, Nov 3; 10 wrong and 9 wrong-name rows of the live slice's 671,
+// and 5 live fees v180 re-read into a wrong category): every read gets a last name review (`withReviewedNames`,
+// `read-name-review.ts`) for words another part of the page lent it: a heading or another column glued in front
+// ("LOAN FEES: 3x10 Box"), a font glyph ("NSF FEE: g"), a box size's footnote digit ("3x103"), advice as a name, a
+// deposit to open or join, an all-capitals cell whose price is the next cell's own label, a box's late charge filed as
+// a loan's, and paper statements offered in a check image's name. A plain returned item beside a free NSF fee, or
+// beside a deposited item return at its own price, is the deposited item return (`withReturnBesideNsf`: Live Oak,
+// TXN; Parthenon's, beside a deposited return at another price, stays NSF). A wire service's monthly charge filed as
+// a monthly fee is held (Ameris). Two label cells over two price cells pair by column (`parallelColumnRows`: Advia);
+// a wire name never borrows a non-wire heading (Crow Wing); a code after a heading is no price digit (St. Cloud); an
+// account name that files as a fee is no account (Austin). The stale-read floor stays at v97.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 182 } as const;
 
 export interface SpecialistRun {
   strategy: string;
@@ -1316,20 +1329,40 @@ export function runFreeSpecialists(rawText: string, options: FreeSpecialistOptio
 export function withReturnBesideNsf<T extends { feeName: string; amount: number | null; canonicalHint: string | null }>(
   candidates: readonly T[],
   held: ReadonlyArray<{ feeName: string; amount: number | null; canonicalHint?: string | null }> = [],
+  text?: string,
 ): T[] {
   const nsfPrices = [...candidates, ...held]
     .filter((row) => row.amount != null && row.canonicalHint !== "deposited_item_return" && SCHEDULE_NSF_NAME.test(row.feeName))
     .map((row) => row.amount as number);
-  if (nsfPrices.length === 0) return [...candidates];
-  const documentNsf = Math.max(...nsfPrices);
+  // v182 (cross-category scan, Live Oak Bank text 6249): a schedule that prints its NSF fee free ("Non-Sufficient Funds
+  // (NSF) Fee No charge" under "Returned Item Fee $10") prices no NSF item, so its priced plain returned item is the
+  // deposited item return.
+  const freeNsf = text != null && freeNsfLine(text);
+  if (nsfPrices.length === 0 && !freeNsf) return [...candidates];
+  const documentNsf = nsfPrices.length > 0 ? Math.max(...nsfPrices) : 0;
   return candidates.map((read) => {
-    if (read.canonicalHint !== "nsf" || read.amount == null || !plainReturnBesideNsf(read.feeName, read.amount, documentNsf)) return read;
+    if (read.canonicalHint !== "nsf" || read.amount == null) return read;
+    const beside = plainReturnBesideNsf(read.feeName, read.amount, documentNsf) ||
+      (freeNsf && nsfPrices.every((price) => price === 0) && read.amount > 0 && PLAIN_RETURNED_ITEM.test(read.feeName));
+    if (!beside) return read;
     if (nsfPrices.some((price) => Math.abs(price - (read.amount as number)) < 0.005)) return read;
-    if ([...candidates, ...held].some((row) => row !== read && row.canonicalHint === "deposited_item_return")) return read;
+    // v182 (cross-category scan, TXN Bank text 10944): the page's own deposited item return at the plain return's own
+    // price ("Charge Backs | $10/Item" beside "Return Items | $10.00" and "NSF | $30.00") is the same kind of fee, so it
+    // never makes the plain return the member's item; one at another price (Parthenon FCU's "Deposited Item Return
+    // Fee- | $25.00/item" beside "Returned Item Fee- | $30.00/item") still does.
+    if ([...candidates, ...held].some((row) => row !== read && row.canonicalHint === "deposited_item_return" &&
+      (row.amount == null || Math.abs(row.amount - (read.amount as number)) >= 0.005))) return read;
     return checkFeeCategory("deposited_item_return", read.feeName).ok && passesDarwinChecks("deposited_item_return", read.feeName, read.amount)
       ? ({ ...read, canonicalHint: "deposited_item_return" } as T)
       : read;
   });
+}
+
+/** v182: a line that prints the NSF or insufficient-funds fee free, with no price ("Non-Sufficient Funds (NSF) Fee No charge"). */
+const FREE_PRICE_WORDS = /\b(?:no\s+charge|free|none|waived)\b|\$\s?0(?:\.00)?(?![\d.])/i;
+export function freeNsfLine(text: string): boolean {
+  return text.split("\n").some((line) => SCHEDULE_NSF_NAME.test(line) && FREE_PRICE_WORDS.test(line) && !/\$\s?[1-9]/.test(line) &&
+    !/\breturn/i.test(line) && line.trim().split(/\s+/).length <= 10);
 }
 
 function readFreeText(sourceText: string, discontinuedRows: DiscontinuedTableFlag, options: FreeSpecialistOptions): FreeExtractionResult {
@@ -1505,7 +1538,10 @@ function readFreeText(sourceText: string, discontinuedRows: DiscontinuedTableFla
       // Handling Service Fee1 (Business) | $30.00 | Per Month", "Returned Item-Recleared Fee1", "Returned
       // Item-Reroute of Return Fee1") is no NSF fee and no type of the 50: held unclassified for review
       // (`returnedItemServiceName`).
+      // v182 (Knox slice dry run, Ameris Bank text 1338): a wire service's own monthly charge filed as an account's
+      // monthly fee ("Online Wire Monthly Maintenance Fee | $25.00") is that subscription, held the same way.
       if ((read.canonicalHint?.startsWith("wire_") && wireServiceSubscription(feeName)) ||
+        (read.canonicalHint === "monthly_maintenance" && wireServiceMonthlyName(feeName)) ||
         (read.canonicalHint === "nsf" && returnedItemServiceName(feeName, read.frequency))) {
         const row: HeldFeeCandidate = { shape: "unclassified", feeName, amount: read.amount, amountMax: null, percent: null, frequency: read.frequency, canonicalHint: null, excerpt: read.excerpt };
         const key = heldKey(row);
@@ -1736,10 +1772,14 @@ function readFreeText(sourceText: string, discontinuedRows: DiscontinuedTableFla
   // document's Knox rows; Knox reads it from this text's reads, so the row is filed right before Darwin.
   // An NSF read at the return's own price, or the page's own deposited item return, keeps it NSF (the
   // seven-state key 5918: "Return Check Fee | $25.00" beside "Non-Sufficient Funds | $25.00").
-  candidates.splice(0, candidates.length, ...withReturnBesideNsf(candidates, held));
+  candidates.splice(0, candidates.length, ...withReturnBesideNsf(candidates, held, sourceText));
   // v181 (backlog dry run 12): a fee card whose own description says the returned item is one the member deposited
   // or cashed files it as the deposited item return (`depositedCardReturnRead`: ESL FCU's "Returned Item Fee").
   candidates.splice(0, candidates.length, ...candidates.map((read) => depositedCardReturnRead(read, sourceText)));
+  // v182 (Knox slice dry run and cross-category scan): words another part of the page lent a read's name or category
+  // come off before Darwin (`read-name-review.ts`: a glued heading, a glyph against the price, a box size's
+  // footnote, advice as a name, an opening deposit, a capitals cell's own label, a box's late fee).
+  candidates.splice(0, candidates.length, ...withReviewedNames(candidates, sourceText));
 
   // v150: a bare "Overdraft Protection" line is the paid-overdraft item fee when the schedule prints its
   // own overdraft transfer line and no other read is the overdraft fee (Alcose CU 51252, "Overdraft

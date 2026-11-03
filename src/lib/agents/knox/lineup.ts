@@ -1,4 +1,4 @@
-import { AMOUNT_PATTERN, amountsIn, BALANCE_BELOW_CLAUSE } from "@/lib/agents/knox/rules";
+import { AMOUNT_PATTERN, amountsIn, BALANCE_BELOW_CLAUSE, classifyFeeText } from "@/lib/agents/knox/rules";
 import { accountTableProduct } from "@/lib/custom-report/account-table";
 import { namesNoAccount, withoutNonAccountWords } from "@/lib/account-name-exclusions";
 import { accountKind, CHECKING_WORDS } from "@/lib/account-kind";
@@ -205,6 +205,10 @@ function distinctAccountNameOnly(value: string): string | null {
   // v141 nit: a footnote star after the name comes off ("50+ Checking*" -> "50+ Checking"); a mark (®) stays.
   const name = squash(value).replace(/[\s\-–:|,.*†‡]+$/, "").replace(HEADING_TAIL, "").replace(LEAD_IN, "");
   if (name.length < 4 || name.length > MAX_PRODUCT_NAME_CHARS || FEE_HEADING_END.test(name)) return null;
+  // v182 (Knox slice dry run, Austin Bank text 25416): a feature an account lists that is itself a fee's service
+  // ("Automatic Transfer from Savings", an overdraft transfer) names no account.
+  const asFee = classifyFeeText(name);
+  if (asFee && !ACCOUNT_PRODUCT_CATEGORIES.has(asFee)) return null;
   const numbered = numberedLine(value);
   if (numbered === "feature" || numbered === "other") return null;
   // "For all customers with savings needs…" is a tagline under the account (RNB 2558, 9 Oct).
