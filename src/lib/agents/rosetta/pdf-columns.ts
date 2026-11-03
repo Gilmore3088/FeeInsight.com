@@ -97,59 +97,42 @@ function rowCrossesGutter(items: PositionedItem[], middle: number): boolean {
   return false;
 }
 
-/** Running prose fills its column: this share of its lines end near the column's right edge... */
-const MIN_FILLED_LINE_SHARE = 0.6;
-/** ...within this share of the column's width. Table cells are ragged. */
-const FILLED_EDGE_SHARE = 0.15;
-
-/** In running prose a sentence wraps, so this share of lines go on in lower case; a cell starts afresh. */
-const MIN_CONTINUED_LINE_SHARE = 0.3;
-
 /**
- * Lines of running prose: long, most of them running to the column's right edge, and many going
- * on with a sentence the line above began. A column of notes, even long ones, starts each afresh.
+ * At least this share of the right side's blocks starting on a left table row marks one table.
+ * Measured on the 27 splits of the 18 replay PDFs (#1092): the share is 0.00 on 17 of them and
+ * at most 0.32 (Buffalo Metropolitan); a table's notes or description column starts nearly every
+ * block on its row (16 of 17 in a Service | Fee | Notes table, its header the 17th).
  */
-function runningProse(lines: PositionedItem[][]): boolean {
-  if (lines.length < MIN_SIDE_LINES) return false;
-  const texts = lines.map(textOf);
-  const start = Math.min(...lines.flat().map((item) => item.x));
-  const end = Math.max(...lines.flat().map((item) => item.end));
-  const reach = end - (end - start) * FILLED_EDGE_SHARE;
-  const filled = lines.filter((line) => Math.max(...line.map((item) => item.end)) >= reach).length;
-  const continued = texts.filter((text) => /^[a-z]/.test(text)).length;
-  return median(texts.map((text) => text.length)) >= MIN_PROSE_LINE_CHARS
-    && filled >= lines.length * MIN_FILLED_LINE_SHARE
-    && continued >= lines.length * MIN_CONTINUED_LINE_SHARE;
-}
-
-/** At least this share of the right side's lines extending a left table row marks one table. */
-const MAX_EXTENSION_SHARE = 0.5;
+const MIN_ROW_START_SHARE = 0.5;
 const LEADER = /\.{4,}/;
 
 /**
- * True when the right side reads as one more column of a table on the left (Service | Fee | Notes,
- * Service | Member | Non-member): on most of its lines, the left side on the same baseline is a
- * table row ending with a price cell ("Overdraft fee | $30.00"), and the right side is a single
- * cell, not a fee row of its own ("Daily maximum $150", "Non-members $30.00"). A table beside
- * another table, or two dot-leader lists, carries its own cells on the right and is not caught.
- * Measured on the 18 replay PDFs: at most 19% of a split side's lines extend a row this way.
+ * True when the right side reads as one more column of a table on the left: its blocks start on
+ * the table's rows. The right side's lines are grouped into blocks first: a line goes on with the
+ * block above it when it starts in lower case or has no left cell on its baseline, so a wrapped
+ * note or description is one block. A block starts on a row when the left side on its first
+ * line's baseline is a table row ending in a price cell ("Overdraft fee | $30.00") and the right
+ * side there is not a fee row of its own ("Stop payment | $35.00", a dot-leader line). A fee
+ * table's notes, descriptions and second prices start on their rows; independent columns start
+ * their blocks wherever their own text runs, and a table beside another table starts its own rows.
  */
 function extendsTableRows(items: PositionedItem[], middle: number): boolean {
   const separator = CELL_SEPARATOR.trim();
-  const rightLines = baselineLines(items.filter((item) => item.x >= middle && item.text.trim().length > 0));
-  if (runningProse(rightLines)) return false;
-  let extended = 0;
+  let blocks = 0;
+  let onRows = 0;
   for (const line of baselineLines(items)) {
-    const leftText = textOf(line.filter((item) => item.end <= middle));
     const rightText = textOf(line.filter((item) => item.x >= middle));
-    if (!leftText || !rightText) continue;
+    if (!rightText) continue;
+    const leftText = textOf(line.filter((item) => item.end <= middle));
+    if (blocks > 0 && (/^[a-z]/.test(rightText) || !leftText)) continue;
+    blocks += 1;
     const cells = leftText.split(separator).map((cell) => cell.trim());
     const leftRow = cells.length > 1 && VALUE_START.test(cells[cells.length - 1]);
     const rightCells = rightText.split(separator).map((cell) => cell.trim());
     const rightRow = LEADER.test(rightText) || (rightCells.length > 1 && rightCells.slice(1).some((cell) => VALUE_START.test(cell)));
-    if (leftRow && !rightRow) extended += 1;
+    if (leftRow && !rightRow) onRows += 1;
   }
-  return rightLines.length > 0 && extended >= rightLines.length * MAX_EXTENSION_SHARE;
+  return blocks > 0 && onRows >= blocks * MIN_ROW_START_SHARE;
 }
 
 /** True when the page may be split into two independent sides at `middle`. */

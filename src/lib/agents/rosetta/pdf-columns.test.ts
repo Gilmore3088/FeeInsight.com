@@ -118,7 +118,8 @@ describe("Rosetta pdf-columns: independent columns (PDF_COLUMN_READING_LIVE)", (
     });
 
     it("should_read_a_fee_table_beside_prose_column_by_column", () => {
-      const items = [...labelPriceTable(LEFT_FEES, 40, 140), ...prose(250, 16, TOP - 3)];
+      // Prose set in its own leading: its baselines fall between the table's rows.
+      const items = [...labelPriceTable(LEFT_FEES, 40, 140), ...PROSE.map((text, row) => run(text, 250, TOP - 6 - row * PITCH))];
       const lines = linesOf(on(items));
       expect(lines.slice(0, 16)).toEqual(LEFT_FEES.map(([label, price]) => `${label} | ${price}`));
       expect(lines.slice(16)).toEqual(PROSE);
@@ -368,6 +369,46 @@ describe("Rosetta pdf-columns: independent columns (PDF_COLUMN_READING_LIVE)", (
     it("should_keep_a_notes_column_whose_notes_are_long_lines", () => {
       const note = (text: string) => `${text}; ask a banker for the full details today`.slice(0, 40);
       const items = NOTED_ROWS.flatMap(([label, price, text], row) => [run(label, 40, y(row)), run(price, 180, y(row)), run(note(text), 240, y(row))]);
+      expect(on(items)).toBe(off(items));
+    });
+
+    // Second review of #2965: block starts, not line counts. A wrapped description is one block,
+    // and every block of a table's notes or descriptions starts on its row.
+    const tableRows = (rows: ReadonlyArray<readonly [string, string, ...unknown[]]>, step = 1) =>
+      rows.flatMap(([label, price], row) => [run(label, 40, y(row * step)), run(price, 180, y(row * step))]);
+
+    it("should_keep_a_table_whose_descriptions_wrap_onto_three_lines", () => {
+      const described = [
+        ["Overdraft fee (per item)", "$30.00", ["Daily maximum $150; charged for each", "item we pay into a negative balance", "on your checking account"]],
+        ["Returned item (NSF)", "$30.00", ["Daily maximum $150; charged for each", "item we return unpaid for lack of", "available funds"]],
+        ["Outgoing domestic wire", "$25.00", ["International wire $45; submit the", "request before 2 p.m. for same day", "processing"]],
+        ["Account research", "$25.00", ["Minimum charge $10; billed per hour", "of research with a one hour minimum", "for each request"]],
+        ["Debit card replacement", "$10.00", ["Rush delivery $50; standard delivery", "takes seven to ten business days", "by mail"]],
+        ["Safe deposit box 3x5", "$30.00", ["Late payment $10; rent is due each", "year on the anniversary of the lease", "date"]],
+        ["Stop payment", "$25.00", ["Online request $15; each stop lasts", "six months and may be renewed for", "another fee"]],
+      ] as const;
+      const items = [...tableRows(described, 3),
+        ...described.flatMap(([, , lines], row) => lines.map((text, k) => run(text, 270, y(row * 3 + k))))];
+      expect(on(items)).toBe(off(items));
+      expect(linesOf(on(items))[0]).toBe("Overdraft fee (per item) | $30.00 | Daily maximum $150; charged for each");
+    });
+
+    it("should_keep_a_notes_column_of_near_equal_mixed_case_notes", () => {
+      const note = (text: string, row: number) =>
+        (`${row % 3 === 0 ? `plus ${text.toLowerCase()}` : text} for all accounts at this bank`).slice(0, 34 + (row % 4) * 2);
+      const items = [...tableRows(NOTED_ROWS), ...NOTED_ROWS.map(([, , text], row) => run(note(text, row), 270, y(row)))];
+      expect(on(items)).toBe(off(items));
+    });
+
+    it("should_keep_a_notes_column_whose_notes_all_start_in_lower_case", () => {
+      const note = (text: string, row: number) => (`plus ${text.toLowerCase()} for all accounts at this bank`).slice(0, 34 + (row % 4) * 2);
+      const items = [...tableRows(NOTED_ROWS), ...NOTED_ROWS.map(([, , text], row) => run(note(text, row), 270, y(row)))];
+      expect(on(items)).toBe(off(items));
+      expect(linesOf(on(items))[14]).toContain("Safe deposit box 3x5 | $30.00 | plus late payment $10");
+    });
+
+    it("should_keep_prose_set_on_a_fee_tables_own_baselines_as_its_description_column", () => {
+      const items = [...labelPriceTable(LEFT_FEES, 40, 140), ...prose(250)];
       expect(on(items)).toBe(off(items));
     });
 

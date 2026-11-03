@@ -30,15 +30,22 @@ runs only when no earlier detector fires. A gutter splits the page only when:
 - no row reaches across it: no shared baseline whose right side opens at its own edge with a price,
   or is nothing but price cells ("$1 $1 $1 $1", "3 Free → $5"); none whose left side is a bare
   price facing a label; no label running into the gutter with its price just past it;
-- the right side is not one more column of a table on the left (review of #2965): on half or more
-  of its lines, the left side on the same baseline must not be a table row ending in a price cell
-  ("Overdraft fee | $30.00") beside a right side that is a single cell rather than a fee row of its
-  own ("Daily maximum $150", "Non-members $30.00", "Not available"). A Service | Fee | Notes or
-  Member | Non-member table keeps its rows. Running prose on the right (long lines that reach the
-  column's edge, and 30% or more go on in lower case) is not a cell column. Row alignment alone
-  could not tell them apart: the real splits share 36% to 100% of their baselines (texas:841's
-  facing pages 90-100%). On the 18 replay PDFs at most 19% of a split side's lines extend a row
-  this way (Buffalo Metropolitan), against 94% for the review's notes table;
+- the right side is not one more column of a table on the left (two reviews of #2965). The right
+  side's lines are grouped into blocks: a line goes on with the block above when it starts in lower
+  case or has no left cell on its baseline, so a wrapped note or description is one block. A block
+  starts on a row when the left side on its first line is a table row ending in a price cell
+  ("Overdraft fee | $30.00") and the right side there is not a fee row of its own (a cell row with
+  a price, a dot-leader line). When half or more of the blocks start on rows, the split is refused:
+  a table's notes, descriptions (wrapped onto three lines too) and second prices ("Non-members
+  $30.00", "Not available") start on their rows, while independent columns start their blocks
+  wherever their own text runs. Prose that shares a table's baselines is refused the same way; prose
+  set in its own leading is not.
+  - Row alignment alone could not separate them: the real splits share 36% to 100% of their
+    baselines (texas:841's facing pages 90-100%). A line-count share (round two) let a wrapped
+    description column through, since only a third of its lines sit on a row.
+  - Block-start share on the 27 splits of the 18 replay PDFs: 0.00 on 17; 0.03 on 2; 0.07, 0.10,
+    0.11, 0.16, 0.20, 0.24, 0.25; at most 0.32 (Buffalo Metropolitan). The review's fee-table
+    shapes score 0.94 to 1.00. The threshold is 0.5;
 - each side stands on its own: running prose (median line 25 characters or more, few cells), or at
   least 3 lines that hold their own label and price;
 - each side is a fifth of the text width or more and holds 5 lines or more; text is upright.
@@ -48,7 +55,7 @@ strip of bullet glyphs joins its column (U.S. Century). When no gutter runs the 
 page is cut into regions at lines holding one item half the text width wide (a title, a footnote),
 and each region is tried alone; spanning lines are read whole.
 
-**Tests:** 49 near-miss tests on synthetic positioned runs (`pdf-columns.test.ts`): two fee lists,
+**Tests:** 53 near-miss tests on synthetic positioned runs (`pdf-columns.test.ts`): two fee lists,
 offset baselines, two side-by-side tables, prose beside a table both ways, account terms, full-width
 title, heading mid-page, spanning footnotes, title plus footnotes, bullet strip, booklet spread,
 landscape tables, three lists, headings and wrapped labels inside a column, box-size rows; and kept
@@ -60,7 +67,9 @@ two-column footnotes under a table, a rotated page, a wide landscape table, too 
 columns, labels beside descriptions, a mixed page whose table rows cross, a mixed page split only
 below its heading, pages the earlier detectors already read, and from the review: a Service | Fee |
 Notes table, a notes column of long lines, a Member | Non-member table whose second price opens with
-words, and table rows beside single-cell fee lines (which read like notes, so they stay rows). Switch tests: off by default, the
+words, table rows beside single-cell fee lines (which read like notes, so they stay rows), a
+description column wrapped onto three lines, near-equal mixed-case notes, all-lower-case notes, and
+prose on a table's own baselines. Switch tests: off by default, the
 default read is the switch-off read (3 tests). `shadow-lab/pdf-column-reading-inert.test.ts` reads all 18
 replay PDFs with the switch off and at its default and checks each text's sha256 against main
 d5771aa66's (`__fixtures__/source-bytes/pdf-text-main-sha256.json`).
