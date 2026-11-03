@@ -77,7 +77,7 @@ earlier read of its line on the same page cannot match.
 - Old category right (5): 4 would be superseded (above); #99612 is left (its line is printed three
   times).
 - Overdraft/NSF combined (8): none moved.
-- Either (2): #32351 superseded, #161632 left (another page). Unclear (1): #33508 left (the live line was
+- Either (2): both left: #32351 ("Certified Check/Cashier’s Check/Money Order $2" prices both items), #161632 (another page). Unclear (1): #33508 left (the live line was
   cut off at "per transfe").
 - Different fees at one price (21): none paired.
 
@@ -85,17 +85,25 @@ earlier read of its line on the same page cannot match.
 pairs: live dollar fees of one bank, amount and product under different categories, the earlier raw row
 written first, one stored line inside the other) found 395 pairs. Narrowed by SQL to the rule's page,
 newer-copy, printed-once, priceless-words and overdraft/NSF tests (139 pairs), and then judged by
-`findRereadCategoryMoves` on those rows, 101 live fees at 96 institutions would come down. The page and
+`findRereadCategoryMoves` on those rows, 101 live fees at 96 institutions would have come down. The page and
 printed-once tests ran as SQL ports of `samePageCopy` and `sameStatedLine`, not the TypeScript itself,
 because no session here can run the step against prod; the first verify step with the check reports its
-own count. Ids: 13397, 14830, 15840, 16686, 17905, 18122, 20317, 21097, 23584, 24750, 25249, 25971,
-26570, 27290, 27543, 27908, 28116, 30658, 30678, 32365, 33582, 34019, 34580, 35160, 35460, 35639, 36379,
-36774, 37081, 37082, 37632, 37633, 37828, 38440, 41880, 44226, 44366, 44459, 45338, 50275, 50803, 52129,
-53494, 55406, 55950, 56100, 56849, 57717, 58050, 58255, 59975, 64309, 65195, 66367, 67304, 69931, 72813,
-74604, 76451, 76920, 76925, 78040, 80371, 80980, 83106, 83813, 86120, 86121, 90080, 94538, 96475, 98236,
-99628, 101882, 104637, 104806, 104858, 108260, 108726, 110249, 111141, 111576, 113669, 113791, 114272,
-114614, 117287, 120035, 126766, 127694, 129383, 132445, 133275, 137561, 139049, 139453, 139766, 143121,
-143778, 144869, 161745.
+own count.
+
+**Review of #2980 (Nov 3): one line can price two fees.** The independent review ran the rule over all 396
+live pairs and found it would take down a right fee where one printed line prices an item of each category:
+"Official Checks and Money Orders (up to $1,000) | $2.00" (#21097), "Money order/Cashier check fee | $8.00"
+(#57717), "Money Orders and Corporate Checks | $3" (#74604), "Teller's checks/money order" (#76925),
+"Purchase money orders and cashier's checks / Free" (#72813), "Copy Requests (checks, statements, deposited
+items)" (#52322). The bank charges that price for both, so both categories stay live. And the overdraft/NSF
+test missed a combined line that names its overdraft program ("NSF/Privilege Pay Fee | $25.00", #37509,
+nsf to overdraft), saved today only because its text prints the line twice. Fixes: `lineNamesBothCategories`
+reads the line's label part by part (split at "/", "and", "&", "or", commas and brackets) with Knox's
+`classifyFeeText`, and leaves the pair when it names both categories; `overdraftNsfMove` never moves between
+overdraft and NSF at all, as Darwin's `CONVENTION_PENDING` already does. The upper bound over the 396 pairs
+(the TypeScript rule on the stored lines) fell from 121 to 94, and 24 of the 101 above drop out, leaving
+77 live fees at 73 institutions (the 101 less those 24; the first verify step reports its own count). Ids:
+13397, 14830, 15840, 16686, 17905, 18122, 20317, 23584, 24750, 25249, 25971, 26570, 27543, 27908, 28116, 30658, 30678, 33582, 34019, 34580, 35460, 35639, 37081, 37082, 37632, 37633, 37828, 38440, 41880, 44226, 44366, 44459, 50803, 52129, 53494, 55406, 55950, 56100, 56849, 59975, 65195, 66367, 67304, 69931, 76451, 80371, 80980, 83106, 83813, 86120, 86121, 90080, 94538, 96475, 99628, 101882, 104637, 104806, 104858, 108260, 108726, 111141, 111576, 113669, 113791, 114272, 114614, 127694, 129383, 132445, 137561, 139453, 139766, 143121, 143778, 144869, 161745.
 
 Most are the loan taxonomy's two readings of one line (`loan_origination` and `other_lending_fee`,
 "Loan Processing Fee", "Loan Modification Fee") and safe deposit box late fees live as loan late fees.
@@ -113,5 +121,5 @@ verdict on these before it goes on, and the wrong later reads go back to Knox as
 **Guard:** `src/lib/agents/hamilton/reread-category-move.test.ts` and `src/lib/agents/darwin/reread-category-move-check.test.ts`.
 **Agent lesson:** hamilton/publish-reread-category-is-not-line-identity
 
-**Status:** Shipped off. Next: Knox's fix for the 5 wrong re-reads, then a sample of the 101 live pairs;
+**Status:** Shipped off. Next: Knox's fix for the 5 wrong re-reads, then a sample of the 77 live pairs;
 turning `REREAD_CATEGORY_MOVE_LIVE` on is James's call on that dry run.

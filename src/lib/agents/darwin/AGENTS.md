@@ -1624,10 +1624,12 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   document's current text. The earlier read comes down on its second look (check
   `darwin.reread_category_move`) as `same_line_duplicate: live fee #<later>` (batch
   `darwin-reread-category-move-<run>`, verified row rejected with the `same_line_duplicate` flag), never
-  behind a fee the same pass takes down. An overdraft/NSF move on a line naming both is never made
-  (#1513). `REREAD_CATEGORY_MOVE_LIVE` (Hamilton's) is off: the step only reports
+  behind a fee the same pass takes down. An overdraft/NSF move is never made (#1513), and neither is a move
+  on a line that prices an item of each category ("Money order/Cashier check fee | $8.00",
+  `lineNamesBothCategories`). `REREAD_CATEGORY_MOVE_LIVE` (Hamilton's) is off: the step only reports
   (`reread_category_move_check`). Dry run 2026-11-03 (prod, read-only, SQL-narrowed then judged by
-  `findRereadCategoryMoves`): 395 candidate pairs, 101 live fees at 96 institutions would come down; at
+  `findRereadCategoryMoves`): 395 candidate pairs, 101 live fees at 96 institutions would come down, 77 at 73 after the two-item-line
+  and overdraft/NSF fixes of the #2980 review; at
   least 10 of them look like the later read is the wrong one, so the switch waits on a sampled verdict
   (finding 2026-11-03-reread-cross-category-duplicates).
 - Schedule editions (`edition-effective-check.ts`, #1915). Avidia's schedule "Effective December 1,

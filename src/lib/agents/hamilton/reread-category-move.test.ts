@@ -4,6 +4,9 @@ import { namesShareReading } from "./publish";
 import {
   REREAD_CATEGORY_MOVE_LIVE,
   combinedOverdraftNsfLine,
+  labelCategories,
+  lineNamesBothCategories,
+  overdraftNsfMove,
   rereadsLineInAnotherCategory,
   sameStatedLine,
   statedLineFold,
@@ -101,10 +104,11 @@ describe("one printed line re-read under another category (reread-category-move.
     expect(superseded("false_pair")).toEqual([]);
   });
 
-  it("leaves the unclear and one of the either-way pairs, and moves the other", () => {
+  it("leaves the unclear and the either-way pairs", () => {
     expect(superseded("doubtful")).toEqual([]);
-    expect(superseded("either")).toEqual([32351]);
-    expect(kept("either")).toEqual([161632]);
+    // 32351 "Certified Check/Cashier’s Check/Money Order $2" prices both items: both stay live (review of #2980).
+    expect(superseded("either")).toEqual([]);
+    expect(kept("either")).toEqual([32351, 161632]);
   });
 
   it("would replace 4 of the 5 live fees whose old category is right, so the switch stays off until Knox reads them right", () => {
@@ -162,5 +166,41 @@ describe("combinedOverdraftNsfLine", () => {
     expect(combinedOverdraftNsfLine(["nsf", "overdraft"], ["Overdraft/Returned Item Fee | $35.00"])).toBe(true);
     expect(combinedOverdraftNsfLine(["overdraft", "nsf"], ["Overdraft Fee | $30.00"])).toBe(false);
     expect(combinedOverdraftNsfLine(["overdraft", "od_protection_transfer"], ["Overdraft/NSF Transfer | $5"])).toBe(false);
+  });
+});
+
+describe("overdraftNsfMove (review of #2980)", () => {
+  it("is every move between overdraft and NSF, whatever the line calls its overdraft program", () => {
+    expect(overdraftNsfMove(["nsf", "overdraft"])).toBe(true);
+    expect(overdraftNsfMove(["overdraft", "nsf"])).toBe(true);
+    expect(overdraftNsfMove(["overdraft", "od_protection_transfer"])).toBe(false);
+  });
+
+  it("keeps live 37509 'NSF/Privilege Pay Fee | $25.00' (nsf) when a re-read files it as overdraft", () => {
+    const c = all.find((each) => each.live_id === 64789)!;
+    const line = "NSF/Privilege Pay Fee | $25.00";
+    const [readSide, liveSide] = sides(c);
+    const read = { ...readSide, canonical_fee_key: "overdraft", fee_name: "NSF/Privilege Pay Fee", excerpt: line };
+    const live = { ...liveSide, canonical_fee_key: "nsf", fee_name: "NSF/Privilege Pay Fee", excerpt: line };
+    expect(rereadsLineInAnotherCategory(read, live, `Fees\n${line}\nOther | $5.00`, 25, true)).toBe(false);
+  });
+});
+
+describe("lineNamesBothCategories (review of #2980)", () => {
+  it("is a line that prices an item of each category: both fees stay live", () => {
+    const lines: Array<[string, string, string]> = [
+      ["cashiers_check", "money_order", "Official Checks and Money Orders (up to $1,000) | $2.00"],
+      ["cashiers_check", "money_order", "Money order/Cashier check fee | $8.00"],
+      ["cashiers_check", "money_order", "Money Orders and Corporate Checks | $3"],
+      ["cashiers_check", "money_order", "Teller's checks/money order (per check/MO) | $10.00"],
+      ["cashiers_check", "money_order", "Purchase money orders and cashier's checks / Free"],
+      ["document_reproduction", "check_image", "Copy Requests (checks, statements, deposited items) | $3.00"],
+    ];
+    for (const [one, two, line] of lines) expect(lineNamesBothCategories([one, two], [line]), line).toBe(true);
+  });
+
+  it("is not a line naming one item, so a real correction still moves", () => {
+    expect(lineNamesBothCategories(["late_payment", "safe_deposit_box"], ["Late Payment Fee .... $15.00"])).toBe(false);
+    expect(labelCategories("Money order/Cashier check fee")).toEqual(new Set(["money_order", "cashiers_check"]));
   });
 });

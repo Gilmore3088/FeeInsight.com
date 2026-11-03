@@ -1350,7 +1350,8 @@ page (one document, or a copy of the same page; never an older copy's read over 
 row is the later read, their stored lines fold to the same words and figures (whole-dollar cents
 dropped) or one is the other with only priceless words around it, each printed once in the row's copy,
 the price printed once unless both names match, one name's words are all in the other's, and the
-frequencies do not differ. A move between overdraft and NSF on a line naming both (#1513) is never made.
+frequencies do not differ. A move between overdraft and NSF (#1513) is never made, and neither is a move on a line that
+prices an item of each category ("Official Checks and Money Orders | $2.00": both fees stay live).
 The re-read supersedes the live fee (no price change recorded). Only a later read qualifies, so a first
 read never replaces anything. Counted in `reread_category_move_check`; acts only while
 `REREAD_CATEGORY_MOVE_LIVE` is on, which waits on Knox's fix for its wrong re-reads (4 of the scan's 5

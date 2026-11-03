@@ -2,6 +2,7 @@ import type { sql } from "@/lib/data-store/connection";
 import { sameProduct } from "@/lib/fee-product";
 import { inSavepoint } from "@/lib/agents/savepoint";
 import { frequencyClass } from "@/lib/agents/hamilton/exact-duplicate";
+import { classifyFeeText } from "@/lib/agents/knox/rules";
 import { pricedOnce, samePageCopy, type ProductSplitSide } from "./product-split";
 import { PUBLISHED_IDENTITY_COLUMNS } from "./published-identity";
 import { readPublicationEvidence, type PublicationEvidence } from "./publication-evidence";
@@ -37,8 +38,11 @@ type SqlTag = typeof sql;
  *   prints the price twice may hold two fees;
  * - one name's words are all in the other's (`namesShareReading` in publish.ts, passed in);
  * - their frequencies do not differ (`frequencyClass`);
- * - the move is not between overdraft and NSF on a line naming both (`combinedOverdraftNsfLine`): the
- *   paid-NSF convention (#1513) is James's to settle.
+ * - the move is never between overdraft and NSF (`OVERDRAFT_NSF_MOVE`), in either direction: the paid-NSF
+ *   convention (#1513) is James's to settle, and a combined line can name its overdraft program by a
+ *   word no list holds ("NSF/Privilege Pay Fee");
+ * - the line does not price an item of each category (`lineNamesBothCategories`): "Official Checks and
+ *   Money Orders | $2.00" is one price for two fees, so both categories stay live.
  *
  * Hamilton's publish step then supersedes the live fee with the re-read (`superseded by #<id>`, no price
  * change recorded, the amount is the same). Darwin's live re-check (`darwin/reread-category-move-check.ts`)
@@ -115,6 +119,56 @@ export function combinedOverdraftNsfLine(keys: [string | null, string | null], t
   return texts.some((text) => OVERDRAFT_WORD.test(text ?? "") && NSF_WORD.test(text ?? ""));
 }
 
+/** Never a move, either way: the paid-NSF convention (#1513), as `CONVENTION_PENDING` in darwin/reread-category-check.ts. */
+export function overdraftNsfMove(keys: [string | null, string | null]): boolean {
+  const pair = new Set(keys);
+  return pair.has("overdraft") && pair.has("nsf");
+}
+
+/**
+ * The parts of a line's label: split at "/", "and", "&", "or", commas and brackets, prices dropped. Never
+ * at a table cell ("Stop Payment | Cashier's Check | $5.00" is a heading cell and the row's own item).
+ */
+const LABEL_JOINER = /\s*(?:\/|\band\b|&|,|;|\bor\b|\(|\))\s*/i;
+/** A part that is a condition, not an item ("2 Free Per Month", "Thereafter", "per presentment"): never borrows the head. */
+const CONDITION_PART = /\d|\b(?:free|per|each|ea|month|monthly|year|thereafter|after|first|up|to|over|under|max(?:imum)?|min(?:imum)?|only|plus|fee|fees|charge)\b/i;
+const singular = (word: string) => word.replace(/['’]s$/i, "").replace(/(?<=[a-z]{3})s$/i, "");
+
+/**
+ * Pure: the categories a line's label names, part by part. A later part also borrows the head part's
+ * words ("Copy Requests (checks, statements)" names a check copy and a statement copy).
+ */
+export function labelCategories(text: string | null | undefined): Set<string> {
+  const label = String(text ?? "").replace(PRICE, " ");
+  const parts = label.split(LABEL_JOINER).map((part) => part.trim()).filter((part) => /[a-z]{2}/i.test(part));
+  const keys = new Set<string>();
+  const add = (value: string) => {
+    const key = classifyFeeText(value);
+    if (key) keys.add(key);
+  };
+  const head = parts[0] ?? "";
+  for (const [index, part] of parts.entries()) {
+    add(part);
+    if (index === 0 || CONDITION_PART.test(part) || part.split(/\s+/).length > 3 || !/[a-z]{4}/i.test(part)) continue;
+    add(`${head} ${part}`);
+    for (const word of head.split(/\s+/).filter((w) => /^[a-z]{3,}$/i.test(w))) add(`${singular(part)} ${singular(word)}`);
+  }
+  return keys;
+}
+
+/**
+ * Pure: the line (or a name) prices an item of each category ("Money order/Cashier check fee | $8.00",
+ * "Purchase money orders and cashier's checks / Free"). One price for two fees: both stay live.
+ */
+export function lineNamesBothCategories(keys: [string | null, string | null], texts: Array<string | null | undefined>): boolean {
+  const [one, two] = keys;
+  if (!one || !two) return false;
+  return texts.some((text) => {
+    const named = labelCategories(text);
+    return named.has(one) && named.has(two);
+  });
+}
+
 /**
  * Pure: `read` re-reads `live`'s printed line under another category (the module note's rule).
  * `currentText` is the stored text of the newer of the two documents; `amount` the shared amount;
@@ -128,6 +182,7 @@ export function rereadsLineInAnotherCategory(
   namesShare: boolean,
 ): boolean {
   if (!read.canonical_fee_key || !live.canonical_fee_key || read.canonical_fee_key === live.canonical_fee_key) return false;
+  if (overdraftNsfMove([read.canonical_fee_key, live.canonical_fee_key])) return false;
   if (!sameProduct(read.product_name, live.product_name)) return false;
   if (!samePageCopy(read, live)) return false;
   // The re-read gate: an earlier read of the line, from the same copy or an older copy of the page.
@@ -144,7 +199,7 @@ export function rereadsLineInAnotherCategory(
   if (!namesShare) return false;
   const [one, two] = [frequencyClass(read.frequency), frequencyClass(live.frequency)];
   if (one != null && two != null && one !== two) return false;
-  return !combinedOverdraftNsfLine([read.canonical_fee_key, live.canonical_fee_key], [read.excerpt, live.excerpt, read.fee_name, live.fee_name]);
+  return !lineNamesBothCategories([read.canonical_fee_key, live.canonical_fee_key], [line, read.excerpt, live.excerpt, read.fee_name, live.fee_name]);
 }
 
 export interface CategoryMoveCandidate {
