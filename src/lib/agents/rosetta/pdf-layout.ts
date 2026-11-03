@@ -24,9 +24,30 @@
  * Layout version 5: two independent stacked label/next-line bullet-price lists
  * read column by column. Mixed label/amount rows and monetary gutter crossings
  * refuse this detector; they retain the existing baseline reading.
+ *
+ * Independent columns (`pdf-columns.ts`, behind `PDF_COLUMN_READING_LIVE`, off; #1092): two
+ * columns that each carry their own fees or prose, split by a gutter no row reaches across,
+ * read column by column. It joins version 5 without a bump while the switch is off; the flip
+ * checklist in `findings/2026-11-02-pdf-columns-read-across.md` says when it needs its own.
  */
 
 import { CELL_SEPARATOR } from "./html-dom";
+import { independentColumnLines, PDF_COLUMN_READING_LIVE } from "./pdf-columns";
+import {
+  baselineLines,
+  inBand,
+  linesText,
+  median,
+  pageGutters,
+  positioned,
+  readInBands,
+  type Band,
+  type PdfTextItem,
+  type PositionedItem,
+} from "./pdf-geometry";
+
+export type { PdfTextItem };
+export { PDF_COLUMN_READING_LIVE };
 
 /**
  * Recorded on each `read.pdf_layout` attempt (`detail.pdf_layout`). Version 2 reads prose
@@ -37,151 +58,19 @@ import { PDF_LAYOUT_VERSION } from "./reader-versions";
 // The number lives in reader-versions.ts (bump it there); the history stays above.
 export { PDF_LAYOUT_VERSION };
 
-export interface PdfTextItem {
-  str: string;
-  /** pdf.js transform matrix: [a, b, c, d, x, y]. */
-  transform: number[];
-  width: number;
-  height: number;
-  /** pdf.js marks the last item of a line the file itself ends (`pdf-reader-agreement.ts`). */
-  hasEOL?: boolean;
-}
-
-/** A gap wider than this many font heights is a column break, not a word space. */
-const COLUMN_GAP_EM = 1.5;
-/** Gaps below this share of the font height join without a space (split words). */
-const WORD_GAP_EM = 0.12;
-
-interface PositionedItem {
-  text: string;
-  x: number;
-  y: number;
-  end: number;
-  size: number;
-}
-
-function positioned(items: PdfTextItem[]): PositionedItem[] {
-  const result: PositionedItem[] = [];
-  for (const item of items) {
-    if (typeof item.str !== "string" || item.str.length === 0) continue;
-    const [a = 0, b = 0, , d = 0, x = 0, y = 0] = item.transform ?? [];
-    const size = Math.abs(item.height) || Math.hypot(a, b) || Math.abs(d) || 10;
-    result.push({ text: item.str, x, y, end: x + (Number(item.width) || 0), size });
-  }
-  return result;
-}
-
-/** A gutter between prose columns is at least this many font heights wide. */
-const GUTTER_EM = 1;
 /** Every prose column spans at least this share of the page's text width. */
 const MIN_COLUMN_SHARE = 0.2;
 /** A prose column's median line has at least this many characters. */
 const MIN_PROSE_LINE_CHARS = 25;
 /** In a prose column fewer than this share of lines carry a price; a fee table's do. */
 const MAX_PRICED_LINE_SHARE = 0.3;
-/**
- * A gutter may be covered by at most this share of the page's lines: a title over the
- * columns, a page number, the full-width lines of a form below them.
- */
-const GUTTER_COVERAGE_SHARE = 0.1;
 /** Items that may cross a gutter (titles over the columns), as a share of the page's items. */
 const MAX_CROSSING_SHARE = 0.1;
-/** Pages with fewer text items are never read as columns. */
-const MIN_COLUMN_PAGE_ITEMS = 30;
 const PRICE = /\$\s?\d/;
 /** A fee table's price cell opens its line; prose states a price mid-sentence. */
 const LEADING_PRICE = /^(?:\$\s?\d|free\b|no (?:charge|fee)\b|n\/a\b)/i;
 /** In a prose column fewer than this share of lines open with a price. */
 const MAX_LEADING_PRICE_SHARE = 0.1;
-
-function median(values: number[]): number {
-  const sorted = [...values].sort((left, right) => left - right);
-  return sorted.length === 0 ? 0 : sorted[Math.floor(sorted.length / 2)];
-}
-
-/** Lines of positioned items, one per baseline, top to bottom. */
-function baselineLines(items: PositionedItem[]): PositionedItem[][] {
-  const sorted = [...items].sort((left, right) => right.y - left.y || left.x - right.x);
-  const lines: PositionedItem[][] = [];
-  for (const item of sorted) {
-    const current = lines[lines.length - 1];
-    const tolerance = Math.max(2, item.size * 0.5);
-    if (current && Math.abs(current[0].y - item.y) <= tolerance) current.push(item);
-    else lines.push([item]);
-  }
-  return lines;
-}
-
-function linesText(items: PositionedItem[]): string[] {
-  return baselineLines(items)
-    .map((line) => {
-      line.sort((left, right) => left.x - right.x);
-      let text = "";
-      let previous: PositionedItem | null = null;
-      for (const item of line) {
-        if (previous) {
-          const gap = item.x - previous.end;
-          const em = Math.max(previous.size, item.size);
-          if (gap > em * COLUMN_GAP_EM) text += CELL_SEPARATOR;
-          else if (gap > em * WORD_GAP_EM && !/\s$/.test(text) && !/^\s/.test(item.text)) text += " ";
-        }
-        text += item.text;
-        previous = item;
-      }
-      return text.trim();
-    })
-    .filter((line) => line.length > 0 && line !== CELL_SEPARATOR.trim());
-}
-
-type Band = [start: number, end: number];
-
-const inBand = (item: PositionedItem, [start, end]: Band) => item.x >= start - 1 && item.end <= end + 1;
-
-/**
- * The page's text items (word spaces left out), their left and right edges, and the middle
- * of each gutter: a vertical strip at least a font height wide that few lines cover. Null
- * when the page has too few items to tell.
- */
-function pageGutters(
-  all: PositionedItem[],
-): { items: PositionedItem[]; left: number; right: number; middles: number[] } | null {
-  // Word spaces drawn as their own items say nothing about where the text is.
-  const items = all.filter((item) => item.text.trim().length > 0);
-  if (items.length < MIN_COLUMN_PAGE_ITEMS) return null;
-  const left = Math.min(...items.map((item) => item.x));
-  const right = Math.max(...items.map((item) => item.end));
-  const width = Math.ceil(right - left);
-  if (width <= 0) return null;
-  // Coverage counts lines, not items: a PDF that draws each word or letter as its own item
-  // (First United's overdraft notice) would otherwise allow a gutter as many items as a
-  // whole column has lines, and no strip of the page would ever be covered.
-  const lines = baselineLines(items);
-  const coverage = new Array<number>(width + 1).fill(0);
-  for (const line of lines) {
-    const covered = new Array<boolean>(width + 1).fill(false);
-    for (const item of line) {
-      const from = Math.max(0, Math.floor(item.x - left));
-      const to = Math.min(width, Math.ceil(item.end - left));
-      for (let point = from; point < to; point += 1) covered[point] = true;
-    }
-    covered.forEach((on, point) => {
-      if (on) coverage[point] += 1;
-    });
-  }
-  const coverageAllowed = Math.floor(lines.length * GUTTER_COVERAGE_SHARE);
-  const minGutter = median(items.map((item) => item.size)) * GUTTER_EM;
-  const middles: number[] = [];
-  let runStart = -1;
-  for (let point = 0; point <= width; point += 1) {
-    const open = point < width && coverage[point] <= coverageAllowed;
-    if (open && runStart < 0) runStart = point;
-    if (!open && runStart >= 0) {
-      if (runStart > 0 && point < width && point - runStart >= minGutter) middles.push(left + (runStart + point) / 2);
-      runStart = -1;
-    }
-  }
-  return { items, left, right, middles };
-}
 
 /**
  * The page's prose columns, left to right, or null when the page is not set in columns of
@@ -319,28 +208,23 @@ function stackedFeeListColumns(all: PositionedItem[]): Band[] | null {
  * Text of one page with one line per baseline. A page in prose columns reads each column
  * top to bottom; a line that crosses the gutters (a title) closes the columns above it.
  */
-export function layoutPageResult(items: PdfTextItem[]): { text: string; stackedColumns: boolean } {
+export interface LayoutOptions {
+  /** Defaults to `PDF_COLUMN_READING_LIVE`; the shadow lab's source replay sets it to measure the switch. */
+  columnReading?: boolean;
+}
+
+export function layoutPageResult(
+  items: PdfTextItem[],
+  options: LayoutOptions = {},
+): { text: string; stackedColumns: boolean } {
   const all = positioned(items);
   const earlierBands = proseColumns(all) ?? leaderListColumns(all);
   const stackedBands = earlierBands ? null : stackedFeeListColumns(all);
   const bands = earlierBands ?? stackedBands;
-  if (!bands) return { text: linesText(all).join("\n"), stackedColumns: false };
-  const out: string[] = [];
-  let block: PositionedItem[] = [];
-  const flush = () => {
-    for (const band of bands) out.push(...linesText(block.filter((item) => inBand(item, band))));
-    block = [];
-  };
-  for (const line of baselineLines(all)) {
-    if (line.every((item) => item.text.trim().length === 0 || bands.some((band) => inBand(item, band)))) {
-      block.push(...line);
-      continue;
-    }
-    flush();
-    out.push(...linesText(line));
-  }
-  flush();
-  return { text: out.join("\n"), stackedColumns: stackedBands != null };
+  if (bands) return { text: readInBands(all, bands).join("\n"), stackedColumns: stackedBands != null };
+  const columnReading = options.columnReading ?? PDF_COLUMN_READING_LIVE;
+  const columns = columnReading ? independentColumnLines(all) : null;
+  return { text: (columns ?? linesText(all)).join("\n"), stackedColumns: false };
 }
 
 export function layoutPageText(items: PdfTextItem[]): string {
@@ -348,5 +232,5 @@ export function layoutPageText(items: PdfTextItem[]): string {
 }
 
 export function layoutDocumentText(pages: PdfTextItem[][]): string {
-  return pages.map(layoutPageText).join("\n\n");
+  return pages.map((items) => layoutPageText(items)).join("\n\n");
 }

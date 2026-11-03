@@ -81,6 +81,11 @@ export interface SwitchOverrides {
    * replays stored text and reads it identically either way.
    */
   htmlRowPairing?: boolean;
+  /**
+   * `PDF_COLUMN_READING_LIVE` (#1092, rosetta/pdf-columns.ts): a Rosetta reader switch, measured
+   * like `htmlRowPairing` on the source replay's re-read only.
+   */
+  pdfColumnReading?: boolean;
   /** Category guard switches: the replay's re-file of Knox's hint and Hamilton's publish guard. */
   category?: Pick<CategoryGuardOptions, "borrowedDirection" | "nonCustomerCashiersCheck" | "intlAbbreviation" | "loanPaymentNsf">;
 }
@@ -134,6 +139,13 @@ export const EXPERIMENTS: Readonly<Record<string, ExperimentConfig>> = {
       "Rosetta's HTML reader writes a label and its price that one DOM row holds (an ARIA row, a grid row of columns, a flex row) on one line (`HTML_ROW_PAIRING_LIVE` switched on). A reader switch: the frozen-text lab cannot move, and the source replay (`source-replay.test.ts`) re-reads the answer-key documents' bytes with it on.",
     excerptAtPublish: false,
     switches: { htmlRowPairing: true },
+  },
+  "pdf-column-reading": {
+    id: "pdf-column-reading",
+    description:
+      "Rosetta's PDF layout reader reads a page in two independent columns column by column, when a gutter splits it into sides that each carry their own fees or prose and no row reaches across (`PDF_COLUMN_READING_LIVE` switched on). A reader switch: the frozen-text lab cannot move, and the source replay (`source-replay.test.ts`) re-reads the answer-key documents' bytes with it on.",
+    excerptAtPublish: false,
+    switches: { pdfColumnReading: true },
   },
   "daily-cap-lines": {
     id: "daily-cap-lines",

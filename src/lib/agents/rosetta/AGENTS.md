@@ -77,7 +77,17 @@ Rosetta owns source text normalization.
   stacked label/next-line bullet-price lists as columns: each band needs repeated own
   pairs, sufficient width and a gutter. Mixed label/amount table rows, monetary or waiver
   gutter crossings and nested cell columns refuse that detector and retain the earlier
-  baseline reading. A PDF text an older layout read across its
+  baseline reading. Independent columns (`pdf-columns.ts`, behind `PDF_COLUMN_READING_LIVE`,
+  off; #1092): when no earlier detector fires, a page split by a gutter into sides that each
+  stand on their own (running prose, or at least three lines holding their own label and price),
+  each a fifth of the text width and five lines tall, is read column by column. Any row reaching
+  across refuses the split: a shared baseline whose right side opens at its own edge with a
+  price, or is only price cells (a tier table's columns), or whose left side is a bare price
+  facing a label, or a label running into the gutter with its price just past it. Rotated text
+  refuses. When no gutter runs the whole page, the page is cut into regions at lines with one
+  item half the text width wide (a title, footnotes) and each region is tried alone. On the
+  answer-key documents' bytes it publishes 19 more keys and loses none; it joins layout 5 without
+  a bump while off. A PDF text an older layout read across its
   columns (`INTERLEAVED_PROSE_CELLS` prose cell breaks or more) is read once more. Word files (.docx) are unzipped and read the same way (`read.docx_text`,
   `docx.ts`): a paragraph per line, a tab as a cell break, a table row per line. A
   legacy binary .doc stays `unsupported_format`. Knox pairs fees and amounts per line,

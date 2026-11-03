@@ -14,6 +14,8 @@ export interface PdfTextExtraction {
 /** Rosetta's existing complete-document layout reader, also used for reference checks. */
 export async function extractPdfDocumentText(bytes: Uint8Array, options: {
   signal?: AbortSignal; timeoutMs?: number; maxPages?: number; maxTextChars?: number; maxItems?: number;
+  /** `PDF_COLUMN_READING_LIVE` held on or off (pdf-columns.ts); unset keeps the code value. */
+  columnReading?: boolean;
 } = {}): Promise<PdfTextExtraction> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(new Error("PDF text extraction timed out")), options.timeoutMs ?? 20_000);
@@ -52,7 +54,7 @@ export async function extractPdfDocumentText(bytes: Uint8Array, options: {
           }
           pages.push(items);
         }
-        const layouts = pages.map(layoutPageResult);
+        const layouts = pages.map((items) => layoutPageResult(items, { columnReading: options.columnReading }));
         // A glyph the PDF's own map leaves unknown is restored where unambiguous (#2598), and a
         // ligature its font drops altogether is restored in known fee words (#1513), in both
         // readings, so the reader-agreement receipt compares like with like.

@@ -110,6 +110,11 @@ function reader(): SwitchAuditReader & { calls: Record<string, unknown[]> } {
       { reader: "read.html_dom", documents: "6", institutions: "5", documents_with_live_fees: "4", live_fees: "52" },
       { reader: "read.js_fallback", documents: 1, institutions: 1, documents_with_live_fees: 1, live_fees: 9 },
     ]),
+    pdfReaderExposure: vi.fn(async () => [
+      { reader: "legacy", documents: 2, institutions: 2, documents_with_live_fees: 1, live_fees: 9 },
+      { reader: "read.ocr_tesseract", documents: 3, institutions: 3, documents_with_live_fees: 2, live_fees: 14 },
+      { reader: "read.pdf_layout", documents: "40", institutions: "31", documents_with_live_fees: "22", live_fees: "310" },
+    ]),
     zeroWaiverRowTexts: vi.fn(async (ids: number[]) => new Map([
       [31, "Elite Checking Package:\nNo Fee for Cashier’s Checks\n\nNo Fee for Stop Payments\n\n$1,000 Overdraft Service"],
       [32, "Notary Service\n\nNo charge for notarization of Bank documents.\n\n$10 per signature for notarization of non-Bank documents"],
@@ -169,6 +174,13 @@ describe("switch dry runs: one pass over every pending count", () => {
       legacy: { documents: 2, documentsWithLiveFees: 1, liveFees: 9 },
       textDiffed: false,
     });
+    // PDF column reading: the same exposure statement over the PDF layout readers, never a text diff.
+    expect(report.pdfColumnReading.summary).toMatchObject({
+      pdf: { documents: 43, documentsWithLiveFees: 24, liveFees: 324 },
+      legacy: { documents: 2, documentsWithLiveFees: 1, liveFees: 9 },
+      textDiffed: false,
+    });
+    expect(mock.pdfReaderExposure).toHaveBeenCalledTimes(1);
   });
 
   it("should_print_every_section_with_its_totals", async () => {
@@ -207,7 +219,10 @@ describe("switch dry runs: one pass over every pending count", () => {
     expect(text).toContain("cannot re-read a page or say how many stored texts would change");
     expect(text).toContain("EXPOSED: 7 current HTML documents (5 with live fees) carry 61 live fees");
     expect(text).toContain("Legacy texts with no reader recorded (format unknown): 2 documents, 9 live fees.");
-    expect(text).toContain("## 9. Live accuracy");
+    expect(text).toContain("## 9. PDF_COLUMN_READING_LIVE (#1092, Rosetta read.pdf_layout)");
+    expect(text).toContain("EXPOSED: 43 current PDF documents (24 with live fees) carry 324 live fees");
+    expect(text).toContain("  read.pdf_layout: 40 documents at 31 institutions, 22 with live fees, 310 live fees");
+    expect(text).toContain("## 10. Live accuracy");
     // The daily receipt's own figure leads; the derived share follows, labelled.
     const receipt = text.indexOf("Daily receipt's figure (right on amount, category, source, fee line and name): 5 / 8 = 62.50%");
     const derived = text.indexOf("Amount and category only (not the receipt's figure): 6 / 8 = 75.00%");

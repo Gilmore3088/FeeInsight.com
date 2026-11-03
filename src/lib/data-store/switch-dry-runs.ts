@@ -17,6 +17,7 @@ import type {
 import { LIMIT_GUARD_MIN_AMOUNT, LIMIT_GUARD_REASON, TRANSACTION_AMOUNT_PG } from "@/lib/agents/hamilton/limit-guard";
 import { zeroWaiverRowRowsSql, zeroWaiverRowTexts } from "@/lib/agents/darwin/zero-waiver-row-check";
 import { HTML_READER_EXPOSURE_SQL, HTML_READERS } from "./switch-dry-runs-html";
+import { PDF_LAYOUT_READERS } from "./switch-dry-runs-pdf";
 
 type SqlTag = typeof sql;
 
@@ -323,6 +324,7 @@ export function createSwitchAuditReader(db: SqlTag, options: { now?: Date; insti
   const scope = options.institutionIds?.length ? options.institutionIds : null;
   return {
     htmlReaderExposure: () => db.unsafe<HtmlReaderExposureRow[]>(HTML_READER_EXPOSURE_SQL, [scope, HTML_READERS]),
+    pdfReaderExposure: () => db.unsafe<HtmlReaderExposureRow[]>(HTML_READER_EXPOSURE_SQL, [scope, PDF_LAYOUT_READERS]),
     dailyCapRows: (limit) => db.unsafe<DailyCapRow[]>(DAILY_CAP_ROWS_SQL, [limit, scope]),
     sourceTexts: (documentIds) => loadSourceTexts(db, documentIds),
     dashListDocuments: (limit, offset) => matchingDocuments(db, DASH_LINE_PG, limit, offset, scope),

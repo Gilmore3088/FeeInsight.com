@@ -1,0 +1,448 @@
+import { describe, expect, it } from "vitest";
+
+import { PDF_COLUMN_READING_LIVE } from "./pdf-columns";
+import { layoutDocumentText, layoutPageResult, layoutPageText, type PdfTextItem } from "./pdf-layout";
+
+/**
+ * Near misses for independent PDF columns (#1092, class R4), on synthetic pages built from
+ * positioned text runs: the pdf.js items pdf-layout reads. A run is 4 points a character wide at
+ * an 8-point font, so a 30-character line is 120 points wide. The switch is held on with
+ * `columnReading: true`; every refusal is checked against the switch-off reading, unchanged.
+ */
+
+const SIZE = 8;
+const CHAR = 4;
+const PITCH = 12;
+const TOP = 700;
+
+function run(str: string, x: number, y: number, size = SIZE): PdfTextItem {
+  return { str, transform: [size, 0, 0, size, x, y], width: str.length * (size / 2), height: size };
+}
+
+/** A run drawn rotated a quarter turn (a landscape table printed on a portrait page). */
+function rotated(str: string, x: number, y: number): PdfTextItem {
+  return { str, transform: [0, SIZE, -SIZE, 0, x, y], width: str.length * CHAR, height: SIZE };
+}
+
+const on = (items: PdfTextItem[]) => layoutPageResult(items, { columnReading: true }).text;
+const off = (items: PdfTextItem[]) => layoutPageResult(items, { columnReading: false }).text;
+const linesOf = (text: string) => text.split("\n");
+const y = (row: number, top = TOP, pitch = PITCH) => top - row * pitch;
+
+const LEFT_FEES = [
+  ["Overdraft item", "$35.00"], ["Returned item", "$30.00"], ["Stop payment", "$25.00"],
+  ["Cashier's check", "$8.00"], ["Money order", "$3.00"], ["Wire outgoing", "$25.00"],
+  ["Wire incoming", "$15.00"], ["Account research", "$20.00"], ["Statement copy", "$5.00"],
+  ["Check image", "$2.00"], ["Dormant account", "$5.00"], ["Account closing", "$25.00"],
+  ["Garnishment", "$100.00"], ["Levy", "$100.00"], ["Notary service", "Free"], ["Coin counting", "$3.00"],
+] as const;
+const RIGHT_FEES = [
+  ["Debit card replacement", "$10.00"], ["Rush card delivery", "$50.00"], ["PIN change", "$2.00"],
+  ["Safe deposit 3 x 5", "$30.00"], ["Safe deposit 5 x 10", "$50.00"], ["Box drilling", "$200.00"],
+  ["Lost key", "$25.00"], ["Fax per page", "$1.00"], ["Photocopy", "$0.25"],
+  ["Bill pay expedited", "$9.95"], ["External transfer", "$3.00"], ["Foreign check", "$10.00"],
+  ["Collection item", "$30.00"], ["Return mail", "$5.00"], ["Overdraft transfer", "$10.00"], ["ATM inquiry", "$1.50"],
+] as const;
+
+const leader = ([name, price]: readonly [string, string]) => `${name} ${".".repeat(24 - name.length)} ${price}`;
+/** A fee line with no dot leaders (pdf-layout v4 reads dot-leader lists beside a table already). */
+const feeLine = ([name, price]: readonly [string, string]) => `${name} ${price}`;
+
+/** Two dot-leader fee lists, one per column, on the same baselines unless `offset` moves the right one. */
+function twoLeaderLists(rows = 16, offset = 0, rightX = 320): { items: PdfTextItem[]; left: string[]; right: string[] } {
+  const left = LEFT_FEES.slice(0, rows).map(feeLine);
+  const right = RIGHT_FEES.slice(0, rows).map(feeLine);
+  const items = [
+    ...left.map((text, row) => run(text, 40, y(row))),
+    ...right.map((text, row) => run(text, rightX, y(row) - offset)),
+  ];
+  return { items, left, right };
+}
+
+/** A label | price table: labels at `labelX`, prices at `priceX`, one row per baseline. */
+function labelPriceTable(rows: ReadonlyArray<readonly [string, string]>, labelX = 40, priceX = 300, top = TOP): PdfTextItem[] {
+  return rows.flatMap(([label, price], row) => [run(label, labelX, y(row, top)), run(price, priceX, y(row, top))]);
+}
+
+const PROSE = [
+  "If your account is overdrawn we may charge a fee",
+  "for each item we pay; the entire balance of your",
+  "account may not be available for withdrawal. We",
+  "may refuse any item for which there are not enough",
+  "funds available at the time the item is presented.",
+  "You agree to pay any fee we charge as set out in",
+  "the schedule of fees and charges for this account",
+  "and you agree that we may change it with notice.",
+  "Dividends are paid from current income and are not",
+  "guaranteed; the rate may change at any time after",
+  "the account is opened. Accrual begins on the day",
+  "of deposit for cash and for checks the day we get",
+  "provisional credit for them from the paying bank.",
+  "Transfers to another account are limited to six a",
+  "month by preauthorized order, by phone or by card.",
+  "Please see the rate schedule for current rates now.",
+];
+
+const prose = (x: number, rows = 16, top = TOP, offset = 0) =>
+  PROSE.slice(0, rows).map((text, row) => run(text, x, y(row, top) - offset));
+
+describe("Rosetta pdf-columns: independent columns (PDF_COLUMN_READING_LIVE)", () => {
+  describe("reads a page set in independent columns column by column", () => {
+    it("should_read_two_dot_leader_fee_lists_column_by_column", () => {
+      const { items, left, right } = twoLeaderLists();
+      expect(linesOf(off(items))[0]).toBe(`${left[0]} | ${right[0]}`);
+      expect(linesOf(on(items))).toEqual([...left, ...right]);
+    });
+
+    it("should_read_two_fee_lists_whose_baselines_do_not_line_up", () => {
+      const { items, left, right } = twoLeaderLists(16, 5);
+      expect(linesOf(on(items))).toEqual([...left, ...right]);
+    });
+
+    it("should_read_two_label_price_tables_set_side_by_side", () => {
+      const items = [
+        ...labelPriceTable(LEFT_FEES, 40, 160),
+        ...labelPriceTable(RIGHT_FEES, 330, 450),
+      ];
+      const lines = linesOf(on(items));
+      expect(lines.slice(0, 16)).toEqual(LEFT_FEES.map(([label, price]) => `${label} | ${price}`));
+      expect(lines.slice(16)).toEqual(RIGHT_FEES.map(([label, price]) => `${label} | ${price}`));
+      expect(linesOf(off(items))[14]).toBe("Notary service | Free | Overdraft transfer | $10.00");
+    });
+
+    it("should_read_prose_beside_a_fee_table_column_by_column", () => {
+      const items = [...prose(40), ...labelPriceTable(LEFT_FEES, 260, 360, TOP - 4)];
+      const lines = linesOf(on(items));
+      expect(lines.slice(0, 16)).toEqual(PROSE);
+      expect(lines.slice(16)).toEqual(LEFT_FEES.map(([label, price]) => `${label} | ${price}`));
+    });
+
+    it("should_read_a_fee_table_beside_prose_column_by_column", () => {
+      const items = [...labelPriceTable(LEFT_FEES, 40, 140), ...prose(250, 16, TOP - 3)];
+      const lines = linesOf(on(items));
+      expect(lines.slice(0, 16)).toEqual(LEFT_FEES.map(([label, price]) => `${label} | ${price}`));
+      expect(lines.slice(16)).toEqual(PROSE);
+    });
+
+    it("should_read_two_columns_of_account_terms_that_state_prices_in_their_sentences", () => {
+      const terms = (name: string, amount: number) => [
+        `${name} CHECKING`,
+        "Minimum to open account $100",
+        "Maintenance Fee: No maintenance fee with a",
+        `minimum daily balance of $${amount},000. If the`,
+        `balance falls below it, $${amount}5 will be charged`,
+        "per monthly statement cycle.",
+      ];
+      const left = [...terms("BASIC", 1), ...terms("PREMIER", 2), ...terms("SENIOR", 3)];
+      const right = [...terms("BUSINESS", 4), ...terms("ANALYSIS", 5), ...terms("NONPROFIT", 6)];
+      const items = [...left.map((text, row) => run(text, 40, y(row))), ...right.map((text, row) => run(text, 320, y(row)))];
+      expect(linesOf(on(items))).toEqual([...left, ...right]);
+    });
+
+    it("should_read_a_full_width_title_first_then_each_column", () => {
+      const { items, left, right } = twoLeaderLists(16, 0);
+      const title = run("SCHEDULE OF FEES AND SERVICE CHARGES FOR PERSONAL ACCOUNTS", 60, TOP + 20);
+      expect(linesOf(on([title, ...items]))).toEqual([title.str, ...left, ...right]);
+    });
+
+    it("should_close_the_columns_above_a_full_width_heading_in_the_middle", () => {
+      const top = twoLeaderLists(16, 0);
+      const heading = run("FEES FOR BUSINESS ACCOUNTS AND TREASURY MANAGEMENT SERVICES", 60, y(16) - 4);
+      const lower = [
+        ...LEFT_FEES.slice(0, 8).map((fee, row) => run(feeLine(fee), 40, y(row, y(17) - 8))),
+        ...RIGHT_FEES.slice(0, 8).map((fee, row) => run(feeLine(fee), 320, y(row, y(17) - 8))),
+      ];
+      const lines = linesOf(on([...top.items, heading, ...lower]));
+      expect(lines.slice(0, 32)).toEqual([...top.left, ...top.right]);
+      expect(lines[32]).toBe(heading.str);
+      expect(lines.slice(33)).toEqual([...LEFT_FEES.slice(0, 8).map(feeLine), ...RIGHT_FEES.slice(0, 8).map(feeLine)]);
+    });
+
+    it("should_find_the_columns_above_footnotes_that_span_the_page", () => {
+      const { items, left, right } = twoLeaderLists(16, 0);
+      // More footnote lines than a page-wide gutter may be crossed by: the region above them splits.
+      const notes = Array.from({ length: 4 }, (_, index) =>
+        run(`${index + 1}. This fee is waived for accounts opened under the student program, see terms.`, 40, y(17 + index)));
+      expect(linesOf(off([...items, ...notes]))[0]).toBe(`${left[0]} | ${right[0]}`);
+      expect(linesOf(on([...items, ...notes]))).toEqual([...left, ...right, ...notes.map((note) => note.str)]);
+    });
+
+    it("should_read_columns_between_a_title_and_footnotes", () => {
+      const { items, left, right } = twoLeaderLists(16, 0);
+      const title = run("CONSUMER ACCOUNT FEES AND SERVICE CHARGES  EFFECTIVE 2026", 40, TOP + 24);
+      const notes = Array.from({ length: 3 }, (_, index) =>
+        run(`${index + 1}. Applies to consumer checking and savings accounts only, see your agreement.`, 40, y(17 + index)));
+      expect(linesOf(on([title, ...items, ...notes]))).toEqual([title.str, ...left, ...right, ...notes.map((note) => note.str)]);
+    });
+
+    it("should_keep_a_strip_of_bullets_with_the_column_it_marks", () => {
+      const left = PROSE.map((text, row) => run(text, 40, y(row)));
+      const bullets = PROSE.map((_, row) => run("•", 300, y(row)));
+      const right = RIGHT_FEES.map((fee, row) => run(feeLine(fee), 316, y(row)));
+      const lines = linesOf(on([...left, ...bullets, ...right]));
+      expect(lines.slice(0, 16)).toEqual(PROSE);
+      expect(lines.slice(16)).toEqual(RIGHT_FEES.map((fee) => `• ${feeLine(fee)}`));
+    });
+
+    it("should_read_a_booklet_spread_of_two_pages_printed_on_one_sheet", () => {
+      const left = [...PROSE.slice(0, 8), ...LEFT_FEES.slice(0, 8).map(feeLine)];
+      const right = [...RIGHT_FEES.slice(0, 8).map(feeLine), ...PROSE.slice(8)];
+      const items = [...left.map((text, row) => run(text, 40, y(row))), ...right.map((text, row) => run(text, 330, y(row)))];
+      expect(linesOf(on(items))).toEqual([...left, ...right]);
+    });
+
+    it("should_read_a_landscape_page_with_two_fee_tables", () => {
+      const items = [...labelPriceTable(LEFT_FEES, 40, 260, 560), ...labelPriceTable(RIGHT_FEES, 420, 680, 560)];
+      const lines = linesOf(on(items));
+      expect(lines[0]).toBe("Overdraft item | $35.00");
+      expect(lines[16]).toBe("Debit card replacement | $10.00");
+    });
+
+    it("should_read_three_independent_fee_lists_as_three_columns", () => {
+      const names = (fees: ReadonlyArray<readonly [string, string]>) => fees.slice(0, 12).map(feeLine);
+      const a = names(LEFT_FEES);
+      const b = names(RIGHT_FEES);
+      const c = names([...LEFT_FEES.slice(4), ...RIGHT_FEES.slice(0, 4)]);
+      const items = [
+        ...a.map((text, row) => run(text, 20, y(row))),
+        ...b.map((text, row) => run(text, 160, y(row))),
+        ...c.map((text, row) => run(text, 300, y(row))),
+      ].map((item) => ({ ...item, width: item.width * 0.9 }));
+      expect(linesOf(on(items))).toEqual([...a, ...b, ...c]);
+    });
+
+    it("should_keep_a_heading_inside_a_column_above_its_own_rows", () => {
+      const left = ["Photocopies", "Per statement ......... $5.00", "Per check ............. $1.00", "Wire transfers",
+        "Customer incoming ..... no charge", "Customer outgoing ..... $25.00", ...LEFT_FEES.slice(0, 10).map(feeLine)];
+      const right = ["WEST BRANCH", "2300 HWY 190 WEST", "LIVINGSTON, TEXAS", "(936) 327-5211", "Member FDIC",
+        ...RIGHT_FEES.slice(0, 11).map(feeLine)];
+      const items = [...left.map((text, row) => run(text, 40, y(row))), ...right.map((text, row) => run(text, 330, y(row)))];
+      const lines = linesOf(on(items));
+      expect(lines.slice(0, 6)).toEqual(left.slice(0, 6));
+      expect(linesOf(off(items))[3]).toBe("Wire transfers | (936) 327-5211");
+    });
+
+    it("should_keep_a_wrapped_label_with_its_price_line_inside_its_column", () => {
+      const left = ["ATM services at non-Credit Union", "and non-network locations $ .25 per inquiry",
+        ...LEFT_FEES.slice(0, 14).map(feeLine)];
+      const items = [...left.map((text, row) => run(text, 40, y(row))), ...RIGHT_FEES.map((fee, row) => run(feeLine(fee), 330, y(row)))];
+      expect(linesOf(on(items)).slice(0, 2)).toEqual(left.slice(0, 2));
+    });
+
+    it("should_read_columns_whose_right_rows_open_with_a_box_size", () => {
+      const sizes = ["2 x 5", "3 x 5", "3 x 10", "5 x 5", "5 x 10", "7 x 10", "10 x 10", "13 x 10", "18 x 11", "36 x 11",
+        "Late fee", "Lost key", "Drilling", "Key deposit", "Box rent", "Box transfer"];
+      const right = sizes.flatMap((size, row) => [run(size, 330, y(row)), run(`$ ${45 + row}.00`, 470, y(row))]);
+      const lines = linesOf(on([...labelPriceTable(LEFT_FEES, 40, 200), ...right]));
+      expect(lines[16]).toBe("2 x 5 | $ 45.00");
+      expect(lines[21]).toBe("7 x 10 | $ 50.00");
+    });
+
+    it("should_split_rows_that_end_with_a_price_from_rows_that_open_with_a_label", () => {
+      const items = [...labelPriceTable(LEFT_FEES, 40, 180), ...RIGHT_FEES.map((fee, row) => run(feeLine(fee), 300, y(row)))];
+      expect(linesOf(off(items))[0]).toBe("Overdraft item | $35.00 | Debit card replacement $10.00");
+      expect(linesOf(on(items))[0]).toBe("Overdraft item | $35.00");
+    });
+  });
+
+  describe("keeps a fee table row by row", () => {
+    it("should_keep_a_label_and_price_table_row_by_row", () => {
+      const items = labelPriceTable(LEFT_FEES).concat(labelPriceTable(RIGHT_FEES, 40, 300, y(16)));
+      expect(on(items)).toBe(off(items));
+      expect(linesOf(on(items))[0]).toBe("Overdraft item | $35.00");
+    });
+
+    it("should_keep_a_table_whose_prices_are_words", () => {
+      const rows = LEFT_FEES.map(([label], row) => [label, ["Free", "No charge", "N/A", "Waived"][row % 4]] as const);
+      const items = [...labelPriceTable(rows), ...labelPriceTable(rows, 40, 300, y(16))];
+      expect(on(items)).toBe(off(items));
+    });
+
+    it("should_keep_a_table_whose_price_cells_carry_terms", () => {
+      const rows = LEFT_FEES.map(([label, price]) => [label, `${price} per item, each presentment`] as const);
+      const items = [...labelPriceTable(rows), ...labelPriceTable(rows, 40, 300, y(16))];
+      expect(on(items)).toBe(off(items));
+    });
+
+    it("should_keep_a_label_table_with_two_price_columns", () => {
+      const items = LEFT_FEES.flatMap(([label, price], row) => [
+        run(`${label} for personal accounts`, 40, y(row)), run(price, 250, y(row)), run(`$${row + 10}.00`, 400, y(row)),
+      ]);
+      expect(on(items)).toBe(off(items));
+    });
+
+    it("should_keep_a_tier_table_with_five_close_price_columns", () => {
+      const items = LEFT_FEES.flatMap(([label], row) => [
+        run(label, 52, y(row)),
+        ...[241, 291, 335, 378, 422].map((x, column) => run(column === 0 ? "FREE" : `$${row + column}`, x, y(row))),
+      ]);
+      const header = [run("PLATINUM", 222, TOP + 30), run("Combined loan and deposit balance of $50,000 or more", 277, TOP + 30)];
+      const notes = Array.from({ length: 6 }, (_, row) =>
+        run(`Tier ${row} requires a combined balance of $${row}0,000 or more`, 277, TOP + 40 + row * PITCH));
+      expect(on([...header, ...notes, ...items])).toBe(off([...header, ...notes, ...items]));
+    });
+
+    it("should_keep_a_service_description_and_fee_table", () => {
+      const items = LEFT_FEES.flatMap(([label, price], row) => [
+        run(label, 40, y(row)), run("Charged when the service is requested", 140, y(row)), run(price, 330, y(row)),
+      ]);
+      expect(on(items)).toBe(off(items));
+    });
+
+    it("should_keep_a_price_first_table", () => {
+      const items = LEFT_FEES.flatMap(([label, price], row) => [run(price, 40, y(row)), run(`${label} fee charged`, 200, y(row))]);
+      expect(on(items)).toBe(off(items));
+    });
+
+    it("should_keep_a_table_with_right_aligned_prices", () => {
+      const items = LEFT_FEES.flatMap(([label, price], row) => [
+        run(label, 40, y(row)), run(price, 360 - price.length * CHAR, y(row)),
+      ]);
+      expect(on([...items, ...items.map((item) => ({ ...item, transform: [...item.transform.slice(0, 5), item.transform[5] - 200] }))]))
+        .toBe(off([...items, ...items.map((item) => ({ ...item, transform: [...item.transform.slice(0, 5), item.transform[5] - 200] }))]));
+    });
+
+    it("should_keep_a_table_under_a_full_width_heading", () => {
+      const heading = run("SCHEDULE OF FEES AND CHARGES FOR ALL CONSUMER DEPOSIT ACCOUNTS", 40, TOP + 20);
+      const items = [heading, ...labelPriceTable(LEFT_FEES), ...labelPriceTable(RIGHT_FEES, 40, 300, y(16))];
+      expect(on(items)).toBe(off(items));
+    });
+
+    it("should_keep_a_table_with_wide_labels_and_a_price_column_at_the_edge", () => {
+      const rows = LEFT_FEES.map(([label, price]) => [`${label} charged on consumer and business accounts`, price] as const);
+      const items = [...labelPriceTable(rows, 40, 420), ...labelPriceTable(rows, 40, 420, y(16))];
+      expect(on(items)).toBe(off(items));
+    });
+
+    it("should_refuse_when_one_row_reaches_across_with_its_price_at_the_right_edge", () => {
+      const { items } = twoLeaderLists(16, 0);
+      const row = [run("Returned deposit item", 40, y(16)), run("$12.00", 320, y(16))];
+      expect(on([...items, ...row])).toBe(off([...items, ...row]));
+    });
+
+    it("should_refuse_when_a_bare_price_on_the_left_faces_its_label", () => {
+      const { items } = twoLeaderLists(16, 0);
+      const row = [run("$12.00", 40, y(16)), run("Returned deposit item", 320, y(16))];
+      expect(on([...items, ...row])).toBe(off([...items, ...row]));
+    });
+
+    it("should_refuse_when_a_label_runs_into_the_gutter_with_its_price_just_past_it", () => {
+      const { items } = twoLeaderLists(16, 0);
+      const row = [run("Overdraft protection transfer from", 40, y(16)), run("$10.00", 320, y(16))];
+      expect(on([...items, ...row])).toBe(off([...items, ...row]));
+    });
+
+    it("should_refuse_when_the_right_side_is_a_column_of_tier_prices_set_in_from_its_edge", () => {
+      const left = LEFT_FEES.map((fee, row) => run(feeLine(fee), 40, y(row)));
+      const right = LEFT_FEES.flatMap((_, row) => [run(`$${row}`, 300, y(row)), run(`$${row + 1}`, 340, y(row))]);
+      const descriptions = PROSE.slice(0, 3).map((text, row) => run(text, 280, TOP + 40 + row * PITCH));
+      expect(on([...left, ...right, ...descriptions])).toBe(off([...left, ...right, ...descriptions]));
+    });
+  });
+
+  describe("keeps the reading on pages without positive evidence", () => {
+    it("should_keep_a_narrow_sidebar_beside_prose", () => {
+      const sidebar = ["Call us", "24/7", "Branches", "Online", "Mobile", "ATMs", "Rates", "Fees", "Help", "Hours",
+        "Contact", "Careers", "News", "Privacy", "Terms", "Map"].map((text, row) => run(text, 440, y(row)));
+      const items = [...prose(40), ...sidebar];
+      expect(on(items)).toBe(off(items));
+    });
+
+    it("should_keep_a_narrow_sidebar_of_prices_beside_a_fee_table", () => {
+      const sidebar = LEFT_FEES.map(([, price], row) => run(`${price} ea`, 470, y(row)));
+      const items = [...labelPriceTable(LEFT_FEES), ...sidebar];
+      expect(on(items)).toBe(off(items));
+    });
+
+    it("should_keep_a_column_of_footnote_marks_beside_a_table", () => {
+      const marks = LEFT_FEES.map((_, row) => run(`${(row % 6) + 1}`, 340, y(row)));
+      const items = [...labelPriceTable(LEFT_FEES), ...marks, ...labelPriceTable(RIGHT_FEES, 40, 300, y(16))];
+      expect(on(items)).toBe(off(items));
+    });
+
+    it("should_keep_footnotes_set_in_two_columns_under_a_table_row_by_row", () => {
+      const table = labelPriceTable(LEFT_FEES, 40, 360);
+      const notesLeft = PROSE.slice(0, 4).map((text, row) => run(text, 40, y(17 + row)));
+      const notesRight = PROSE.slice(4, 8).map((text, row) => run(text, 300, y(17 + row)));
+      const lines = linesOf(on([...table, ...notesLeft, ...notesRight]));
+      expect(lines.slice(0, 16)).toEqual(LEFT_FEES.map(([label, price]) => `${label} | ${price}`));
+    });
+
+    it("should_keep_a_rotated_page_as_it_reads", () => {
+      const items = [...LEFT_FEES.map((fee, row) => rotated(feeLine(fee), 40, y(row))),
+        ...RIGHT_FEES.map((fee, row) => rotated(feeLine(fee), 320, y(row)))];
+      expect(on(items)).toBe(off(items));
+    });
+
+    it("should_keep_a_wide_landscape_table_row_by_row", () => {
+      const items = [...labelPriceTable(LEFT_FEES, 40, 640, 560), ...labelPriceTable(RIGHT_FEES, 40, 640, 560 - 16 * PITCH)];
+      expect(on(items)).toBe(off(items));
+    });
+
+    it("should_keep_a_page_with_too_few_text_runs", () => {
+      const { items } = twoLeaderLists(12, 0);
+      expect(items.length).toBeLessThan(30);
+      expect(on(items)).toBe(off(items));
+    });
+
+    it("should_keep_columns_too_short_to_tell", () => {
+      const { items } = twoLeaderLists(4, 0);
+      const filler = PROSE.flatMap((text, row) => [run(text.slice(0, 20), 40, y(5 + row)), run(text.slice(20), 120, y(5 + row))]);
+      expect(on([...items, ...filler])).toBe(off([...items, ...filler]));
+    });
+
+    it("should_keep_a_column_of_labels_beside_a_column_of_descriptions_with_prices", () => {
+      const items = LEFT_FEES.flatMap(([label, price], row) => [
+        run(label, 40, y(row)), run(`Charged ${price} each time the service is used`, 200, y(row)),
+      ]);
+      expect(on(items)).toBe(off(items));
+    });
+
+    it("should_keep_a_mixed_page_whose_table_rows_reach_across_the_gutter", () => {
+      const table = labelPriceTable(LEFT_FEES.slice(0, 6), 40, 320);
+      const below = twoLeaderLists(16, 0);
+      const shifted = below.items.map((item) => ({ ...item, transform: [...item.transform.slice(0, 5), item.transform[5] - 6 * PITCH] }));
+      expect(on([...table, ...shifted])).toBe(off([...table, ...shifted]));
+    });
+
+    it("should_split_only_the_region_below_a_heading_on_a_mixed_page", () => {
+      const table = labelPriceTable(LEFT_FEES.slice(0, 6), 40, 320, TOP + 120);
+      const heading = run("ADDITIONAL SERVICES AND FEES FOR CHECKING AND SAVINGS ACCOUNTS", 40, TOP + 30);
+      const { items, left, right } = twoLeaderLists(16, 0);
+      const lines = linesOf(on([...table, heading, ...items]));
+      expect(lines.slice(0, 6)).toEqual(LEFT_FEES.slice(0, 6).map(([label, price]) => `${label} | ${price}`));
+      expect(lines[6]).toBe(heading.str);
+      expect(lines.slice(7)).toEqual([...left, ...right]);
+    });
+
+    it("should_leave_prose_columns_to_the_earlier_prose_reading", () => {
+      const items = [...prose(40), ...prose(300, 16, TOP, 4)];
+      expect(on(items)).toBe(off(items));
+      expect(linesOf(off(items)).slice(0, 16)).toEqual(PROSE);
+    });
+
+    it("should_leave_a_leader_list_beside_a_table_to_the_earlier_list_reading", () => {
+      const table = LEFT_FEES.flatMap(([label], row) => [run(label, 40, y(row)), run("Personal", 130, y(row)), run("Business", 200, y(row))]);
+      const list = RIGHT_FEES.map((fee, row) => run(leader(fee), 320, y(row)));
+      expect(on([...table, ...list])).toBe(off([...table, ...list]));
+    });
+  });
+
+  describe("the switch", () => {
+    it("should_ship_off", () => {
+      expect(PDF_COLUMN_READING_LIVE).toBe(false);
+    });
+
+    it("should_read_as_main_by_default", () => {
+      const { items } = twoLeaderLists();
+      expect(layoutPageResult(items).text).toBe(off(items));
+      expect(layoutPageText(items)).toBe(off(items));
+      expect(layoutDocumentText([items, items])).toBe(`${off(items)}\n\n${off(items)}`);
+    });
+
+    it("should_not_mark_a_column_page_as_a_stacked_list_page", () => {
+      const { items } = twoLeaderLists();
+      expect(layoutPageResult(items, { columnReading: true }).stackedColumns).toBe(false);
+    });
+  });
+});

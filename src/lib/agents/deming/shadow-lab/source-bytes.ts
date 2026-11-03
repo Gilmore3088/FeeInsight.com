@@ -35,6 +35,8 @@ export type SourceRead =
 export interface SourceReadOptions {
   /** `HTML_ROW_PAIRING_LIVE` held on or off for this read (rosetta/html-row-pairing.ts). */
   htmlRowPairing?: boolean;
+  /** `PDF_COLUMN_READING_LIVE` held on or off for this read (rosetta/pdf-columns.ts). */
+  pdfColumnReading?: boolean;
 }
 
 /**
@@ -51,7 +53,7 @@ export async function readSourceBytes(
 ): Promise<SourceRead> {
   const format = detectFormat(bytes, contentType, url);
   if (format === "pdf") {
-    const extracted = await extractPdfDocumentText(bytes);
+    const extracted = await extractPdfDocumentText(bytes, { columnReading: options.pdfColumnReading });
     const text = normalizeWhitespace(extracted.text);
     if (text.length === 0 || isLikelyScannedPdf(text, extracted.totalPages)) return { ok: false, reason: "scanned PDF: needs OCR" };
     return { ok: true, text, reader: "read.pdf_layout" };

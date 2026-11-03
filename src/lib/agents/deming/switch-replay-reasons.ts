@@ -71,6 +71,7 @@ export const NOT_REPLAYABLE_REASONS: Readonly<Record<string, string>> = {
   NON_DEPOSIT_LINK_RELEASE_LIVE: `sends a bank's left-behind fee link back to discovery; ${SYSTEM}`,
   OVERDRAFT_PLAN_HOLD_LIVE: "not wired yet: Hamilton's frequency fill holds a period-priced overdraft plan beside the bank's per-item overdraft fee; the replay does not run the fill",
   PAGE_COPY_COLLAPSE_LIVE: `collapses copies of one page published from different documents; ${ONE_DOCUMENT}`,
+  PDF_COLUMN_READING_LIVE: "a Rosetta reader switch: it changes how a PDF page's text runs become lines, and every golden member is text already read, so no golden number can move; it is measured on the answer-key documents' own bytes instead (shadow-lab experiment `pdf-column-reading`, `source-replay.test.ts`; `pdf-column-reading-inert.test.ts` holds the switch-off read to main's text)",
   PRODUCT_PAGE_CONFLICT_LIVE: `rolls back a product page's fee that conflicts with the bank's schedule; ${ONE_DOCUMENT}`,
   PRODUCT_PAGE_REPEAT_TAKEDOWN_LIVE: `takes down a product page's repeat of a schedule line (\`scheduleTwin\`); ${ONE_DOCUMENT}`,
   PUBLISH_REFUSE_DUPLICATES_LIVE: `refuses rows the exact-duplicate collapse would close against live fees from earlier publish steps; ${ONE_DOCUMENT}`,

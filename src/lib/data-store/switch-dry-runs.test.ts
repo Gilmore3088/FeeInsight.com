@@ -15,6 +15,8 @@ import {
   SWITCH_AUDIT_STATEMENTS,
   withReadOnlySwitchAudit,
 } from "./switch-dry-runs";
+import { HTML_READER_EXPOSURE_SQL, HTML_READERS } from "./switch-dry-runs-html";
+import { PDF_LAYOUT_READERS } from "./switch-dry-runs-pdf";
 
 type SqlTag = typeof sql;
 
@@ -146,6 +148,17 @@ describe("switch dry-run reads", () => {
       [[3, 4]],
     ]);
     expect(EXCERPT_TAKEDOWN_PATTERNS).toEqual(["limit_as_fee:transaction_amount:%", "limit_as_fee:source_states_limit:%"]);
+  });
+
+  it("should_count_html_and_pdf_reader_exposure_with_one_statement_and_its_reader_names", async () => {
+    const fake = fakeClient();
+    const reader = createSwitchAuditReader(fake.tag, { institutionIds: [3] });
+    await reader.htmlReaderExposure();
+    await reader.pdfReaderExposure();
+    expect(fake.statements.map((s) => s.text)).toEqual([HTML_READER_EXPOSURE_SQL, HTML_READER_EXPOSURE_SQL]);
+    expect(fake.statements.map((s) => s.params)).toEqual([[[3], HTML_READERS], [[3], PDF_LAYOUT_READERS]]);
+    // PDF_COLUMN_READING_LIVE changes how both the PDF layout reader and free OCR's word layout read.
+    expect(PDF_LAYOUT_READERS).toEqual(["read.pdf_layout", "read.ocr_tesseract"]);
   });
 
   it("should_read_live_non_network_fees_as_the_rules_recheck_selects_them", () => {

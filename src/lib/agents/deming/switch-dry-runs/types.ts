@@ -154,6 +154,8 @@ export interface HtmlReaderExposureRow {
 export interface SwitchAuditReader {
   /** `HTML_ROW_PAIRING_LIVE` (#1092): the HTML exposure by reader (`HTML_READER_EXPOSURE_SQL`). */
   htmlReaderExposure(): Promise<HtmlReaderExposureRow[]>;
+  /** `PDF_COLUMN_READING_LIVE` (#1092): the PDF layout exposure by reader (the same statement, PDF readers). */
+  pdfReaderExposure(): Promise<HtmlReaderExposureRow[]>;
   dailyCapRows(limit: number): Promise<DailyCapRow[]>;
   /** The newest completed stored text of each document (`loadSourceTexts`). */
   sourceTexts(documentIds: number[]): Promise<Map<number, string>>;

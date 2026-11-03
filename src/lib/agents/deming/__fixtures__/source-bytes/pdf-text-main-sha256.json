@@ -1,0 +1,24 @@
+{
+ "note": "sha256 of extractPdfDocumentText(bytes).text for every PDF source-bytes fixture, read by main d5771aa66 before PDF_COLUMN_READING_LIVE existed. pdf-column-reading-inert.test.ts checks the switch-off read against it.",
+ "main": "d5771aa66",
+ "sha256": {
+  "missed_fees:state:3981": "281e98b8c4bf2b72a89d9d8c12d31ab6fc0c54325409f0ca7d765ba9fcb74854",
+  "missed_fees:state:6730": "5a3c536acf3aaaccbd2af9b1b8d145e9f7ff4e7e44401b40633ce0b6018f10c3",
+  "missed_fees:state:7450": "3dfb175890bfe1c24e9dca4db0ea2bb16e0d2aad684eab14b9c6ef2d3385a629",
+  "missed_fees:state:8036": "1f13641a4e400edf462f2f76b2c43f6fa914d019645c9d02783c77d76aabde0c",
+  "missed_fees:state:6820": "e02f08d3ebed9f29540bde193bc366e9139e60635985b89eeaeef4cab2db4b90",
+  "missed_fees:state:8085": "ee189e4e7a982fa09ef8c55870e232bb871dcfad977961cc801ecf54d21e7da0",
+  "missed_fees:state:10193": "a6692615ef39b69b8ded6aea836ef279bd3cc8ef43e35129c8a9392bd9f5626f",
+  "missed_fees:state:1338": "798956c1cb7ac7477577ea5436ccf4512b843d505d3231f09af2a0cfb6a5c642",
+  "missed_fees:state:3148": "9d4e21c8b49452cb5dc49c860342c5e894b8e140263839f03355515b4ed94275",
+  "missed_fees:state:11362": "c386904917809d613efce28fb2d0b8e2ec3f46fa43688797f64ba67e0445e23d",
+  "missed_fees:state:3515": "5a46a9120f6ee5945d51f5de249ae775718f047e65a8c4ec22efd725ff681aa5",
+  "missed_fees:state:4677": "35dd821abc2f3aa5f75245b71322cecfe7cf270b09fb3743980e8651b78d8f5e",
+  "missed_fees:state:8741": "18b795ade569d44d1be3d417ae361acafa84da42ba2aab6c71afaa621b67b2a9",
+  "missed_fees:state:7114": "28655b68a830f52ba4a9df58760f0627033932e62184416c480df6c655e039fe",
+  "missed_fees:state:8240": "57dff68315566397e60f819108280ed0fcae16f93d4e3f727df522fc6cd288dd",
+  "missed_fees:texas:2429": "7ed6f3bf6b3d6aa021ba93781f86a82fbaf2b6c8d60f037bb0002d6e73b21330",
+  "missed_fees:texas:2451": "117e8cfc01cde9e26c482290ec171b12acd0a781295e772e59dbddfaed60e1f4",
+  "missed_fees:texas:841": "21b06f50a9abc164515ddcfb77f17997388da92277770245ae4bff7fd1f85c4e"
+ }
+}

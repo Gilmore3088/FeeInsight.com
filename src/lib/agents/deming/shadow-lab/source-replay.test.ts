@@ -65,41 +65,50 @@ describe("shadow lab source-bytes replay", () => {
     REPLAY_TIMEOUT_MS,
   );
 
-  it(
-    "should_replay_the_html_row_pairing_experiment_on_the_reread_with_no_provider_calls",
-    async () => {
-      assertOfflineEnv();
-      const { applyManifest, loadScenarios } = await import("./scenarios");
-      const { currentVariant, EXPERIMENTS, experimentalVariant } = await import("./variants");
-      const { readSourceManifest, rereadAcceptedSources } = await import("./source-bytes");
-      const { replayDelta, replaySources } = await import("./source-replay");
-      const { renderReplayDelta } = await import("./source-replay-report");
+  // Each Rosetta reader switch is measured on the re-read: today's read (switch off) against the
+  // switch held on, same keys, same pipeline. `option` is the reader option the switch sets.
+  const READER_EXPERIMENTS = [
+    { id: "html-row-pairing", option: "htmlRowPairing" },
+    { id: "pdf-column-reading", option: "pdfColumnReading" },
+  ] as const;
 
-      const config = EXPERIMENTS["html-row-pairing"];
-      const frozenManifest = JSON.parse(readFileSync(MANIFEST_PATH, "utf8")) as Record<string, string>;
-      const cases = applyManifest(loadScenarios(), frozenManifest);
-      const manifest = readSourceManifest();
-      const today = await rereadAcceptedSources();
-      const off = await rereadAcceptedSources(process.cwd(), { htmlRowPairing: false });
-      const on = await rereadAcceptedSources(process.cwd(), { htmlRowPairing: config.switches?.htmlRowPairing });
-      // The switch ships off: today's read is the switch-off read, document for document.
-      for (const [key, read] of today) expect(off.get(key)).toEqual(read);
+  for (const { id, option } of READER_EXPERIMENTS) {
+    it(
+      `should_replay_the_${id.replaceAll("-", "_")}_experiment_on_the_reread_with_no_provider_calls`,
+      async () => {
+        assertOfflineEnv();
+        const { applyManifest, loadScenarios } = await import("./scenarios");
+        const { currentVariant, EXPERIMENTS, experimentalVariant } = await import("./variants");
+        const { readSourceManifest, rereadAcceptedSources } = await import("./source-bytes");
+        const { replayDelta, replaySources } = await import("./source-replay");
+        const { renderReplayDelta } = await import("./source-replay-report");
 
-      const base = replaySources({ manifest, cases, rereads: today, variant: currentVariant });
-      const run = () => replaySources({ manifest, cases, rereads: on, variant: experimentalVariant(config) });
-      const switched = run();
-      expect(JSON.stringify(run())).toBe(JSON.stringify(switched));
-      expect(provider.calls).toBe(0);
-      // Frozen text is the reader's output, so the reader switch cannot move the frozen side.
-      expect(switched.total.frozen).toEqual(base.total.frozen);
+        const config = EXPERIMENTS[id];
+        const frozenManifest = JSON.parse(readFileSync(MANIFEST_PATH, "utf8")) as Record<string, string>;
+        const cases = applyManifest(loadScenarios(), frozenManifest);
+        const manifest = readSourceManifest();
+        const today = await rereadAcceptedSources();
+        const off = await rereadAcceptedSources(process.cwd(), { [option]: false });
+        const on = await rereadAcceptedSources(process.cwd(), { [option]: config.switches?.[option] });
+        // The switch ships off: today's read is the switch-off read, document for document.
+        for (const [key, read] of today) expect(off.get(key)).toEqual(read);
 
-      if (OUT) {
-        const delta = replayDelta(base, switched);
-        mkdirSync(OUT, { recursive: true });
-        writeFileSync(join(OUT, `source-replay-${config.id}.json`), `${JSON.stringify({ total: switched.total, delta }, null, 1)}\n`);
-        writeFileSync(join(OUT, `source-replay-${config.id}.md`), renderReplayDelta(config.id, base, switched, delta));
-      }
-    },
-    REPLAY_TIMEOUT_MS,
-  );
+        const base = replaySources({ manifest, cases, rereads: today, variant: currentVariant });
+        const run = () => replaySources({ manifest, cases, rereads: on, variant: experimentalVariant(config) });
+        const switched = run();
+        expect(JSON.stringify(run())).toBe(JSON.stringify(switched));
+        expect(provider.calls).toBe(0);
+        // Frozen text is the reader's output, so the reader switch cannot move the frozen side.
+        expect(switched.total.frozen).toEqual(base.total.frozen);
+
+        if (OUT) {
+          const delta = replayDelta(base, switched);
+          mkdirSync(OUT, { recursive: true });
+          writeFileSync(join(OUT, `source-replay-${config.id}.json`), `${JSON.stringify({ total: switched.total, delta }, null, 1)}\n`);
+          writeFileSync(join(OUT, `source-replay-${config.id}.md`), renderReplayDelta(config.id, base, switched, delta));
+        }
+      },
+      REPLAY_TIMEOUT_MS,
+    );
+  }
 });
