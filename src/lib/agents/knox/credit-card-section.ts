@@ -173,3 +173,18 @@ export function creditCardSectionRead(read: { canonicalHint?: string | null; fee
   }
   return rows > 0;
 }
+
+/**
+ * Knox v176 (backlog dry run 7): a statement fee whose own name opens with a credit card ("Visa Monthly
+ * Paper Statement Fee | $1.25" under USF FCU's "Loans*" heading, "Credit Card Paper Statements") is the
+ * card account's, never the deposit account's `paper_statement`: USF's deposit paper statement fee is
+ * $3.00. A deposit statement fee that only excludes card statements ("Paper statement fee (excludes ...
+ * Visa)") names its card later and stays. A name that also names a debit card or a deposit account stays.
+ */
+const CARD_STATEMENT_NAME = /^\W*(?:(?:visa|master\s?card|amex|american express|discover)(?:\s+(?:credit|platinum|signature|rewards|classic|gold))*(?:\s+cards?)?|credit\s+cards?)\b[^|()]{0,40}\bstatements?\b/i;
+const DEPOSIT_STATEMENT_WORDS = /\b(?:debit|atm|check\s+cards?|checking|savings|shares?|deposits?|money market)\b/i;
+
+/** True when `read` is a paper statement fee its own name gives to a credit card (see above). Pure. */
+export function creditCardStatementRead(read: { canonicalHint?: string | null; feeName: string }): boolean {
+  return read.canonicalHint === "paper_statement" && CARD_STATEMENT_NAME.test(read.feeName) && !DEPOSIT_STATEMENT_WORDS.test(read.feeName);
+}

@@ -15,7 +15,8 @@ export const UNCHANGED_FROM_MAIN: NearMiss[] = [
   { lines: ["Mobile Deposit", "$5,000 - Maximum mobile deposit per day", "$2.00 - Mobile Deposit Express"], published: [["mobile_deposit", 2.0, null, "Mobile Deposit"]] },
   { lines: ["Overdraft", "$35.00 - Overdraft Fee", "$140 - Maximum overdraft fees per day"], published: [["overdraft", 35.0, null, "Overdraft Fee"]] },
   { lines: ["Overdraft", "$35.00 - Per item, maximum 4 per day", "$5.00 - Overdraft Transfer"], published: [["overdraft", 5.0, null, "Overdraft"], ["overdraft", 35.0, null, "Overdraft"]] },
-  { lines: ["Checking", "$10.00 - Monthly Service Fee (waived with $500 balance)", "$5.00 - Paper Statement (waived with eStatements)"], published: [["monthly_maintenance", 10.0, "monthly", "Monthly Service Fee (waived with balance)"]] },
+  { lines: ["Checking", "$10.00 - Monthly Service Fee (waived with $500 balance)", "$5.00 - Paper Statement (waived with eStatements)"], published: [["monthly_maintenance", 10.0, "monthly", "Monthly Service Fee"]] },
+  // v176 (live-site audit, fwccu): main named it "Monthly Service Fee (waived with balance)", the line with its $500 deleted.
   { lines: ["Services", "1% - Foreign Transaction Fee", "$0.50 - Per $100 coin counted"], published: [] },
   { lines: ["Services", "$25.00 - Stop Payment; $35.00 - Range of checks", "$30.00 - NSF Fee"], published: [["nsf", 30.0, null, "NSF Fee"]] },
   { lines: ["Services", "$30.00 - NSF Fee, $30.00 Overdraft Fee", "$10.00 - Account Research"], published: [["nsf", 30.0, null, "NSF Fee, Overdraft Fee"]] },

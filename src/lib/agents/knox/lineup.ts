@@ -165,8 +165,25 @@ function numberedLine(value: string): NumberedLine | null {
   return NUMBERED_ACCOUNT_WORD.test(line) ? "account" : "other";
 }
 
+/**
+ * v176 (backlog dry run 7): a qualifier after a dash that names no account and no audience ("Revolution
+ * Money Market - New Money Only*", Bay State Savings Bank) is a note on the account's name: the name
+ * before the dash is the account. A tail that names a fee or rate ("Classic Business Checking Account -
+ * Minimum Balance Fee") is the fee's own line, not a heading, and stays as before. The money market's $7 charge took the section heading "Money Market
+ * Accounts" above it, which also heads two $10 money market accounts.
+ */
+const DASH_QUALIFIER = /^(.+?)\s+[-–]\s+([^-–]+)$/;
+const QUALIFIER_NAMES_OTHER = /\b(?:checking|savings|money market|share|club|account|certificates?|cds?|iras?|personal|consumer|business|commercial|student|youth|senior|teen|kids?|fees?|charges?|balance|minimum|maintenance|service|monthly|rates?|apy|dividends?|interest)\b/i;
+
 /** A name that says which account: an account word plus a word of its own, 2 to 6 words. */
 function distinctAccountName(value: string): string | null {
+  const whole = distinctAccountNameOnly(value);
+  if (whole) return whole;
+  const dashed = squash(value).replace(/[\s\-–:|,.*†‡]+$/, "").match(DASH_QUALIFIER);
+  return dashed && !QUALIFIER_NAMES_OTHER.test(dashed[2]) ? distinctAccountNameOnly(dashed[1]) : null;
+}
+
+function distinctAccountNameOnly(value: string): string | null {
   // v141 nit: a footnote star after the name comes off ("50+ Checking*" -> "50+ Checking"); a mark (®) stays.
   const name = squash(value).replace(/[\s\-–:|,.*†‡]+$/, "").replace(HEADING_TAIL, "").replace(LEAD_IN, "");
   if (name.length < 4 || name.length > MAX_PRODUCT_NAME_CHARS || FEE_HEADING_END.test(name)) return null;

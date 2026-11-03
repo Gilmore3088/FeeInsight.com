@@ -25,7 +25,7 @@ import { FAMILY_EXPERTS, priceWindows, runFamilyExpert } from "@/lib/agents/knox
 import { newestColumnText } from "@/lib/fee-change-columns";
 import { namesALimit, namesAWorkedExample, passesDarwinChecks, readsAMeasuredAmount, tidyFeeName } from "@/lib/agents/knox/layout";
 import { boxLateColumnPrices, boxLateColumnRead } from "@/lib/agents/knox/box-late-column";
-import { creditCardSectionColumns, creditCardSectionRead } from "@/lib/agents/knox/credit-card-section";
+import { creditCardSectionColumns, creditCardSectionRead, creditCardStatementRead } from "@/lib/agents/knox/credit-card-section";
 import { checkFeeCategory, plainReturnBesideNsf, SCHEDULE_NSF_NAME } from "@/lib/fee-category-guard";
 import { BOX_CATEGORY } from "@/lib/custom-report/box-size-name";
 import { carryColumnHeadingCell, columnHeadingCell, extractTableCandidates, KNOX_TABLE_STRATEGY } from "@/lib/agents/knox/table-rows";
@@ -850,7 +850,23 @@ import { onlineServiceMonthlyFee } from "@/lib/service-monthly-charge";
 // `LOW_BALANCE_CHARGE` leaves "Monthly Service Charge or Minimum Balance Fee" to monthly maintenance, and
 // `ITEM_INSUFFICIENT` skips deposited, cashed and paid items. The shared check is unchanged. The stale-read
 // floor stays at v97.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 175 } as const;
+// v176 (Knox re-read backlog dry run 7, Nov 3; one wrong and four doubtful reads of 40 stored texts, plus the
+// review of PR #2967). (1) Verifying employment or income is a loan's underwriting cost, filed other lending, never
+// account verification (rules.ts): Jax Fire FCU's "Employment Verification | $256" under "Real Estate Loans". (2) A
+// statement fee whose own name opens with a credit card is the card's, never the deposit paper statement
+// (`creditCardStatementRead`): USF FCU's "Visa Monthly Paper Statement Fee" $1.25 stood in for its $3.00 fee, which
+// was not read because a starred waiver note in the name's cell covered the next cell's price (`STARRED_WAIVER`,
+// `bracketedWaiverEnd`) and "(eStatements are free)" read as no fee (`FREE_FOR_NOTE`). (3) A footnote number glued
+// to the name's last word no longer hides its words from the rules (`classifyNearest`): GTE FCU's "Overdraft
+// Transfer2,10 | $8.00" read as an overdraft beside the table reader's transfer, so both reads were kept; a copy of
+// a paper statement is document reproduction. (4) A dash qualifier naming no account, audience or fee ("Revolution
+// Money Market - New Money Only*") leaves the account name before it (lineup.ts). (5) Review of PR #2967: an item
+// named insufficient that the bank pays, naming no return, reads overdraft (`ITEM_INSUFFICIENT_PAID`). (6) Live-site
+// audit (fwccu, live 137329): a price-first line with a second figure is named by its own words after the price
+// (`maintenanceFromProse`, `priceFirstClauseName`), never the whole line with its figures deleted; its pages are
+// read again once (`KNOX_PRICE_FIRST_NAME_READ_BELOW_VERSION`, extract.ts). The shared check is unchanged. The
+// stale-read floor stays at v97.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 176 } as const;
 
 export interface SpecialistRun {
   strategy: string;
@@ -1265,6 +1281,10 @@ function readFreeText(sourceText: string, discontinuedRows: DiscontinuedTableFla
     const found = { ...run, candidates: withWireChannelReads(checkText, run.candidates.map((read) => { const next = billPayByHeading(read); return next && carryColumnHeadingCell(read, next); }).filter((read): read is ExtractedFeeCandidate => read != null).map((read) => stopPaymentListRead(bulletItemRead(payeeReturnedBillPayRead(loanSectionFeeRead(boxSectionLateFeeRead(read, checkText), checkText), checkText)), checkText))
       .filter((read) => !boxLateColumnRead(read, boxLatePrices) && !creditCardSectionRead(read, checkText, creditCardColumns))),
       held: run.held.filter((read) => !creditCardSectionRead(read, checkText, creditCardColumns)) };
+    // v176 (backlog dry run 7): a statement fee its own name gives to a credit card is not the deposit
+    // account's paper statement (`creditCardStatementRead`: USF FCU's "Visa Monthly Paper Statement Fee").
+    found.candidates = found.candidates.filter((read) => !creditCardStatementRead(read));
+    found.held = found.held.filter((read) => !creditCardStatementRead(read));
     for (const [reason, count] of Object.entries(found.dropped ?? {})) countDropped(reason as DroppedLineReason, count);
     let added = 0;
     let selfCheckFailed = 0;

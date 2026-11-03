@@ -332,6 +332,10 @@ text Knox has read before is picked again when any one of these holds:
    document is its current copy, and the bank has no live overdraft fee. A run for one institution
    (Atlas's read-now runs) uses that institution alone as the list and drops the overdraft
    condition.
+8. Price-first name (v176, live-site audit, fwccu): the current copy has a live Knox fee whose stored line
+   opens with its price and prints a second figure (`PRICE_FIRST_MULTI_AMOUNT_NOTE_SQL`), and no attempt at
+   v176 or later (`KNOX_PRICE_FIRST_NAME_READ_BELOW_VERSION`), so the fee is named by its own words after the
+   price. 293 current-copy texts on Nov 3 (read-only).
 
 Since Nov 2, triggers 1, 3, 4 and 7 (and an empty read) wait for the re-read floor
 (`KNOX_REREAD_BELOW_VERSION` v167, `KNOX_REREAD_REFRESH_DAYS` 14; see "The re-read floor and order").
@@ -2719,6 +2723,40 @@ holds. Darwin's verify refuses the same reads (`service_maintenance_heading`) an
 is live (`SERVICE_MAINTENANCE_TAKEDOWN_LIVE`, off). The shared check is unchanged. The stale-read floor stays at
 v97.
 
+v176 (seventh Knox re-read backlog dry run, Nov 3; 40 backlog texts at v175, one wrong row, four doubtful and
+one duplicate, each against the bank's own line): (1) "Employment Verification", "Verification of Employment"
+and income verification are filed other lending (a loan's underwriting cost), never account verification
+(Jax Fire FCU 40648: $256 under "Real Estate Loans"). (2) A statement fee whose own name opens with a credit card
+("Visa Monthly Paper Statement Fee", "Credit Card Paper Statements") is left out of the read
+(`creditCardStatementRead` in `credit-card-section.ts`); a name that only excludes card statements stays. USF FCU's
+deposit "Monthly Paper Statement Fee (eStatements are free) *Waived for members under 18 and over 65 | $3.00" is
+now read: a starred waiver note ends with its cell (`STARRED_WAIVER`, `bracketedWaiverEnd`) and a note that
+e-statements are free is a free-for note (`FREE_FOR_NOTE`). (3) The rules classify a name without the footnote
+number glued to its last word (`classifyNearest`): GTE FCU's "Overdraft Transfer2,10 | $8.00" is the overdraft
+transfer, like the table reader's read, so one read is kept; "Copy of Paper Statement" is document reproduction.
+(4) A dash qualifier that names no account, audience, fee or rate is a note on the account name (lineup.ts
+`distinctAccountName`): Bay State Savings Bank's $7 money market charge is "Revolution Money Market", not the
+section heading "Money Market Accounts". (5) Review of PR #2967: an item named insufficient that the bank pays,
+naming no return ("Insufficient Check Paid", "Item Insufficient - Paid", "Insufficient Debit Paid"), reads
+overdraft (`ITEM_INSUFFICIENT_PAID`). Left: San Antonio Citizens' and Gulf Winds' business-section rows with
+unknown audience (a section heading's audience is the audience lessons' work, behind
+`KNOX_AUDIENCE_LESSONS_LIVE`). Live (SELECT, Nov 3): no live employment verification, nsf-filed paid
+insufficient item or copy-of-statement paper_statement fee; 2 live credit card paper statement fees (94693,
+135781) would not be read again and stay live; Darwin's credit card section re-check (v2) reports them. (6)
+Live-site audit (fwccu, live 137329, text 27597): a line that opens with its price and prints a second figure
+("● $5 monthly fee, waived with minimum balance of $500 or ... direct deposit totaling $500 or more") is named by
+its own words after the price, never the whole line with its figures deleted ("monthly fee, waived with minimum
+balance of or ... totalin"): a monthly fee by `maintenanceFromProse` ("Monthly fee"), any other by
+`priceFirstClauseName` when the whole-line name would delete a condition figure (cut at a clause, a waiver, "or", "per" or "for each", past the price's own unit, and an
+open bracket dropped); a line that names nothing that way is held for review as before. A bare fee word ("Fee",
+"Service charge", `BARE_FEE_NAME`) never renames a read, and a renamed read whose name and price would equal
+another line's read on the text keeps its v175 name (`wholeLineName`), so two accounts' rows never merge. A later price opening a
+bracket after the first fee's words ("$8 monthly service charge ($6 if age 55+)") is a note, not a fee. Live
+(SELECT, Nov 3): of 534 live Knox fees read from such lines, a re-read renames 251 (166 institutions; 230
+monthly maintenance), none to a bare fee word, and loses none; the pages are read again once (`KNOX_PRICE_FIRST_NAME_READ_BELOW_VERSION`
+v176, 293 current-copy texts, waiting for the re-read floor like every class, which is not raised). The guard is
+unchanged (v108). The stale-read floor stays at v97.
+
 v175 (sixth Knox re-read backlog dry run, Nov 3; renumbered from v173 when merging after #2953; 40 backlog texts at v172, one wrong and five doubtful
 rows of 97 changed, each against the bank's own line): (1) the heading of a bullet list is read from its own
 line even when the other column's priced row shares it (`listHeadingOf` in `rules.ts`: "Stop Payment |
@@ -3366,7 +3404,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v3 | `knox/paid-extract.ts` |
 | `KNOX_PAID_FIND_MISS_VERSION` | — | v1 | `knox/paid-find-misses.ts` |
 | `TWO_READ_AGREEMENT_STRATEGY` | `knox.two_read_agreement` | v2 | `knox/two-read-agreement.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v175 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v176 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v13 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v2 | `knox/takedown-lessons.ts` |
