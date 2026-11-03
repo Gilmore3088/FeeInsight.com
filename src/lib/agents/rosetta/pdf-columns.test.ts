@@ -72,8 +72,8 @@ const place = (lines: readonly Placed[], x: number, offset = 0, cell = 110) =>
 function twoLeaderLists(rows = 16, offset = 0, rightX = 320): { items: PdfTextItem[]; left: string[]; right: string[] } {
   const leftRows = LEFT_FEES.slice(0, rows);
   const rightRows = RIGHT_FEES.slice(0, rows);
-  const items = [...place(leftRows, 40, 0, 100), ...place(rightRows, rightX, offset)];
-  return { items, left: leftRows.map(placedText), right: rightRows.map(placedText) };
+  const items = [...place(leftRows, 40, 0, 100), ...place(rightRows, rightX, offset), run("22", 40, y(rows)), run("23", rightX, y(rows))];
+  return { items, left: [...leftRows.map(placedText), "22"], right: [...rightRows.map(placedText), "23"] };
 }
 
 /** Each half's own page number, one line below `rows` lines: facing pages' furniture. */
@@ -119,15 +119,17 @@ describe("Rosetta pdf-columns: independent columns (PDF_COLUMN_READING_LIVE)", (
       expect(linesOf(on(items))).toEqual([...left, ...right]);
     });
 
-    it("should_read_two_label_price_tables_set_side_by_side", () => {
-      const items = [
-        ...labelPriceTable(LEFT_FEES, 40, 160),
-        ...labelPriceTable(RIGHT_FEES, 330, 450),
-      ];
+    it("should_read_two_label_price_tables_on_facing_pages_column_by_column", () => {
+      const items = [...labelPriceTable(LEFT_FEES, 40, 160), ...labelPriceTable(RIGHT_FEES, 330, 450), ...folios(16, 330)];
       const lines = linesOf(on(items));
-      expect(lines.slice(0, 16)).toEqual(LEFT_FEES.map(([label, price]) => `${label} | ${price}`));
-      expect(lines.slice(16)).toEqual(RIGHT_FEES.map(([label, price]) => `${label} | ${price}`));
+      expect(lines.slice(0, 17)).toEqual([...LEFT_FEES.map(([label, price]) => `${label} | ${price}`), "22"]);
+      expect(lines.slice(17)).toEqual([...RIGHT_FEES.map(([label, price]) => `${label} | ${price}`), "23"]);
       expect(linesOf(off(items))[14]).toBe("Notary service | Free | Overdraft transfer | $10.00");
+    });
+
+    it("should_keep_two_row_aligned_label_price_tables_with_no_other_evidence_as_one_wide_table", () => {
+      const items = [...labelPriceTable(LEFT_FEES, 40, 160), ...labelPriceTable(RIGHT_FEES, 330, 450)];
+      expect(on(items)).toBe(off(items));
     });
 
     it("should_read_prose_beside_a_fee_table_on_facing_pages_column_by_column", () => {
@@ -166,15 +168,17 @@ describe("Rosetta pdf-columns: independent columns (PDF_COLUMN_READING_LIVE)", (
 
     it("should_close_the_columns_above_a_full_width_heading_in_the_middle", () => {
       const top = twoLeaderLists(16, 0);
-      const heading = run("FEES FOR BUSINESS ACCOUNTS AND TREASURY MANAGEMENT SERVICES", 60, y(16) - 4);
+      const heading = run("FEES FOR BUSINESS ACCOUNTS AND TREASURY MANAGEMENT SERVICES", 60, y(16) - 10);
+      const lowerTop = y(17) - 8;
       const lower = [
-        ...LEFT_FEES.slice(0, 8).map((fee, row) => run(feeLine(fee), 40, y(row, y(17) - 8))),
-        ...RIGHT_FEES.slice(0, 8).map((fee, row) => run(feeLine(fee), 320, y(row, y(17) - 8))),
+        ...LEFT_FEES.slice(0, 8).map((fee, row) => run(feeLine(fee), 40, y(row, lowerTop))),
+        ...RIGHT_FEES.slice(0, 8).map((fee, row) => run(feeLine(fee), 320, y(row, lowerTop))),
+        run("24", 40, y(8, lowerTop)), run("25", 320, y(8, lowerTop)),
       ];
       const lines = linesOf(on([...top.items, heading, ...lower]));
-      expect(lines.slice(0, 32)).toEqual([...top.left, ...top.right]);
-      expect(lines[32]).toBe(heading.str);
-      expect(lines.slice(33)).toEqual([...LEFT_FEES.slice(0, 8).map(feeLine), ...RIGHT_FEES.slice(0, 8).map(feeLine)]);
+      expect(lines.slice(0, 34)).toEqual([...top.left, ...top.right]);
+      expect(lines[34]).toBe(heading.str);
+      expect(lines.slice(35)).toEqual([...LEFT_FEES.slice(0, 8).map(feeLine), "24", ...RIGHT_FEES.slice(0, 8).map(feeLine), "25"]);
     });
 
     it("should_find_the_columns_above_footnotes_that_span_the_page", () => {
@@ -210,20 +214,21 @@ describe("Rosetta pdf-columns: independent columns (PDF_COLUMN_READING_LIVE)", (
       expect(linesOf(on(items))).toEqual([...left, "22", ...right.map(placedText), "23"]);
     });
 
-    it("should_read_a_landscape_page_with_two_fee_tables", () => {
-      const items = [...labelPriceTable(LEFT_FEES, 40, 260, 560), ...labelPriceTable(RIGHT_FEES, 420, 680, 560)];
+    it("should_read_a_landscape_page_with_two_fee_tables_and_their_page_numbers", () => {
+      const items = [...labelPriceTable(LEFT_FEES, 40, 260, 560), ...labelPriceTable(RIGHT_FEES, 420, 680, 560),
+        run("22", 40, y(16, 560)), run("23", 420, y(16, 560))];
       const lines = linesOf(on(items));
       expect(lines[0]).toBe("Overdraft item | $35.00");
-      expect(lines[16]).toBe("Debit card replacement | $10.00");
+      expect(lines[17]).toBe("Debit card replacement | $10.00");
     });
 
-    it("should_read_three_independent_fee_lists_as_three_columns", () => {
+    it("should_keep_three_row_aligned_fee_lists_as_one_wide_table", () => {
       const a = LEFT_FEES.slice(0, 12);
       const b = RIGHT_FEES.slice(0, 12);
       const c = [...LEFT_FEES.slice(4, 12)];
       const items = [...place(a, 20, 0, 85), ...place(b, 170, 0, 95), ...place(c, 320, 0, 80)]
         .map((item) => ({ ...item, width: item.width * 0.9 }));
-      expect(linesOf(on(items))).toEqual([...a.map(placedText), ...b.map(placedText), ...c.map(placedText)]);
+      expect(on(items)).toBe(off(items));
     });
 
     it("should_keep_a_heading_inside_a_column_above_its_own_rows", () => {
@@ -248,13 +253,15 @@ describe("Rosetta pdf-columns: independent columns (PDF_COLUMN_READING_LIVE)", (
       const sizes = ["2 x 5", "3 x 5", "3 x 10", "5 x 5", "5 x 10", "7 x 10", "10 x 10", "13 x 10", "18 x 11", "36 x 11",
         "Late fee", "Lost key", "Drilling", "Key deposit", "Box rent", "Box transfer"];
       const right = sizes.flatMap((size, row) => [run(size, 330, y(row)), run(`$ ${45 + row}.00`, 470, y(row))]);
-      const lines = linesOf(on([...labelPriceTable(LEFT_FEES, 40, 200), ...right]));
-      expect(lines[16]).toBe("2 x 5 | $ 45.00");
-      expect(lines[21]).toBe("7 x 10 | $ 50.00");
+      const lines = linesOf(on([...labelPriceTable(LEFT_FEES, 40, 200), ...right, ...folios(16, 330)]));
+      expect(lines[17]).toBe("2 x 5 | $ 45.00");
+      expect(lines[22]).toBe("7 x 10 | $ 50.00");
     });
 
-    it("should_split_table_rows_from_a_label_price_table_on_the_same_baselines", () => {
-      const items = [...labelPriceTable(LEFT_FEES, 40, 180), ...labelPriceTable(RIGHT_FEES, 300, 450)];
+    it("should_split_a_label_price_table_from_another_on_its_own_line_spacing", () => {
+      // The right table's rows sit 8 points apart against the left's 12: its own baselines.
+      const right = RIGHT_FEES.flatMap(([label, price], row) => [run(label, 300, TOP - 3 - row * 8), run(price, 450, TOP - 3 - row * 8)]);
+      const items = [...labelPriceTable(LEFT_FEES, 40, 180), ...right];
       expect(linesOf(on(items))[0]).toBe("Overdraft item | $35.00");
       expect(linesOf(on(items))[16]).toBe("Debit card replacement | $10.00");
     });
@@ -490,8 +497,9 @@ describe("Rosetta pdf-columns: independent columns (PDF_COLUMN_READING_LIVE)", (
       const items = NOTED_ROWS.slice(0, 15).flatMap(([label, price, note], row) => [
         run(label, 40, y(row)), run(price, 180, y(row)),
         ...(row % 3 === 0 ? [run(note, 300, y(row))] : [run(RIGHT_FEES[row][0], 300, y(row)), run(RIGHT_FEES[row][1], 410, y(row))]),
-      ]);
-      expect(topShare(items)).toBe(0.33);
+      ]).concat(folios(15, 300));
+      // 5 of 15 right blocks on priced rows; each half's page number is a block of its own (5 of 16).
+      expect(topShare(items)).toBe(0.31);
       expect(on(items)).not.toBe(off(items));
       expect(linesOf(on(items))[0]).toBe("Overdraft fee (per item) | $30.00");
     });
@@ -517,6 +525,27 @@ describe("Rosetta pdf-columns: independent columns (PDF_COLUMN_READING_LIVE)", (
     it("should_keep_lower_case_or_parenthesised_notes_under_a_header_row", () => {
       for (const [name, note] of [["parenthesised", (n: string) => `(${n})`], ["lower case", (n: string) => n.toLowerCase()]] as const) {
         const items = notesTable((p) => p, note, true);
+        expect(on(items), name).toBe(off(items));
+      }
+    });
+
+    // Fifth review of #2965: row-aligned tables with label cells on both sides are one wide table,
+    // so "two self-contained tables" is not evidence of independence.
+    it("should_keep_a_member_and_non_member_table_with_its_own_non_member_label_cells", () => {
+      const items = NOTED_ROWS.flatMap(([label, price], row) => [
+        run(label, 40, y(row)), run(price, 180, y(row)), run("Non-members", 270, y(row)), run(price.replace("$", "$1"), 380, y(row)),
+      ]);
+      expect(on(items)).toBe(off(items));
+      expect(linesOf(on(items))[15]).toBe("Check printing | Varies | Non-members | Varies");
+    });
+
+    it("should_keep_a_label_price_sub_label_sub_price_table", () => {
+      const sub = NOTED_ROWS.map(([, , note]) => /^(.*?) (\$[\d.]+)$/.exec(note)?.slice(1, 3) ?? [note, "N/A"]);
+      for (const [name, labelX, priceX, header] of [["at 270", 270, 380, false], ["near", 240, 350, false], ["under a header", 270, 380, true]] as const) {
+        const items = [
+          ...(header ? [run("Service", 40, y(-1)), run("Fee", 180, y(-1)), run("Notes", labelX, y(-1))] : []),
+          ...NOTED_ROWS.flatMap(([label, price], row) => [run(label, 40, y(row)), run(price, 180, y(row)), run(sub[row][0], labelX, y(row)), run(sub[row][1], priceX, y(row))]),
+        ];
         expect(on(items), name).toBe(off(items));
       }
     });
@@ -570,7 +599,7 @@ describe("Rosetta pdf-columns: independent columns (PDF_COLUMN_READING_LIVE)", (
     });
 
     it("should_keep_a_page_with_too_few_text_runs", () => {
-      const { items } = twoLeaderLists(7, 0);
+      const { items } = twoLeaderLists(6, 0);
       expect(items.length).toBeLessThan(30);
       expect(on(items)).toBe(off(items));
     });

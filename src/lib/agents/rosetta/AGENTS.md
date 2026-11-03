@@ -100,9 +100,9 @@ Rosetta owns source text normalization.
   without a fee row of their own. Rotated text
   refuses. When no gutter runs the whole page, the page is cut into regions at lines with one
   item half the text width wide (a title, footnotes) and each region is tried alone. A split also needs positive
-  evidence: facing pages (gutter near the centre, each half with its own furniture or page number),
-  two self-contained label | price tables, or the right side's own line spacing. On the answer-key
-  documents' bytes it publishes 9 more keys and loses none; it joins layout 6 without
+  evidence: facing pages (gutter near the centre, each half with its own furniture or page number) or
+  the right side's own line spacing; two row-aligned tables keep their rows. On the answer-key
+  documents' bytes it publishes 8 more keys and loses none; it joins layout 6 without
   a bump while off. A PDF text an older layout read across its
   columns (`INTERLEAVED_PROSE_CELLS` prose cell breaks or more) is read once more. Word files (.docx) are unzipped and read the same way (`read.docx_text`,
   `docx.ts`): a paragraph per line, a tab as a cell break, a table row per line. A
