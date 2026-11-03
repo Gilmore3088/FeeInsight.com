@@ -1,6 +1,7 @@
 import { sql } from "@/lib/data-store/connection";
 import { ACCURACY_HISTORY_WEEKS, accuracyDays, eventFromAccuracyDay, poolAccuracyDays, type AccuracyDay, type AccuracyMeasure } from "./accuracy-measure";
 import { validateLiveAuditComponent, type LiveAuditSummary } from "./live-source-audit-records";
+import { fixedCohortDays, type FixedCohortDay } from "./fixed-cohort-history";
 
 export interface AccuracyWeek extends AccuracyMeasure {
   weekStart: string;
@@ -22,6 +23,8 @@ export interface AccuracyHistory {
   weeks: AccuracyWeek[];
   /** The live-site score by draw day, newest last; absent when it could not be read. */
   live?: LiveScoreDay[];
+  /** The fixed answer-key cohort's daily precision and recall, oldest first; absent when it could not be read. */
+  fixedCohort?: FixedCohortDay[];
   /** Older snapshots contain only overlapping rolling totals: show them, never sum them into weeks. */
   legacySnapshots?: LegacyAccuracySnapshot[];
 }
@@ -91,6 +94,19 @@ export async function readLiveScoreHistory(db: typeof sql = sql, now = new Date(
   return liveScoreDays(rows.map((row) => row?.component));
 }
 
+/** The fixed answer-key cohort score each daily snapshot kept (`goal.fixedCohort.latest`); outlives event retention. */
+export async function readFixedCohortHistory(db: typeof sql = sql, now = new Date()): Promise<FixedCohortDay[]> {
+  const since = new Date(now);
+  since.setUTCDate(since.getUTCDate() - ACCURACY_HISTORY_WEEKS * 7);
+  const rows = await db<Array<{ score: unknown }>>`
+    SELECT s.detail #> '{goal,fixedCohort,latest}' AS score
+      FROM pipeline_scoreboard_snapshots s
+     WHERE s.snapshot_date >= ${since.toISOString().slice(0, 10)}::date
+       AND jsonb_typeof(s.detail #> '{goal,fixedCohort,latest}') = 'object'
+  `;
+  return fixedCohortDays(rows.map((row) => row?.score));
+}
+
 /** Only the small dated audit receipts are read, not each snapshot's full operational detail. */
 export async function readAccuracyHistory(db: typeof sql = sql, now = new Date()): Promise<AccuracyHistory> {
   const since = new Date(now);
@@ -115,9 +131,14 @@ export async function readAccuracyHistory(db: typeof sql = sql, now = new Date()
     console.error("Live score history read failed", error);
     return undefined;
   });
+  const fixedCohort = await readFixedCohortHistory(db, now).catch((error) => {
+    console.error("Fixed cohort history read failed", error);
+    return undefined;
+  });
   return {
     ...bucketAccuracyHistory(rows.flatMap((row) => row.day ? [row.day] : []), now),
     ...(live ? { live } : {}),
+    ...(fixedCohort ? { fixedCohort } : {}),
     legacySnapshots: rows.flatMap((row) => {
       const old = row.legacy;
       if (!old || !Number.isSafeInteger(old.right) || !Number.isSafeInteger(old.scorable) || old.right < 0 || old.right > old.scorable || old.scorable <= 0) return [];

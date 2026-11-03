@@ -161,6 +161,8 @@ describe("stale copy check", () => {
       currentText: text,
       olderText: `${text}\nSavings Dormant Charges- $5.00 per month\n`,
       knoxVersion: 156,
+      // Off, so the fee waits on Knox; on, the same-category, same-price live read keeps it live (`restated`). Neither is a twin.
+      droppedLine: false,
     });
     expect(judged.verdict).toBe("waiting_reread");
   });
@@ -234,9 +236,13 @@ describe("stale copy check", () => {
     expect(findings.byVerdict).toMatchObject({ dropped: 1, stated: 2 });
   });
 
-  it("waits for a current-version Knox read before reading Knox's silence", () => {
-    const judged = judgeStaleCopyDocument({ fees: fees.map((row) => ({ ...row, current_read_version: 155 })), twins: [], rawRows: [], currentText: CSB, olderText: older, knoxVersion: 156 });
-    expect(judged[0].verdict).toBe("waiting_reread");
+  it("with the dropped-line switch off, waits for a current-version Knox read before reading Knox's silence", () => {
+    const judge = (droppedLine: boolean) => judgeStaleCopyDocument({
+      fees: fees.map((row) => ({ ...row, current_read_version: 155 })), twins: [], rawRows: [], currentText: CSB, olderText: older, knoxVersion: 156, droppedLine,
+    });
+    expect(judge(false)[0].verdict).toBe("waiting_reread");
+    // On (the shipped setting), a read at or above the stale-read floor and the fee's own read version counts.
+    expect(judge(true)[0].verdict).toBe("dropped");
   });
 
   it("never reads a current copy Knox read below the fee's own read version", () => {
@@ -292,6 +298,8 @@ describe("stale copy check", () => {
       currentText: CSB,
       olderText: olderPlus,
       knoxVersion: 163,
+      // The fee-count test alone: with the switch on, this same-address page is also recognized by its text.
+      droppedLine: false,
     });
     const byId = Object.fromEntries(judged.map((row) => [row.feePublishedId, row.verdict]));
     expect(byId[5]).toBe("restated");
@@ -446,8 +454,8 @@ You must also pay certain fees to third parties. These fees generally total betw
     });
 
   describe("dropped line (STALE_COPY_DROPPED_LINE_LIVE)", () => {
-    it("ships switched off", () => {
-      expect(STALE_COPY_DROPPED_LINE_LIVE).toBe(false);
+    it("ships switched on (Nov 2 re-run: 15 drops at 11 institutions, all absent from the current copy)", () => {
+      expect(STALE_COPY_DROPPED_LINE_LIVE).toBe(true);
     });
 
     it("counts a Knox read from Knox's own stale-read floor, never below the fee's read version", () => {

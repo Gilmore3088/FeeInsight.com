@@ -103,7 +103,9 @@ const FLOORS: Record<string, { right: number; wrong: number }> = {
   // and "$140/day" trace too (MN 127), and key 10500's "($150.00 max daily)" (IL 117).
   // v148 (#1092): key 10272's dash price-first lists read as main reads them with `DASH_LIST_ROWS_LIVE` off
   // (main reads a name or price from both runs, so they add nothing); with it on, MN 130.
-  MN: { right: 124, wrong: 8 },
+  // v168 (Nov 2): key 8741's "Returned Item Fee | $10/item", beside its own "NSF Return Fee | $35/item", is read as the returned
+  // deposited item the key files it under (`withReturnBesideNsf`): main 131 right / 8 wrong -> 132 / 7.
+  MN: { right: 125, wrong: 7 },
   NY: { right: 46, wrong: 4 },
   // v97: 870 -> 877 right (GA's key 60); wrong 33 -> 34, inside the floor.
   // Guard v81 and the escheat range (Oct 22): returned check deposits and escheat processing fees read
@@ -120,7 +122,8 @@ const FLOORS: Record<string, { right: number; wrong: number }> = {
   // Retired keys with no home (Nov 1; see CA): 915 -> 910 right, 30 -> 29 wrong (ceiling kept).
   // v161: +8 right (held-name vocabulary; see CA): main at b72a24fee (DASH_LIST_ROWS_LIVE and
   // DAILY_CAP_LINES_LIVE on, #2885) reads 918 / 29, v161 926 / 29; no wrong read added.
-  all: { right: 926, wrong: 34 },
+  // v168: 926 -> 927 right, 29 -> 28 wrong (MN's key 8741; see MN). The wrong ceiling keeps its slack.
+  all: { right: 927, wrong: 34 },
 };
 
 const fixture = JSON.parse(

@@ -11,6 +11,9 @@ import {
 import { tierPerkZero } from "./tier-perk";
 import { accountBenefitZeroOf } from "@/lib/account-benefit-zero";
 import { zeroWaiverRowRead } from "@/lib/zero-waiver-row";
+import { freeListItemRead } from "@/lib/free-list-item";
+import { dividendThresholdSentence } from "@/lib/dividend-threshold";
+import { onlineServiceMonthlyFee } from "@/lib/service-monthly-charge";
 import { serviceMaintenanceRead } from "@/lib/service-maintenance-heading";
 import { requireInternationalVerification } from "./international-verification";
 import { matchOriginalRawSource } from "./locked-raw-source";
@@ -166,6 +169,9 @@ export type DarwinReasonCode =
   | "tier_perk_zero"
   | "account_benefit_zero"
   | "zero_waiver_row"
+  | "free_list_item"
+  | "dividend_threshold"
+  | "online_service_monthly"
   | "service_maintenance_heading"
   | "name_rule"
   | "maintenance_per_item"
@@ -198,6 +204,9 @@ export const DARWIN_REASON_TEXT: Readonly<Record<DarwinReasonCode, string>> = {
   tier_perk_zero: "A $0 from one account tier's own schedule (premium, private banking, BankOn) or named for that account: the tier's perk, not the bank's price",
   account_benefit_zero: "A $0 read from one named account's list of benefits (\"... Checking Account owners are provided the following free services\"): that account's perk, not the bank's price; held for a person",
   zero_waiver_row: "A $0 whose own line is no priced row: a \"No fee for ...\" item of a list of free items, or the balance row that avoids a fee (\"Minimum balance required to avoid a service charge\"); held for a person",
+  free_list_item: "A priced fee the page lists as an item of a \"free services\" list and whose price the source check took from another line: another fee's price, not this one's",
+  dividend_threshold: "The balance a rate disclosure says earns no dividend or interest (\"If your average daily balance is below $100.00 ..., no dividends are earned\"), in a sentence that names no charge: no fee",
+  online_service_monthly: "A monthly service fee printed in a section of online, electronic or digital services (\"Online Fees\"): that service's charge, not the account's monthly maintenance fee",
   service_maintenance_heading: "A monthly maintenance fee whose row sits under a heading that names a service, not an account (\"Consumer Online Banking Services and Mobile Banking Fees\" over \"Monthly Maintenance Fee | No charge\"): the service's own fee, not the checking account's; held for a person",
   name_rule: "The name or line fails a rule Hamilton would take the live fee down for",
   maintenance_per_item: "A monthly maintenance fee whose own line prices it per item (\"$16 each\", \"$1.00 per withdrawal\"): not the account's monthly fee",
@@ -2060,7 +2069,26 @@ export async function runDarwinVerify(
         if (!reasonCode && zeroWaiverRowRead({ excerpt: excerptOf(row.conditions), tracedLine, amount: normalizedAmount(row.amount), documentText: sourceText })) {
           reasonCode = "zero_waiver_row";
         }
-        // #1092 (Knox v165 holds new ones): and a monthly maintenance fee, $0 or priced, whose row sits
+        // #1092 (Knox v169 refuses new ones): a priced fee the page lists as an item of a "free services"
+        // list, traced only by joining its line to a price from another line (`freeListItemRead`
+        // on the line the shared check traced): "Money market | Fax Service | $5.00" at Mountain Star FCU.
+        if (!reasonCode && freeListItemRead({ feeName: row.fee_name, amount: normalizedAmount(row.amount), tracedLine, documentText: sourceText })) {
+          reasonCode = "free_list_item";
+        }
+        // Knox v170 (backlog dry run 3) refuses new ones: a rate disclosure's balance threshold read as a fee,
+        // on Knox's own line (`dividendThresholdSentence`). Verify counts the shared check's `tiered_fee` as
+        // stated (`statedInOwnSource`), so Peninsula Community FCU's "If your average daily balance is below
+        // $100.00 ($5.00 for accounts held by those under 18 ...), no dividends are earned" passed as a $5 fee.
+        if (!reasonCode && dividendThresholdSentence(excerptOf(row.conditions), normalizedAmount(row.amount))) {
+          reasonCode = "dividend_threshold";
+        }
+        // Knox v170: and a monthly service fee printed under an online services section ("Online Fees" /
+        // ... / "Cinfed Connection Monthly Service Fee | FREE"), not the account's maintenance fee.
+        if (!reasonCode && canonicalFeeKey === "monthly_maintenance"
+          && [excerptOf(row.conditions), tracedLine].some((line) => onlineServiceMonthlyFee(row.fee_name, line, sourceText) !== null)) {
+          reasonCode = "online_service_monthly";
+        }
+        // #1092 (Knox v171 holds new ones): and a monthly maintenance fee, $0 or priced, whose row sits
         // under a service's heading, read on Knox's line and the line the shared check traces it to
         // (`serviceMaintenanceRead`).
         if (!reasonCode && serviceMaintenanceRead({ excerpt: excerptOf(row.conditions), tracedLine, canonicalFeeKey, documentText: sourceText })) {

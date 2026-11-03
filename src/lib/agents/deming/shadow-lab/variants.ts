@@ -17,6 +17,9 @@ import {
 import { tierPerkZero } from "@/lib/agents/darwin/tier-perk";
 import { accountBenefitZeroOf } from "@/lib/account-benefit-zero";
 import { zeroWaiverRowOf, zeroWaiverRowRead } from "@/lib/zero-waiver-row";
+import { freeListItemRead } from "@/lib/free-list-item";
+import { dividendThresholdSentence } from "@/lib/dividend-threshold";
+import { onlineServiceMonthlyFee } from "@/lib/service-monthly-charge";
 import { serviceMaintenanceOf, serviceMaintenanceRead } from "@/lib/service-maintenance-heading";
 import { foldContext } from "@/lib/fee-fold";
 import { withFootnotedAtmHeading } from "@/lib/fee-fold-atm-heading";
@@ -83,8 +86,8 @@ export interface SwitchOverrides {
    */
   htmlRowPairing?: boolean;
   /**
-   * Knox v165's service-heading hold and Darwin's matching refusal (#1092, `service-maintenance-heading.ts`).
-   * Off is how main read before v165: the hold has no switch of its own, only its live re-check does
+   * Knox v171's service-heading hold and Darwin's matching refusal (#1092, `service-maintenance-heading.ts`).
+   * Off is how main read before v171: the hold has no switch of its own, only its live re-check does
    * (`SERVICE_MAINTENANCE_TAKEDOWN_LIVE`), so this override exists to measure what the hold changes.
    */
   serviceMaintenanceHold?: boolean;
@@ -131,7 +134,7 @@ export const EXPERIMENTS: Readonly<Record<string, ExperimentConfig>> = {
   "service-maintenance-hold-off": {
     id: "service-maintenance-hold-off",
     description:
-      "Every stage reads without Knox v165's service-heading hold and Darwin's matching refusal, as main read before them: a monthly maintenance row under a heading that names a service (\"Consumer Online Banking Services and Mobile Banking Fees\") is read as the account's fee. Current minus experimental is what the hold changes on the frozen texts; the live re-check behind `SERVICE_MAINTENANCE_TAKEDOWN_LIVE` is a database sweep the lab cannot replay (switch dry-run audit, section 9).",
+      "Every stage reads without Knox v171's service-heading hold and Darwin's matching refusal, as main read before them: a monthly maintenance row under a heading that names a service (\"Consumer Online Banking Services and Mobile Banking Fees\") is read as the account's fee. Current minus experimental is what the hold changes on the frozen texts; the live re-check behind `SERVICE_MAINTENANCE_TAKEDOWN_LIVE` is a database sweep the lab cannot replay (switch dry-run audit, section 9).",
     excerptAtPublish: false,
     switches: { serviceMaintenanceHold: false },
   },
@@ -187,7 +190,7 @@ function readText(text: string, dailyCapLines = false, dashListRows = false, swi
     ...(switches.withoutDiscontinuedTables == null ? {} : { withoutDiscontinuedTables: switches.withoutDiscontinuedTables }),
   });
   const serviceHold = switches.serviceMaintenanceHold !== false;
-  // Knox v165 holds a monthly maintenance read under a service's heading for review, $0 or priced, on
+  // Knox v171 holds a monthly maintenance read under a service's heading for review, $0 or priced, on
   // Knox's own hint (`extract.ts`): never sent to Darwin.
   const serviceHeld = (hint: string | null, excerpt: string | null | undefined) =>
     serviceHold ? serviceMaintenanceOf({ line: excerpt, canonicalFeeKey: hint, documentText: text }) : null;
@@ -265,6 +268,9 @@ function verifyFee(fee: StageFee, text: string, dailyCapLines = false, switches:
   if (tierPerkZero(amount, name, REPLAY_URL, text, key)) return { ok: false, reason: "tier_perk_zero" };
   if (amount === 0 && accountBenefitZeroOf({ line: fee.excerpt ?? line, documentText: text, feeName: name })) return { ok: false, reason: "account_benefit_zero" };
   if (zeroWaiverRowRead({ excerpt: fee.excerpt, tracedLine: traced, amount, documentText: text })) return { ok: false, reason: "zero_waiver_row" };
+  if (freeListItemRead({ feeName: name, amount, tracedLine: traced, documentText: text })) return { ok: false, reason: "free_list_item" };
+  if (dividendThresholdSentence(fee.excerpt, amount)) return { ok: false, reason: "dividend_threshold" };
+  if (key === "monthly_maintenance" && [fee.excerpt, traced].some((line) => onlineServiceMonthlyFee(name, line, text) !== null)) return { ok: false, reason: "online_service_monthly" };
   if (switches.serviceMaintenanceHold !== false && serviceMaintenanceRead({ excerpt: fee.excerpt, tracedLine: traced, canonicalFeeKey: key, documentText: text })) {
     return { ok: false, reason: "service_maintenance_heading" };
   }

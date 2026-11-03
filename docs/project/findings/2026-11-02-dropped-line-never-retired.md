@@ -28,7 +28,7 @@ Why it survived (prod, read-only, Nov 2):
   on). No switch was off, and no age, size or category guard applied.
 
 **Fix:** Darwin `stale-copy-check.ts` v3.
-- Behind `STALE_COPY_DROPPED_LINE_LIVE` (off): Knox's read of the current copy counts from Knox's
+- Behind `STALE_COPY_DROPPED_LINE_LIVE` (shipped off, turned on after the re-run below): Knox's read of the current copy counts from Knox's
   stale-read floor (v97) and never below the fee's own read version. A same-address current copy that
   still prints 60% of the older copy's lines is the same page, even when it carries few of the old
   copy's live fees.
@@ -58,8 +58,47 @@ live fees and the stored texts of the 1,449 copy pairs Knox has read at the floo
   absent from the current copy at their amount. The live pages were not fetched: this container's proxy
   refuses them (HTTP 403).
 
+**Switch on (Nov 2, sampled-clean rule):** the dry run was re-run on main (4055bbe8, Knox v163) with the
+same read-only pulls: 2,191 superseded copies with live flat fees, their 6,931 live fees, the current
+copies' 20,954 live fees and 38,767 raw rows, and the stored texts of the 1,443 copy pairs Knox has read
+at the floor (2,561 texts), judged with `judgeStaleCopyDocument`.
+
+| | drops | institutions | twins (already on) |
+|---|---|---|---|
+| Switch off | 0 (321 `waiting_reread`) | 0 | 41 |
+| Switch on | 15 | 11 | 41 |
+
+With the switch on, the guards keep 38 `named_and_priced`, 3 `restated` and 1 `not_same_page` live, and 81
+fall to `not_same_schedule`. The 15 are the same fees as the first dry run. Each was read by hand against
+the current copy's stored text; all 15 are absent at their amount, and each pair is one address with the
+current copy the same schedule (text overlap 0.20 to 0.99; the two low ones, ULFCU 0.27 and Fidelis 0.20,
+carry 4 of 8 and 10 of 13 of the older copy's live fees).
+
+| Fee | Inst | Copies | Name, amount | Current copy's stored text |
+|---|---|---|---|---|
+| 94533 | 7318 | 6648 -> 41389 | Returned Mail (Per Each Occurrence of Returned Mail) $5 | no "mail" anywhere; the row after Dormant Account Letter is now Account Research |
+| 49178 | 5747 | 12874 -> 21046 | Debit Card Dispute $10 | no "dispute"; the new fee table lists Debit Card Fee $12 annually |
+| 49180 | 5747 | 12874 -> 21046 | Mortgage Loan Application $200 | no $200 line; mortgage fees are Origination 1.50% and Credit Report $20 |
+| 49182 | 5747 | 12874 -> 21046 | Skip a Payment Promotion Fee $40 | no skip-a-payment line and no $40 |
+| 49183 | 5747 | 12874 -> 21046 | Certified Checks/Credit Union Checks/Telephone Check $5 | gone; only Lost or Stolen Cashier/Credit Union Check $28 and Reissue $29 |
+| 144004 | 515 | 15534 -> 41811 | Counter Checks $0.25 | "COUNTER CHECKS / $1 per page (limit 2 pages per visit)"; older "$.25 each" |
+| 78206 | 767 | 16363 -> 41457 | Deposited item returned $12 | row removed between Coin counting and Early Closeout Fee; no $12 |
+| 53954 | 2957 | 16690 -> 36907 | Go Green Secure Checking Monthly service charge $3 | the Go Green cell "$3 ... falls below $500" and its section sentence are both gone |
+| 115075 | 7558 | 25801 -> 38320 | Returned Deposited Items - Charge Back $15 | "Returned Deposited Items - Charge Back \| $25.00" |
+| 139689 | 5454 | 31052 -> 41682 | Expedited card Online Services $6 | misread of the flattened old copy ($6 was Bill Pay); clean table: "Up to $75 \| Expedited card"; no $6 |
+| 139725 | 5454 | 31052 -> 41682 | Card replacement fee $35 | misread ($35 was Expedited card); clean table: "$10 \| Card replacement fee"; no $35 |
+| 107278 | 5534 | 34656 -> 39479 | Cashier's Check: Non-member $10 | only "Cashier's Check/Members \| N/C" |
+| 159209 | 2214 | 38387 -> 40408 | Processing Fee $575 | "$675 Processing Fee" (both manufactured-home lines) |
+| 164340 | 6256 | 38872 -> 40739 | Statement copy fee $2.50 | "Statement copy fee \| $5.00 per statement" |
+| 107864 | 5985 | 39997 -> 41882 | Money Orders $2 | no "money order" anywhere |
+
+Darwin's own guards hold for all 15: none has a correction row (`published_fee_corrections`, any status),
+all are live and unquarantined, and each takedown still waits for the shared 12-hour second look before the
+archive write, which again skips admin-corrected fees. Olympia's six now cite a newer copy, 42071, which
+Knox has not read, so they still wait. The live pages were not fetched (the proxy refuses them); every
+check is against the stored texts. Rollback: set `STALE_COPY_DROPPED_LINE_LIVE` to false.
+
 **Still open:**
-- Turning the switch on is a separate PR after review of this dry run.
 - Fees on current copies Knox has never read (286 copies) or with no stored text (330) still wait;
   that is the Knox and Rosetta backlog, not this check.
 

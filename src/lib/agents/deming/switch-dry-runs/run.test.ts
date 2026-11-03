@@ -174,7 +174,7 @@ describe("switch dry runs: one pass over every pending count", () => {
     expect(report.footnotedAtmHeading.summary.liveNonNetwork).toMatchObject({ fees: 1, documents: 1, noText: 0, wouldLeave: 0 });
     // Waiver-row $0s: the list item would come down, the notary row stays, the textless row is not judged.
     expect(report.zeroWaiverRow.summary).toMatchObject({
-      checked: 3, noText: 1, wouldTakeDown: 1, institutions: 1, byKind: { no_fee_sentence: 1, waiver_requirement: 0 }, byCategory: { stop_payment: 1 },
+      checked: 3, noText: 1, wouldTakeDown: 1, institutions: 1, byKind: { no_fee_sentence: 1, waiver_requirement: 0, avoid_fee_advice: 0 }, byCategory: { stop_payment: 1 },
     });
     expect(report.zeroWaiverRow.summary.samples.map((m) => m.feePublishedId)).toEqual([64331]);
     // Service-heading monthly maintenance: the online banking row would come down, the account's row stays.
@@ -229,7 +229,7 @@ describe("switch dry runs: one pass over every pending count", () => {
     expect(text).toContain("cannot re-read a page or say how many stored texts would change");
     expect(text).toContain("EXPOSED: 7 current HTML documents (5 with live fees) carry 61 live fees");
     expect(text).toContain("Legacy texts with no reader recorded (format unknown): 2 documents, 9 live fees.");
-    expect(text).toContain("## 9. SERVICE_MAINTENANCE_TAKEDOWN_LIVE (#1092, Knox v165)");
+    expect(text).toContain("## 9. SERVICE_MAINTENANCE_TAKEDOWN_LIVE (#1092, Knox v171)");
     expect(text).toContain("LIVE TAKEDOWN: switched on, 1 of 2 selected live monthly maintenance fees at 1 institutions would come down");
     expect(text).toContain("1 live monthly maintenance fees past the row cap were left unjudged (re-run with a higher --row-cap)");
     expect(text).toContain("## 10. Live accuracy");

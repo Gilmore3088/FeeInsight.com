@@ -7,7 +7,7 @@ import {
 import { bounded, type Bounded, type SwitchAuditOptions, type SwitchAuditReader } from "./types";
 
 /**
- * `SERVICE_MAINTENANCE_TAKEDOWN_LIVE` (#1092, Knox v165): the live monthly maintenance fees Darwin's
+ * `SERVICE_MAINTENANCE_TAKEDOWN_LIVE` (#1092, Knox v171): the live monthly maintenance fees Darwin's
  * service-heading re-check would take down switched on, judged by the re-check's own function
  * (`findServiceMaintenance`: Knox's stored row and the line `checkFeeAgainstSource` traces the fee to,
  * on the text Knox read, must both sit under a heading that names only services). The summary is

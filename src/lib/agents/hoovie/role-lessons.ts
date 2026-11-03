@@ -6,6 +6,26 @@ import type { AgentLesson } from "@/lib/agents/learning/lesson-types";
  */
 export const HOOVIE_LESSONS: AgentLesson[] = [
   {
+    id: "issue-2232-relink-when-identity-improves",
+    agent: "hoovie",
+    stage: "registry identity",
+    lesson: "When the source of a matching key improves (a new LEI crosswalk, a fixed registry walk), re-apply it to the rows already stored, as its own fill-only step with a dry-run count, instead of waiting for the next download of the data being matched. Fill only exact, unshared, unheld identities; never change or clear a link another step made.",
+    why: "The HMDA Reporter Panel stopped after 2023, so 2024 and 2025 lenders had no RSSD and stayed unlinked. On 2026-11-02 the fixed GLEIF partitions linked 3,703 institutions to their registered LEIs, about 2,950 HMDA lenders a year, but HMDA partitions refresh yearly, so the links would have waited until October 2027.",
+    evidence: { issues: [2232], prs: [], files: ["src/lib/agents/magellan/registry/hmda-relink.ts", "docs/project/findings/2026-11-02-hmda-links-wait-a-year.md"] },
+    appliesTo: "all",
+    since: "2026-11-02",
+  },
+  {
+    id: "issue-2613-keep-the-as-filed-value",
+    agent: "hoovie",
+    stage: "registry store",
+    lesson: "A loader that refetches a filing because publishers amend it never overwrites what was filed: in the same statement as the upsert it keeps each changed reported value as [before, after] in registry_filing_versions, with the run that last wrote it and the run that replaced it. Compare reported values only (not raw_json, URLs or labels), store only what changed, and give the history table its own size budget.",
+    why: "FDIC and NCUA quarters are refetched weekly because they are amended, but every load upserted in place, so an amendment silently replaced the value a saved Hamilton answer or report had cited, and an NCUA standalone quarter derived from a year-to-date figure changed with no trace.",
+    evidence: { issues: [2613], prs: [], files: ["supabase/migrations/20270110000086_registry_filing_versions.sql", "src/lib/agents/hoovie/filing-versions.ts"] },
+    appliesTo: "all",
+    since: "2026-11-01",
+  },
+  {
     id: "sba-catalog-moved-off-ckan",
     agent: "hoovie",
     stage: "registry collect",

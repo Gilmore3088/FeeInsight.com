@@ -14,10 +14,16 @@ type SqlTag = typeof sql;
  * `STUCK_AFTER_CHECKS` counts (the PRD's no-progress loop). Bayes only counts: the agents that
  * own each rerun keep doing the re-processing, inside their own budgets and pause controls.
  *
+ * A row keyed at an older version of a manifest the code still declares is superseded: the code no
+ * longer counts it, so without a close it would stay open or stuck with its last count forever and
+ * every version bump would add a frozen row to the backlog. Each run closes those rows with the note
+ * `superseded by <current change key>` and one check row, and names them in the step detail (v2).
+ *
  * Deterministic: no model calls, no fee rows written.
  */
 
-export const BAYES_LEDGER_VERSION = 1;
+export const BAYES_LEDGER_VERSION = 2;
+export const SUPERSEDED_NOTE_PREFIX = "superseded by ";
 export const STUCK_AFTER_CHECKS = 3;
 
 export type ReplayStatus = "open" | "closed" | "stuck" | "not_counted";
@@ -42,10 +48,24 @@ export interface ReplayJobResult {
   error?: string;
 }
 
+/** An older version's row closed because the code now declares a newer version of its manifest. */
+export interface SupersededJob {
+  changeKey: string;
+  manifestKey: string;
+  supersededBy: string;
+  /** The status and queue it had at its last count, kept on the row as history. */
+  previousStatus: string;
+  lastQueued: number;
+}
+
 export interface BayesLedgerResult {
   schemaReady: boolean;
   dryRun: boolean;
   jobs: ReplayJobResult[];
+  /** Open or stuck rows of an older version closed (dry run: that would be closed) this run. */
+  superseded: SupersededJob[];
+  /** Set when closing superseded rows failed; the counts above still stand. */
+  supersededError?: string;
   closed: number;
   open: number;
   stuck: number;
@@ -88,6 +108,72 @@ async function loadHistory(db: SqlTag, key: string): Promise<ReplayCheck[]> {
      LIMIT ${STUCK_AFTER_CHECKS}
   `;
   return rows.map((row) => ({ done: Number(row.done), queued: Number(row.queued), excluded: Number(row.excluded) }));
+}
+
+/**
+ * Pure: for each manifest key the code declares, its current change key. A manifest key declared
+ * twice keeps the first (`loadManifests` keys are unique; its test checks that).
+ */
+export function currentChangeKeys(manifests: ReplayManifest[]): Map<string, string> {
+  const current = new Map<string, string>();
+  for (const manifest of manifests) if (!current.has(manifest.key)) current.set(manifest.key, changeKey(manifest));
+  return current;
+}
+
+export const supersededNote = (currentKey: string): string => `${SUPERSEDED_NOTE_PREFIX}${currentKey}`;
+
+/**
+ * Closes every open or stuck row whose manifest the code declares at another change key, with the
+ * note `superseded by <current key>` and one appended check row. The row keeps its last counts as
+ * history. Touches only `replay_jobs` and `replay_job_checks`; a closed or not_counted row is left
+ * as it is, so a second run closes nothing more (idempotent). A dry run only reads.
+ */
+export async function closeSupersededJobs(
+  db: SqlTag,
+  current: Map<string, string>,
+  { runId, dryRun }: { runId: number | null; dryRun: boolean },
+): Promise<SupersededJob[]> {
+  if (current.size === 0) return [];
+  const manifestKeys = [...current.keys()];
+  const currentKeys = manifestKeys.map((key) => current.get(key) as string);
+  const rows = await db<Array<{ id: number | string; change_key: string; manifest_key: string; status: string; queued: number | string }>>`
+    SELECT j.id, j.change_key, j.manifest_key, j.status, j.queued
+      FROM replay_jobs j
+      JOIN UNNEST(${manifestKeys}::text[], ${currentKeys}::text[]) AS c(manifest_key, change_key)
+        ON c.manifest_key = j.manifest_key
+     WHERE j.status IN ('open', 'stuck')
+       AND j.change_key <> c.change_key
+     ORDER BY j.manifest_key, j.id
+  `;
+  const closed: SupersededJob[] = [];
+  for (const row of rows) {
+    const supersededBy = current.get(row.manifest_key) as string;
+    const job: SupersededJob = {
+      changeKey: row.change_key,
+      manifestKey: row.manifest_key,
+      supersededBy,
+      previousStatus: row.status,
+      lastQueued: Number(row.queued ?? 0),
+    };
+    if (!dryRun) {
+      const note = supersededNote(supersededBy);
+      const [updated] = await db<Array<{ id: number | string }>>`
+        UPDATE replay_jobs
+           SET status = 'closed', note = ${note}, closed_at = COALESCE(closed_at, NOW()),
+               last_run_id = ${runId}, updated_at = NOW()
+         WHERE id = ${Number(row.id)} AND status IN ('open', 'stuck')
+        RETURNING id
+      `;
+      if (!updated) continue;
+      await db`
+        INSERT INTO replay_job_checks (job_id, agent_run_id, status, affected, done, queued, excluded, exclusions, note)
+        SELECT id, ${runId}, 'closed', affected, done, queued, excluded, exclusions, ${note}
+          FROM replay_jobs WHERE id = ${Number(row.id)}
+      `;
+    }
+    closed.push(job);
+  }
+  return closed;
 }
 
 async function writeJob(db: SqlTag, manifest: ReplayManifest, job: ReplayJobResult, runId: number | null): Promise<void> {
@@ -137,6 +223,7 @@ export async function runBayesLedger({
     schemaReady: false,
     dryRun,
     jobs: [],
+    superseded: [],
     closed: 0,
     open: 0,
     stuck: 0,
@@ -147,7 +234,8 @@ export async function runBayesLedger({
   result.schemaReady = await replayLedgerSchemaReady(db);
   if (!result.schemaReady) return result;
 
-  for (const manifest of manifests ?? (await loadManifests())) {
+  const declared = manifests ?? (await loadManifests());
+  for (const manifest of declared) {
     const key = changeKey(manifest);
     let count: ReplayCount | null = null;
     let error: string | undefined;
@@ -190,6 +278,12 @@ export async function runBayesLedger({
     result.queuedRecords += job.queued;
     if (!dryRun) await writeJob(db, manifest, job, runId);
   }
+  // After the current rows are written, so each superseded row points at a row that exists.
+  try {
+    result.superseded = await inSavepoint(db, (scope) => closeSupersededJobs(scope, currentChangeKeys(declared), { runId, dryRun }));
+  } catch (caught) {
+    result.supersededError = caught instanceof Error ? caught.message : String(caught);
+  }
   return result;
 }
 
@@ -204,6 +298,10 @@ export function summarizeBayesLedger(result: BayesLedgerResult): string {
   const tail = [
     result.notCounted > 0 ? `${result.notCounted} not countable yet` : null,
     result.failed > 0 ? `${result.failed} counts failed` : null,
+    result.superseded.length > 0
+      ? `${result.dryRun ? "Would close" : "Closed"} ${result.superseded.length} superseded older-version ${result.superseded.length === 1 ? "row" : "rows"} (${result.superseded.reduce((total, job) => total + job.lastQueued, 0)} stale queued, not in the queue)`
+      : null,
+    result.supersededError ? `closing superseded rows failed (${result.supersededError})` : null,
   ].filter(Boolean);
   return `${result.dryRun ? "Would record" : "Recorded"} ${counted} rule changes: ${parts.join(", ")}.${tail.length > 0 ? ` ${tail.join("; ")}.` : ""}`;
 }

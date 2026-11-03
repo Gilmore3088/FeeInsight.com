@@ -1,6 +1,6 @@
 import { sql } from "@/lib/data-store/connection";
 import { KNOX_RULES_STRATEGY } from "@/lib/agents/knox/specialists";
-import { countKnoxRereadsDue } from "@/lib/agents/knox/extract";
+import { countKnoxRereadsDue, KNOX_REREAD_BELOW_VERSION, KNOX_REREAD_REFRESH_DAYS } from "@/lib/agents/knox/extract";
 import { CATEGORY_GUARD_VERSION } from "@/lib/fee-category-guard";
 import { FREQUENCY_FILL_VERSION } from "@/lib/agents/hamilton/frequency-fill";
 import { countCurrentCopyPairs, CURRENT_COPY_STRATEGY } from "@/lib/agents/hamilton/current-copy";
@@ -73,13 +73,18 @@ async function countKnoxRules(db: SqlTag): Promise<ReplayCount> {
   `;
   const affected = n(row?.affected);
   const done = n(row?.done);
-  const queued = Math.min((await countKnoxRereadsDue(db)).due, Math.max(0, affected - done));
+  // Queued is Knox's own selection (`countKnoxRereadsDue` runs the extract step's query), so it moves
+  // with the re-read floor: a bump below KNOX_REREAD_BELOW_VERSION adds no queue, a raise of the floor does.
+  const rereads = await countKnoxRereadsDue(db);
+  const queued = Math.min(rereads.due, Math.max(0, affected - done));
+  const left = Math.max(0, affected - done - queued);
+  const heldByFloor = Math.min(rereads.heldByFloor, left);
   return {
     affected,
     done,
     queued,
-    exclusions: { knox_keeps_older_read: Math.max(0, affected - done - queued) },
-    note: "Knox re-reads a current copy only when its own rules ask (thin text, $10B+ bank, missing fees, older copy still live, stale or unnamed read, priority bank); the rest keep their older read.",
+    exclusions: { knox_read_at_floor_recently: heldByFloor, knox_keeps_older_read: left - heldByFloor },
+    note: `Knox re-reads a current copy only when its own rules ask (thin text, $10B+ bank, missing fees, older copy still live, stale or unnamed read, priority bank). Since Nov 2 those re-reads wait for the floor (KNOX_REREAD_BELOW_VERSION v${KNOX_REREAD_BELOW_VERSION}) or a ${KNOX_REREAD_REFRESH_DAYS}-day refresh (KNOX_REREAD_REFRESH_DAYS), except missing fees and one-institution runs; knox_read_at_floor_recently counts texts last read at or above the floor inside that window. The rest keep their older read.`,
   };
 }
 
@@ -371,6 +376,8 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   // #2265: implementation versions cannot authorize the broader identity rollout.
   HMDA_PARSER_VERSION: "Implementation v3 is prepared, but the default-off ordinary identity gate leaves HMDA_SCHEDULED_PARSER_VERSION at2. Registry replay counts use that effective scheduled selector; the explicit ten-bank repair is manual-only and creates no automatic replay. Any ordinary activation requires separate review, including #2266.",
   FDIC_UNIVERSE_PARSER_VERSION: "Implementation v3 is prepared, but own-LEI propagation is default off and FDIC_UNIVERSE_SCHEDULED_PARSER_VERSION stays2. Registry replay counts use the effective scheduled selector. Enabling broader source identity writes is a separate reviewed release; the ten-bank repair does not authorize it.",
+  // Mountain Star FCU fee 159428 (Nov 2): the replay is behind its own switch, off.
+  PDF_LAYOUT_REPLAY_VERSION: "v6 names the layout version a reader replay brings stored read.pdf_layout texts to (side-by-side fee tables keep each cell in its own table). With PDF_CELL_REPLAY_LIVE off (the code default) it selects nothing; on, every current completed read.pdf_layout text with a cell break and no layout read of its bytes at v6 is read once more in the reader replay lane (rosetta.reader_replay receipts, key pdf_layout_version), and the rosetta.read manifest counts it. Nov 2 (SELECT on prod): 3,226 such texts carrying 30,735 live fees. The record-only layout recheck measures the live fees first; a changed text goes to Knox and Darwin re-checks its fees. No fee row or provider work is touched by the version.",
   PDF_PROSE_REREAD_VERSION: "Frozen layout4 prose retry floor. Stacked layout5 has a separate measured current-copy witness and pdf_stacked@1 persisted-artifact check; changing PDF_LAYOUT_VERSION does not reopen every settled prose document.",
   // #2068, #2057: lessons apply when Knox reads a text, so they reach old texts only on a re-read.
   KNOX_LESSONS_VERSION: "v5 also reads extract-stage hand corrections, category holds and Deming's category-guard audit misses as category verdicts, one bank each (v4 added name-family lessons). Lessons are read at each extract step and act on texts Knox reads; old texts are read again only when KNOX_RULES_STRATEGY moves, and the knox.rules manifest counts that replay. Dry run 2026-10-26 (SELECT on prod pipeline_feedback): 0 rows teach a category yet (no extract correction or hold of a person's own, no category audit miss; 76 name and 3 amount misses teach none; 21 takedown-sync copies of corrections are skipped), so no lesson or live fee changes until such findings are filed; every re-filed fee is still checked by Darwin.",
@@ -411,7 +418,7 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   NO_FEE_SENTENCE_CHECK_VERSION: "First version: each verify step reads every live flat fee whose stored line has a \"no ... fee\" sentence before a price (no cursor, 19 rows on Oct 30); its switch is off, so it only reports; nothing older to replay.",
   WORKED_EXAMPLE_CHECK_VERSION: "First version (prod sample, Nov 2): each verify step reads every live flat fee whose prose excerpt has an example word in the 3,000 characters of its stored text before it (no cursor; 1,267 rows on Nov 2 with the text hash proved, 1 match, 89920); its switch (DARWIN_WORKED_EXAMPLE_TAKEDOWN_LIVE) is off, so it only reports; nothing older to replay.",
   LOAN_PAYMENT_EXAMPLE_CHECK_VERSION: "First version (#2854): each verify step reads every live flat fee whose stored line has payment words, the amount financed, per $1,000 or \"for N months\" (no cursor, 443 rows on Nov 1, 4 matches); its switch (DARWIN_LOAN_PAYMENT_EXAMPLE_TAKEDOWN_LIVE) is off, so it only reports; nothing older to replay.",
-  STALE_COPY_CHECK_VERSION: "First version (Nov 2): each verify step reads the next 60 superseded copies that still carry live flat fees after a ledger cursor, so every copy is read again on the next pass; nothing is recorded per copy, so there is nothing to replay. v2 (Nov 2) keeps more pairs live (own-name row elsewhere, two-fee row, missing qualifier); the cursor pass reads every copy again under it, and its switch (STALE_COPY_RETIRE_LIVE) is on. v3 (Nov 2) keeps a would-be drop live when the current copy still names and prices it, restates it in the same category and amount, or comes from another address; behind STALE_COPY_DROPPED_LINE_LIVE (off) a drop counts a Knox read from the stale-read floor and recognizes a same-address page by its text. The cursor pass reads every copy again under it.",
+  STALE_COPY_CHECK_VERSION: "First version (Nov 2): each verify step reads the next 60 superseded copies that still carry live flat fees after a ledger cursor, so every copy is read again on the next pass; nothing is recorded per copy, so there is nothing to replay. v2 (Nov 2) keeps more pairs live (own-name row elsewhere, two-fee row, missing qualifier); the cursor pass reads every copy again under it, and its switch (STALE_COPY_RETIRE_LIVE) is on. v3 (Nov 2) keeps a would-be drop live when the current copy still names and prices it, restates it in the same category and amount, or comes from another address; with STALE_COPY_DROPPED_LINE_LIVE on (Nov 2, after a sampled-clean dry run) a drop counts a Knox read from the stale-read floor and recognizes a same-address page by its text. The cursor pass reads every copy again under it.",
   OD_TRANSFER_REFILE_CHECK_VERSION: "First version: each verify step re-reads the stored line of every live overdraft fee that says transfer, sweep or protection (no cursor, 122 rows after an Oct 31 rollback); its switch is off, so it only reports; nothing older to replay.",
   LOAN_PAYMENT_NSF_REFILE_CHECK_VERSION: "First version: each verify step reads every live NSF fee whose name prices a bounced loan, mortgage or lease payment (no cursor, 2 rows on Oct 31); its switch is off, so it only reports; nothing older to replay.",
   PROTECTION_ITEM_REFILE_CHECK_VERSION: "First version: each verify step re-reads the stored page of every live overdraft-protection transfer fee named only \"Overdraft Protection\" (92 rows on Nov 1, 5 would re-file); its switch is off, so it only reports; nothing older to replay.",
@@ -434,7 +441,9 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   // v1 (#1397): a live $0 that is an item in one named account's list of benefits (Knox rules v157 holds new ones).
   ACCOUNT_BENEFIT_ZERO_CHECK_VERSION: "First version: each verify step re-reads every live $0 fee whose stored line is a free item (no cursor, 142 rows on Nov 1); its switch (DARWIN_ACCOUNT_BENEFIT_ZERO_LIVE) is off, so it only reports; nothing older to replay.",
   SERVICE_MAINTENANCE_CHECK_VERSION: "First version: each verify step re-reads every live flat monthly maintenance fee whose text prints a service's words (no cursor; not yet counted on prod); its switch (SERVICE_MAINTENANCE_TAKEDOWN_LIVE) is off, so it only reports; nothing older to replay.",
-  ZERO_WAIVER_ROW_CHECK_VERSION: "First version: each verify step re-reads every live flat $0 fee whose stored line opens with a no-fee phrase or says \"to avoid / to waive\" (no cursor; not yet counted on prod); its switch (ZERO_WAIVER_ROW_TAKEDOWN_LIVE) is off, so it only reports; nothing older to replay.",
+  NOT_ACCOUNT_FEE_LINE_CHECK_VERSION: "First version: each verify step re-reads every live flat fee whose Knox line says no dividend or interest is earned, and every live monthly maintenance fee on a text that prints an online services section title (no cursor; 493 rows on Nov 2, 2 matches, live 73916 and 152003); its switch (NOT_ACCOUNT_FEE_LINE_TAKEDOWN_LIVE) is off, so it only reports; nothing older to replay.",
+  FREE_LIST_ITEM_CHECK_VERSION: "First version: each verify step re-reads every live flat priced fee whose Knox line joins a name line to a price line on a text that prints a free services list heading (no cursor; 39 rows on Nov 2, 1 match, live 159428); its switch (FREE_LIST_ITEM_TAKEDOWN_LIVE) is off, so it only reports; nothing older to replay.",
+  ZERO_WAIVER_ROW_CHECK_VERSION: "First version: each verify step re-reads every live flat $0 fee whose stored line opens with a no-fee phrase or says \"to avoid / to waive\" (no cursor; not yet counted on prod); its switch (ZERO_WAIVER_ROW_TAKEDOWN_LIVE) is off, so it only reports; nothing older to replay. v2 (Nov 2, Knox v168): also reads a $0 whose free word is advice in a \"Ways to Avoid\" section (avoid_fee_advice); read-only on prod, 2 live fees match (89909, 105000 at Financial Health FCU), reported only while the switch is off.",
   // v2 (#1673): the same-line restore follows the older line's replacement before bringing a copy back.
   SAME_LINE_DUPLICATE_RESTORE_VERSION: "Each publish step re-reads every same-line takedown whose older line is down (no cursor), so v2's replacement check reaches every pending restore on the next step; the copies v1 already restored are read by Darwin's same-line replacement re-check.",
   // v1 (#1915): schedule editions not yet in effect. Every verify step reads every live fee on a dated document.
@@ -480,6 +489,10 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   // more. It is one of the extract step's own re-read triggers, which the knox.rules manifest's
   // queue counts with the same query (`countKnoxRereadsDue`), so the replay is counted there.
   KNOX_STALE_READ_BELOW_VERSION: "A re-read trigger inside the extract step's selection; the knox.rules manifest counts its queue (countKnoxRereadsDue).",
+  // Nov 2 (replay backlog review): the re-read floor. The once-per-version re-read classes wait for it
+  // or for KNOX_REREAD_REFRESH_DAYS, so a rules bump below it adds no queue; the knox.rules manifest's
+  // queue is the step's own selection, and its knox_read_at_floor_recently exclusion counts the texts it holds.
+  KNOX_REREAD_BELOW_VERSION: "The re-read floor inside the extract step's selection; the knox.rules manifest counts its queue (countKnoxRereadsDue) and the texts it holds (knox_read_at_floor_recently).",
   // v2 (Oct 15): footnoted held names ("1Monthly fee") also meet the live fees printed without the
   // mark. The week mark carries the version, so each lane's next extract step reads its held lines
   // again under v2; there is no backlog for a replay to count.
@@ -715,7 +728,27 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
     // never sent to Darwin as a free fee. New reads only; Darwin's live re-check
     // (`darwin.zero_waiver_row`, ZERO_WAIVER_ROW_TAKEDOWN_LIVE off) reports the live ones. No replay.
     // Floor stays v97.
-    // v165 (#1092, Nov 2, state key 5608; v164 is #2952's): a monthly maintenance read, $0 or priced, whose row sits under a
+    // v164 (live-source audit draw 275762, Nov 2; v163 is #2938's): a read whose own line has a later cell opening
+    // with a bullet item takes the name the item alone reads at the same category and amount
+    // (`bulletItemRead`), never the other column's words in front of it. Rename only: no line moves and no
+    // read is added or dropped. On 21 full texts (20 two-column bullet pages and Elite Community's 13895)
+    // 26 reads are renamed, none added or lost. Name retidy v28 renames the live rows. No replay. Floor stays v97.
+    // v169 (#1092, James's Nov 2 review; v167 is #2958's, v168 the second backlog dry run's fix): a
+    // priced read whose name is an item of a "free services" list and whose price the self-check found on another line (`freeListItemRead`) is held
+    // untraced. Drop only, new reads only. Nov 2 sample (read-only, prod stored texts, main vs head): on 51
+    // read.pdf_layout multi-column texts and on all 207 texts with such a list heading that live priced fees
+    // cite, the one read lost is Mountain Star's "Fax Service" $5 (text 36365); none added or changed.
+    // Darwin's live re-check (`darwin.free_list_item`, FREE_LIST_ITEM_TAKEDOWN_LIVE off) reports the live
+    // one (159428). No replay. Floor stays v97.
+    // v170 (third re-read backlog dry run, Nov 2): a heading a responsive table repeats in each cell is
+    // stripped before any reader (`withoutColumnLabelEchoes`); a rate disclosure's no-dividend balance
+    // (`dividendThresholdSentence`) and a monthly fee under an online services section title
+    // (`onlineServiceMonthlyFee`) are dropped; a threshold a comparison word ties to the name is put back
+    // into it (`withThresholdFigures`, rename only). On the 40 rb3 texts (v169 vs v170) the four wrong reads
+    // are gone and no right read is lost; on 60 fresh random texts (main vs head) 5 reads are renamed only.
+    // Darwin's live re-check (`darwin.not_account_fee_line`, NOT_ACCOUNT_FEE_LINE_TAKEDOWN_LIVE off) reports
+    // the live ones (73916, 152003). No replay. Floor stays v97.
+    // v171 (#1092, Nov 2, state key 5608; v164-v170 are on main): a monthly maintenance read, $0 or priced, whose row sits under a
     // heading that names a service rather than an account (`serviceMaintenanceOf`) is held as a range for
     // review, never sent to Darwin. New reads only: on the 291 frozen texts no read changes. Darwin's live
     // re-check (`darwin.service_maintenance_heading`, SERVICE_MAINTENANCE_TAKEDOWN_LIVE off) reports the
@@ -810,6 +843,13 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
     // v105 (Nov 2, with Knox v162): od_protection_transfer also accepts a name that opens with an
     // automatic transfer into checking ("Automatic Transfer of Funds to a Checking Account"); accept-only,
     // so 0 live fees come down or re-file on the dry run; rows rejected for this name are judged again.
+    // v107 (Nov 2, with Knox v167): deposited_item_return accepts a charged-back check or item and
+    // excess_withdrawal a savings withdrawal fee or a money market excess check; accept-only, so 0 live
+    // fees come down or re-file on the dry run (1 live name matches, already filed there).
+    // v108 (Nov 2, with Knox v168; v107 is #2958's): a wire's confirmation is its notice and fails every
+    // wire type (1 live fee comes down, 131028), and a coin counting name carrying a three-dimension box
+    // size re-files to safe_deposit_box (2 live fees, 97753 and 64741, come down as twins of the bank's
+    // live box rent at the same price).
     {
       key: "hamilton.guard_catch_up",
       owner: "hamilton",

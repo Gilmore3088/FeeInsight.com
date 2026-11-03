@@ -12,6 +12,7 @@ import { readKnoxHoldGroups, type KnoxHoldAges } from "./knox/held-queue";
 import { ANSWER_KEY_SCORER_VERSION } from "@/lib/data-store/answer-key";
 import { LINE_TRACE_STRATEGIES } from "@/lib/source-line-trace";
 import type { KnoxSpecialistScore } from "./answer-key-score";
+import { fixedCohortBriefLine, readFixedCohortLatest, type FixedCohortLatest } from "./deming/fixed-cohort-history";
 import robotHumanReceipt from "./deming/robot-human-agreement.json";
 
 /**
@@ -67,6 +68,7 @@ export const GOAL_QUERIES = {
   robotHumanAgreement: "goal.deming_robot_human_agreement_w43",
   lineTraced: "goal.line_traced",
   sourceFreshness: "goal.source_documents_checked_30d",
+  fixedCohort: "goal.deming_fixed_answer_key_cohort",
 } as const;
 
 /** The freshness promise: every document behind a live fee is checked against the bank's site within this many days. */
@@ -592,6 +594,8 @@ export interface GoalScorecard {
   lineTraced?: LineTraced | null;
   /** Documents behind live fees checked within 30 days; absent on snapshots from before it. */
   sourceFreshness?: SourceFreshness | null;
+  /** Deming's fixed answer-key cohort, today's score and the day before's (2026-11-02); absent on snapshots from before it. */
+  fixedCohort?: FixedCohortLatest | null;
 }
 
 const usd = (micro: unknown): number => Math.round(Number(micro ?? 0) / 10_000) / 100;
@@ -1435,6 +1439,7 @@ export async function readGoalScorecard(db: SqlTag = sql, now = new Date()): Pro
   const knoxAnswerKey = await guarded(db, GOAL_QUERIES.knoxAnswerKey, readKnoxAnswerKey);
   const lineTraced = await guarded(db, GOAL_QUERIES.lineTraced, readLineTraced);
   const sourceFreshness = await guarded(db, GOAL_QUERIES.sourceFreshness, readSourceFreshness);
+  const fixedCohort = await guarded(db, GOAL_QUERIES.fixedCohort, readFixedCohortLatest);
   return {
     readAt: now.toISOString(),
     windowDays: GOAL_WINDOW_DAYS,
@@ -1456,6 +1461,7 @@ export async function readGoalScorecard(db: SqlTag = sql, now = new Date()): Pro
     robotHumanAgreement: readRobotHumanAgreement(),
     lineTraced,
     sourceFreshness,
+    fixedCohort,
   };
 }
 
@@ -1481,6 +1487,7 @@ export function goalHeadline(goal: GoalScorecard): string {
 export function goalBriefLines(goal: GoalScorecard): string[] {
   const lines: string[] = [];
   lines.push(liveAuditBrief(goal.liveSourceAudit??null));
+  if (goal.fixedCohort !== undefined) lines.push(fixedCohortBriefLine(goal.fixedCohort));
   const c = goal.coverageCells;
   lines.push(c
     ? `Coverage: ${c.readyCells} of ${c.totalCells} state and size groups under $10B meet the target; ${count(c.institutionsShort)} more covered institutions would close the gap${c.institutionsShortWeekAgo == null ? "" : ` (${count(c.institutionsShortWeekAgo)} 7 days ago)`}.`

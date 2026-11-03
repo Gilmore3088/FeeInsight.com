@@ -24,7 +24,7 @@ export const HOOVIE_SOURCES_00: HoovieSourceContract[] = [
     cadence: "quarterly",
     grain: ["institution"],
     linkKeys: ["fdic-cert"],
-    tables: ["institution_financial_records"],
+    tables: ["institution_financial_records", "registry_filing_versions"],
   },
   {
     // magellan/registry/ncua-financials.ts, regulatory/ncua.ts (ncua.gov quarterly 5300 zip)
@@ -36,7 +36,7 @@ export const HOOVIE_SOURCES_00: HoovieSourceContract[] = [
     cadence: "quarterly",
     grain: ["institution"],
     linkKeys: ["ncua-charter"],
-    tables: ["institution_financial_records", "institution_sources"],
+    tables: ["institution_financial_records", "institution_sources", "registry_filing_versions"],
   },
   {
     // magellan/registry/ffiec-overdraft.ts, regulatory/ffiec.ts (cdr.ffiec.gov bulk download)
@@ -60,7 +60,7 @@ export const HOOVIE_SOURCES_00: HoovieSourceContract[] = [
     cadence: "quarterly",
     grain: ["institution"],
     linkKeys: ["rssd"],
-    tables: ["institution_call_report_items"],
+    tables: ["institution_call_report_items", "registry_filing_versions"],
   },
   {
     // magellan/registry/ncua-extras.ts, regulatory/ncua.ts (ncuaZipUrl), regulatory/ncua-extras.ts
@@ -72,7 +72,7 @@ export const HOOVIE_SOURCES_00: HoovieSourceContract[] = [
     cadence: "quarterly",
     grain: ["institution"],
     linkKeys: ["ncua-charter"],
-    tables: ["institution_call_report_items"],
+    tables: ["institution_call_report_items", "registry_filing_versions"],
   },
   {
     // magellan/registry/fdic-history.ts, regulatory/fdic-history.ts (api.fdic.gov/banks/history)
@@ -196,6 +196,19 @@ export const HOOVIE_SOURCES_00: HoovieSourceContract[] = [
     cadence: "annual",
     grain: ["institution", "county", "metro"],
     linkKeys: ["lei", "rssd", "county-fips", "cbsa", "state"],
+    tables: ["hmda_lenders", "hmda_lender_originations", "hmda_lender_loan_costs"],
+  },
+  {
+    // magellan/registry/hmda-relink.ts (#2232): applies institution_lei_links (GLEIF-registered FDIC cert / NCUA
+    // charter LEIs) to the HMDA lenders already stored; no download. Fill-only, off until HMDA_RELINK_LIVE.
+    source: "hmda-relink",
+    loader: "hmda",
+    publisher: "GLEIF LEI links applied to CFPB / FFIEC HMDA lenders already held",
+    licence: { status: "public-domain" },
+    connection: "derived",
+    cadence: "weekly",
+    grain: ["institution"],
+    linkKeys: ["lei"],
     tables: ["hmda_lenders", "hmda_lender_originations", "hmda_lender_loan_costs"],
   },
   {

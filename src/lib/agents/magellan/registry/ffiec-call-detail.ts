@@ -14,6 +14,7 @@ import { parseQuarterKey, quarterEndDate, type Quarter } from "@/lib/regulatory/
 import { ffiecOverdraftPartitions, ffiecRefreshHours } from "./ffiec-overdraft";
 import { checkValues, flaggedOnly } from "@/lib/regulatory/data-checks";
 import { markFdicQuarterForPorCerts } from "./fdic-financials";
+import { CALL_ITEM_VALUE_KEYS, filingVersionsDetail, filingVersionsReady } from "@/lib/agents/hoovie/filing-versions";
 import { recordRegistryPartition, type RegistryDb } from "./partitions";
 
 /**
@@ -86,10 +87,19 @@ export interface RegistryFfiecCallDetailResult {
   emptyReason: string | null;
 }
 
-async function writeValues(db: RegistryDb, q: Quarter, values: FfiecItemValue[], runId: number | null): Promise<number> {
+/** Lines written, and lines whose values changed (null when the compact SQL writer counted them). */
+interface FilingWrite {
+  written: number;
+  amended: number | null;
+  versioning: boolean;
+}
+
+async function writeValues(db: RegistryDb, q: Quarter, values: FfiecItemValue[], runId: number | null): Promise<FilingWrite> {
   const reportDate = quarterEndDate(q);
   if (await compactCallStorageReady(db)) {
-    return writeCompactCallItems(db, { source: "ffiec", reportDate: reportDate, url: FFIEC_BULK_URL, runId,
+    // The compact writer versions amended lines inside its own SQL function (#2613); it returns no count.
+    const versioning = await filingVersionsReady(db);
+    const written = await writeCompactCallItems(db, { source: "ffiec", reportDate: reportDate, url: FFIEC_BULK_URL, runId,
       rows: values.map((v) => ({
         rssd: v.rssd,
         item_key: v.key,
@@ -101,8 +111,11 @@ async function writeValues(db: RegistryDb, q: Quarter, values: FfiecItemValue[],
         period_basis: v.basis,
       })),
     });
+    return { written, amended: null, versioning };
   }
   let written = 0;
+  let amended = 0;
+  const versioning = await filingVersionsReady(db);
   for (let at = 0; at < values.length; at += WRITE_CHUNK) {
     const payload = JSON.stringify(
       values.slice(at, at + WRITE_CHUNK).map((v) => ({
@@ -116,7 +129,27 @@ async function writeValues(db: RegistryDb, q: Quarter, values: FfiecItemValue[],
         period_basis: v.basis,
       })),
     );
-    const result = await db`
+    // #2613: an amended line keeps the value it replaces. Same snapshot as the upsert below.
+    const versioned = versioning
+      ? db`, versioned AS (
+          INSERT INTO registry_filing_versions
+            (table_name, row_id, institution_id, source, report_date, item_key, changed, prior_fetched_at, prior_agent_run_id, superseded_by_run_id)
+          SELECT 'institution_call_report_items', f.id, f.institution_id, f.source, f.report_date, f.item_key, d.changed,
+                 f.fetched_at, f.agent_run_id, ${runId}::bigint
+            FROM r
+            JOIN ids ON ids.rssd_id = r.rssd
+            JOIN institution_call_report_items f
+              ON f.institution_id = ids.institution_id AND f.source = 'ffiec'
+             AND f.report_date = ${reportDate}::date AND f.item_key = r.item_key
+            CROSS JOIN LATERAL (
+              SELECT registry_changed_values(to_jsonb(f), to_jsonb(r), ${[...CALL_ITEM_VALUE_KEYS]}::text[]) AS changed
+            ) d
+           WHERE d.changed <> '{}'::jsonb
+          RETURNING 1
+        )`
+      : db``;
+    const versionedCount = versioning ? db`(SELECT COUNT(*) FROM versioned)::int` : db`0`;
+    const result = await db<{ written: number; versioned: number }[]>`
       WITH r AS (
         SELECT * FROM jsonb_to_recordset(${payload}::jsonb)
           AS x(rssd text, item_key text, item_code text, item_description text, schedule text, value numeric, unit text, period_basis text)
@@ -125,7 +158,7 @@ async function writeValues(db: RegistryDb, q: Quarter, values: FfiecItemValue[],
           FROM institution_sources s
          WHERE s.source = 'fdic' AND s.rssd_id IN (SELECT DISTINCT rssd FROM r)
          ORDER BY s.rssd_id, s.id
-      )
+      )${versioned}, written AS (
       INSERT INTO institution_call_report_items AS f
         (institution_id, source, report_date, item_code, item_key, item_description, schedule, value, unit,
          period_basis, source_url, agent_run_id, fetched_at)
@@ -146,10 +179,13 @@ async function writeValues(db: RegistryDb, q: Quarter, values: FfiecItemValue[],
       WHERE ROW(f.item_code, f.item_description, f.schedule, f.value, f.unit, f.period_basis, f.source_url)
         IS DISTINCT FROM ROW(EXCLUDED.item_code, EXCLUDED.item_description, EXCLUDED.schedule, EXCLUDED.value, EXCLUDED.unit, EXCLUDED.period_basis, EXCLUDED.source_url)
       RETURNING 1
+      )
+      SELECT (SELECT COUNT(*) FROM written)::int AS written, ${versionedCount} AS versioned
     `;
-    written += [...(result as unknown as unknown[])].length;
+    written += Number(result[0]?.written ?? 0);
+    amended += Number(result[0]?.versioned ?? 0);
   }
-  return written;
+  return { written, amended, versioning };
 }
 
 async function countMatched(db: RegistryDb, rssds: string[]): Promise<number> {
@@ -245,9 +281,10 @@ export async function runRegistryFfiecCallDetail(options: RegistryFfiecCallDetai
   }
 
   const matched = base.matchedBanks;
-  const writtenRows = await writeValues(db, quarter, values, options.runId ?? null);
-  const filingTimeRows = filingTimes.length > 0 ? await writeValues(db, quarter, filingTimes, options.runId ?? null) : 0;
-  const filingCertRows = filingCerts.length > 0 ? await writeValues(db, quarter, filingCerts, options.runId ?? null) : 0;
+  const lines = await writeValues(db, quarter, values, options.runId ?? null);
+  const writtenRows = lines.written;
+  const filingTimeRows = filingTimes.length > 0 ? (await writeValues(db, quarter, filingTimes, options.runId ?? null)).written : 0;
+  const filingCertRows = filingCerts.length > 0 ? (await writeValues(db, quarter, filingCerts, options.runId ?? null)).written : 0;
   const fdicQuarterMarked = filingCerts.length > 0 ? await markFdicQuarterForPorCerts(db, options.partitionKey, reportDate) : null;
   await recordRegistryPartition(db, {
     source: FFIEC_CALL_DETAIL_SOURCE,
@@ -268,6 +305,8 @@ export async function runRegistryFfiecCallDetail(options: RegistryFfiecCallDetai
       written_rows: writtenRows,
       filing_time_rows: filingTimeRows,
       filing_cert_rows: filingCertRows,
+      // #2613: lines whose value changed since last stored keep the prior value in registry_filing_versions.
+      filing_versions: filingVersionsDetail(lines),
       // Banks whose filing certificate this quarter is not today's, and whether that made the
       // FDIC quarter due again (#2625).
       por_cert_splits: fdicQuarterMarked?.splits ?? null,

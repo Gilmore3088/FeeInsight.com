@@ -7,7 +7,7 @@
  * name no service, so the name rules (`SERVICE_MONTHLY_CHARGE_NAME` in `service-monthly-charge.ts`,
  * guard v102) cannot see it, and `classifyFeeText` gives the heading no category.
  *
- * Shared by Knox (rules v165 holds such a read for review, $0 and priced alike, never sending it to
+ * Shared by Knox (rules v171 holds such a read for review, $0 and priced alike, never sending it to
  * Darwin as the account's fee), Darwin's verify (refuses it, `service_maintenance_heading`) and its
  * live re-check (`darwin/service-maintenance-check.ts`). Pure: no database and no agent imports.
  *

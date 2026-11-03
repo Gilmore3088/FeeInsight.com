@@ -7,8 +7,8 @@ import { describe, expect, it, vi } from "vitest";
 import { rosettaReadCandidatesQuery, runRosettaRead } from "./read";
 import { JS_FALLBACK_STRATEGY } from "./js-fallback";
 import { OCR_STRATEGY } from "./ocr";
-import { READER_REPLAY_EVENT, READER_REPLAY_OWN_VERSIONS, READER_REPLAY_PER_RUN, READER_REPLAY_READERS, readerReplayDueSql, recordReaderReplay } from "./reader-replay";
-import { ROSETTA_JS_FALLBACK_VERSION, ROSETTA_OCR_VERSION, ROSETTA_READ_VERSION } from "./reader-versions";
+import { PDF_CELL_REPLAY_LIVE, READER_REPLAY_EVENT, READER_REPLAY_OWN_VERSIONS, READER_REPLAY_PDF_LAYOUT, READER_REPLAY_PER_RUN, READER_REPLAY_READERS, readerReplayDueSql, recordReaderReplay } from "./reader-replay";
+import { PDF_LAYOUT_REPLAY_VERSION, PDF_LAYOUT_VERSION, ROSETTA_JS_FALLBACK_VERSION, ROSETTA_OCR_VERSION, ROSETTA_READ_VERSION } from "./reader-versions";
 
 type DbMock = ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn>; begin?: unknown };
 
@@ -72,6 +72,19 @@ describe("reader replay selection", () => {
     expect(READER_REPLAY_READERS).not.toContain("read.paid_transcribe");
   });
 
+  it("replays pdf_layout texts with a cell break below the cell-ownership layout only once its switch is on", () => {
+    expect(PDF_CELL_REPLAY_LIVE).toBe(false);
+    expect(READER_REPLAY_PDF_LAYOUT).toEqual({ reader: "read.pdf_layout", version: PDF_LAYOUT_REPLAY_VERSION, receiptKey: "pdf_layout_version" });
+    expect(PDF_LAYOUT_REPLAY_VERSION).toBeLessThanOrEqual(PDF_LAYOUT_VERSION);
+    const off = readerReplayDueSql("t", { readers: "$1", version: "$2", event: "$3" }, "TRUE");
+    expect(off).not.toContain("layout_read");
+    const on = readerReplayDueSql("t", { readers: "$1", version: "$2", event: "$3" }, "TRUE", true);
+    expect(on).toContain("t.reader = 'read.pdf_layout'");
+    expect(on).toContain("position(' | ' in t.normalized_text) > 0");
+    expect(on).toContain(`COALESCE((layout_read.detail->>'pdf_layout')::int, 1) >= ${PDF_LAYOUT_REPLAY_VERSION}`);
+    expect(on).toContain(`(replayed.detail->>'pdf_layout_version')::int >= ${PDF_LAYOUT_REPLAY_VERSION}::int`);
+  });
+
   it("lets an OCR or fallback replay past its bytes' scanned_pdf or js_required primary read", () => {
     const { query } = select("only");
     const failedRead = query.slice(query.indexOf("OR NOT EXISTS (\n           SELECT 1\n             FROM pipeline_attempts pa") - 400);
@@ -108,9 +121,22 @@ describe("recordReaderReplay", () => {
     const insert = calls.find((call) => call.sql.includes("INSERT INTO agent_run_events"))!;
     expect(insert.values[2]).toBe(READER_REPLAY_EVENT);
     expect(JSON.parse(String(insert.values[5]))).toMatchObject({
-      reader_version: ROSETTA_READ_VERSION, ocr_version: ROSETTA_OCR_VERSION, js_fallback_version: ROSETTA_JS_FALLBACK_VERSION, from_reader: null, from_reader_version: 2, source_document_id: 7,
+      reader_version: ROSETTA_READ_VERSION, ocr_version: ROSETTA_OCR_VERSION, js_fallback_version: ROSETTA_JS_FALLBACK_VERSION,
+      from_reader: null, from_reader_version: 2, source_document_id: 7,
       source_hash: "bytes", old_text_hash: "old", new_text_hash: "new", text_changed: true,
     });
+  });
+
+  it("stamps the layout replay version only on a pdf_layout text's receipt", async () => {
+    const detail = async (reader: string | null) => {
+      const { db, calls } = receiptDb({ text_hash: "new", status: "completed" });
+      await recordReaderReplay(db, { runId: 1, stepId: 2 }, { ...row, reader_replay_reader: reader }, { status: "completed", attemptOutcome: "ok" });
+      return JSON.parse(String(calls.find((call) => call.sql.includes("INSERT INTO agent_run_events"))!.values[5]));
+    };
+    expect(await detail("read.pdf_layout")).toMatchObject({ pdf_layout_version: PDF_LAYOUT_REPLAY_VERSION });
+    for (const reader of [null, OCR_STRATEGY, JS_FALLBACK_STRATEGY, "read.html_dom"]) {
+      expect(await detail(reader)).not.toHaveProperty("pdf_layout_version");
+    }
   });
 
   it("records a kept text and a failed read, so neither is replayed again at this version", async () => {

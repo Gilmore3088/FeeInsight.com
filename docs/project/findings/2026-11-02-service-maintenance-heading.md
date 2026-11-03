@@ -38,7 +38,7 @@ v102 re-files by the fee's name, and a heading-only re-file would be a new rule 
   "Services", "Fees", "and"). It must open its own section: no heading-shaped line, colon lead or "includes /
   features / benefits / following / offers" line right above it.
 - The row's own label names no account.
-- Knox rules v165 (`knox/extract.ts`) holds a matching read as a range for review, $0 (in
+- Knox rules v171 (`knox/extract.ts`) holds a matching read as a range for review, $0 (in
   `insertHeldCandidate`) and priced (`holdServiceMaintenanceCandidate`, on the free, paid and re-read
   paths), flag `knox_service_maintenance:<services>`. Never sent to Darwin.
 - Darwin's verify refuses one as `service_maintenance_heading` (needs review) on Knox's row and the line

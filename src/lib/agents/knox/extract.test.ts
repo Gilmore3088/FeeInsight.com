@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { createHash } from "node:crypto";
 
-import { extractionOutcome, KNOX_PRIORITY_REREAD_IDS, KNOX_REEXTRACT_MAX_FEES, KNOX_REREAD_ASSET_FLOOR, KNOX_STALE_READ_BELOW_VERSION, runKnoxExtract, insertCandidate } from "./extract";
+import { extractionOutcome, KNOX_PRIORITY_REREAD_IDS, KNOX_REEXTRACT_MAX_FEES, KNOX_REREAD_ASSET_FLOOR, KNOX_REREAD_BELOW_VERSION, KNOX_REREAD_REFRESH_DAYS, KNOX_STALE_READ_BELOW_VERSION, runKnoxExtract, insertCandidate, textArtifactQuery } from "./extract";
 import { thinRereadKindSql } from "@/lib/agents/thin-document";
 import { KNOX_FAULT_REASONS } from "./calibration";
 import { KNOX_RULES_STRATEGY } from "./specialists";
@@ -428,6 +428,48 @@ describe("Knox agentic extraction", () => {
       );
     });
 
+    it("re-reads at the floor, not once per rules version, except for the rules re-check's missing fees (Nov 2)", () => {
+      const { query, params } = textArtifactQuery(50, true, true, undefined, "TX", [161]);
+      const floor = query.match(/floor_read\.strategy_version >= \$(\d+)/);
+      const days = query.match(/make_interval\(days => \$(\d+)::int\)/);
+      expect(params[Number(floor?.[1]) - 1]).toBe(KNOX_REREAD_BELOW_VERSION);
+      expect(params[Number(days?.[1]) - 1]).toBe(KNOX_REREAD_REFRESH_DAYS);
+      // Its own AND term: (floor due OR missing fees), so missing fees stay once per version.
+      const gate = query.slice(query.indexOf("AND (NOT EXISTS (\n             SELECT 1 FROM pipeline_attempts floor_read"));
+      expect(gate.slice(0, gate.indexOf("AND NOT EXISTS (\n           -- The same text"))).toContain("recheck.strategy = 'hamilton.rules_recheck'");
+      // Same text + same version is still never read twice.
+      expect(query).toContain("pa.strategy_version = $");
+    });
+
+    it("reads a requested institution once per rules version, with no floor", () => {
+      const { query } = textArtifactQuery(50, true, true, 8109, undefined, [8109]);
+      expect(query).not.toContain("floor_read");
+    });
+
+    it("orders texts behind live fees first, the oldest rules read first, before the stale and large-bank order", () => {
+      const { query } = textArtifactQuery(50, true, true, undefined, undefined, [161]);
+      const order = query.slice(query.lastIndexOf("ORDER BY"));
+      expect(query).toContain("WITH reread_live_doc AS MATERIALIZED");
+      expect(query).toContain("LEFT JOIN reread_behind_live behind_live ON behind_live.doc_id = adt.source_document_id");
+      expect(order.indexOf("(behind_live.doc_id IS NOT NULL) DESC")).toBeGreaterThan(order.indexOf("array_position"));
+      expect(order.indexOf("MAX(live_read.strategy_version)")).toBeGreaterThan(order.indexOf("(behind_live.doc_id IS NOT NULL) DESC"));
+      expect(order.indexOf("current_read.strategy_version")).toBeGreaterThan(order.indexOf("MAX(live_read.strategy_version)"));
+      expect(order.indexOf(`(COALESCE(inst.asset_size, 0) >= ${KNOX_REREAD_ASSET_FLOOR}) DESC`)).toBeGreaterThan(order.indexOf("current_read.strategy_version"));
+      // A lane run scopes the live-fee read to its state.
+      const lane = textArtifactQuery(50, true, true, undefined, "TX", []).query;
+      expect(lane).toContain("upper(btrim(live_inst.state_code)) = $");
+    });
+
+    it("counts Bayes's queue with the same selection, gate included and no ordering work", () => {
+      const read = textArtifactQuery(50, true, true, undefined, undefined, [161]).query;
+      const count = textArtifactQuery(1_000_000, true, true, undefined, undefined, [161], true).query;
+      expect(count).toContain("floor_read.strategy_version >=");
+      expect(count).not.toContain("reread_live_doc");
+      expect(count).not.toContain("ORDER BY");
+      const where = (sqlText: string) => sqlText.slice(sqlText.indexOf("WHERE adt.status = 'completed'"), sqlText.lastIndexOf("ORDER BY") > 0 ? sqlText.lastIndexOf("ORDER BY") : sqlText.lastIndexOf("LIMIT"));
+      expect(where(count).trim()).toBe(where(read).trim());
+    });
+
     it("reads a priority bank's current page again while it has no live overdraft fee", async () => {
       const db = createDbMock([]);
       db.mockImplementation((strings: TemplateStringsArray) => {
@@ -584,3 +626,10 @@ describe("second wave (James, Oct 22)", () => {
   });
 });
 
+describe("re-read floor (Nov 2)", () => {
+  it("keeps the floor between the stale floor and today's rules, with a refresh of at least a week", () => {
+    expect(KNOX_REREAD_BELOW_VERSION).toBeGreaterThanOrEqual(KNOX_STALE_READ_BELOW_VERSION);
+    expect(KNOX_REREAD_BELOW_VERSION).toBeLessThanOrEqual(KNOX_RULES_STRATEGY.version);
+    expect(KNOX_REREAD_REFRESH_DAYS).toBeGreaterThanOrEqual(7);
+  });
+});

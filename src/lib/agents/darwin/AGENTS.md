@@ -199,10 +199,12 @@ verified row rejected with `stale_copy`. Each step reads the next 60 superseded 
 v3 (audit draw 275762, Olympia Federal fee 103684): a would-be drop stays live when the current copy
 still prints the fee's name and its price anywhere (`named_and_priced`), when a live current-copy fee
 has its category and amount (`restated`), or when the copies come from different addresses
-(`not_same_page`). Behind `STALE_COPY_DROPPED_LINE_LIVE` (off), Knox's read of the current copy counts
+(`not_same_page`). With `STALE_COPY_DROPPED_LINE_LIVE` on (Nov 2, sampled-clean rule), Knox's read of the current copy counts
 from Knox's stale-read floor (v97) instead of today's rules version, and a same-address copy that still
 prints 60% of the older copy's lines is the same schedule (Nov 2 dry run: 15 drops at 11 institutions,
-all absent from the current text; Olympia's six once Knox reads copy 41830).
+all absent from the current text; the re-run on main found the same 15 with the switch on and none off,
+and 15 of 15 were absent by hand against the stored texts; Olympia's six wait on Knox's read of the page's
+newest copy, 42071). Rollback: set the switch false.
 
 Live loan payment example re-check (`loan-payment-example-check.ts`,
 `LOAN_PAYMENT_EXAMPLE_CHECK_VERSION` v1, Nov 1, #2854). Knox v153 no longer reads a loan's payment
@@ -1785,11 +1787,53 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   second look (`darwin.zero_waiver_row`) and is archived with `zero_waiver_row: <kind>, "<line>"`
   (verified row rejected with the `zero_waiver_row` flag; event `darwin.zero_waiver_row_takedown`). Step
   detail `zero_waiver_row_check`. Golden-set replay: the `darwin.zero_waiver_row` sweep.
+  v2 (Nov 2, Knox v168): a third kind, `avoid_fee_advice`. The fee's line sits in a "Ways to Avoid" section
+  (a heading line of its own that names fees in general: "Ways to Avoid", "How to Avoid Fees"), and its free
+  word's cell is advice ("Reconcile online for FREE", "FREE with good | address on file", "FREE online").
+  A bare free cell, a line before the heading and a heading naming one thing ("How to Avoid Paying
+  Interest on Purchases") stay. The pre-filter also takes a stored line that says "free" on a text with
+  such a heading (`ZERO_WAIVER_ROW_FREE_PREFILTER`, `AVOID_FEES_HEADING_SQL`). Read-only on prod (Nov 2):
+  of 3,429 live flat $0 fees, 2 match, both at Financial Health FCU (6465) and both wrong on its page
+  (89909 "Bad Address Charge" beside its $12.00 row; 105000 "Share Draft Copy" beside its $1.00 and $2.00
+  rows). They are reported while the switch is off.
+- A priced fee whose name is an item of a "free services" list, priced from another line
+  (`free-list-item-check.ts`, #1092, James's Nov 2 review): Mountain Star FCU's "Fax Service" $5 (live
+  159428, text 36365) is one of the page's "Other Free Services"; the shared check traced it as "Money
+  market | Fax Service | $5.00", the $5.00 being the left column's money market excess check price. Knox
+  v169 holds such a read untraced and verify refuses it (`free_list_item`, rejected), both through
+  `src/lib/free-list-item.ts` on the line `checkFeeAgainstSource` traces (`sourceLineFor`): the traced line
+  joins a printed line that does not print the amount to a price from another line, and on that printed
+  line the fee's name is an item of a list whose heading cell says free or no charge and names what is
+  listed. Each verify step reads every live flat priced fee whose stored line is stacked
+  (`FREE_LIST_ITEM_PREFILTER`, a name line, " / ", the price line) on a text that prints such a heading
+  (`FREE_LIST_HEADING_SQL`), with the text Knox read (admin-corrected fees never). Dry run Nov 2 (prod,
+  read-only): of 1,365 live flat priced fees on the 207 texts that print a heading, any stored line, 1
+  matches (159428); the step's own read selects 39 of them and matches the same 1. The switch
+  (`FREE_LIST_ITEM_TAKEDOWN_LIVE`, code, off) waits for James's yes; on, a match goes through the 12-hour
+  second look (`darwin.free_list_item`) and is archived with `free_list_item: "<item>" under "<heading>"`
+  (verified row rejected with the `free_list_item` flag; event `darwin.free_list_item_takedown`). Step
+  detail `free_list_item_check`. Golden-set replay: the `darwin.free_list_item` sweep.
+- A line that is no account fee (`not-account-fee-line-check.ts`, third Knox re-read backlog dry run, Nov
+  2). Two classes, through shared rules on Knox's own line: a rate disclosure's balance threshold, a
+  sentence that says no dividend or interest is earned below the amount and names no charge
+  (`dividendThresholdSentence`, `src/lib/dividend-threshold.ts`; Peninsula Community FCU's $5, live 73916),
+  and a monthly service fee whose own line sits under an online, electronic or digital services section
+  title (`onlineServiceMonthlyFee`, `src/lib/service-monthly-charge.ts`; University of Virginia Community
+  CU's "Monthly fee | No charge" under "Personal Online Banking Fees", live 152003). Knox v170 drops such
+  reads and verify refuses them (`dividend_threshold`, `online_service_monthly`). Verify had passed 73916
+  because `checkFeeAgainstSource` answered `tiered_fee`, which `statedInOwnSource` counts as stated, and
+  with no traced line no later check read the sentence. Each verify step reads every live flat fee whose
+  stored line carries the no-earnings words and every live monthly maintenance fee on a text that prints a
+  section title (admin-corrected fees never). Dry run Nov 2 (prod, read-only): of 493 candidates, 2 match
+  (73916, 152003). The switch (`NOT_ACCOUNT_FEE_LINE_TAKEDOWN_LIVE`, code, off) waits for James's yes; on,
+  a match goes through the 12-hour second look (`darwin.not_account_fee_line`) and is archived with its
+  reason. Step detail `not_account_fee_line_check`. Golden-set replay: the `darwin.not_account_fee_line`
+  sweep.
 - A monthly maintenance fee whose row sits under a service's heading (`service-maintenance-check.ts`,
   #1092, state key 5608): River City Bank's "Consumer Online Banking Services and Mobile Banking Fees" over
   "Monthly Maintenance Fee | No charge" is the online banking service's fee; published as the account's
   monthly maintenance it would say the bank has free checking. The row names no service, so the name rule
-  (`SERVICE_MONTHLY_CHARGE_NAME`, guard v102) cannot see it. Knox v165 holds such a read, $0 or priced, and
+  (`SERVICE_MONTHLY_CHARGE_NAME`, guard v102) cannot see it. Knox v171 holds such a read, $0 or priced, and
   verify refuses it (`service_maintenance_heading`, needs review), both through
   `src/lib/service-maintenance-heading.ts`: the nearest heading-shaped line above the row that is not a
   stacked row's label names only services (online, mobile, internet or text banking, bill pay, e-statements,
@@ -2414,7 +2458,18 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
 - Guard v35 (2026-10-08) accepts a per-item overdraft or NSF fee whose note states the daily cap: a dollar cap above the row's own price ("NSF Returned Item(s) Charge (NSF charge maximum of $100 per day)" $25, First State Bank of Rosemount), and a cap note that names the returned items sharing it ("Overdraft Fee ... (Consumer Accts: 5 max total OD or Returned Item fees daily)", BankIowa).
 - Guard v36 (2026-10-08) changes no rule: PRs 665 and 668 both shipped v35, so rows rejected between their deploys are re-checked under both.
 - Guard v42 (2026-10-08; v40 and v41 are Accuracy's, PR 682) files an NSF item marked paid after a dash or in brackets ("NSF Fee Charge - Paid (per item)", "Nonsufficient Funds Fee-Paid", "Insufficient Funds Charge (Check Paid, Per Item)") as the overdraft fee and re-files it there from NSF; "per non-paid item", "Paid from other ... account" and "We will not assess ..." stay out. "Overdraft Privilege Standard or Extended Coverage" names the program, not an extended overdraft fee.
-- The guard is at v105 (`CATEGORY_GUARD_VERSION` in `src/lib/fee-category-guard.ts`). v105 (Nov 2, with
+- The guard is at v108 (`CATEGORY_GUARD_VERSION` in `src/lib/fee-category-guard.ts`). v108 (Nov 2, with
+  Knox v168): a wire's confirmation is its notice (`WIRE_NOTIFICATION_NAME`) and fails every wire type with
+  no re-file (1 live fee comes down, 131028); a coin counting name carrying a three-dimension box size
+  (`BOX_SIZE_3D_NAME`) fails and re-files to safe_deposit_box (97753 and 64741 move onto their live box
+  twins). v107 (Nov 2, with
+  Knox v167): `deposited_item_return` also accepts a charged-back check, item or draft ("Charged Back
+  Checks") and `excess_withdrawal` a savings, share or money market account's withdrawal fee or excess
+  check ("Savings Withdrawal Fee"); a card's or a loan's chargeback stays out. Accept-only: on the
+  read-only dry run 1 live name matches (95269, already deposited_item_return), so 0 come down and 0
+  re-file. v106 (Nov 2, with Knox v166): a notice of a wire fails every wire type, mobile banking's and
+  hold mail's own monthly charge fail monthly maintenance, and an account reactivation fails early
+  closure and re-files to dormant_account (see `fee-category-guard.ts`). v105 (Nov 2, with
   Knox v162): `od_protection_transfer` also accepts a name that opens with an automatic transfer into
   checking (`AUTOMATIC_TRANSFER_TO_CHECKING`: "Automatic Transfer of Funds to a Checking Account"); a
   two-way service is not. Accept-only, so no live fee comes down; rows rejected under v104 for such a
@@ -2848,7 +2903,9 @@ fails a PR that changes one of these constants without updating its line here (#
 | `INTERNATIONAL_DIRECTION_CHECK_VERSION` | `darwin.international_direction` | v4 | `darwin/international-direction-check.ts` |
 | `BANDED_ZERO_CHECK_VERSION` | `darwin.banded_zero` | v1 | `darwin/banded-zero-check.ts` |
 | `ACCOUNT_BENEFIT_ZERO_CHECK_VERSION` | `darwin.account_benefit_zero` | v1 | `darwin/account-benefit-zero-check.ts` |
-| `ZERO_WAIVER_ROW_CHECK_VERSION` | `darwin.zero_waiver_row` | v1 | `darwin/zero-waiver-row-check.ts` |
+| `ZERO_WAIVER_ROW_CHECK_VERSION` | `darwin.zero_waiver_row` | v2 | `darwin/zero-waiver-row-check.ts` |
+| `FREE_LIST_ITEM_CHECK_VERSION` | `darwin.free_list_item` | v1 | `darwin/free-list-item-check.ts` |
+| `NOT_ACCOUNT_FEE_LINE_CHECK_VERSION` | `darwin.not_account_fee_line` | v1 | `darwin/not-account-fee-line-check.ts` |
 | `SERVICE_MAINTENANCE_CHECK_VERSION` | `darwin.service_maintenance_heading` | v1 | `darwin/service-maintenance-check.ts` |
 | `CARD_PROGRAM_SECTION_CHECK_VERSION` | `darwin.card_program_section` | v1 | `darwin/card-program-section-check.ts` |
 | `LOAN_SECTION_CHECK_VERSION` | `darwin.loan_section` | v1 | `darwin/loan-section-check.ts` |

@@ -58,6 +58,14 @@ describe("shadow lab variants", () => {
     expect(currentVariant.verify(fee, "Stop Payment | $30.00")).toEqual({ ok: false, reason: "not_in_source" });
   });
 
+  it("should_refuse_a_free_services_list_item_priced_from_another_line_as_darwin_verify_does", () => {
+    // #1092: Mountain Star FCU, text 36365 (live 159428).
+    const text = ["statement | Instant Issue | Other Free Services: Anytime, Notary", "Membership Fee $3.00 | Check Writing, Balance Inquiries,",
+      "Money market | Fax Service", "$5.00", "excess check"].join("\n");
+    const fee: StageFee = { canonicalFeeKey: "document_reproduction", feeName: "Fax Service", amountCents: 500, frequency: null, excerpt: "Money market | Fax Service / $5.00", reason: null };
+    expect(currentVariant.verify(fee, text)).toEqual({ ok: false, reason: "free_list_item" });
+  });
+
   it("should_read_hourly_at_verify_as_darwin_does", () => {
     const text = "Account research | $25.00 per hour";
     const fee = { canonicalFeeKey: "account_research", feeName: "Account research", amountCents: 2500, frequency: null, excerpt: text, reason: null };
@@ -65,7 +73,7 @@ describe("shadow lab variants", () => {
     expect(verified.ok && verified.fee.frequency).toBe("hourly");
   });
 
-  it("should_hold_a_monthly_maintenance_row_under_a_service_heading_as_knox_v165_does", () => {
+  it("should_hold_a_monthly_maintenance_row_under_a_service_heading_as_knox_v171_does", () => {
     // State key 5608 (River City Bank) as a table read pairs its rows (#1092).
     const text = "Consumer Online Banking Services and Mobile Banking Fees\n\nSet Up Fee | No charge\n\nMonthly Maintenance Fee | No charge\n\nMonthly Statement Fee | $3.00";
     const read = currentVariant.extract(text);

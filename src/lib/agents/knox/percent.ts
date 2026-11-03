@@ -51,7 +51,8 @@ const CASH_ADVANCE = /\bcash advances?\b/i;
 const CATEGORY_CORE: Record<string, RegExp> = {
   card_foreign_txn: /\b(?:foreign (?:transactions?|currency(?: conversion)?)|international (?:transactions?|purchases?|point of sale|pos|currency|service(?: assessment)?)|currency conversion|cross[- ]border|(?:multi(?:ple)?|single)[- ]currency)\b/i,
   cash_advance: /\b(?:cash advance|balance transfer)(?:\s*(?:and|&|or|\/)\s*(?:cash advance|balance transfer))?\b/i,
-  coin_counting: /\b(?:coin (?:counting|processing|counter|machine|sorting|sorter)|loose coins?|count(?:ing)?(?: and roll)? coins?|coinstar)\b/i,
+  // v167: "Coin Deposit 5% of total" (Mountain Star FCU) names coin counting too.
+  coin_counting: /\b(?:coin (?:counting|processing|counter|machine|sorting|sorter|deposits?)|loose coins?|count(?:ing)?(?: and roll)? coins?|coinstar)\b/i,
   late_payment: /\blate (?:payment|charge|fee)\b/i,
   // #1102: the two categories that publish rates from v2 of the held-rate re-check.
   check_cashing: /\bcheck cashing\b|\bcash(?:ing)? (?:a |of )?(?:checks?|items?)\b/i,

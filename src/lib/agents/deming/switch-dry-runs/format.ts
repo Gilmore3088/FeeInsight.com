@@ -242,7 +242,7 @@ function htmlRowPairing(report: SwitchDryRunReport): string[] {
 function serviceMaintenance(report: SwitchDryRunReport): string[] {
   const { rowsRead, summary } = report.serviceMaintenance;
   const lines = [
-    "## 9. SERVICE_MAINTENANCE_TAKEDOWN_LIVE (#1092, Knox v165)",
+    "## 9. SERVICE_MAINTENANCE_TAKEDOWN_LIVE (#1092, Knox v171)",
     "Method: every live flat monthly maintenance fee Darwin's service-heading re-check selects (its own SQL; texts only where they print a service's words), " +
       "judged by the re-check's own function (findServiceMaintenance) on the text Knox read: Knox's row and the line checkFeeAgainstSource traces the fee to " +
       "must both sit under a heading that names only services (online, mobile, internet or text banking, bill pay, e-statements, remote deposit, Zelle, treasury). " +
