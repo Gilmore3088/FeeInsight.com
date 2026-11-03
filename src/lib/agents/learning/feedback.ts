@@ -308,6 +308,7 @@ export const TAKEDOWN_REASON_CHECKS: Readonly<Record<string, string>> = {
   account_benefit_zero: "darwin.account_benefit_zero",
   zero_waiver_row: "darwin.zero_waiver_row",
   free_list_item: "darwin.free_list_item",
+  credit_card_section: "darwin.credit_card_section",
   dividend_threshold: "darwin.not_account_fee_line",
   online_service_monthly: "darwin.not_account_fee_line",
   canadian_document: "darwin.canadian_document",

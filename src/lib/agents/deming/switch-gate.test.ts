@@ -116,6 +116,9 @@ const SWEEP_PROBES: Record<string, () => SweepProbe> = {
     "Mailed paper | $1.00\nstatement | Instant Issue | Other Free Services: Anytime, Notary\n$10.00 | Service, Signature Guarantee, Unlimited\nDebit Card\nMembership Fee $3.00 | Check Writing, Balance Inquiries,\nMoney market | Fax Service\n$5.00\nexcess check\nMoney Orders $.75 ea."),
   // Peninsula Community FCU (live 73916): a rate disclosure's balance threshold read as a $5 minimum balance fee.
   NOT_ACCOUNT_FEE_LINE_TAKEDOWN_LIVE: () => one([pub("minimum_balance", "If your average daily balance is below", 500, "If your average daily balance is below $100.00 ($5.00 for accounts held by those under 18 years of age), no dividends are earned")]),
+  // Knox v173 review (PR #2967): a card replacement under a credit card title, before the bank's own debit card fees.
+  CREDIT_CARD_SECTION_TAKEDOWN_LIVE: () => one([pub("card_replacement", "Card Replacement", 1000, "Card Replacement | $10.00"), pub("card_replacement", "Card Replacement", 500, "Card Replacement | $5.00")],
+    ["VISA CREDIT CARD", "Late Payment | $25.00", "Card Replacement | $10.00", "2. Debit Card Fees", "Card Replacement | $5.00"].join("\n")),
   DARWIN_LOAN_PAYMENT_EXAMPLE_TAKEDOWN_LIVE: () => one([pub("other_lending_fee", "Loan Documentation Fee, estimated payment", 147389, "Loan Documentation Fee, estimated payment of $1,473.89")]),
   CANADIAN_DOCUMENT_TAKEDOWN_LIVE: () => one([pub("monthly_maintenance", "Monthly Fee", 400, "Monthly Fee $4.00")], "Chequing account Monthly Fee $4.00 ... Unlimited Interac e‑Transfers with no fees"),
   NON_DEPOSIT_DOCUMENT_TAKEDOWN_LIVE: () => one([pub("appraisal_fee", "Appraisal", 40000, "Appraisal $400")], "Current Rates\nAppraisal $400", "https://www.bankofgreene.com/current-rates/"),

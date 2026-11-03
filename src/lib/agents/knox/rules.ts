@@ -471,8 +471,14 @@ export function checkingNamePriceAmbiguous(excerpt: string | null | undefined, f
  * v173 (review of v172): not a deposited or cashed item returned for insufficient funds ("Deposited Item -
  * Insufficient", "Cashed Item Insufficient": the deposited item return), and not an item the bank pays
  * ("Insufficient Debit Paid": a paid item is the overdraft's, never the NSF row's).
+ * Review of v173 (PR #2967): an item "paid or returned" ("Insufficient Check - Paid or Returned", "Check -
+ * Insufficient (per item, paid or returned)") is still the NSF row: only a paid item that names no return
+ * is left out. A deposited item named insufficient is the deposited item return (`DEPOSITED_ITEM_INSUFFICIENT`).
  */
-export const ITEM_INSUFFICIENT = /^(?![^|]*\b(?:deposited|cashed|deposit)\s+(?:items?|checks?|drafts?)\b)(?![^|]*\b(?:paid|honou?red)\b)[^|]*?(?:\b(?:ACH|checks?|items?|drafts?|debits?)\s*[-–:/]?\s*insufficient\b(?!\s*(?:funds?|balances?|deposits?|collateral)\b)|\binsufficient\s*[-–:/]?\s*(?:ACH|checks?|items?|drafts?|debits?)\b)/i;
+export const ITEM_INSUFFICIENT = /^(?![^|]*\b(?:deposited|cashed|deposit)\s+(?:items?|checks?|drafts?)\b)(?!(?![^|]*\breturn(?:ed)?\b)[^|]*\b(?:paid|honou?red)\b)[^|]*?(?:\b(?:ACH|checks?|items?|drafts?|debits?)\s*[-–:/]?\s*insufficient\b(?!\s*(?:funds?|balances?|deposits?|collateral)\b)|\binsufficient\s*[-–:/]?\s*(?:ACH|checks?|items?|drafts?|debits?)\b)/i;
+
+/** Review of v173 (PR #2967): a deposited item or check named insufficient ("Deposited Item - Insufficient") is the deposited item return. */
+export const DEPOSITED_ITEM_INSUFFICIENT = /\bdeposit(?:ed)?\s+(?:items?|checks?)\s*[-–:/]?\s*insufficient\b/i;
 
 /**
  * v171 (backlog dry run 4): the held-name rule's short stop payment ("Stop Pay", "Stop-Pay", "Stop Pmt"),
@@ -546,6 +552,8 @@ export const FEE_PATTERNS: FeePattern[] = [
     key: "deposited_item_return",
     pattern: /\b(deposited items? return(ed)?|returned deposit(ed)?|deposit(ed)? (items?|checks?) return(ed)?|deposited checks? \([^)]{0,30}\) return(ed)?|return(ed)? deposit(ed)? (items?|checks?)|return(ed)? (check|item) deposits?|deposit return|third[- ]party return(ed)? items?|charge[- ]?backs?)\b/i,
   },
+  // Review of v173: "Deposited Item - Insufficient" is the deposited item return, never NSF (`DEPOSITED_ITEM_INSUFFICIENT`).
+  { key: "deposited_item_return", pattern: DEPOSITED_ITEM_INSUFFICIENT },
   // v19: "Overdrafts Paid", "Overdrafts (OD)": the plural names the fee when it opens the
   // name or the fee follows it. Elsewhere ("transfer to cover overdrafts", "overdrafts up
   // to a total of $500") it describes another fee or a limit.
@@ -1414,7 +1422,7 @@ const LIST_BULLET = /^[•●▪‣]\s*/;
  * $30.00 | Positive Pay Checks | $50.00/mo", Navigant FCU doc 2007). The line is priced, so it never
  * read as a heading and the bullets under it lost it. Only when the next line opens with a bullet, the
  * first cell is a heading on its own (`headingName`) and the cells after it are another row's name and
- * price. Null otherwise.
+ * price: a capitalised name a fee rule reads, not a unit or note ("per request"). Null otherwise.
  */
 export function listHeadingOf(line: string, next: string | undefined): string | null {
   if (!next || !LIST_BULLET.test(next.trim()) || LIST_BULLET.test(line)) return null;
@@ -1422,6 +1430,9 @@ export function listHeadingOf(line: string, next: string | undefined): string | 
   if (plain !== undefined) return plain;
   const cells = line.split(CELL_SEPARATOR).map((cell) => cell.trim());
   if (cells.length < 3 || amountsIn(cells[1]).length > 0 || !/[a-z]{3,}/i.test(cells[1]) || amountsIn(cells.slice(2).join(" ")).length === 0) return null;
+  // Review of v173 (PR #2967): the second cell must be another row's own name ("Cashier’s Check"), never the
+  // heading's own unit or note ("Stop Payment | per request | $30.00" is the stop payment's priced row).
+  if (!/^[A-Z]/.test(cells[1]) || /^(?:per|each|for|plus|up to|min(?:imum)?|max(?:imum)?)\b/i.test(cells[1]) || classifyPatternKey(cells[1]) == null) return null;
   return headingName(cells[0]) || null;
 }
 
@@ -1594,8 +1605,9 @@ export function billPayByHeading(candidate: ExtractedFeeCandidate, heading?: str
  * (`listHeadingOf`). A read whose whole name is its bullet's own label at the bullet's own price, where
  * the label names an item a stop payment is placed on (`STOP_PAYMENT_ITEM`), is filed as the stop
  * payment and named under the heading ("Stop Payment: Bill Payment"), when that passes Darwin's
- * checks. Another column's read on the same line, a label that names a fee of its own, or a read
- * whose line the page prints under more than one heading passes through unchanged. Pure.
+ * checks. Another column's read on the same line, a label that names a fee of its own, a bullet whose
+ * price is not the one most of the list's bullets carry, or a read whose line the page prints under more
+ * than one heading passes through unchanged. Pure.
  */
 const STOP_PAYMENT_ITEM = /^(?:(?:personal|official|cashier['’]?s|teller['’]?s|counter|certified|electronic|recurring|pre-?authori[sz]ed|share|business)\s+)*(?:checks?|drafts?|share\s+drafts?|money\s+orders?|ach(?:\s+(?:debits?|items?|payments?))?|bill\s*pay(?:ments?)?|debits?|items?|payments?)$/i;
 const MAX_LIST_ITEMS = 12;
@@ -1614,7 +1626,15 @@ export function stopPaymentListRead(candidate: ExtractedFeeCandidate, text: stri
     label = normalizeSegment(item.slice(0, price.start).replace(/(?:\.{2,}|…)[.…]*/g, " "));
     let at = index - 1;
     while (at >= 0 && index - at <= MAX_LIST_ITEMS && LIST_BULLET.test(lines[at])) at -= 1;
-    headings.add(at >= 0 ? listHeadingOf(lines[at], lines[at + 1]) ?? "" : "");
+    // Review of v173 (PR #2967): the bullet's price must be the list's own, the price most of its bullets
+    // carry; a bullet at another price ("• Money Order | $5.00" among $30 stop payments) is a fee of its own.
+    const run: number[] = [];
+    for (let below = at + 1; below < lines.length && below - at <= MAX_LIST_ITEMS && LIST_BULLET.test(lines[below]); below += 1) {
+      const first = amountsIn(lines[below].replace(LIST_BULLET, ""))[0];
+      if (first) run.push(first.value);
+    }
+    const same = run.filter((value) => Math.abs(value - price.value) < 0.005).length;
+    headings.add(at >= 0 && same * 2 > run.length ? listHeadingOf(lines[at], lines[at + 1]) ?? "" : "");
   }
   const [heading] = [...headings];
   if (headings.size !== 1 || !heading || classifyPatternKey(heading) !== "stop_payment") return candidate;

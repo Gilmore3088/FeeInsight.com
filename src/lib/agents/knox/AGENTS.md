@@ -2716,15 +2716,21 @@ zero name another zero name of the same row and category opens with, word for wo
 product-split work) and Tongass FCU's "Non-Member Fees" prices (no non-member audience value; policy waits
 on `NON_CUSTOMER_CASHIERS_CHECK_LIVE`). Re-run: on rb6 the wrong row is gone and the other 95 changed rows are
 unchanged; rb, rb4 and rb5 stop reading four credit card section replacements; rb2 and rb3 do not change.
-Live (SELECT): 42 live card replacement or rush card fees on 36 documents sit under a credit card title in
-their column and would not be read again (they stay live); no live fee is re-filed by the stop payment list
-or audience changes. Review of v172, folded in: a bare "Service Charge", "Charge" or "Fee" after a price
+Live (SELECT): no live fee is re-filed by the stop payment list or audience changes. Review of v172, folded in: a bare "Service Charge", "Charge" or "Fee" after a price
 never names it in the family experts (`GENERIC_FEE_NAME`; "ATM Fees" / "Foreign: $1.00 Service Charge." is
 "ATM Fees: Foreign" again); `LOW_BALANCE_CHARGE` leaves a name offering the monthly fee in full and the
 minimum balance fee ("Monthly Service Charge or Minimum Balance Fee") to monthly maintenance; and
 `ITEM_INSUFFICIENT` no longer files a deposited, cashed or paid insufficient item as NSF. None changes a
-harness read. The guard is unchanged (v108); no Darwin re-check (no guard rule). The stale-read floor
-stays at v97.
+harness read. Review of v173 (PR #2967): the credit card section ends at a debit card or ATM heading in any
+form ("2. Debit Card Fees", "Debit Card Fees (effective 1/1/2026)", "The following fees apply to all debit
+cards:") and at a title-case heading naming another section ("Miscellaneous", "Wire Transfers", "Collection
+Items"), never at a fee's own label or a column header row, and a row two columns name takes the cell
+printing its price; `ITEM_INSUFFICIENT` files an item "paid or returned" as NSF again and
+`DEPOSITED_ITEM_INSUFFICIENT` files "Deposited Item - Insufficient" as the deposited item return;
+`listHeadingOf` needs a named second cell (not "per request") and `stopPaymentListRead` the price most of the
+list's bullets carry. Darwin's live re-check (`darwin.credit_card_section`, `CREDIT_CARD_SECTION_TAKEDOWN_LIVE`
+off) reports the 75 live credit card section replacements on 62 texts (prod, read-only, Nov 3). The guard is
+unchanged (v108). The stale-read floor stays at v97.
 
 v172 (fifth Knox re-read backlog dry run, Nov 3; 40 backlog texts at v171, six wrong rows of 99 changed,
 each against the bank's own line): (1) a statement's copy priced per item is document reproduction: the

@@ -930,4 +930,14 @@ export const DARWIN_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-11-02",
   },
+  {
+    id: "knox-v173-review-2026-11-03-credit-card-section-live-recheck",
+    agent: "darwin",
+    stage: "verify",
+    lesson: "A card replacement the page prints under a credit card title, in its own column, is the credit card's, not the deposit account's card replacement or rush card fee, even when its own name names no card. Re-check the live ones with Knox's own section reader on the stored line and the same text, and count where a section ends: a debit card or ATM heading in any form (numbered, with a note, or a sentence that opens a list) and any other section heading end it, a fee's own label or a table's column header row does not, and a row whose name two columns print belongs to the column that prints its price. Keep the takedown behind an off switch until the dry-run rows are read.",
+    why: "Greylock FCU's \"Card Replacement (Emergency/Rush Delivery)\" $35 (published 73521, doc 20487) is live as the bank's rush card fee, though the page prints it in the right column under \"CREDIT CARD CHARGES\" and the debit card's own replacement is $5. Knox v173 stops reading such rows; the independent review of PR #2967 found the first cut of the section reader ran past numbered and sentence debit headings and took the first column that named the row. Dry run Nov 3 (prod, read-only, the check's own rule on the stored lines and texts): 75 of 2,347 candidate live fees on 62 texts match; the takedown waits behind CREDIT_CARD_SECTION_TAKEDOWN_LIVE (off).",
+    evidence: { issues: [1026], prs: [2967], files: ["src/lib/agents/knox/credit-card-section.ts", "src/lib/agents/darwin/credit-card-section-check.ts", "src/lib/agents/darwin/credit-card-section-check.test.ts", "docs/project/findings/2026-11-03-knox-backlog-dry-run-6-misfiles.md"] },
+    appliesTo: "all",
+    since: "2026-11-03",
+  },
 ];

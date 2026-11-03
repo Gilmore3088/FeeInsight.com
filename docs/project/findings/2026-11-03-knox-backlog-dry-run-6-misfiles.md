@@ -95,13 +95,21 @@ down and no right live fee is lost.
   check, bill payment) on a document whose latest text prints "• <name>" and a stop payment: none is re-filed
   by `stopPaymentListRead` (the only bullet run under a stop payment heading is Navigant's, where the live
   "Money Order" $4 is the other column's). On Navigant v173 adds three stop_payment reads at $30.
-- Credit card section: of 315 live card_replacement and rush_card fees whose document text names a credit
-  card and has a credit card title within 2,000 characters above the fee's name (latest text only), 42 on
-  36 documents sit under a credit card title in their own column and would not be read again as the debit
-  card's (Whitewater Community FCU 75676, Argent FCU 129766, 129767 and 154631, Greylock 73521, Epb
-  Employees FCU 129890 and others; a site menu's "Credit Card" with no price after it heads nothing, and a
-  heading naming an ATM, debit card or deposit account ends the section). They stay live: a re-read never retires a verified or live row, and this
-  PR adds no Darwin take-down.
+- Credit card section (recounted after the review of PR #2967, with the fixed reader): Darwin's new live
+  re-check (`darwin/credit-card-section-check.ts`, its own rule) was run read-only on prod. Of 4,269 live flat
+  card_replacement and rush_card fees (admin-corrected ones left out), 2,347 sit on 1,704 Knox texts that
+  name a credit card. A SQL pass found, per fee, every text line that holds Knox's stored line or is held in
+  it (the reader's own match), and kept the 742 fees with a line naming a credit card within 32 lines above
+  one of those lines (a credit card title more than 30 lines up never counts); for those it fetched lines -32
+  to +20 around every matching line, and `findCreditCardSectionFees` ran on those lines at their own line
+  numbers. **75 live fees on 62 texts (62 institutions) match**, among them Greylock 73521, Whitewater
+  Community FCU 75676, Argent FCU 129766, 129767 and 154631, and Epb Employees FCU 129890. The nearest
+  line naming a credit card above each of the 75 was listed, and 13 of their windows were read in full;
+  none is a debit card fee. The first cut of the reader, run the
+  same way, matched 71; the fixed reader keeps all 71 and adds 4 (titles it now reads past a column header
+  row such as "FEE AMOUNT" or a footnote mark). An earlier count (42 of 315) used a 2,000-character
+  window and is replaced by this one. They stay live: the take-down is behind
+  `CREDIT_CARD_SECTION_TAKEDOWN_LIVE` (off) and waits for James's yes.
 - Audience: the 12 live consumer or unknown fees whose Knox evidence names a business word keep their
   audience under v173; LM's live business bill pay rows (46651, 125469) are already business.
 - Free cell: 2 live pairs of $0 fees on one document and category have one name opening the other
@@ -123,6 +131,27 @@ down and no right live fee is lost.
   known-wrong refused 256 to 257 of 287). A first cut lost live audit 75's "Card Replacement" $5 to a site
   menu's "Credit Card" link 28 lines above; the credit card title now needs a price after it. The committed
   baseline is regenerated for this code.
+
+**Review of v173 (PR #2967), fixed in the same PR:**
+
+- Credit card section (`credit-card-section.ts`): the section did not end at a numbered debit heading ("2.
+  Debit Card Fees"), a debit heading with a note ("Debit Card Fees (effective 1/1/2026)"), a sentence opening
+  a debit list ("The following fees apply to all debit cards:"), or another section ("Miscellaneous", "Wire
+  Transfers", "Collection Items"), and a row two columns name took the first cell that named it. Now a debit
+  card or ATM heading ends it in any form, a title-case heading naming a section ends it, a fee's own label,
+  a wrapped name's last word and a column header row ("Fee Type | Fee Amount") do not, and a row takes the
+  cell that prints its own price.
+- `ITEM_INSUFFICIENT`: the v173 "paid" exclusion also dropped "Insufficient Check - Paid or Returned",
+  "Check - Insufficient (per item, paid or returned)" and "Insufficient Check (returned or paid)"; they read
+  NSF again (only a paid item naming no return, "Insufficient Debit Paid", stays out). "Deposited Item -
+  Insufficient" files as the deposited item return (`DEPOSITED_ITEM_INSUFFICIENT`). The shared guard (v108,
+  unchanged) still refuses an NSF name that says "paid" ("NSF Paid or Returned" included), so these reads
+  are filed right by Knox but still not published; that guard rule is older than v173 and not changed here.
+- Stop payment list (`listHeadingOf`, `stopPaymentListRead`): a priced heading row ("Stop Payment | per request
+  | $30.00") is no list heading, and a bullet priced unlike most of the list ("• Money Order | $5.00" among
+  $30 stop payments) keeps its own category.
+- The live re-check for the credit card section drop is in Darwin (`credit-card-section-check.ts`, switch
+  off), with the count above.
 
 **Lesson:** a heading or section title is read from the page's own column, even when it shares its line with
 another column's row: a bullet list keeps its heading, a credit card section keeps its replacements, and a

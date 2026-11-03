@@ -70,6 +70,18 @@ describe("an item bulleted under a stop payment heading is the stop payment (Nav
     expect(listHeadingOf("Stop Payments | $20.00 | Same Day ACH | $10.00", "• ACH | $30.00")).toBeNull();
   });
 
+  it("never reads a heading's own priced row as a list heading, nor re-files a bullet at another price (review of v173)", () => {
+    expect(listHeadingOf("Stop Payment | per request | $30.00", "• Money Order | $30.00")).toBeNull();
+    const priced = "Stop Payment | per request | $30.00\n• Money Order | $30.00";
+    const money = { feeName: "Money Order", amount: 30, canonicalHint: "money_order", excerpt: "• Money Order | $30.00", confidence: 0.9, frequency: null, waivable: false } as never;
+    expect(stopPaymentListRead(money, priced)).toBe(money);
+    const list = ["Stop Payment", "• Personal Check | $30.00", "• Money Order | $5.00", "• Official Check | $30.00", "• ACH | $30.00"].join("\n");
+    const five = { feeName: "Money Order", amount: 5, canonicalHint: "money_order", excerpt: "• Money Order | $5.00", confidence: 0.9, frequency: null, waivable: false } as never;
+    expect(stopPaymentListRead(five, list)).toBe(five);
+    const official = { feeName: "Official Check", amount: 30, canonicalHint: "cashiers_check", excerpt: "• Official Check | $30.00", confidence: 0.9, frequency: null, waivable: false } as never;
+    expect(stopPaymentListRead(official, list)).toMatchObject({ canonicalHint: "stop_payment", feeName: "Stop Payment: Official Check" });
+  });
+
   it("leaves a bullet that names a fee of its own, or a list under another heading, as read", () => {
     const read = { feeName: "Bill Payment", amount: 30, canonicalHint: "bill_pay", excerpt: "• Bill Payment | $30.00", confidence: 0.9, frequency: null, waivable: false } as never;
     expect(stopPaymentListRead(read, "Online Services\n• Bill Payment | $30.00")).toBe(read);
@@ -225,5 +237,58 @@ describe("review of v172: narrower names keep their own scope", () => {
     expect(classifyFeeText("ACH - Insufficient")).toBe("nsf");
     expect(classifyFeeText("Check - Insufficient")).toBe("nsf");
     expect(classifyFeeText("Insufficient Item")).toBe("nsf");
+  });
+
+  it("an insufficient item paid or returned stays the NSF row, and a deposited one is the deposited item return (review of v173)", () => {
+    expect(classifyFeeText("Insufficient Check - Paid or Returned")).toBe("nsf");
+    expect(classifyFeeText("Check - Insufficient (per item, paid or returned)")).toBe("nsf");
+    expect(classifyFeeText("Insufficient Check (returned or paid)")).toBe("nsf");
+    expect(all("Insufficient Check - Paid or Returned | $30.00")).toContainEqual(["Insufficient Check - Paid or Returned", 30, "nsf"]);
+    expect(classifyFeeText("Deposited Item - Insufficient")).toBe("deposited_item_return");
+    expect(all("Deposited Item - Insufficient | $10.00")).toContainEqual(["Deposited Item - Insufficient", 10, "deposited_item_return"]);
+    // The v173 case stays fixed: a paid item that names no return is not the NSF row.
+    expect(classifyFeeText("Insufficient Debit Paid")).not.toBe("nsf");
+  });
+});
+
+// Review of v173 (PR #2967): a credit card section ends at the next section, and a row's own column is the
+// cell that prints its own price.
+const creditThen = (heading: string) => ["VISA CREDIT CARD", "Late Payment | $25.00", "Card Replacement | $10.00", heading, "Card Replacement | $5.00"].join("\n");
+
+describe("a credit card section ends at the next section (review of v173)", () => {
+  it.each([
+    ["a numbered debit card heading", "2. Debit Card Fees"],
+    ["a debit card heading with a note", "Debit Card Fees (effective 1/1/2026)"],
+    ["a sentence that opens a debit card list", "The following fees apply to all debit cards:"],
+    ["a miscellaneous heading", "Miscellaneous"],
+    ["a wire transfer heading", "Wire Transfers"],
+    ["a collection items heading", "Collection Items"],
+  ])("keeps the debit card replacement after %s and still leaves out the credit card's", (_label, heading) => {
+    const text = creditThen(heading);
+    const found = all(text);
+    expect(found).toContainEqual(["Card Replacement", 5, "card_replacement"]);
+    expect(found.some(([name, amount, key]) => /card replacement/i.test(name) && amount === 10 && key === "card_replacement")).toBe(false);
+    const columns = creditCardSectionColumns(text);
+    const read = (amount: number) => ({ feeName: "Card Replacement", amount, excerpt: `Card Replacement | $${amount}.00`, canonicalHint: "card_replacement" });
+    expect(creditCardSectionRead(read(5), text, columns)).toBe(false);
+    expect(creditCardSectionRead(read(10), text, columns)).toBe(true);
+  });
+
+  it("does not end the section at a sentence about the fee or a stacked row's label", () => {
+    const text = ["CREDIT CARD CHARGES", "This fee applies to any debit card or credit card transaction", "Annual Fee", "$0.00", "Card Replacement ...... $15.00"].join("\n");
+    const columns = creditCardSectionColumns(text);
+    expect(creditCardSectionRead({ feeName: "Card Replacement", amount: 15, excerpt: "Card Replacement ...... $15.00", canonicalHint: "card_replacement" }, text, columns)).toBe(true);
+  });
+
+  it("reads the row's own column when both columns print the name", () => {
+    const creditLeft = ["CREDIT CARD FEES | DEBIT CARD FEES", "Late Payment ...... $25.00 | Overdraft ...... $30.00", "Card Replacement ...... $10.00 | Card Replacement ...... $5.00"].join("\n");
+    const debitLeft = ["DEBIT CARD FEES | CREDIT CARD FEES", "Overdraft ...... $30.00 | Late Payment ...... $25.00", "Card Replacement ...... $5.00 | Card Replacement ...... $10.00"].join("\n");
+    for (const text of [creditLeft, debitLeft]) {
+      const columns = creditCardSectionColumns(text);
+      const row = text.split("\n")[2];
+      const read = (amount: number) => ({ feeName: "Card Replacement", amount, excerpt: row, canonicalHint: "card_replacement" });
+      expect(creditCardSectionRead(read(5), text, columns)).toBe(false);
+      expect(creditCardSectionRead(read(10), text, columns)).toBe(true);
+    }
   });
 });

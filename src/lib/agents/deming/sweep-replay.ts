@@ -6,6 +6,7 @@ import { findNoFeeSentences, NO_FEE_SENTENCE_TAKEDOWN_LIVE } from "@/lib/agents/
 import { findZeroWaiverRows, ZERO_WAIVER_ROW_TAKEDOWN_LIVE } from "@/lib/agents/darwin/zero-waiver-row-check";
 import { findFreeListItems, FREE_LIST_ITEM_PREFILTER, FREE_LIST_ITEM_TAKEDOWN_LIVE } from "@/lib/agents/darwin/free-list-item-check";
 import { findNotAccountFeeLines, NOT_ACCOUNT_FEE_LINE_TAKEDOWN_LIVE } from "@/lib/agents/darwin/not-account-fee-line-check";
+import { CREDIT_CARD_SECTION_KEYS, CREDIT_CARD_SECTION_TAKEDOWN_LIVE, findCreditCardSectionFees } from "@/lib/agents/darwin/credit-card-section-check";
 import { findLoanPaymentExamples, LOAN_PAYMENT_EXAMPLE_TAKEDOWN_LIVE } from "@/lib/agents/darwin/loan-payment-example-check";
 import { canadianDocument, CANADIAN_DOCUMENT_TAKEDOWN_LIVE } from "@/lib/agents/darwin/canadian-document-check";
 import {
@@ -185,6 +186,20 @@ export const SWEEP_REPLAYS: readonly SweepReplay[] = [
       const rows = fees.flatMap((fee, index) => fee.amountCents != null && fee.amountCents >= 0
         ? [{ ...base(fee, index), source_line: note(fee), artifact_id: DOCUMENT_ID }] : []);
       return findNotAccountFeeLines(rows, new Map([[DOCUMENT_ID, c.text]])).matches
+        .map((m) => ({ index: indexOf(m.feePublishedId), action: "takedown", reason: m.reason }));
+    },
+  },
+  {
+    check: "darwin.credit_card_section",
+    switches: { CREDIT_CARD_SECTION_TAKEDOWN_LIVE },
+    scope: "sweep",
+    replays: "Darwin's credit card section re-check (`findCreditCardSectionFees`, Knox's `creditCardSectionRead`) on every published card replacement and rush card fee, with Knox's stored line and the member's text as the artifact Knox read",
+    run(fees, c, on) {
+      if (!on("CREDIT_CARD_SECTION_TAKEDOWN_LIVE")) return [];
+      const keys: ReadonlySet<string> = new Set(CREDIT_CARD_SECTION_KEYS);
+      const rows = fees.flatMap((fee, index) => fee.amountCents != null && fee.amountCents >= 0 && fee.canonicalFeeKey != null && keys.has(fee.canonicalFeeKey)
+        ? [{ ...base(fee, index), source_line: note(fee), artifact_id: DOCUMENT_ID }] : []);
+      return findCreditCardSectionFees(rows, new Map([[DOCUMENT_ID, c.text]])).matches
         .map((m) => ({ index: indexOf(m.feePublishedId), action: "takedown", reason: m.reason }));
     },
   },

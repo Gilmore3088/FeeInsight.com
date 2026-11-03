@@ -1852,6 +1852,18 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   a match goes through the 12-hour second look (`darwin.not_account_fee_line`) and is archived with its
   reason. Step detail `not_account_fee_line_check`. Golden-set replay: the `darwin.not_account_fee_line`
   sweep.
+- Card replacements in a credit card section (`credit-card-section-check.ts`, Knox v173, sixth re-read
+  backlog dry run and its review on PR #2967, Nov 3). A live flat `card_replacement` or `rush_card` fee whose
+  every printed row (Knox's stored line, on the text Knox read) sits under a credit card title in its own
+  column is the credit card's (`creditCardSectionRead`, `knox/credit-card-section.ts`, the rule Knox v173
+  applies; Greylock FCU's "Card Replacement (Emergency/Rush Delivery)" $35, live 73521). A debit card or ATM
+  heading in any form and any other section heading end the section; a row two columns name belongs to the
+  column printing its price. Each verify step reads every live candidate on a text that names a credit card
+  (admin-corrected fees never). Dry run Nov 3 (prod, read-only): of 2,347 candidates, 75 match on 62 texts.
+  The switch (`CREDIT_CARD_SECTION_TAKEDOWN_LIVE`, code, off) waits for James's yes; on, a match goes
+  through the 12-hour second look (`darwin.credit_card_section`) and is archived with `credit_card_section:
+  "<name>" #<text>` (verified row rejected with the `credit_card_section` flag). Step detail
+  `credit_card_section_check`. Golden-set replay: the `darwin.credit_card_section` sweep.
 - Card program sections of a general schedule (`card-program-section-check.ts`, #1908, #1905). Navy
   Federal's fees page prints "Prepaid and Gift Cards" / "GO Prepaid Cards" sections after its deposit
   fees, and their "Lost/Stolen Card" $5 and Visa/PLUS ATM $1 rows went live as the account's fees on
@@ -2910,6 +2922,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `ZERO_WAIVER_ROW_CHECK_VERSION` | `darwin.zero_waiver_row` | v2 | `darwin/zero-waiver-row-check.ts` |
 | `FREE_LIST_ITEM_CHECK_VERSION` | `darwin.free_list_item` | v1 | `darwin/free-list-item-check.ts` |
 | `NOT_ACCOUNT_FEE_LINE_CHECK_VERSION` | `darwin.not_account_fee_line` | v1 | `darwin/not-account-fee-line-check.ts` |
+| `CREDIT_CARD_SECTION_CHECK_VERSION` | `darwin.credit_card_section` | v1 | `darwin/credit-card-section-check.ts` |
 | `CARD_PROGRAM_SECTION_CHECK_VERSION` | `darwin.card_program_section` | v1 | `darwin/card-program-section-check.ts` |
 | `LOAN_SECTION_CHECK_VERSION` | `darwin.loan_section` | v1 | `darwin/loan-section-check.ts` |
 | `DOCUMENT_OWNER_STRATEGY` | `verify.document_owner` | v1 | `darwin/document-owner.ts` |
