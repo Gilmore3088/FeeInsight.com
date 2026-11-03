@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { accountRowRivalRead } from "@/lib/agents/knox/account-table";
 import { classifyFeeText } from "@/lib/agents/knox/rules";
 import { conditionalFreeRow, runFreeSpecialists } from "@/lib/agents/knox/specialists";
-import { accountRowCellsPricing, accountTableCells } from "@/lib/custom-report/account-table";
+import { accountRowCellsPricing, accountTableCells, productName } from "@/lib/custom-report/account-table";
 import { refileCategory } from "@/lib/fee-category-guard";
 
 /** Knox v180: the reads backlog dry run 11 (Nov 3) found wrong or doubtful, each from the bank's own lines. */
@@ -117,6 +117,38 @@ describe("v180: each priced cell of an account table's monthly fee row is its ow
     expect(accountRowRivalRead({ amount: 5, canonicalHint: "monthly_maintenance", excerpt: row, strategy: "extract.family.account" }, cells)).toBe(true);
     expect(accountRowRivalRead({ amount: 5, canonicalHint: "paper_statement", excerpt: row, strategy: "extract.rules" }, cells)).toBe(false);
     expect(accountRowRivalRead({ amount: 6, canonicalHint: "monthly_maintenance", excerpt: row, strategy: "extract.account_table" }, cells)).toBe(false);
+  });
+});
+
+describe("v180 review (#2978): account-table cells", () => {
+  // The headers as stored: texts 17677 and 34068, 22059, and 27674 (its siblings carry footnotes 1, 3 and 4).
+  it("names each column without its button or its version note", () => {
+    expect(productName("Guardian Checking Request Appointment")).toBe("Guardian Checking");
+    expect(productName("Interest Checking Open Account")).toBe("Interest Checking");
+    expect(productName("Rewards Checking5 Open Account")).toBe("Rewards Checking");
+    expect(productName("Most Popular DirectPlus Checking Open Account")).toBe("DirectPlus Checking");
+    expect(productName("Free eChecking Open Account")).toBe("Free eChecking");
+    expect(productName("Cashback Checking Student Version Available6")).toBe("Cashback Checking");
+    expect(productName("Team 50 Checking (Age 50 or Better) Open Account")).toBe("Team 50 Checking (Age 50 or Better)");
+  });
+
+  // A paper statement cell and a monthly fee column at the same price.
+  const SAME_PRICE = [
+    "Feature | Basic Checking | Value Checking | Premier Checking",
+    "",
+    "Monthly Service Fee | $5 | $5 per paper statement if not enrolled in eStatements | $10",
+  ].join("\n");
+
+  it("keeps a read of another fee whose own cell prints a column's price", () => {
+    const cells = accountTableCells(SAME_PRICE);
+    expect(cells.map((cell) => [cell.product, cell.amount])).toEqual([["Basic Checking", 5], ["Premier Checking", 10]]);
+    const row = cells[0].row;
+    expect(accountRowCellsPricing(row, 5)).toEqual([5, null]);
+    expect(accountRowRivalRead({ amount: 5, canonicalHint: "paper_statement", excerpt: row, strategy: "extract.rules" }, cells)).toBe(false);
+    // The row's label at the column's price is the column's fee, which the account table reads by name.
+    expect(accountRowRivalRead({ amount: 5, canonicalHint: "monthly_maintenance", excerpt: row, strategy: "extract.rules" }, cells)).toBe(true);
+    // Another fee at a price only a column prints is still that column's fee.
+    expect(accountRowRivalRead({ amount: 10, canonicalHint: "paper_statement", excerpt: row, strategy: "extract.rules" }, cells)).toBe(true);
   });
 });
 

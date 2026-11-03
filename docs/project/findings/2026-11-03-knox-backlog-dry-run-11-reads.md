@@ -37,15 +37,27 @@ wrong and 9 doubtful; no correct live fee would have been lost or replaced. rb10
 - `custom-report/account-table.ts`: the header walk goes on above a one-cell caption (up to five words, no price,
   no sentence end). `accountRowCellsPricing` says which fee each cell printing a price states.
 - `knox/account-table.ts` `accountRowRivalRead`, applied in `specialists.ts`: on a monthly fee row the account-table
-  specialist reads, another specialist's read at a column's price, or a monthly fee read at a price only a cell
-  stating another fee prints, is dropped. Another fee's read at its own cell's price (the $5 paper statement) stays.
+  specialist reads, a monthly fee read is dropped at a column's price or at a price only cells stating another fee
+  print; a read of another fee is dropped only when every cell printing its price is a column's monthly fee. Another
+  fee's read at its own cell's price stays, also beside a column at the same price ("$5 per paper statement" next to
+  a "$5" column; review of #2978).
+- Review of #2978: the account table's column names drop button text ("Open Account", "Request Appointment") and a
+  "Student Version Available6" note (`productName`), so a re-read never names a column "Interest Checking Open
+  Account" or "Cashback Checking Student Version Available6" next to the live "Cashback Checking" (137619). On the
+  reviewer's texts (17677, 34068, 22059, 27674, 27675, 27783-27786) every column is now the plain account name.
 - `families.ts`: a monthly fee priced "per paper statement" is the paper statement charge, which the rules read.
 - `specialists.ts` `conditionalFreeRow`: a held $0 whose next line opens with a condition, beside a priced read of
   the same fee, is dropped.
 
 **Live:** the new excess withdrawal wording matches no live fee name (Nov 3, SELECT on `published_fee_records`, not
 rolled back or quarantined: 0 rows; 6 live names contain "additional withdrawal/transfer/debit", none with "over N").
-No rule here holds, re-files or takes down a live fee, so no Darwin re-check is added; the caption change only lets
+No live fee's name carries a column name the cleanup changes (Nov 3, SELECT: 4 live rows mention "open account"
+or an appointment in the name or raw product, none in the account-table name form), so the shared check traces the
+same live fees. Live 149047 ("Monthly Service Fee" $7.50, raw product "Interest Checking Open Account") still traces on
+its own row ("Monthly Service Fee | $7.50 ..."); a re-read reads it under the same name and price, and the
+account lookup still gives it "Interest Checking Open Account" (`sameProduct` true), so it is confirmed, not
+duplicated. That product name comes from the lineup's own heading read, which this change leaves alone. No rule
+here holds, re-files or takes down a live fee, so no Darwin re-check is added; the caption change only lets
 the shared check trace more account-table rows. Harnesses rb to rb11 (v179 vs v180): live fees not reproduced 408 to
 408; rb11's three wrong rows and People's FCU's $0 fixed; rb5 renames one confirmed fee to its column's name
 ("Premium Checking Monthly Service Charge"). No right read lost.
