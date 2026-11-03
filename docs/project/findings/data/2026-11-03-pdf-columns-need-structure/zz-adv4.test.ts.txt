@@ -1,0 +1,69 @@
+import { it } from "vitest";
+import { layoutPageResult, type PdfTextItem } from "@/lib/agents/rosetta/pdf-layout";
+import { currentVariant as v } from "@/lib/agents/deming/shadow-lab/variants";
+const S = 8;
+const run = (str: string, x: number, y: number): PdfTextItem => ({ str, transform: [S, 0, 0, S, x, y], width: str.length * 4, height: S });
+const Y = (r: number) => 700 - r * 12;
+function publish(text: string) {
+  const ex = v.extract(text); const live: any[] = [];
+  for (const f of ex.passed) { const ver = v.verify(f, text); if (!ver.ok) continue; const d = v.publishGate(ver.fee, text, live); if (d.publish) live.push(ver.fee); }
+  return live.map((f) => `${f.canonicalFeeKey}:${f.amountCents} (${f.feeName})`).sort();
+}
+const ROWS: [string, string, string][] = [
+  ["Overdraft fee (per item)", "$30.00", "Daily maximum $150"], ["Returned item (NSF)", "$30.00", "Daily maximum $150"],
+  ["Outgoing domestic wire", "$25.00", "International wire $45"], ["Incoming wire", "$10.00", "International incoming $15"],
+  ["Stop payment", "$25.00", "Online request $15"], ["Account research", "$25.00", "Minimum charge $10"],
+  ["Cashier's check", "$8.00", "Members only"], ["Money order", "$3.00", "Limit 5 per day"],
+  ["Statement copy", "$5.00", "Online statements free"], ["Debit card replacement", "$10.00", "Rush delivery $50"],
+  ["Dormant account", "$5.00", "After 12 months"], ["Account closing", "$25.00", "Within 90 days"],
+  ["Garnishment / levy", "$100.00", "Per order"], ["Coin counting", "$3.00", "Non-members 5% of total"],
+  ["Safe deposit box 3x5", "$30.00", "Late payment $10"], ["Check printing", "Varies", "Depends on style"],
+];
+// a: notes with two own fee rows (gap inside)
+const tbl = (r: number, l: string, p: string, px = 180) => [run(l, 40, Y(r)), run(p, px, Y(r))];
+const cases: Record<string, PdfTextItem[]> = {};
+const WN: [string, string, string[]][] = [
+ ["Overdraft fee (per item)", "$30.00", ["Daily Maximum $150; Charged For Each", "Item We Pay Into A Negative Balance", "On Your Checking Account"]],
+ ["Returned item (NSF)", "$30.00", ["Daily Maximum $150; Charged For Each", "Item We Return Unpaid For Lack Of", "Available Funds"]],
+ ["Outgoing domestic wire", "$25.00", ["International Wire $45; Submit The", "Request Before 2 P.M. For Same Day", "Processing"]],
+ ["Account research", "$25.00", ["Minimum Charge $10; Billed Per Hour", "Of Research With A One Hour Minimum", "For Each Request"]],
+ ["Debit card replacement", "$10.00", ["Rush Delivery $50; Standard Delivery", "Takes Seven To Ten Business Days", "By Mail"]],
+ ["Safe deposit box 3x5", "$30.00", ["Late Payment $10; Rent Is Due Each", "Year On The Anniversary Of The Lease", "Date"]],
+ ["Stop payment", "$25.00", ["Online Request $15; Each Stop Lasts", "Six Months And May Be Renewed For", "Another Fee"]],
+];
+// capitals every line, left cell only on first line
+cases.capsDesc = WN.flatMap(([l, p, d], r) => [...tbl(3 * r, l, p), ...d.map((t, k) => run(t, 270, Y(3 * r + k)))]);
+// caps desc where left label also wraps onto 3 lines (left cell on every line, priced only on first)
+cases.capsDescLeftWrap = WN.flatMap(([l, p, d], r) => [...tbl(3 * r, l, p), run("(continued label)", 40, Y(3 * r + 1)), run("see terms", 40, Y(3 * r + 2)), ...d.map((t, k) => run(t, 270, Y(3 * r + k)))]);
+// numbers first
+const NUM = ["2 free per month, then $3", "3 per day max, $150 cap", "1 business day, intl $45", "5 or more, $2 each", "6 months, renew $15", "1 hour minimum, $10", "2 per year free", "10 per day limit", "12 per year, then $2", "7-10 days, rush $50", "12 months inactive", "90 days from open", "1 per order", "5% for non-members", "1 key, late $10", "3 styles to choose"];
+cases.numberNotes = ROWS.flatMap(([l, p], r) => [...tbl(r, l, p), run(NUM[r], 270, Y(r))]);
+// blank-line gaps: rows spaced 2 lines, notes only on some rows
+cases.gapNotes = ROWS.flatMap(([l, p, n], r) => [...tbl(2 * r, l, p), ...(r % 3 === 1 ? [] : [run(n, 270, Y(2 * r))])]);
+// notes set half a line lower than rows (own leading)
+cases.offsetNotes = ROWS.flatMap(([l, p, n], r) => [...tbl(r, l, p), run(n, 270, Y(r) - 6)]);
+// notes 4.5pt lower (just above baseline tolerance 4)
+cases.offsetNotes45 = ROWS.flatMap(([l, p, n], r) => [...tbl(r, l, p), run(n, 270, Y(r) - 4.5)]);
+// left rows with dot leaders (single cell) + notes
+cases.leaderNotes = ROWS.flatMap(([l, p, n], r) => [run(`${l} ${".".repeat(28 - l.length)} ${p}`, 40, Y(r)), run(n, 270, Y(r))]);
+// left rows label + price a single space (single cell) + notes
+cases.spaceNotes = ROWS.flatMap(([l, p, n], r) => [run(`${l} ${p}`, 40, Y(r)), run(n, 270, Y(r))]);
+// left prices without $ ("30.00") + notes
+cases.noDollar = ROWS.flatMap(([l, p, n], r) => [...tbl(r, l, p.replace("$", "")), run(n, 270, Y(r))]);
+// left price "30.00" in most, "$" in a few
+cases.someDollar = ROWS.flatMap(([l, p, n], r) => [...tbl(r, l, r % 4 ? p.replace("$", "") : p), run(n, 270, Y(r))]);
+// prices with trailing words in left price cell "$30.00 each"
+cases.eachNotes = ROWS.flatMap(([l, p, n], r) => [...tbl(r, l, p + " each"), run(n, 270, Y(r))]);
+// header lines interleaved left (section headings, unpriced) with notes starting on them
+cases.headingRows = ROWS.flatMap(([l, p, n], r) => r % 2 ? [...tbl(r, l, p), run(n, 270, Y(r))] : [run(l.toUpperCase(), 40, Y(r)), run(n, 270, Y(r)), ...tbl(r + 0.5, "  " + l, p)]);
+it("adv4", () => {
+  for (const [name, items] of Object.entries(cases)) {
+    const a = layoutPageResult(items, { columnReading: true }).text, b = layoutPageResult(items, { columnReading: false }).text;
+    console.log(`=== ${name}: ${a === b ? "UNCHANGED" : "SPLIT"}`);
+    if (a === b) continue;
+    console.log(a.split("\n").slice(0, 4).join("\n"), "\n...");
+    const pa = publish(a), pb = publish(b);
+    console.log("ON only:", pa.filter((x) => !pb.includes(x)));
+    console.log("OFF only:", pb.filter((x) => !pa.includes(x)));
+  }
+});

@@ -1,0 +1,56 @@
+import { it } from "vitest";
+import { layoutPageResult, type PdfTextItem } from "@/lib/agents/rosetta/pdf-layout";
+const S = 8;
+const run = (str: string, x: number, y: number, size = S): PdfTextItem => ({ str, transform: [size, 0, 0, size, x, y], width: str.length * (size / 2), height: size });
+const on = (i: PdfTextItem[]) => layoutPageResult(i, { columnReading: true }).text;
+const off = (i: PdfTextItem[]) => layoutPageResult(i, { columnReading: false }).text;
+const Y = (r: number) => 700 - r * 12;
+const L = ["Overdraft item paid","Returned item","Stop payment","Cashier's check","Money order","Wire outgoing","Wire incoming","Account research","Statement copy","Check image","Dormant account","Account closing","Garnishment","Levy","Notary service","Coin counting","Debit card replace","Rush card","Fax per page","Photocopy"];
+const P = ["$35.00","$30.00","$25.00","$8.00","$3.00","$25.00","$15.00","$20.00","$5.00","$2.00","$5.00","$25.00","$100.00","$100.00","Free","$3.00","$10.00","$50.00","$1.00","$0.25"];
+const cases: Record<string, PdfTextItem[]> = {};
+// 1 wide gutter label|price
+cases.wideGutter = L.flatMap((l, r) => [run(l, 40, Y(r)), run(P[r], 450, Y(r))]);
+// 2 tier table, gutter after first price column (Schools shape)
+cases.tierGutter = L.flatMap((l, r) => [run(l, 40, Y(r)), run(P[r], 160, Y(r)), run("$1.00", 280, Y(r)), run("$2.00", 330, Y(r)), run("Free", 380, Y(r)), run("$5.00", 430, Y(r))]);
+// 2b tier with text in later columns
+cases.tierGutterText = L.flatMap((l, r) => [run(l, 40, Y(r)), run(P[r], 160, Y(r)), run("$1.00 per item", 280, Y(r)), run("2 free then $2", 380, Y(r))]);
+// 3 three-column: label | description | price
+cases.threeCol = L.flatMap((l, r) => [run(l, 40, Y(r)), run("Charged for each occurrence " + r, 160, Y(r)), run(P[r], 420, Y(r))]);
+// 4 wrapped labels, price on first line
+cases.wrapped = L.slice(0, 12).flatMap((l, r) => [run(l + " for each item", 40, Y(2 * r)), run("presented on the account", 40, Y(2 * r + 1)), run(P[r], 400, Y(2 * r))]);
+// 4b wrapped labels, price vertically centered between the two label lines
+cases.wrappedMid = L.slice(0, 12).flatMap((l, r) => [run(l + " for each item that we pay", 40, Y(2 * r)), run("presented on the account by you", 40, Y(2 * r + 1)), run(P[r], 400, Y(2 * r) - 6)]);
+// 5 right-aligned prices, ragged labels
+cases.rightAligned = L.flatMap((l, r) => [run(l, 40, Y(r)), run(P[r], 460 - P[r].length * 4, Y(r))]);
+// 5b right-aligned price cells that open with words
+const PW = P.map((p) => "Per item " + p);
+cases.wordPrices = L.flatMap((l, r) => [run(l, 40, Y(r)), run(PW[r], 460 - PW[r].length * 4, Y(r))]);
+// 5c long descriptive labels (prose-like) with "Per item $x" prices
+const LD = L.map((l) => (l + " charged when the item is presented").slice(0, 44));
+cases.descWordPrices = LD.flatMap((l, r) => [run(l, 40, Y(r)), run("Each " + P[r].replace("Free", "$0.00"), 300, Y(r))]);
+// 5d labels + "Monthly $x" style
+cases.monthly = L.flatMap((l, r) => [run(l, 40, Y(r)), run((r % 2 ? "Monthly " : "Each ") + P[r], 300, Y(r))]);
+// 6 fee table left, prose right
+const PROSE = ["If your account is overdrawn we may charge a fee","for each item we pay; the entire balance of your","account may not be available for withdrawal. We","may refuse any item for which there are not enough","funds available at the time the item is presented.","You agree to pay any fee we charge as set out in","the schedule of fees and charges for this account","and you agree that we may change it with notice.","Dividends are paid from current income and are not","guaranteed; the rate may change at any time after","the account is opened. Accrual begins on the day","of deposit for cash and for checks the day we get","provisional credit for them from the paying bank.","Fees are subject to change at our discretion."];
+cases.tablePlusProse = [...L.slice(0, 14).flatMap((l, r) => [run(l, 40, Y(r)), run(P[r], 170, Y(r))]), ...PROSE.map((t, r) => run(t, 260, Y(r)))];
+// 7 footnote column (notes with amounts)
+const N = ["Max $150 per day","Plus $5 mailing","Per item, max 5","Over $10,000: $15","Each, plus postage","Waived for seniors","Intl $45","Per hour, min $10","Paper only","Online free","After 12 months","Within 90 days","Per order","Per levy","Members only","Over $500 count"];
+cases.notesCol = L.slice(0, 16).flatMap((l, r) => [run(l, 40, Y(r)), run(P[r], 150, Y(r)), run(N[r], 260, Y(r))]);
+// 7b notes col with ownPair notes
+const N2 = ["Daily max $150","Mailing add $5","Rush add $25","Large items $15","Postage add $2","Seniors pay $0","International $45","Minimum fee $10","Paper copy $3","Online copy $1","Inactive after $0","Early close $10","Order fee $1","Levy cap $250","Members pay $0","Large count $5"];
+cases.notesOwnPair = L.slice(0, 16).flatMap((l, r) => [run(l, 40, Y(r)), run(P[r], 150, Y(r)), run(N2[r], 260, Y(r))]);
+// 7c footnote marks
+cases.marks = L.flatMap((l, r) => [run(l, 40, Y(r)), run(P[r], 170, Y(r)), run(String((r % 3) + 1), 300, Y(r))]);
+// 8 landscape wide page
+cases.landscape = L.flatMap((l, r) => [run(l, 40, Y(r)), run(P[r], 200, Y(r)), run("$1.00", 400, Y(r)), run("$2.00", 520, Y(r)), run("$3.00", 640, Y(r))]);
+// 8b rotated landscape (pdf rotate)
+cases.rotated = L.flatMap((l, r) => [{ str: l, transform: [0, S, -S, 0, 100 + r * 12, 40], width: l.length * 4, height: S }, { str: P[r], transform: [0, S, -S, 0, 100 + r * 12, 400], width: 24, height: S }]);
+// 9 two-col table: label|price left and its "Non-member" price block with header right, header-only words
+cases.memberNon = [run("Service", 40, Y(0)), run("Member", 160, Y(0)), run("Non-member", 300, Y(0)), ...L.slice(0, 16).flatMap((l, r) => [run(l, 40, Y(r + 1)), run(P[r], 160, Y(r + 1)), run(r % 2 ? "Not available" : "Same as member " + P[r], 300, Y(r + 1))])];
+it("adv", () => {
+  for (const [name, items] of Object.entries(cases)) {
+    const a = on(items), b = off(items);
+    console.log(`=== ${name}: ${a === b ? "UNCHANGED" : "SPLIT"}`);
+    if (a !== b) console.log(a.split("\n").slice(0, 40).join("\n"));
+  }
+});
