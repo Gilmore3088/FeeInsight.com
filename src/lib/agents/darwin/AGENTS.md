@@ -1906,7 +1906,13 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   step reads the live flat fees each rule's name pre-filter selects, and every live flat early closure fee on a
   text that names an IRA (admin-corrected fees never). Dry run Nov 3 (prod, read-only): 6 of 31 name candidates
   match (77750, 68504, 167014, 101378, 152355, 85500) and 6 IRA section closings (63736, 94053, 136541, 156197,
-  159259, 159533) among the 1,069 live early closure fees on a text that names an IRA. The switch
+  159259, 159533) among the 1,069 live early closure fees on a text that names an IRA. After the review of
+  #2973 tightened the IRA section (it ends on a row titled by another account kind and at the first general
+  service row; only the IRA's column of a two-title line), the wire module rule (a price for the module itself)
+  and the waiver rule (advice naming one fee's service is that fee), the same 12 still match: each rule only
+  narrowed, and each of the 12 was re-checked with the new rule. 63736's "IRA Share Savings Account Fees" title
+  shares its line with the right column's wire row; its "Account Closure Fee | $25.00" is the left column's IRA
+  row, the last before the page's footer. The switch
   (`SECTION_MISREAD_TAKEDOWN_LIVE`, code, off) waits for James's yes; on, a match goes through the 12-hour second
   look (`darwin.section_misread`) and is archived with its reason (verified row rejected with the reason's flag);
   the bank's next read files the row by Knox v177. Step detail `section_misread_check`. Golden-set replay: the

@@ -23,6 +23,16 @@ import { HEADING_SENTENCE_END, loanSectionRow } from "./loan-section-fee";
  * no other account ("Share Fees (Savings/Checking/IRAs)") and leaves none out ("(except IRA accounts)"). At most
  * `IRA_SECTION_REACH_LINES` non-empty lines are walked.
  *
+ * The section ends (review of #2973) on a non-row line, on a row whose first cell is another section's title
+ * (`opensOtherSection`: a title ending in fees, charges or services, or naming an account kind, "Checking
+ * Accounts | Early Account Closure | $25.00", "Money Market | ...", "Share Certificates | ...", "Other Fees (All
+ * Accounts) | Stop Payment | $25.00", followed by a label cell), and on the first general service row
+ * (`GENERAL_ROW_WORDS`: a wire, copy, money order, stop payment, check, card or statement row), so a closing
+ * after general rows with no heading between is not the IRA's. Under a title line of two section titles ("IRA
+ * FEES | CHECKING ACCOUNT FEES"), only the IRA's own column of each row is the IRA's: a row is split into its
+ * name-and-price groups and only the group in the IRA's column counts; a row with another number of groups
+ * counts for neither.
+ *
  * Only an early_closure read is judged, and every line that prints its name at its price (at least one) must
  * sit in an IRA section.
  */
@@ -39,6 +49,13 @@ const IRA_END_RE = / (?:fees|charges|services|accounts?|iras?|plans?) $/;
 const PRICED_TITLE_END_RE = / (?:fees|charges|services) $/;
 /** Another section's title in a row's first cell ("Account Fees | Outgoing Wire Foreign (USD) - per wire | $50.00"). */
 const OTHER_TITLE_END_RE = / (?:fees|charges|services) $/;
+/** A first cell that names an account kind ("Checking Accounts", "Money Market", "Share Certificates", "Other Fees
+ * (All Accounts)") is another section's title when a label cell follows it. */
+export const ACCOUNT_KIND_WORDS = " (?:checking|savings|money market|certificates?|cds?|shares?|share drafts?|accounts|deposits) ";
+const ACCOUNT_KIND_RE = new RegExp(ACCOUNT_KIND_WORDS);
+/** A general service row ends the IRA's block of rows ("Wire Transfer - Outgoing | $25.00", "Copies | $2.00"). */
+export const GENERAL_ROW_WORDS = " (?:wires?|copy|copies|photocop[a-z]*|money orders?|stop payments?|cashier s|cashiers|official checks?|checks?|check cashing|overdrafts?|nsf|non sufficient|insufficient|returned|atm|debit|cards?|research|garnishments?|levy|levies|legal|dormant|inactive|inactivity|notary|safe deposit|coin|fax|statements?|bill pay|ach|courtesy pay|gift|travelers?|chargebacks?) ";
+const GENERAL_ROW_RE = new RegExp(GENERAL_ROW_WORDS);
 const ROW_PRICE_RE = new RegExp(SECTION_ROW_PRICE);
 const HEADER_ROW_RE = new RegExp(SECTION_HEADER_ROW);
 const PRICE_WORD_RE = /^\s*(?:no charge|free|none|varies|n\/a|not applicable)\b/i;
@@ -62,30 +79,79 @@ function opensIraSection(line: string): boolean {
   return iraSectionTitle(line.split("|")[0], ROW_PRICE_RE.test(line));
 }
 
+/** A cell priced or valued by a price word ("$25.00", "FREE"). */
+function priceCell(cell: string): boolean {
+  return ROW_PRICE_RE.test(cell) || PRICE_WORD_RE.test(cell);
+}
+
+/** Another section's title as a row's first cell (see the module note); no IRA, no price, at most seven words. */
+function otherSectionTitle(cell: string): boolean {
+  const words = sectionWords(cell);
+  if (!cell.trim() || ROW_PRICE_RE.test(cell) || IRA_WORDS_RE.test(words)) return false;
+  if (words.trim().split(" ").length > IRA_HEADING_MAX_WORDS) return false;
+  return OTHER_TITLE_END_RE.test(words) || ACCOUNT_KIND_RE.test(words);
+}
+
 /**
- * A two-column row whose first cell is another section's title and whose next cell names a fee, not a price
- * ("Account Fees | Outgoing Wire Foreign (USD) - per wire | $50.00"): the left column's section changes there.
+ * A row whose first cell is another section's title and whose next cell names a fee, not a price ("Account Fees |
+ * Outgoing Wire Foreign (USD) - per wire | $50.00", "Checking Accounts | Early Account Closure | $25.00"): the
+ * section changes there.
  */
 function opensOtherSection(line: string): boolean {
   if (!line.includes("|") || HEADER_ROW_RE.test(line.trim().toLowerCase())) return false;
   const [first, second = ""] = line.split("|");
-  if (!first.trim() || ROW_PRICE_RE.test(first) || !OTHER_TITLE_END_RE.test(sectionWords(first))) return false;
-  if (sectionWords(first).trim().split(" ").length > IRA_HEADING_MAX_WORDS) return false;
-  return /[a-z]{3,}/i.test(second) && !ROW_PRICE_RE.test(second) && !PRICE_WORD_RE.test(second);
+  if (!otherSectionTitle(first)) return false;
+  return /[a-z]{3,}/i.test(second) && !priceCell(second);
 }
 
-/** Indexes (into `text.split("\n")`) of the rows printed in an IRA section, the title's own line included. */
-export function iraSectionRows(text: string | null | undefined): Set<number> {
-  const rows = new Set<number>();
+/**
+ * The IRA's column on a title line of section titles only ("IRA FEES | CHECKING ACCOUNT FEES"): its index and
+ * the number of columns; null on any other line.
+ */
+function iraTitleColumn(line: string): { column: number; columns: number } | null {
+  const cells = line.split("|").map((cell) => cell.trim());
+  if (cells.length < 2 || cells.some((cell) => !cell || priceCell(cell))) return null;
+  const column = cells.findIndex((cell) => iraSectionTitle(cell));
+  if (column < 0) return null;
+  return cells.every((cell, index) => index === column || otherSectionTitle(cell)) ? { column, columns: cells.length } : null;
+}
+
+/** A row's name-and-price groups: cells up to and including each run of price cells. */
+function rowGroups(line: string): string[] {
+  const groups: string[][] = [];
+  let current: string[] = [];
+  let priced = false;
+  for (const cell of line.split("|")) {
+    if (priced && !priceCell(cell)) {
+      groups.push(current);
+      current = [];
+      priced = false;
+    }
+    current.push(cell);
+    if (priceCell(cell)) priced = true;
+  }
+  if (current.length > 0) groups.push(current);
+  return groups.map((group) => group.join("|"));
+}
+
+/**
+ * The rows printed in an IRA section, the title's own line included, by index into `text.split("\n")`. The value
+ * is the IRA's own part of the row: the whole line, or, under a title line of two section titles, the row's
+ * group in the IRA's column.
+ */
+export function iraSectionRowParts(text: string | null | undefined): Map<number, string> {
+  const rows = new Map<number, string>();
   if (!text) return rows;
   let inIra = false;
   let since = Number.POSITIVE_INFINITY;
+  let columns: { column: number; columns: number } | null = null;
   for (const [index, line] of text.split("\n").entries()) {
     if (!line.trim()) continue;
     if (opensIraSection(line)) {
       inIra = true;
       since = 0;
-      rows.add(index);
+      columns = iraTitleColumn(line);
+      rows.set(index, line);
       continue;
     }
     since += 1;
@@ -93,9 +159,25 @@ export function iraSectionRows(text: string | null | undefined): Set<number> {
       inIra = false;
       continue;
     }
-    if (inIra && since <= IRA_SECTION_REACH_LINES) rows.add(index);
+    if (!inIra || since > IRA_SECTION_REACH_LINES) continue;
+    let part = line;
+    if (columns) {
+      const groups = rowGroups(line);
+      if (groups.length !== columns.columns) continue;
+      part = groups[columns.column];
+    }
+    if (GENERAL_ROW_RE.test(sectionWords(part.split("|")[0]))) {
+      inIra = false;
+      continue;
+    }
+    rows.set(index, part);
   }
   return rows;
+}
+
+/** Indexes (into `text.split("\n")`) of the rows printed in an IRA section, the title's own line included. */
+export function iraSectionRows(text: string | null | undefined): Set<number> {
+  return new Set(iraSectionRowParts(text).keys());
 }
 
 /**
@@ -111,6 +193,10 @@ export function iraSectionClosingFee(
   if (!text || !feeName || amount == null || !Number.isFinite(amount) || canonicalFeeKey !== IRA_SECTION_SOURCE_KEY) return false;
   const found = pricedNameLines(text, feeName, amount);
   if (found.length === 0) return false;
-  const rows = iraSectionRows(text);
-  return found.every((index) => rows.has(index));
+  const rows = iraSectionRowParts(text);
+  const lines = text.split("\n");
+  return found.every((index) => {
+    const part = rows.get(index);
+    return part != null && (part === lines[index] || pricedNameLines(part, feeName, amount).length > 0);
+  });
 }

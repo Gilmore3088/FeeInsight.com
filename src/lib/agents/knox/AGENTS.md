@@ -2740,7 +2740,13 @@ sets no frequency (`withoutTrailingProse`); a product card's marketing label ("B
 longer ends the product lookback, and the last entry of a product tab list is no account (`inProductTabList`,
 lineup.ts). (6) Found by the golden-set gate: a sentence stating the minimum balance ("Minimum balance is
 $500.00") gives no price unless its clause names a charge (`minimumBalanceStated`; "Penalty for falling below the
-minimum balance is $8.00", live 137774, still read). Left: business-section rows with unknown audience (audience lessons, `KNOX_AUDIENCE_LESSONS_LIVE`),
+minimum balance is $8.00", live 137774, still read). (7) Review of #2973: the IRA section ends on a row titled by
+another account kind ("Checking Accounts | Early Account Closure | $25.00", "Other Fees (All Accounts) | ...") and
+at the first general service row (wire, copy, money order, stop payment), and under a title line of two section
+titles only the IRA's column counts; advice naming one fee's service is that fee ("Use Non-Network ATM | $2.50");
+only a price for the wire module itself is held ("base module", "(per month)", a module fee, "International Wire
+Module"), not a wire priced for a package's customers; a tab entry printed right above the fee keeps its product;
+and only a next column's continued sentence (lower case) loses the frequency. Left: business-section rows with unknown audience (audience lessons, `KNOX_AUDIENCE_LESSONS_LIVE`),
 First-Citizens' QuickBooks/Quicken bundles and ACH modules, its held $45 USD wire origination ("origination"
 as outgoing would publish a golden-set known-wrong cash management wire), and Crosbyton's minimum-or-percent rate with a cap
 (not read). Live (SELECT, Nov 3): Darwin's section misread re-check (`darwin.section_misread`, switch off) reports

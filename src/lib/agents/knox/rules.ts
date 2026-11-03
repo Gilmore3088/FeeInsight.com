@@ -1725,18 +1725,29 @@ export function loanSectionFeeRead(candidate: ExtractedFeeCandidate, text: strin
  * v177 (backlog dry run 8, First-Citizens Bank text 40703, line 718): a wire service's monthly module or package
  * ("Domestic wire transfer base module (per month)D | $20.00", "International Wire Module | $20.00 | Per Month",
  * "Premium Package (per month) (includes ACH & Domestic Wire access)") is a subscription to send wires, not the
- * price of a wire; no type of the 50 holds it. A wire sent through a module ("Outgoing Online Module Wire
- * Transfer", "Outgoing Domestic Wire through Wire Module", "Non-Module Wire Transfer") is a wire's price.
+ * price of a wire; no type of the 50 holds it. Only a price for the module itself is held (review of #2973): a
+ * base module, a module, package or subscription priced per month or monthly, a package or module fee, or a
+ * name whose head is the module ("International Wire Module", "Wire Transfer Package"). A wire's price that
+ * names the module its sender has is a wire's price: "Outgoing Domestic Wire - Premium Package customers",
+ * "Outgoing domestic wire, Business Package", "Outgoing international wire – Treasury Module", "Domestic Wire
+ * Out (subscription required)", "Outgoing Domestic Wire through Wire Module", "Outgoing Online Module Wire
+ * Transfer", "Non-Module Wire Transfer".
  */
 const WIRE_SUBSCRIPTION = /\b(?:module|package|subscription)\b/gi;
+const SUBSCRIPTION_PRICE_AFTER = /^\W*(?:fees?\b|\(?\s*(?:per\s+month|monthly|month(?:ly)?\s+fee|\/\s*mo(?:nth)?\b))/i;
+const SUBSCRIPTION_PRICE_BEFORE = /\b(?:base|monthly)\s+(?:wire\s+(?:transfer\s+)?)?$/i;
+const MODULE_IS_HEAD = /\b(?:wires?|wire\s+transfers?|transfers?)\s+$/i;
 export function wireServiceSubscription(name: string): boolean {
   for (const match of name.matchAll(WIRE_SUBSCRIPTION)) {
     const at = match.index ?? 0;
     const before = name.slice(Math.max(0, at - 24), at);
     if (/\b(?:through|via|using|by|with|online|non)\W*(?:\w+\W+)?$/i.test(before) || /non-$/i.test(before)) continue;
-    const after = name.slice(at + match[0].length).replace(/\([^()]*\)/g, " ");
+    const rest = name.slice(at + match[0].length);
+    const after = rest.replace(/\([^()]*\)/g, " ");
     if (/\b(?:wires?|transfers?)\b/i.test(after)) continue;
-    return true;
+    if (SUBSCRIPTION_PRICE_AFTER.test(rest) || SUBSCRIPTION_PRICE_BEFORE.test(before)) return true;
+    // The module is the name's head ("International Wire Module", "Wire Transfer Package (per month)").
+    if (MODULE_IS_HEAD.test(before) && /^\W*(?:\([^()]*\)\W*)*[A-Z]?$/.test(rest.trim())) return true;
   }
   return false;
 }
@@ -3076,8 +3087,14 @@ export function laterPriceOwnWords(words: string): string {
  */
 const WAIVER_ADVICE_OPEN = /^\W*(?:use|enroll\s+in|sign\s+up\s+for|switch\s+to|maintain|keep)\s+(?!of\b|at\b|our\s+money|an?\s+(?:non|foreign|out|other))/i;
 const NAMES_A_CHARGE = /\b(?:fees?|charges?|cost|request|for\s+an?|per)\b|\$/i;
+/** Advice that offers a choice of ways ("Use Online BillPay, HonorPay or Account-To-Account Transfers"). */
+const ADVICE_CHOICES = /,|\b(?:or|and)\b/i;
 export function waiverAdviceName(name: string): boolean {
-  return WAIVER_ADVICE_OPEN.test(name) && !NAMES_A_CHARGE.test(name);
+  if (!WAIVER_ADVICE_OPEN.test(name) || NAMES_A_CHARGE.test(name)) return false;
+  // Review of #2973: advice naming one fee's service is that fee's name ("Use Non-Network ATM | $2.50" is
+  // atm_non_network, "Switch to paper statements | $5.00" is paper_statement); only advice that names no type,
+  // or offers a choice of ways to avoid a fee, names no fee.
+  return classifyFeeText(name) == null || ADVICE_CHOICES.test(name);
 }
 /**
  * v177: a name composed from a waiver column's advice and the item after it ("Use Online BillPay, HonorPay or
@@ -3096,16 +3113,20 @@ export function waiverAdvicePrefix(name: string): { advice: string; item: string
  * ("Real Estate Reconveyance (up to...) $ 300 $ 300 | due date each month. We will be charging interest on cash
  * advances and") sets no unit for the fee: "each month" there is a card's payment due date, not a monthly
  * reconveyance. Each cell after the last price that reads as a sentence (six words or more, with a sentence
- * word) is left out of the frequency text; a unit cell ("| per month", "| Monthly") stays.
+ * word) and carries on another column's sentence (opens in lower case) is left out of the frequency text; a
+ * unit cell ("| per month", "| Monthly") and the fee's own terms ("| You will be charged each month") stay.
  */
 const TRAILING_PROSE_WORDS = /\b(?:we|you|your|will|is|are|our|if|when|may|must)\b/i;
+/** Review of #2973: only a cell that carries on another column's sentence (it opens in lower case) is the next
+ * column's; "You will be charged each month ..." and "Charged monthly if ..." are the fee's own terms. */
+const CONTINUED_SENTENCE = /^[a-z]/;
 function withoutTrailingProse(segment: string, amounts: readonly AmountMatch[]): string {
   const last = amounts[amounts.length - 1];
   if (!last || !segment.includes(CELL_SEPARATOR)) return segment;
   const cut = segment.indexOf(CELL_SEPARATOR, last.end);
   if (cut < 0) return segment;
   const tail = segment.slice(cut).split(CELL_SEPARATOR).map((cell) => cell.trim()).filter(Boolean);
-  const prose = tail.length > 0 && tail.every((cell) => cell.split(/\s+/).length >= 6 && TRAILING_PROSE_WORDS.test(cell));
+  const prose = tail.length > 0 && tail.every((cell) => CONTINUED_SENTENCE.test(cell) && cell.split(/\s+/).length >= 6 && TRAILING_PROSE_WORDS.test(cell));
   return prose ? segment.slice(0, cut) : segment;
 }
 

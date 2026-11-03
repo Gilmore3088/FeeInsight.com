@@ -95,6 +95,30 @@ doubtful; no correct live fee was lost or replaced.
 - Across rb to rb8, the harness rows (new publish reads and reads matching a live fee) go from 5,273 to 5,263
   (new publish reads 1,041 to 1,035), and the live fees not reproduced stay 313. No right read is lost.
 
+**Review of #2973 (fixed in the same PR):**
+
+- The IRA section reached past its end: it ended only on a first cell ending in fees, charges or services and
+  kept 20 lines. It now ends on a row whose first cell names another account kind ("Checking Accounts | Early
+  Account Closure | $25.00", "Money Market | ...", "Share Certificates | ...", "CERTIFICATE ACCOUNTS | ...", "Other
+  Fees (All Accounts) | Stop Payment | $25.00") and at the first general service row (wire, copies, money order,
+  stop payment); under a title line of two section titles ("IRA FEES | CHECKING ACCOUNT FEES") only the IRA's
+  column of each row counts. A name printed in both an IRA row and a certificate row stays early_closure.
+- The waiver hold took "Use Non-Network ATM | $2.50" and "Switch to paper statements | $5.00": advice that names
+  one fee's type is that fee; only advice naming no type, or offering a choice of ways, is held.
+- The wire hold took per-wire prices ("Outgoing domestic wire, Business Package", "Outgoing international wire –
+  Treasury Module", "Domestic Wire Out (subscription required)"): only a price for the module itself (a base
+  module, priced per month, a module or package fee, or a name whose head is the module) is held. Darwin uses the
+  same function.
+- A tab entry printed right above the fee ("... / Premier Checking" / "Monthly Service Charge $10") keeps its
+  product.
+- Trailing prose erased the fee's own terms ("| You will be charged each month ...", "| Charged monthly if ...");
+  only a cell that carries on another column's sentence (opens in lower case) is left out. The harness showed
+  v177 had also erased two right frequencies (rb3 40221 NSF per item, rb6 4106 ATM per transaction); both are back.
+- Re-run: harness rows across rb to rb8 unchanged (5,263); the only frequency change from v176 is Mattel's
+  reconveyance. Live: the same 12 fees match (each rule only narrowed; each of the 12 re-checked with the new
+  rule). 63736 stays: its "IRA Share Savings Account Fees" title shares a line with the right column's wire row,
+  and "Account Closure Fee | $25.00" is the left column's IRA row, the last before the page's footer.
+
 **Left for the Knox tracker:**
 
 - The business-section audience rows: a section heading's audience is the audience lessons' work

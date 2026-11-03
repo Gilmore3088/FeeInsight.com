@@ -231,3 +231,62 @@ describe("a sentence stating the minimum balance gives no price (golden-set case
     expect(extractFromSegment("Penalty for falling below the minimum balance is $8.00").candidates[0]).toMatchObject({ amount: 8, canonicalHint: "minimum_balance" });
   });
 });
+
+/** Review of #2973: the IRA section ends where the page leaves it, and the other rules keep the fees main read. */
+describe("review of #2973", () => {
+  const ira = (text: string, name: string, amount: number) => iraSectionClosingFee(text, name, amount, "early_closure");
+
+  it("ends the IRA section on a row titled by another account kind", () => {
+    expect(ira("IRA Fees\nAnnual Fee | $10.00\nChecking Accounts | Early Account Closure | $25.00", "Early Account Closure", 25)).toBe(false);
+    expect(ira("IRA Fees\nAnnual Fee | $10.00\nMoney Market | Early Account Closure (within 90 days) | $25.00", "Early Account Closure (within 90 days)", 25)).toBe(false);
+    expect(ira("IRA Fees\nAnnual Fee | $10.00\nShare Certificates | Early Closure Fee | $25.00", "Early Closure Fee", 25)).toBe(false);
+    expect(ira("IRA Fees\nAnnual Fee | $15.00\nOther Fees (All Accounts) | Stop Payment | $25.00\nAccount Closure | $10.00", "Account Closure", 10)).toBe(false);
+    // The certificate's row is not the IRA's, so the name is not printed only in the IRA section.
+    expect(ira("IRA FEES | Annual Maintenance Fee | $12.00\nEarly Closure Fee | $25.00\nCERTIFICATE ACCOUNTS | Early Closure Fee | $25.00", "Early Closure Fee", 25)).toBe(false);
+  });
+
+  it("takes only the IRA's own column under a title line of two sections", () => {
+    expect(ira("IRA FEES | CHECKING ACCOUNT FEES\nAnnual Fee | $10.00 | Early Account Closure | $25.00", "Early Account Closure", 25)).toBe(false);
+    expect(ira("IRA FEES | CHECKING ACCOUNT FEES\nEarly IRA Closure | $25.00 | Overdraft | $30.00", "Early IRA Closure", 25)).toBe(true);
+  });
+
+  it("ends the IRA's block at the first general service row", () => {
+    const general = ["IRA Fees", "Annual Fee | $15.00", "Wire Transfer - Outgoing | $25.00", "Copies | $2.00", "Money Order | $5.00", "Stop Payment | $30.00", "Wire Transfer - Incoming | $10.00", "Account Closed within 90 Days | $25.00"].join("\n");
+    expect(ira(general, "Account Closed within 90 Days", 25)).toBe(false);
+  });
+
+  it("keeps a left column's IRA section under a title line that carries the right column's row (live 63736)", () => {
+    const text = ["Bright Start Savings Account Fees | Stop Payment Fee (credit union items) | $25.00 ea", "IRA Share Savings Account Fees | Wire-Outgoing International | $40.00 ea", "Minimum Balance (under $500) | $5.00/Qtr", "Account Closure Fee | $25.00", "Revised: 09/17/2021 | Effective Date: 01/01/2022"].join("\n");
+    expect(ira(text, "Account Closure Fee", 25)).toBe(true);
+  });
+
+  it("reads advice that names one fee's service as that fee", () => {
+    expect(waiverAdviceName("Use Non-Network ATM")).toBe(false);
+    expect(waiverAdviceName("Switch to paper statements")).toBe(false);
+    expect(waiverAdviceName("Use Online BillPay, HonorPay or Account-To-Account Transfers")).toBe(true);
+    const found = reads("Fees\nATM Fees | $1.00 | Use Non-Network ATM | $2.50\nStatement Fee | $1.00 | Switch to paper statements | $5.00");
+    expect(found).toContainEqual(["Use Non-Network ATM", 2.5, "atm_non_network"]);
+    expect(found).toContainEqual(["Switch to paper statements", 5, "paper_statement"]);
+  });
+
+  it("holds only a price for the wire module itself", () => {
+    for (const name of ["Outgoing Domestic Wire - Premium Package customers", "Outgoing domestic wire, Business Package", "Outgoing international wire – Treasury Module", "Domestic Wire Out (subscription required)"]) {
+      expect(wireServiceSubscription(name)).toBe(false);
+    }
+    for (const name of ["Domestic wire transfer base module (per month)D", "International Wire Module", "Premium Package (per month) (includes ACH & Domestic Wire access)"]) {
+      expect(wireServiceSubscription(name)).toBe(true);
+    }
+    expect(reads("Wire Transfers\nOutgoing domestic wire, Business Package | $20.00\nDomestic Wire Out (subscription required) | $25.00 per wire")
+      .map(([, amount, key]) => [amount, key])).toEqual(expect.arrayContaining([[20, expect.stringMatching(/^wire_/)], [25, expect.stringMatching(/^wire_/)]]));
+  });
+
+  it("keeps a tab entry printed right above the fee as its product", () => {
+    const tabs = ["Student Checking", "Senior Checking", "Health Savings Account", "Premier Checking", "Monthly Service Charge $10"].join("\n");
+    expect(product(tabs, "Monthly Service Charge $10", 10)).toBe("Premier Checking");
+  });
+
+  it("keeps the fee's own terms after its price as its frequency", () => {
+    expect(extractFromSegment("Paper Statement Fee | $3.00 | You will be charged each month that a paper statement is mailed").candidates[0]).toMatchObject({ frequency: "monthly" });
+    expect(extractFromSegment("Dormant Account | $5.00 | Charged monthly if there is no activity for twelve months").candidates[0]).toMatchObject({ frequency: "monthly" });
+  });
+});

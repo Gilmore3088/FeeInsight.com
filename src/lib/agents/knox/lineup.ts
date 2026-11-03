@@ -407,8 +407,10 @@ function accountBlock(text: string, excerpt: string): AccountBlock | null {
     if (MARKETING_LABEL.test(line)) continue;
     // v177 (backlog dry run 8, Elkhorn Valley Bank text 21910): a product in a tab list ("PERSONAL SAVINGS
     // ACCOUNT" / "MONEY MARKET" / ... / "HSA" / "IRA") is a menu entry, not the fee's account: the fee
-    // under the list is the page's selected product, which the list does not say.
-    if (inProductTabList(lines, index)) {
+    // under the list is the page's selected product, which the list does not say. A tab entry printed right
+    // above the fee's own line ("Student Checking" / ... / "Premier Checking" / "Monthly Service Charge $10",
+    // review of #2973) is the nearest heading and still owns the fee.
+    if (index < at - 1 && inProductTabList(lines, index)) {
       accountStopped = true;
       break;
     }

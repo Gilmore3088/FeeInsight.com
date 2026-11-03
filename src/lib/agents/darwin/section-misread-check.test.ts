@@ -69,6 +69,16 @@ describe("Darwin's section misread re-check (Knox v177)", () => {
     expect(found.matches[1].reason).toBe('waiver_column_name: "Verification of Deposits is account_verification, not bill_pay"');
   });
 
+  it("keeps a wire's price that names its sender's package or module, and a single service's advice (review of #2973)", () => {
+    const kept = [
+      row(1, 1, "wire_domestic_outgoing", "Outgoing domestic wire, Business Package", 20),
+      row(2, 1, "wire_intl_outgoing", "Outgoing international wire – Treasury Module", 45),
+      row(3, 1, "atm_non_network", "Use Non-Network ATM", 2.5),
+      row(4, 1, "paper_statement", "Switch to paper statements", 5),
+    ];
+    expect(findSectionMisreads(kept, TEXTS).matches).toEqual([]);
+  });
+
   it("selects the rows by Postgres pre-filters wide enough for each rule", () => {
     expect(new RegExp(WAIVER_ADVICE_NAME_SQL, "i").test(ROWS[0].fee_name ?? "")).toBe(true);
     expect(new RegExp(FRONT_MATTER_NAME_SQL, "i").test(ROWS[3].fee_name ?? "")).toBe(true);
