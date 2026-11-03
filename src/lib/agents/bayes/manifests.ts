@@ -819,6 +819,13 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
     // (`zeroPrintedForRead`). Harnesses rb..rb10 (v178 at 6afdb47e983 vs v179): live fees not reproduced 382 to 381;
     // rb10's four wrong rows fixed; rb, rb3, rb6 and rb9 change products only. Darwin's section misread re-check v3
     // reports 4 more live fees (switch off); source check v31 takes down none. No replay. Floor stays v97.
+    // v180 (eleventh re-read backlog dry run, Nov 3): "additional withdrawals ... over N per month" is the excess
+    // withdrawal charge; each priced cell of an account table's monthly fee row is its own column's value (the
+    // header walk passes a one-cell caption, `accountRowRivalRead`); a free row with its condition on the next line
+    // beside a priced twin is no $0 (`conditionalFreeRow`). Harnesses rb..rb11 (v179 at de8cf5a68c4 vs v180): live
+    // fees not reproduced 408 to 408; rb11's three wrong reads and People's FCU's doubtful $0 fixed; rb5 renames one
+    // confirmed fee only. The new excess withdrawal wording matches no live fee name (Nov 3, SELECT), so nothing
+    // re-files. No replay. Floor stays v97.
     {
       key: "knox.rules",
       owner: "knox",

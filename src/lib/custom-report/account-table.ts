@@ -26,6 +26,8 @@ import { withAccountName } from "@/lib/fee-account-heading";
 const SEPARATOR = " | ";
 /** How far above the fee row its header row may sit. */
 const HEADER_REACH = 15;
+/** A short caption row inside a table: up to five words, no figure, no sentence end. */
+const TABLE_CAPTION = /^(?!.*[$\d.:;!?]\s*$)(?!.*\$)(?:[^\s|]+\s+){0,4}[^\s|]+$/;
 
 /** The fee row's own label: the account's monthly fee and nothing else. */
 export const ACCOUNT_FEE_ROW_LABEL =
@@ -256,6 +258,11 @@ function headerFor(lines: string[], index: number, width: number): Array<string 
       run.push(above);
       continue;
     }
+    // v180 (Knox backlog dry run 11): a one-cell caption printed between a table's rows ("Visa® Debit
+    // Cards", "Free E-Statements" in Community First National Bank's checking comparison) is a
+    // section label inside the table, not its top: the run goes on above it. A caption that states a
+    // price, or reads as a sentence, still ends the run.
+    if (length === 1 && TABLE_CAPTION.test(cells[0])) continue;
     if (length === width - 1) run.push(above);
     break;
   }
@@ -318,4 +325,18 @@ export function accountTableProduct(text: string, excerpt: string, amount: numbe
       .map((cell) => cell.product),
   );
   return products.size === 1 ? [...products][0] : null;
+}
+
+/**
+ * v180 (Knox backlog dry run 11): the cells of an account table's monthly fee row that print this
+ * price, each with the fee the cell itself states (`accountCellPrice`; null when it states another
+ * fee or no single figure). Pure. Community First National Bank's "Monthly Service Fees | None | $5
+ * per paper statement if not enrolled ... | $6 if $300 minimum balance ... is not maintained | $10
+ * ..." prints $5 only in a paper statement cell (no monthly fee) and $6 as the third column's fee.
+ */
+export function accountRowCellsPricing(row: string, amount: number): Array<number | null> {
+  const cents = Math.round(amount * 100);
+  return cellsOf(squash(row)).slice(1)
+    .filter((cell) => [...cell.matchAll(CELL_PRICE)].some((match) => Math.round(Number(`${match[1].replace(/,/g, "")}${match[2] ?? ""}`) * 100) === cents))
+    .map((cell) => accountCellPrice(cell));
 }

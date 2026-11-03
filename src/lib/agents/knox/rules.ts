@@ -257,9 +257,12 @@ export const FOLDED_PATTERNS: FeePattern[] = [
     pattern: /^(?![\s\S]*\btransfers?\b)[\s\S]*\bfax(?:es|ing)?\b/i,
   },
   {
+    // v180 (backlog dry run 11): "Additional withdrawals (per withdrawal over 3 per month) ... $10" under a
+    // savings or money market withdrawal heading is the excess withdrawal charge, not an ATM fee
+    // (Advancial FCU's money market column). Not when the line names an ATM or a network.
     key: researchSplitTarget("excess_withdrawal"),
     pattern:
-      /\bexcess(?:ive)? (?:withdrawals?|transactions?|activity|debits?|transfers?)\b|\bwithdrawal limit fee\b|\b(?:withdrawals?|transactions?) in excess of\b/i,
+      /\bexcess(?:ive)? (?:withdrawals?|transactions?|activity|debits?|transfers?)\b|\bwithdrawal limit fee\b|\b(?:withdrawals?|transactions?) in excess of\b|^(?![\s\S]*\b(?:atms?|non[- ]?network|foreign)\b)[\s\S]*\b(?:additional|extra) (?:withdrawals?|transfers?|debits?)\b[^|$]{0,40}?\bover (?:\d+|one|two|three|four|five|six)\b/i,
   },
   {
     // Collection items got their own type on Oct 8 (James, "Own type"); v26 filed them under

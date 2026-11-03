@@ -1464,4 +1464,14 @@ export const KNOX_LESSONS: AgentLesson[] = [
     appliesTo: ["extract"],
     since: "2026-11-03",
   },
+  {
+    id: "backlog-dry-run-11-2026-11-03-each-cell-is-its-own-column",
+    agent: "knox",
+    stage: "extract",
+    lesson: "Read each cell of a row as its own column's value. On a comparison table's monthly fee row, the price in a column is that column's account's monthly fee under the row's label; it never takes the name of the cell before it, and a cell that states another fee (\"$5 per paper statement if not enrolled in eStatements\") is that fee, not the row's label at its price. A caption printed inside the table (\"Free E-Statements\") is not the table's top, so keep looking up for the header. On a two-column page, a cell in the right column is named by its own words (\"Additional withdrawals (per withdrawal over 3 per month)\" is the excess withdrawal charge), never joined to the left column's heading and cell. A free row whose condition is printed on the next line (\"when opting for E-Statements\") beside a priced row of the same fee is the fee waived on a condition, not a free fee. Before keeping a read, check that the name, the price and the account all come from the same cell or column.",
+    why: "The eleventh dry run for KNOX_REREAD_BACKLOG_LIVE (40 backlog texts, Nov 3, Knox v179) found 4 wrong and 9 doubtful reads of 67 changed rows: Advancial's money market \"Additional withdrawals\" $10 filed as an ATM fee named after the left column's \"In-person\" cell, Community First National Bank's checking comparison row filed its $6 column as a paper statement named by the cell before it and put \"Monthly Service Fees\" on the $5 paper statement cell, and The People's FCU's conditional free Bill Payer read as a $0 beside its $4.95. Knox v180 reads each right with no right read lost across rb to rb11; the new excess withdrawal wording matches no live fee name, so nothing live moves. The fourth row, a free Zelle line filed under bill_pay, is the 50-type taxonomy's \"Bill Pay & Zelle\" and stays.",
+    evidence: { issues: [1026], prs: [], files: ["src/lib/agents/knox/rules.ts", "src/lib/agents/knox/account-table.ts", "src/lib/custom-report/account-table.ts", "src/lib/agents/knox/families.ts", "src/lib/agents/knox/specialists.ts", "src/lib/agents/knox/backlog-dry-run-11.test.ts", "docs/project/findings/2026-11-03-knox-backlog-dry-run-11-reads.md"] },
+    appliesTo: ["extract"],
+    since: "2026-11-03",
+  },
 ];
