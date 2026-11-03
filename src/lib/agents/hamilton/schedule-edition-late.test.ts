@@ -161,6 +161,75 @@ describe("an edition line past the menu (lateEdition)", () => {
   });
 });
 
+// GTE FCU's "Member Schedule of Current Charges" (doc 42265, text 40659, crawled Nov 3), cut to the
+// lines that matter: its 2027 prices, its last footnote line, its closing edition line and its address.
+const GTE = [
+  "Member Schedule of Current Charges",
+  "Checking account charges: | Fee | Card services: | Fee",
+  "Go Further Checking1,8 | $9.95 | Card Replacement2 | $10.00",
+  "NSF (Courtesy Pay)2,10 | $37.00 | Mortgage Loan Modification | $75.00",
+  "Overdraft Transfer2,10 | $8.00 | General charges:",
+  "Account Research per hour2 | $30.00",
+  "Stop Payment2 | $37.00 | 2,12",
+  "Mailed Statements1,15 | $9.00",
+  "Verification of Deposit2 | $25.00",
+  "All charges are in US dollars. Fees are subject to change. 1. Per month. 2. Per occurrence and/or item and/or account, and includes resubmitted occurrences/",
+  "New due date must remain within the same calendar month as the current, maximum of 2 changes per life of the loan. Personal Line of Credit and Credit",
+  "Cards are not eligible. 19. Loan must be with GTE Financial for at least 6 months. 20. Includes deposit accounts, loan accounts, and credit card accounts. |",
+  "Effective Date 01/05/2027.",
+  "711 E. Henderson Ave., Tampa, FL 33602 | 813.871.2690 | gtefinancial.org",
+  "P.O. Box 172599, Tampa, FL 33672-0599 | 888.871.2690 | INSURED BY NCUA. | 1126",
+].join("\n");
+
+// Solon/Chagrin Falls FCU's "Fee-Schedule-December-1-2026.pdf" (doc 16774) ends under a priced row.
+const SOLON =
+  "Solon/Chagrin Falls Federal Credit Union\nFees and Charges Schedule\nCredit Union Membership\n" +
+  "o Membership Share: ……………………………..………. (par value) $5.00\n".repeat(4) +
+  "Other Service Fees\no Stop Payment order ….…………………………………..……….…..$12.00\n" +
+  "GAP Insurance\no GAP Insurance – new & used vehicles ……………………….………$399.00\n" +
+  "CARFAX Reports ………………………………………………………….……. $24.99\nEffective December 1, 2026";
+
+describe("a schedule's closing edition line (GTE FCU, doc 42265)", () => {
+  it("reads an edition-only line that closes the schedule under its last footnote", () => {
+    expect(GTE.length).toBeGreaterThan(EDITION_HEAD_CHARS);
+    expect(lateEdition(GTE)).toBe("2027-01-05");
+    expect(notYetEffective(GTE, "2026-11-03")).toBe("2027-01-05");
+    expect(notYetEffective(GTE, "2027-01-05")).toBeNull();
+    // Under the last priced row too (Solon, doc 16774, effective December 1, 2026).
+    expect(SOLON.length).toBeGreaterThan(EDITION_HEAD_CHARS);
+    expect(notYetEffective(SOLON, "2026-11-03")).toBe("2026-12-01");
+  });
+
+  it("takes the usual edition-line spellings, and only those", () => {
+    for (const line of ["Effective Date: January 5, 2027", "| Effective 1/5/2027 *", "EFFECTIVE AS OF 2027-01-05", "Effective on 5 January 2027."]) {
+      expect(lateEdition(GTE.replace("Effective Date 01/05/2027.", line))).toBe("2027-01-05");
+    }
+    for (const line of [
+      "Effective 1/5/2027 for accounts opened after that date.",
+      "Fees subject to change. Effective 1/5/2027",
+      "Rates effective 1/5/2027",
+      "Effective annual rate 1.50%",
+      "Effective Date 01/05/2027 | Rev 2",
+    ]) {
+      expect(lateEdition(GTE.replace("Effective Date 01/05/2027.", line))).toBeNull();
+    }
+  });
+
+  it("is no closing line when a price follows it, a short heading sits above it, or the text runs past the window", () => {
+    // Priced lines after it: it dates what follows, and only a schedule title above makes it the edition.
+    expect(lateEdition(GTE.replace("711 E. Henderson Ave.", "Stop Payment | $37.00\n711 E. Henderson Ave."))).toBeNull();
+    // Under a short heading it is that section's date.
+    expect(lateEdition(`${MENU}NSF | $30\n\nOverdraft Fees\nEffective January 1, 2027`)).toBeNull();
+    expect(lateEdition(`${MENU}NSF | $30\n\nMonthly Service Charge\n\nEffective January 1, 2027\n\nCall us at 800.555.0100`)).toBeNull();
+    // A text the window does not hold to its end may print prices after the line.
+    expect(lateEdition(`${MENU}${"Stop Payment | $30 per item and a long footnote that runs on and on.\n".repeat(110)}Effective January 1, 2027`)).toBeNull();
+    // A page that calls its prices current is current, and a closing line in the past holds nothing.
+    expect(lateEdition(`${GTE}\nCurrent fees remain in effect until January 4, 2027.`)).toBeNull();
+    expect(lateEdition(GTE.replace("01/05/2027", "01/01/2025"))).toBe("2025-01-01");
+    expect(notYetEffective(GTE.replace("01/05/2027", "01/01/2025"), "2026-11-03")).toBeNull();
+  });
+});
+
 describe("the SQL window an edition reader is given (editionWindowSql)", () => {
   it("sends the long window only for an effective date in this year or the next two", () => {
     const sql = editionWindowSql("t.normalized_text", TODAY);

@@ -451,7 +451,8 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   // v1 (#1915): schedule editions not yet in effect. Every verify step reads every live fee on a dated document.
   // v2 (T1): an edition line past a web page's menu, counted only until EDITION_LATE_HEADING_LIVE.
   // v3 (#1945): a later dated edition of the same schedule takes over, read from every text-dated document each step.
-  EDITION_CHECK_VERSION: "Each verify step re-reads every live or held fee on a document whose heading or late edition line states an edition, and every verified row on a document whose text states its date (no cursor); nothing older to replay.",
+  // v5 (Nov 3, backlog dry run 7): a schedule's closing edition line ("Effective Date 01/05/2027." after the footnotes, GTE doc 42265).
+  EDITION_CHECK_VERSION: "Each verify step re-reads every live or held fee on a document whose heading or late edition line states an edition, and every verified row on a document whose text states its date (no cursor); nothing older to replay. v5 (Nov 3): the shared reader also takes a schedule's closing edition line; dry run (SELECT on prod) over 690 short texts with a 2026-2028 effective line past the heading: 2 more documents not yet in effect (GTE 42265 with no rows yet, Solon/Chagrin Falls 16774 with 7 live fees held until 2026-12-01), no new takeover, restore or lost hold. The publish hold (edition-hold.ts) reads the same reader each step, so nothing older to replay.",
   // v1 (#2022): Canadian bank documents. A full verify step re-reads every live document's text at most hourly.
   CANADIAN_DOCUMENT_CHECK_VERSION: "First version: a verify step re-reads every live fee's document text (no cursor, at most hourly); nothing older to replay.",
   // v1 (#1905): a late charge's cap or floor read as the late fee. On (LATE_CHARGE_BOUND_TAKEDOWN_LIVE), sampled clean 5 of 5.

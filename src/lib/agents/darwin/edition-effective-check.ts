@@ -53,8 +53,15 @@ export const EDITION_CHECK = "darwin.edition_effective_check";
  * international schedule with its domestic one (`scheduleMarket`), never a newer edition itself
  * older than `STALE_STATED_MONTHS`, and never a same-named line at another price when the newer copy
  * prints the older price in that category on another row.
+ *
+ * v5 (Nov 3, re-read backlog dry run 7): the shared reader also takes a schedule's closing edition
+ * line (`lateEdition`'s `closingEditionLine`): GTE FCU's new copy (doc 42265) ends "Effective Date
+ * 01/05/2027." under its footnotes, and its 2027 prices would have superseded 16 correct live fees.
+ * Dry run (SELECT on prod, Nov 3): of 690 short stored texts with a 2026-2028 "effective" line past
+ * the heading, 2 more documents read as not yet in effect (GTE 42265, no rows yet; Solon/Chagrin
+ * Falls FCU 16774, 7 live fees held until 2026-12-01); no new takeover or restore, no hold lost.
  */
-export const EDITION_CHECK_VERSION = 4;
+export const EDITION_CHECK_VERSION = 5;
 export const EDITION_CHECK_LIVE = true;
 export const NOT_YET_EFFECTIVE_REASON = "not_yet_effective";
 export const OLDER_EDITION_REASON = "older_edition";

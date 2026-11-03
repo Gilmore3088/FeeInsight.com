@@ -329,6 +329,37 @@ const ENDS_AT_DATE = /^\s*(?:[*†‡]|[.,;)\]]*\s*$)/;
 const CURRENT_PRICES =
   /\bfees?\s*[-–:|]\s*current\b|\bcurrent\s+(?:consumer\s+|business\s+|personal\s+)?(?:fees?|fee schedule|schedule of fees|prices?)\b|\bfees?\s+today\b|\bcurrent schedule\b|\b(?:in effect|effective|appl(?:y|ies)|valid)\s+(?:through|thru|until|now)\b|\bremains?\s+(?:in effect|valid)\b/i;
 const TITLE_MAX_CHARS = 80;
+/**
+ * A line that is nothing but the edition: "Effective Date 01/05/2027.", "Effective: January 5, 2027",
+ * "| Effective as of 1/5/2027 *". No other word before "effective" and nothing after the date but
+ * closing punctuation or a footnote mark, so "effective annual rate", "Fees effective 1/1/2025 for
+ * new accounts" or a fee's own change date are never one.
+ */
+const EDITION_ONLY_LINE = new RegExp(
+  "^[\\s|*]*effective(?:\\s+date)?(?:\\s+(?:as\\s+of|on))?\\s*[-–:]?\\s*(?:" +
+    `${MONTH}\\s+\\d{1,2}(?:st|nd|rd|th)?,?\\s+\\d{4}` +
+    `|\\d{1,2}(?:st|nd|rd|th)?\\s+${MONTH},?\\s+\\d{4}` +
+    "|\\d{4}-\\d{1,2}-\\d{1,2}" +
+    "|\\d{1,2}[/.-]\\d{1,2}[/.-]\\d{2,4}" +
+    ")\\s*[.,;)\\]*†‡]*\\s*$",
+  "i",
+);
+
+/**
+ * A schedule's closing edition line (GTE FCU, doc 42265, Nov 3): an edition-only line
+ * (`EDITION_ONLY_LINE`) after which the text prints no price, in a text that ends inside
+ * `EDITION_SCAN_CHARS` (so the reader sees every line after it, from the SQL window or the full text
+ * alike). GTE's "Member Schedule of Current Charges" ends with its footnotes, "Effective Date
+ * 01/05/2027." and its address: its 2027 prices took 16 correct live fees down by same-page supersede
+ * because the line sat under a long footnote, not a schedule title. An edition-only line under a short
+ * heading is that section's ("Overdraft Fees" / "Effective January 1, 2027") and is not one; one
+ * with priced lines after it dates what follows, which `lateEdition`'s title rule reads.
+ */
+function closingEditionLine(lines: string[], i: number, textLength: number, title: string): boolean {
+  if (textLength >= EDITION_SCAN_CHARS || !EDITION_ONLY_LINE.test(lines[i])) return false;
+  if (title.length > 0 && title.length <= TITLE_MAX_CHARS && !PRICED.test(title)) return false;
+  return !lines.slice(i + 1).some((line) => PRICED.test(line));
+}
 
 /**
  * Pure: the edition a schedule states on its own title or edition line after its first
@@ -352,8 +383,12 @@ export function lateEdition(text: string | null | undefined): string | null {
     let above = i - 1;
     if (above >= 0 && lines[above].trim() === "") above -= 1;
     const title = above >= 0 ? lines[above].trim() : "";
+    // The schedule's closing edition line, under its last footnote or priced row (GTE, doc 42265).
+    // The first line is cut at EDITION_HEAD_CHARS; its whole line is the one above (GTE's footnote).
+    const wholeTitle = above === 0 ? window.slice(window.lastIndexOf("\n", EDITION_HEAD_CHARS - 1) + 1).split("\n")[0].trim() : title;
+    const closing = closingEditionLine(lines, i, text.length, wholeTitle);
     // A notice or announcement title above makes the line part of it ("Notice to Members").
-    if (ANNOUNCES.test(title)) continue;
+    if (!closing && ANNOUNCES.test(title)) continue;
     const shortHeading = title.length > 0 && title.length <= TITLE_MAX_CHARS && !PRICED.test(title);
     const underTitle = shortHeading && WHOLE_SCHEDULE.test(title);
     // Under another heading ("Overdraft Fees", "IRA Fees", "Checking"), "Fees Effective …" dates
@@ -365,7 +400,7 @@ export function lateEdition(text: string | null | undefined): string | null {
       if (ANNOUNCES.test(before)) continue;
       // "Business Fee Schedule - Effective …" names itself; a bare "Fees" or "Service Charges" needs no other heading above it.
       const named = SCHEDULE_NAME_ONLY.test(before) && (/\bfee schedule\b|\bschedule of\b/i.test(before) || !underOtherHeading);
-      if (!named && !(underTitle && before.trim() === "")) continue;
+      if (!named && !(underTitle && before.trim() === "") && !closing) continue;
       const after = line.slice(at + "effective".length);
       // "Effective through December 31, 2026" ends an edition; it does not start one.
       if (/^\s*(?:through|thru|until|till)\b/i.test(after)) continue;
