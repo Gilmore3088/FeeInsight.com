@@ -41,9 +41,12 @@ page-copy collapses, the same-line read (#1876) and Darwin's stale-copy twin che
   ("Checking and Savings Accounts: Paper statement fee $2.00", or a line under "Basic Checking &
   Student Checking"), unless one name is part of the other ("Fresh Start Checking" and "Checking" are
   one name). These two guards came from the independent reviews; neither matches a live pair today.
-  A $0 row counts every $0 price it prints, whatever the word ("| Free | None |", "| 0 | - |"), and
-  the heading checked for both names is the nearest line above with no price that names either one,
-  so "Checking and Savings Account Fees", a long list of account names and a table header row count.
+  A $0 table row with more than one filled value cell prints one price per column, whatever the cells
+  say ("| Free | None |", "| Included | Included |", "| -0- | -0- |"), and stays two rows; a $0 line
+  outside a table counts its zero words and zero figures. The heading checked for both names is the
+  nearest short, priceless label above that names either one (not a sentence or a "Name: description"
+  line), so "Checking and Savings Account Fees", a long list of account names and a table header row
+  count. A heading that names neither product ("All Checking Accounts") does not keep two rows.
   A row with no product never "names both": a line under "Basic Checking & Student Checking" read once
   under no product and once under "Basic Checking" is one fee and keeps "Basic Checking".
 - Whose product stays: a read from an older copy than the live fee never wins. Otherwise the product

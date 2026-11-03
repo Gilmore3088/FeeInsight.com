@@ -164,4 +164,23 @@ describe("one printed line under two products", () => {
     // The nearer heading names one product only: it heads the line.
     expect(namesBothProducts("Basic Checking", "Student Checking", ["Basic Checking & Student Checking", "Student Checking Fees", line].join("\n"), line)).toBe(false);
   });
+
+  it("third review of #2964: a $0 table row with two filled value cells is two prices, whatever the cells say", () => {
+    for (const line of ["| Monthly Fee | -0- | -0- |", "| Monthly Fee | Included | Included |", "| Monthly Fee | No monthly fee | No monthly fee |",
+      "| Monthly Fee | (none) | (none) |", "| Monthly Fee | No Cost | No Cost |", "| | Free | Free |", "Monthly Fee 0 0"]) {
+      expect(pricedOnce(line, 0)).toBe(false);
+    }
+    expect(pricedOnce("Monthly Fee | $0.00", 0)).toBe(true);
+    expect(pricedOnce("| Monthly Fee | None |", 0)).toBe(true);
+    expect(pricedOnce("Monthly Fee $0 on balances over $10,000", 0)).toBe(true);
+    const text = ["| Fee | Basic | Student |", "| Monthly Fee | Included | Included |"].join("\n");
+    expect(readsOneLineTwoProducts(read("Basic Checking", "| Monthly Fee | Included | Included |"), live("Student Checking", "| Monthly Fee | Included | Included |"), text, 0)).toBe(false);
+  });
+
+  it("third review of #2964: a description line under a shared heading does not hide it", () => {
+    const zero = "Monthly Maintenance Fee | None";
+    expect(namesBothProducts("Basic Checking", "Student Checking", ["Basic Checking & Student Checking", "Student Checking is available to customers under 24.", zero].join("\n"), zero)).toBe(true);
+    const five = "Monthly fee | $5.00";
+    expect(namesBothProducts("Basic Checking", "Student Checking", ["Basic Checking & Student Checking", "Basic Checking: no minimum balance", five].join("\n"), five)).toBe(true);
+  });
 });

@@ -85,14 +85,25 @@ export function linePrintCount(text: string, excerpt: string): number {
 const ANY_PRICE = /\$\s*\d|(?<![\d.,$])\d[\d,]*\.\d{2}(?!\d)/;
 
 const ZERO_WORD = /\b(?:free|none|n\/?c|n\/?a|no\s+charge|waived|no\s+fee)\b/gi;
-/** A table cell that prints a $0 price: a zero word, a zero figure or a dash. */
-const ZERO_CELL = /^(?:\$?\s*0(?:\.0{1,2})?(?![\d.,])|[-–—]+$|(?:free|none|n\/?c|n\/?a|no\s+charge|waived|no\s+fee)\b)/i;
 
-/** Pure: how many $0 prices the line prints: zero cells of a table row, else zero words and zero figures. */
+/** Pure: the value cells of a table row (every cell after the label, which may be empty); null for a line with no table cells. */
+function tableValueCells(line: string): string[] | null {
+  if (!line.includes("|")) return null;
+  const cells = line.split("|").map((cell) => cell.trim());
+  if (cells[0] === "" && line.trimStart().startsWith("|")) cells.shift();
+  if (cells.length > 0 && cells[cells.length - 1] === "" && line.trimEnd().endsWith("|")) cells.pop();
+  return cells.slice(1).filter(Boolean);
+}
+
+/**
+ * Pure: how many $0 prices the line prints. A table row counts every filled value cell, whatever it
+ * says ("Included", "-0-", "No monthly fee"): one per account column. Other lines count zero words
+ * and zero figures.
+ */
 export function zeroPriceCount(line: string): number {
-  const cells = line.split("|").map((cell) => cell.trim()).filter(Boolean);
-  if (line.includes("|") && cells.length > 1) return cells.slice(1).filter((cell) => ZERO_CELL.test(cell)).length;
-  return (line.match(ZERO_WORD) ?? []).length + (line.match(/\$\s*0(?:\.0{1,2})?(?![\d.,])/g) ?? []).length;
+  const values = tableValueCells(line);
+  if (values) return values.length;
+  return (line.match(ZERO_WORD) ?? []).length + (line.match(/(?<![\d.,])\$?\s*0(?:\.0{1,2})?(?![\d.,])/g) ?? []).length;
 }
 
 /**
@@ -191,6 +202,13 @@ export function samePageCopy(a: ProductSplitSide, b: ProductSplitSide): boolean 
   return one != null && one === feePageKey(b.document_url ?? b.source_url) && (a.document_stream ?? "") === (b.document_stream ?? "");
 }
 
+/** Pure: a short label, not a sentence or a "Name: description" line ("Basic Checking: no minimum balance"). */
+function headingShaped(line: string): boolean {
+  const plain = line.replace(/^[#*\s]+|[*\s]+$/g, "");
+  if (/[.!?]$/.test(plain) || /:\s*\S/.test(plain)) return false;
+  return lineFold(plain).split(" ").filter(Boolean).length <= 12;
+}
+
 function wordsWithin(inner: string[], outer: string[]): boolean {
   return inner.length > 0 && inner.every((word) => outer.includes(word));
 }
@@ -213,12 +231,12 @@ export function namesBothProducts(one: string | null | undefined, two: string | 
   const lines = text.split(/\r?\n/).filter((each) => each.trim() !== "");
   const at = lines.findIndex((each) => lineFold(each) === lineFold(excerpt));
   if (at < 0) return false;
-  // Looser than an account heading for the winner: any priceless line naming either product, so
+  // Looser than an account heading for the winner: any short priceless label naming either product, so
   // "Checking and Savings Account Fees", a long list of account names and a table header row
   // ("| | Basic Checking | Student Checking |") count. Wrongly keeping two rows is the safe side.
   for (let index = at - 1; index >= Math.max(0, at - PRODUCT_HEADING_WINDOW); index -= 1) {
     const above = lines[index];
-    if (/\$/.test(above) || ANY_PRICE.test(above)) continue;
+    if (/\$/.test(above) || ANY_PRICE.test(above) || !headingShaped(above)) continue;
     if (productPrintedOnLine(one, above) || productPrintedOnLine(two, above)) return both(above);
   }
   return false;
