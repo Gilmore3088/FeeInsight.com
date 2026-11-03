@@ -37,9 +37,14 @@
  * row reading. An amount set midway beside a label that wraps onto two lines
  * joins that label ("Money market excess check | $5.00"). A wide item that crosses a table's
  * edge is its own line and never shares one with a table's cells.
+ *
+ * Sideways pages (`PDF_TEXT_DIRECTION_LIVE`, off; pdf-text-direction.ts): a page whose text is
+ * mostly drawn a quarter turn from upright is read with its items turned back first, so its lines
+ * are read along, not across. Upright pages are untouched either way.
  */
 
 import { CELL_SEPARATOR } from "./html-dom";
+import { pageTextDirection, type QuarterTurn } from "./pdf-text-direction";
 
 /**
  * Recorded on each `read.pdf_layout` attempt (`detail.pdf_layout`). Version 2 reads prose
@@ -527,19 +532,28 @@ export interface PdfPageLayout {
    * which table it belongs to cannot be told from its position.
    */
   ambiguousLines: number;
+  /** The quarter turn most of the page's text is drawn at (0 upright), whether or not it was turned back. */
+  textTurn: QuarterTurn;
+}
+
+export interface PdfLayoutOptions {
+  /** Defaults to `PDF_TEXT_DIRECTION_LIVE`; the shadow lab's source replay sets it to measure the switch. */
+  textDirection?: boolean;
 }
 
 /**
  * Text of one page with one line per baseline. A page in prose columns reads each column
  * top to bottom; a line that crosses the gutters (a title) closes the columns above it.
  */
-export function layoutPageResult(items: PdfTextItem[]): PdfPageLayout {
-  const all = positioned(items);
+export function layoutPageResult(items: PdfTextItem[], options: PdfLayoutOptions = {}): PdfPageLayout {
+  const direction = pageTextDirection(items, options.textDirection);
+  const textTurn = direction.turn;
+  const all = positioned(direction.items);
   const earlierBands = proseColumns(all) ?? leaderListColumns(all);
   const stackedBands = earlierBands ? null : stackedFeeListColumns(all);
   const cells = earlierBands || stackedBands ? null : tableCellColumns(all);
   const bands = earlierBands ?? stackedBands ?? cells?.bands ?? null;
-  if (!bands) return { text: linesText(all).join("\n"), stackedColumns: false, tableColumns: false, ambiguousLines: 0 };
+  if (!bands) return { text: linesText(all).join("\n"), stackedColumns: false, tableColumns: false, ambiguousLines: 0, textTurn };
   const bandLines = cells ? tableCellLines : linesText;
   const out: string[] = [];
   let ambiguousLines = 0;
@@ -567,13 +581,13 @@ export function layoutPageResult(items: PdfTextItem[]): PdfPageLayout {
     out.push(...linesText(line));
   }
   flush();
-  return { text: out.join("\n"), stackedColumns: stackedBands != null, tableColumns: cells != null, ambiguousLines };
+  return { text: out.join("\n"), stackedColumns: stackedBands != null, tableColumns: cells != null, ambiguousLines, textTurn };
 }
 
-export function layoutPageText(items: PdfTextItem[]): string {
-  return layoutPageResult(items).text;
+export function layoutPageText(items: PdfTextItem[], options: PdfLayoutOptions = {}): string {
+  return layoutPageResult(items, options).text;
 }
 
-export function layoutDocumentText(pages: PdfTextItem[][]): string {
-  return pages.map(layoutPageText).join("\n\n");
+export function layoutDocumentText(pages: PdfTextItem[][], options: PdfLayoutOptions = {}): string {
+  return pages.map((items) => layoutPageText(items, options)).join("\n\n");
 }

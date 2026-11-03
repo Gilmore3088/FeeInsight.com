@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { layoutPageResult, type PdfTextItem } from "./pdf-layout";
+import { PDF_TEXT_DIRECTION_LIVE } from "./pdf-text-direction";
 import { compareReadings, streamPageText, type PdfReaderAgreement } from "./pdf-reader-agreement";
 import { textSha256, type StackedGeometryReceipt } from "./pdf-repair-survival";
 import { droppedLigatureEvidence, repairUnmappedGlyphs, restoreDroppedLigatures } from "./glyph-repair";
@@ -14,13 +15,21 @@ export interface PdfTextExtraction {
    * table's edge and was written on its own line (`layoutPageResult`). Bound to the text read.
    */
   tableColumns?: TableColumnsReceipt;
+  /**
+   * Pages whose text is mostly drawn a quarter turn from upright (pdf-text-direction.ts), and
+   * whether they were read turned back (`PDF_TEXT_DIRECTION_LIVE`). Bound to the text read.
+   */
+  textDirection?: TextDirectionReceipt;
 }
 
 export interface TableColumnsReceipt { pages: number[]; ambiguousLines: number; textHash: string }
+export interface TextDirectionReceipt { pages: number[]; turnedUpright: boolean; textHash: string }
 
 /** Rosetta's existing complete-document layout reader, also used for reference checks. */
 export async function extractPdfDocumentText(bytes: Uint8Array, options: {
   signal?: AbortSignal; timeoutMs?: number; maxPages?: number; maxTextChars?: number; maxItems?: number;
+  /** Defaults to `PDF_TEXT_DIRECTION_LIVE`; the shadow lab's source replay sets it to measure the switch. */
+  textDirection?: boolean;
 } = {}): Promise<PdfTextExtraction> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(new Error("PDF text extraction timed out")), options.timeoutMs ?? 20_000);
@@ -59,7 +68,8 @@ export async function extractPdfDocumentText(bytes: Uint8Array, options: {
           }
           pages.push(items);
         }
-        const layouts = pages.map(layoutPageResult);
+        const turnedUpright = options.textDirection ?? PDF_TEXT_DIRECTION_LIVE;
+        const layouts = pages.map((items) => layoutPageResult(items, { textDirection: turnedUpright }));
         // A glyph the PDF's own map leaves unknown is restored where unambiguous (#2598), and a
         // ligature its font drops altogether is restored in known fee words (#1513), in both
         // readings, so the reader-agreement receipt compares like with like.
@@ -76,7 +86,12 @@ export async function extractPdfDocumentText(bytes: Uint8Array, options: {
           ambiguousLines: layouts.reduce((sum, page) => sum + page.ambiguousLines, 0),
           textHash: textSha256(text),
         };
-        return { text, totalPages, pages: pageTexts, readerAgreement, tableColumns, stackedGeometry: {
+        const textDirection = {
+          pages: layouts.flatMap((page, index) => page.textTurn !== 0 ? [index + 1] : []),
+          turnedUpright,
+          textHash: textSha256(text),
+        };
+        return { text, totalPages, pages: pageTexts, readerAgreement, tableColumns, textDirection, stackedGeometry: {
           sourceHash: createHash("sha256").update(bytes).digest("hex"),
           textHash: textSha256(text),
           stackedPages: layouts.flatMap((page, index) => page.stackedColumns ? [index + 1] : []),

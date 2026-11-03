@@ -6,6 +6,7 @@ import { liveAccuracyFrom, type LiveAccuracy } from "./live-accuracy";
 import { addHeldVocabularyDocument, emptyHeldVocabularySummary, replayHeldVocabularyDocument, type HeldVocabularySummary } from "./held-vocabulary";
 import { addSectionPathDocument, emptySectionPathSummary, replaySectionPathDocument, type SectionPathSummary } from "./section-path";
 import { summarizeHtmlExposure, type HtmlRowPairingSummary } from "./html-row-pairing";
+import { summarizePdfExposure, type PdfTextDirectionSummary } from "./pdf-text-direction";
 import { addZeroWaiverRows, emptyZeroWaiverRowSummary, type ZeroWaiverRowSummary } from "./zero-waiver-row";
 import { ZERO_WAIVER_ROW_MAX_ROWS, type ZeroWaiverRowLiveRow } from "@/lib/agents/darwin/zero-waiver-row-check";
 import { serviceMaintenanceSection, type ServiceMaintenanceSection } from "./service-maintenance";
@@ -60,6 +61,7 @@ export interface SwitchDryRunReport {
   };
   zeroWaiverRow: { switch: "ZERO_WAIVER_ROW_TAKEDOWN_LIVE"; issue: number; rowsRead: Bounded; summary: ZeroWaiverRowSummary };
   htmlRowPairing: { switch: "HTML_ROW_PAIRING_LIVE"; issue: number; summary: HtmlRowPairingSummary };
+  pdfTextDirection: { switch: "PDF_TEXT_DIRECTION_LIVE"; issue: number; summary: PdfTextDirectionSummary };
   serviceMaintenance: ServiceMaintenanceSection;
   liveAccuracy: LiveAccuracy;
 }
@@ -243,6 +245,7 @@ export async function runSwitchDryRuns(reader: SwitchAuditReader, options: Switc
     heldVocabulary: await heldVocabulary(reader, options),
     zeroWaiverRow: await zeroWaiverRow(reader, options),
     htmlRowPairing: { switch: "HTML_ROW_PAIRING_LIVE", issue: 1092, summary: summarizeHtmlExposure(await reader.htmlReaderExposure()) },
+    pdfTextDirection: { switch: "PDF_TEXT_DIRECTION_LIVE", issue: 1092, summary: summarizePdfExposure(await reader.pdfReaderExposure()) },
     serviceMaintenance: await serviceMaintenanceSection(reader, options),
     liveAccuracy: liveAccuracyFrom(await reader.freshAudit(options.accuracySample)),
   };

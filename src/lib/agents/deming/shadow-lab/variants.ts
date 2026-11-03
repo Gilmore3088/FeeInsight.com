@@ -86,6 +86,11 @@ export interface SwitchOverrides {
    */
   htmlRowPairing?: boolean;
   /**
+   * `PDF_TEXT_DIRECTION_LIVE` (#1092, rosetta/pdf-text-direction.ts): a Rosetta reader switch, so
+   * it moves only the source replay's re-read of the answer-key PDFs' bytes, as `htmlRowPairing`.
+   */
+  pdfTextDirection?: boolean;
+  /**
    * Knox v174's service-heading hold and Darwin's matching refusal (#1092, `service-maintenance-heading.ts`).
    * Off is how main read before v174: the hold has no switch of its own, only its live re-check does
    * (`SERVICE_MAINTENANCE_TAKEDOWN_LIVE`), so this override exists to measure what the hold changes.
@@ -151,6 +156,13 @@ export const EXPERIMENTS: Readonly<Record<string, ExperimentConfig>> = {
       "Rosetta's HTML reader writes a label and its price that one DOM row holds (an ARIA row, a grid row of columns, a flex row) on one line (`HTML_ROW_PAIRING_LIVE` switched on). A reader switch: the frozen-text lab cannot move, and the source replay (`source-replay.test.ts`) re-reads the answer-key documents' bytes with it on.",
     excerptAtPublish: false,
     switches: { htmlRowPairing: true },
+  },
+  "pdf-text-direction": {
+    id: "pdf-text-direction",
+    description:
+      "Rosetta's PDF reader reads a page whose text is mostly drawn a quarter turn from upright (a landscape table stored turned) with its items turned back first (`PDF_TEXT_DIRECTION_LIVE` switched on). A reader switch: the frozen-text lab cannot move, and the source replay (`source-replay.test.ts`) re-reads the answer-key documents' bytes with it on.",
+    excerptAtPublish: false,
+    switches: { pdfTextDirection: true },
   },
   "daily-cap-lines": {
     id: "daily-cap-lines",

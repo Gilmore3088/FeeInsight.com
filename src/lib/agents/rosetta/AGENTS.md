@@ -86,7 +86,15 @@ Rosetta owns source text normalization.
   the shorter one's baselines are one wide table and keep the row reading). An amount centred
   beside a label that wraps onto two lines joins that label, and an item crossing a table's edge
   is its own line; the read attempt records the pages and any such priced crossings
-  (`detail.pdf_table_columns`). One table with several price columns keeps the row reading. A PDF text an older layout read across its
+  (`detail.pdf_table_columns`). One table with several price columns keeps the row reading.
+  Sideways pages (#1092, `pdf-text-direction.ts`, `PDF_TEXT_DIRECTION_LIVE`, off): a landscape
+  page stored as a portrait page turned a quarter draws its text at [0, s, -s, 0, x, y], so the
+  layout reader, which groups by y and orders by x, read it across its lines; stacked words joined
+  with no space ("AverageBalance") and Georgia United's re-read published none of its 36 key fees.
+  With the switch on, a page where more than half the characters run in one non-upright quarter
+  turn (read from each item's own text matrix; slanted text has no vote) has its items turned back
+  first; an upright page, sideways margin notes included, is untouched. Every PDF read records the
+  sideways pages it found and whether it turned them (`detail.pdf_text_direction`). A PDF text an older layout read across its
   columns (`INTERLEAVED_PROSE_CELLS` prose cell breaks or more) is read once more. Word files (.docx) are unzipped and read the same way (`read.docx_text`,
   `docx.ts`): a paragraph per line, a tab as a cell break, a table row per line. A
   legacy binary .doc stays `unsupported_format`. Knox pairs fees and amounts per line,
@@ -189,6 +197,11 @@ Rosetta owns source text normalization.
   bytes records the version or a receipt carries it (`html_read_version`); no other reader's text,
   and no legacy text (no reader; already due under `ROSETTA_READ_VERSION`), enters. At v1 the
   selection SQL is the same text as before the version existed. v2 is `HTML_ROW_PAIRING_LIVE`.
+  PDFs have the same, `PDF_READ_VERSION` (#1092): every `read.pdf_layout` read records it as
+  `detail.pdf_read`; above v1 a current completed `read.pdf_layout` text is due once, with no
+  cell-break filter, until a read of its bytes records the version or a receipt carries it
+  (`pdf_read_version`). No HTML, plain-text, DOCX, OCR or legacy text enters, and at v1 the SQL is
+  unchanged. v2 is `PDF_TEXT_DIRECTION_LIVE` (a test fails if the switch flips without it).
 - Scoped layout 5 repairs (#2219) keep the global reader 3 and prose-layout 4 replay floors
   settled (`PDF_PROSE_REREAD_VERSION`). `PDF_STACKED_REPAIR_VERSION` v1 makes only current
   completed PDF-layout texts with at least three crossed bullet-price cells and three
@@ -535,6 +548,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `ROSETTA_JS_FALLBACK_VERSION` | — | v3 | `rosetta/reader-versions.ts` |
 | `ROSETTA_OCR_VERSION` | — | v3 | `rosetta/reader-versions.ts` |
 | `HTML_READ_VERSION` | `read.html_dom`, `read.js_fallback` reader replay (`detail.html_read`); v2 with `HTML_ROW_PAIRING_LIVE` | v1 | `rosetta/reader-versions.ts` |
+| `PDF_READ_VERSION` | `read.pdf_layout` reader replay (`detail.pdf_read`); v2 with `PDF_TEXT_DIRECTION_LIVE` | v1 | `rosetta/reader-versions.ts` |
 | `ROSETTA_PAID_READ_VERSION` | — | v2 | `rosetta/paid-read.ts` |
 | `PDF_LAYOUT_VERSION` | — | v6 | `rosetta/reader-versions.ts` |
 | `PDF_LAYOUT_REPLAY_VERSION` | `read.pdf_layout` reader replay | v6 | `rosetta/reader-versions.ts` |

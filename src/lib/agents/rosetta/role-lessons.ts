@@ -187,6 +187,16 @@ export const ROSETTA_LESSONS: AgentLesson[] = [
     since: "2026-11-02",
   },
   {
+    id: "issue-1092-read-sideways-pages-along-their-lines",
+    agent: "rosetta",
+    stage: "read",
+    lesson: "Read a PDF's text in the direction the file draws it. Each text item's own matrix says which way its line runs; when most of a page runs a quarter turn from upright (a landscape table stored on a turned portrait page), turn the items back before grouping them into lines, and leave an upright page exactly as it was. Never infer word breaks from a dictionary: the positions are the evidence. When a re-read of the original bytes fails the same-document test, suspect the reader before the document.",
+    why: "Georgia United FCU's truth-in-savings disclosure (answer key state:60) draws every item at [0, s, -s, 0, x, y] on pages with /Rotate 90. read.pdf_layout grouped items by y and ordered them by x, so it read across the lines: the first words of stacked lines joined with no space (\"AverageBalance\", \"Account withdrawalAccount withdrawal\") and the fee table lost every name-amount pair. The Internet Archive capture has the seed's own sha256, yet the re-read scored token 0.8181 and published none of the 36 key fees; every layout version since v1 (Oct 4) reads it the same way, and the frozen text came from the stream reader that preceded it (#1092).",
+    evidence: { issues: [1092], prs: [2974], files: ["docs/project/findings/2026-11-03-pdf-word-gaps.md", "src/lib/agents/rosetta/pdf-text-direction.ts", "src/lib/agents/rosetta/pdf-text-direction.test.ts"] },
+    appliesTo: ["read"],
+    since: "2026-11-03",
+  },
+  {
     id: "issue-1092-version-what-a-change-rereads",
     agent: "rosetta",
     stage: "read",

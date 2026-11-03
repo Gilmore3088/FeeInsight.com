@@ -151,8 +151,21 @@ export interface HtmlReaderExposureRow {
   live_fees: number | string;
 }
 
+/** Current documents the PDF reader wrote the stored text of, with their live fees and known sideways pages. */
+export interface PdfReaderExposureRow {
+  documents: number | string;
+  institutions: number | string;
+  documents_with_live_fees: number | string;
+  live_fees: number | string;
+  direction_known: number | string;
+  sideways: number | string;
+  sideways_live_fees: number | string;
+}
+
 /** The data-store boundary. Every method reads only; the real one runs in a read-only transaction. */
 export interface SwitchAuditReader {
+  /** `PDF_TEXT_DIRECTION_LIVE` (#1092): the PDF exposure (`PDF_READER_EXPOSURE_SQL`). */
+  pdfReaderExposure(): Promise<PdfReaderExposureRow[]>;
   /** `HTML_ROW_PAIRING_LIVE` (#1092): the HTML exposure by reader (`HTML_READER_EXPOSURE_SQL`). */
   htmlReaderExposure(): Promise<HtmlReaderExposureRow[]>;
   dailyCapRows(limit: number): Promise<DailyCapRow[]>;

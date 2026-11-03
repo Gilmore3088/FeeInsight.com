@@ -262,11 +262,26 @@ function serviceMaintenance(report: SwitchDryRunReport): string[] {
   return lines;
 }
 
+function pdfTextDirection(report: SwitchDryRunReport): string[] {
+  const { pdf, directionKnown, sideways } = report.pdfTextDirection.summary;
+  return [
+    "## 10. PDF_TEXT_DIRECTION_LIVE (#1092, Rosetta read.pdf_layout)",
+    "Method: exposure only. The audit reads the database, and the PDF bytes are in the document vault, so it cannot re-read a file " +
+      "or say how many stored texts would change. It counts current copies whose newest text the PDF reader wrote (read.pdf_layout), " +
+      "which the flip's PDF_READ_VERSION bump re-reads once, and the documents a read since Nov 3 found sideways pages in (detail.pdf_text_direction). " +
+      "The change itself is measured on the answer-key documents' bytes (shadow-lab experiment pdf-text-direction).",
+    `EXPOSED: ${pdf.documents} current PDF documents at ${pdf.institutions} institutions (${pdf.documentsWithLiveFees} with live fees) carry ${pdf.liveFees} live fees; ` +
+      `the flip re-reads each once, and only a sideways page's text can change.`,
+    `SIDEWAYS: ${sideways.documents} of the ${directionKnown} documents read since the direction was recorded have a sideways page, carrying ${sideways.liveFees} live fees; ` +
+      `${pdf.documents - directionKnown} have no such read, so their direction is not known.`,
+  ];
+}
+
 function accuracy(report: SwitchDryRunReport): string[] {
   const a = report.liveAccuracy;
-  if (!a.readable) return ["## 10. Live accuracy", "The fresh audit could not read the live fees: accuracy is unknown."];
+  if (!a.readable) return ["## 11. Live accuracy", "The fresh audit could not read the live fees: accuracy is unknown."];
   return [
-    "## 10. Live accuracy (stored source, not the bank's current schedule)",
+    "## 11. Live accuracy (stored source, not the bank's current schedule)",
     `Method: ${a.method}`,
     `Seed ${a.seed}; source check v${a.sourceCheckVersion}; category guard v${a.categoryGuardVersion}.`,
     `Sampled ${a.sampled}; scorable ${a.scorable}; no stored text ${a.noText}.`,
@@ -281,7 +296,7 @@ export function formatSwitchDryRuns(report: SwitchDryRunReport): string {
     `# Switch dry runs (read-only), ${report.generatedAt}`,
     "One read-only snapshot for the whole run: it holds back vacuum while it runs, so run it off-peak (or on a replica).",
     `Samples capped at ${report.options.sampleCap} per list; totals count every row read.` +
-      (report.options.institutionIds ? ` Sections 1-7 and 9 limited to institutions ${report.options.institutionIds.join(", ")}.` : ""),
+      (report.options.institutionIds ? ` Sections 1-7, 9 and 10 limited to institutions ${report.options.institutionIds.join(", ")}.` : ""),
     "",
     ...dailyCap(report),
     "",
@@ -300,6 +315,8 @@ export function formatSwitchDryRuns(report: SwitchDryRunReport): string {
     ...htmlRowPairing(report),
     "",
     ...serviceMaintenance(report),
+    "",
+    ...pdfTextDirection(report),
     "",
     ...accuracy(report),
     "",

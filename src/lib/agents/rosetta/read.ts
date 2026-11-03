@@ -87,7 +87,7 @@ import { inSavepoint } from "@/lib/agents/savepoint";
 import { extractPdfDocumentText as extractPdfText, type PdfTextExtraction } from "./pdf-document-text";
 import { losslessStackedRecovery, textSha256, type StackedGeometryReceipt } from "./pdf-repair-survival";
 import type { PdfReaderAgreement } from "./pdf-reader-agreement";
-import { GLYPH_REPAIR_VERSION, HTML_READ_READERS, HTML_READ_VERSION, PDF_PROSE_REREAD_VERSION, PDF_STACKED_REPAIR_VERSION } from "./reader-versions";
+import { GLYPH_REPAIR_VERSION, HTML_READ_READERS, HTML_READ_VERSION, PDF_PROSE_REREAD_VERSION, PDF_READ_READERS, PDF_READ_VERSION, PDF_STACKED_REPAIR_VERSION } from "./reader-versions";
 import {
   decodeTextBytes, DROPPED_LIGATURE_DUE_PATTERN, DROPPED_LIGATURE_READER, expandUnicodeLigatures, GLYPH_REPAIR_DUE_PATTERN,
   GLYPH_REPAIR_STRATEGY,
@@ -244,6 +244,8 @@ export interface ReadResult {
   readerAgreement?: PdfReaderAgreement;
   /** Layout v6: pages read as side-by-side fee tables, and ambiguous crossing lines; recorded only. */
   tableColumns?: { pages: number[]; ambiguousLines: number };
+  /** Pages mostly drawn a quarter turn from upright, and whether they were read turned back; recorded only. */
+  textDirection?: { pages: number[]; turnedUpright: boolean };
   witnessRetention?: WitnessRetention;
   repairSettlement?: { accepted: boolean; reason: string; artifactId?: number; textHash?: string };
   /**
@@ -1045,6 +1047,9 @@ async function readCandidate(
       if (extracted.tableColumns?.textHash === textSha256(extracted.text) && extracted.tableColumns.pages.length > 0) {
         base.tableColumns = { pages: extracted.tableColumns.pages, ambiguousLines: extracted.tableColumns.ambiguousLines };
       }
+      if (extracted.textDirection?.textHash === textSha256(extracted.text) && extracted.textDirection.pages.length > 0) {
+        base.textDirection = { pages: extracted.textDirection.pages, turnedUpright: extracted.textDirection.turnedUpright };
+      }
       return finishRead(normalizedText, "pdf_text", tableRowsFromText(pageTexts, "pdf_layout"));
     }
 
@@ -1196,6 +1201,8 @@ export function rosettaReadCandidatesQuery(
   readerReplay: "include" | "only" | "exclude" = "exclude",
   // The HTML reader version the replay lane compares (reader-replay.ts); tests pass a bump.
   htmlReadVersion: number = HTML_READ_VERSION,
+  // The PDF reader version the replay lane compares (reader-replay.ts); tests pass a bump.
+  pdfReadVersion: number = PDF_READ_VERSION,
 ): { query: string; params: Array<number | string | string[]> } {
   const params: Array<number | string | string[]> = [limit];
   const filters: string[] = [];
@@ -1341,7 +1348,7 @@ export function rosettaReadCandidatesQuery(
                 AND cr.superseded_by_id IS NULL AND cr.duplicate_of_id IS NULL`;
       // The PDF cell replay keeps its own default (PDF_CELL_REPLAY_LIVE).
       const replayDue = (alias: string, notSettled: string) =>
-        readerReplayDueSql(alias, replayParams, notSettled, undefined, htmlReadVersion);
+        readerReplayDueSql(alias, replayParams, notSettled, undefined, htmlReadVersion, pdfReadVersion);
       readerReplayText = `(${currentText("adt")} AND ${replayDue("adt", notSettledByCurrentReader)})`;
       readerReplayDue = `EXISTS (
       SELECT 1 FROM agent_source_texts replay_text
@@ -2939,6 +2946,8 @@ async function settleReadInScope(
         glyph_repair: result.reader != null && GLYPH_REPAIR_READERS.includes(result.reader) ? GLYPH_REPAIR_VERSION : undefined,
         // Settles an HTML-read text for reader replay at this HTML version (reader-replay.ts).
         html_read: result.reader != null && HTML_READ_READERS.includes(result.reader) ? HTML_READ_VERSION : undefined,
+        // Settles a PDF-read text for reader replay at this PDF version (reader-replay.ts).
+        pdf_read: result.reader != null && PDF_READ_READERS.includes(result.reader) ? PDF_READ_VERSION : undefined,
         pdf_stacked_requested: row.pdf_stacked_repair_due ? PDF_STACKED_REPAIR_VERSION : undefined,
         pdf_stacked: repairProof && !keepEarlierText ? PDF_STACKED_REPAIR_VERSION : undefined,
         persisted_text_id: repairProof && !keepEarlierText ? repairProof.artifactId : undefined,
@@ -2947,6 +2956,7 @@ async function settleReadInScope(
         // Only for text this read stores: a kept earlier text was not the one compared.
         pdf_reader_agreement: result.reader === PRIMARY_READERS.pdf && !keepEarlierText ? result.readerAgreement : undefined,
         pdf_table_columns: result.reader === PRIMARY_READERS.pdf && !keepEarlierText ? result.tableColumns : undefined,
+        pdf_text_direction: result.reader === PRIMARY_READERS.pdf && !keepEarlierText ? result.textDirection : undefined,
         reread: result.reread,
         escalation: result.escalation ?? null,
         linked_fee_page: result.linkedFeePage ?? undefined,
