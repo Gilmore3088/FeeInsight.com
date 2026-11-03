@@ -76,7 +76,7 @@ Live fees the cross-category scan found:
 - *A footnote digit glued to a box size.* "3x103" is the 3x10 box with footnote 3. The source check matched sizes
   whole, so the corrected name would not trace.
 
-**Fix (Knox v182, `KNOX_RULES_STRATEGY` 182):**
+**Fix (Knox v184, `KNOX_RULES_STRATEGY` 184):**
 
 - `knox/read-name-review.ts` (`withReviewedNames`, run after every specialist) gives each read a last look for
   words another part of the page lent it:
@@ -138,7 +138,7 @@ Live fees the cross-category scan found:
 
 **Live:**
 
-- Slice dry run, v182 on main 5f56bb55a05 against v181 (the same 205 texts, harness in `slice/dry`): publish rows
+- Slice dry run, v184 on main 5f56bb55a05 against v181 (the same 205 texts, harness in `slice/dry`): publish rows
   671 to 660.
   - Wrong fees 10 to 0 and wrong names 9 to 0. The 11 glyph names, the glued headings and the duplicate boxes are
     fixed as well.
@@ -147,7 +147,7 @@ Live fees the cross-category scan found:
     (before the slice: 123/137 and 133/213). None of the fixed rows is on an answer-key bank's scored document.
   - Doubtful: 34 monthly fees with no product (33 before; the Austin $10 lost its wrong product). A live $5.95 fee
     is re-confirmed without the wrong product "Share-to-Share Overdraft Transfer Fee" (text 27995).
-- Harnesses rb to rb12 (v181 against v182 on main 5f56bb55a05): live fees not reproduced 456 to 453.
+- Harnesses rb to rb12 (v181 against v184 on main 5f56bb55a05): live fees not reproduced 456 to 453.
   - Reproduced again: #128047, #99611, #99612 and #41503.
   - No longer reproduced: #63177 only. That is "Archived Statement Reproduction (see Record Research above): Wire
     Transfer" $9, filed document_reproduction; its own line is "Wire Transfer | $9.00 repair wire fee", so the live

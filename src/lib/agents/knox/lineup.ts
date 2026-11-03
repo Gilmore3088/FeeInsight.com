@@ -205,7 +205,7 @@ function distinctAccountNameOnly(value: string): string | null {
   // v141 nit: a footnote star after the name comes off ("50+ Checking*" -> "50+ Checking"); a mark (®) stays.
   const name = squash(value).replace(/[\s\-–:|,.*†‡]+$/, "").replace(HEADING_TAIL, "").replace(LEAD_IN, "");
   if (name.length < 4 || name.length > MAX_PRODUCT_NAME_CHARS || FEE_HEADING_END.test(name)) return null;
-  // v182 (Knox slice dry run, Austin Bank text 25416): a feature an account lists that is itself a fee's service
+  // v184 (Knox slice dry run, Austin Bank text 25416): a feature an account lists that is itself a fee's service
   // ("Automatic Transfer from Savings", an overdraft transfer) names no account.
   const asFee = classifyFeeText(name);
   if (asFee && !ACCOUNT_PRODUCT_CATEGORIES.has(asFee)) return null;

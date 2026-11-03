@@ -1,5 +1,5 @@
 /**
- * The section misread re-check's read in real PostgreSQL (production schema, loopback only). The review of Knox v182
+ * The section misread re-check's read in real PostgreSQL (production schema, loopback only). The review of Knox v184
  * found version 5's read was invalid SQL (a missing comma) that `recheckSectionMisreads` swallowed, so its dry run
  * reported nothing: this file runs the real `sectionMisreadRowsSql` and the whole step (dry run) on seeded live fees,
  * so a read that does not parse or plan fails here. Lines as printed: Ameris Bank text 1338, a box late fee, the page

@@ -462,7 +462,7 @@ export function joinWrappedLeaderNames(lines: string[]): string[] {
   const joined: string[] = [];
   for (const line of lines) {
     const leader = line.match(WRAPPED_LEADER_PRICE);
-    // v182 (Knox slice dry run, Velocity CU text 5217): only the leader's own cell is the name's tail; a parenthesis
+    // v184 (Knox slice dry run, Velocity CU text 5217): only the leader's own cell is the name's tail; a parenthesis
     // closed in an earlier cell ("the 28th ... month), | Statement Print-Out .....$5.00") is another column's prose.
     let balance = leader ? parenBalance(line.slice(line.lastIndexOf("|", leader.index) + 1, leader.index)) : 0;
     if (balance >= 0) {
@@ -736,7 +736,7 @@ function nameHaystacks(text: string): Haystack[] {
   if (cached) return cached;
   const plain = haystackOf(` ${comparable(text)} `);
   const haystacks = /[a-z][A-Z]/.test(text) ? [plain, haystackOf(` ${comparable(text.replace(/([a-z])([A-Z])/g, "$1 $2"))} `)] : [plain];
-  // v182 (Texas Capital Bank text 35692): a footnote digit glued to a box size ("Safe Deposit Box 3x103") also
+  // v184 (Texas Capital Bank text 35692): a footnote digit glued to a box size ("Safe Deposit Box 3x103") also
   // reads as the size it marks ("3x10"), when the side it makes is no box's (over 30 inches).
   const unmarked = plain.text.replace(FOOTNOTED_SIZE, (whole, a: string, b: string, mark: string) =>
     Number(`${b}${mark}`) > MAX_BOX_SIDE && Number(b) <= MAX_BOX_SIDE ? `${a}x${b} ` : whole);

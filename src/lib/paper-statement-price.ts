@@ -54,7 +54,7 @@ const ONLY_FOR_PAPER_AFTER = new RegExp(
 const LABEL_BEFORE = new RegExp(String.raw`(?:^|[|•·:;.]\s*|^\W*)${PAPER}\s+${STATEMENT}\s*(?:fees?|charges?)?\s*$`, "i");
 
 /**
- * v182 (Knox slice dry run, Austin Bank text 25416): paper statements offered at the price, in the price's own cell
+ * v184 (Knox slice dry run, Austin Bank text 25416): paper statements offered at the price, in the price's own cell
  * ("Free eStatements (Paper statements without check images are available for a $3 monthly fee)").
  */
 const OFFERED_BEFORE = new RegExp(String.raw`\b${PAPER}\s+${STATEMENT}[^|$]{0,40}?\b(?:are|is)\s+(?:also\s+)?available\s+(?:for|at)\s+(?:a|an)?\s*$`, "i");

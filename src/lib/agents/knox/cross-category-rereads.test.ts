@@ -8,10 +8,10 @@ import { checkFeeAgainstSource, joinWrappedLeaderNames } from "@/lib/custom-repo
 import { paperStatementPriceOnLine } from "@/lib/paper-statement-price";
 import type { ExtractedFeeCandidate } from "@/lib/agents/knox/rules";
 
-/** Knox v182: the live slice dry run's wrong reads and the cross-category scan's five live fees, from their texts' own lines. */
+/** Knox v184: the live slice dry run's wrong reads and the cross-category scan's five live fees, from their texts' own lines. */
 const read = (canonicalHint: string, feeName: string, amount: number, excerpt: string) => ({ canonicalHint, feeName, amount, excerpt });
 
-describe("Knox v182 last name review (read-name-review.ts)", () => {
+describe("Knox v184 last name review (read-name-review.ts)", () => {
   it("drops a heading or another column glued in front when the label alone files under the read's category", () => {
     // Fee Insight slice texts 27330, 28158, 33581, 33617.
     expect(gluedHeadingName("LOAN FEES: 3x10 Box", "safe_deposit_box")).toBe("3x10 Box");
@@ -98,7 +98,7 @@ describe("Knox v182 last name review (read-name-review.ts)", () => {
   });
 });
 
-describe("Knox v182 plain returned item beside the NSF fee (withReturnBesideNsf)", () => {
+describe("Knox v184 plain returned item beside the NSF fee (withReturnBesideNsf)", () => {
   const fee = (canonicalHint: string, feeName: string, amount: number) => ({ canonicalHint, feeName, amount });
 
   it("files a return beside a free NSF fee, or beside a deposited return at its own price, as the deposited item return", () => {
@@ -124,7 +124,7 @@ describe("Knox v182 plain returned item beside the NSF fee (withReturnBesideNsf)
   });
 });
 
-describe("Knox v182 layout reads", () => {
+describe("Knox v184 layout reads", () => {
   it("pairs two label cells over two price cells by column, and leaves a wrapped label alone", () => {
     // Advia CU text 30743, joined as one row.
     expect(parallelColumnRows({ cells: ["Account History Print", "Loan Skip Pay", "$1/page", "$35 where regionally offered"] } as never).map((row) => row.cells))

@@ -76,7 +76,7 @@ type SqlTag = typeof sql;
  *   Fee" $10, "For each item you deposit or cash that is returned unpaid" (68629). Knox v181 files it as the
  *   deposited item return.
  *
- * Version 5 (Knox v182, slice dry run and cross-category scan, Nov 3) adds three rules Knox v182 holds, re-files or
+ * Version 5 (Knox v184, slice dry run and cross-category scan, Nov 3) adds three rules Knox v184 holds, re-files or
  * drops new reads by, judged with the same shared functions:
  *
  * - `wire_service_monthly_fee`: a wire service's own monthly charge filed as an account's monthly fee
@@ -86,7 +86,7 @@ type SqlTag = typeof sql;
  *   started"), a capitals label whose price sits in the next cell's own label ("COUNTER CHECKS | PER DEBIT ITEM •
  *   $32"), a box's late charge filed as a loan's ("Box Late Fee"), or paper statements offered in a check image's
  *   name. A rename alone is no match.
- * - `return_beside_nsf`: a plain returned check or item filed as NSF that Knox v182 files as the deposited item
+ * - `return_beside_nsf`: a plain returned check or item filed as NSF that Knox v184 files as the deposited item
  *   return (`withReturnBesideNsf`, with the live NSF and deposited item return fees read from the same text as the
  *   page's other reads): beside an NSF fee the schedule prints free ("Insufficient Funds (NSF) | $0" over "Returned
  *   Check | $20", 133756), or beside a deposited item return at its own price and an NSF fee above it.
@@ -258,7 +258,7 @@ function returnCandidate(row: SectionMisreadRow): boolean {
 }
 
 /**
- * Pure, version 5: Knox v182's last name review of a live fee on its stored line and the text Knox read, when it drops
+ * Pure, version 5: Knox v184's last name review of a live fee on its stored line and the text Knox read, when it drops
  * the read or files it elsewhere (a rename alone is no match), or null.
  */
 export function reviewedReadKind(row: SectionMisreadRow, text: string): { kind: SectionMisreadKind; evidence: string } | null {
@@ -275,7 +275,7 @@ export function reviewedReadKind(row: SectionMisreadRow, text: string): { kind: 
 }
 
 /**
- * Pure, version 5: a live plain returned item filed as NSF that Knox v182 files as the deposited item return, judged
+ * Pure, version 5: a live plain returned item filed as NSF that Knox v184 files as the deposited item return, judged
  * with `withReturnBesideNsf` on the live fee and the other live NSF and deposited item return fees from its text.
  */
 export function returnBesideNsfKind(row: SectionMisreadRow, text: string | undefined): { kind: SectionMisreadKind; evidence: string } | null {
@@ -521,7 +521,7 @@ export function sectionMisreadRowsSql(db: SqlTag, options: { institutionId?: num
           OR (live.canonical_fee_key = 'monthly_maintenance' AND live.fee_name ~* ${WIRE_MONTHLY_NAME_SQL})
     ),
     reviewed AS (
-      -- Version 5: a live fee Knox v182's name review or plain-return rule could drop or re-file.
+      -- Version 5: a live fee Knox v184's name review or plain-return rule could drop or re-file.
       SELECT live.* FROM live
        WHERE (live.canonical_fee_key = 'nsf' AND live.amount > 0 AND live.fee_name ~* ${PLAIN_RETURN_NAME_SQL})
           OR (live.source_line ~ ${STORED_LINE_SQL} AND (

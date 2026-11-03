@@ -305,6 +305,7 @@ export const TAKEDOWN_REASON_CHECKS: Readonly<Record<string, string>> = {
   source_mismatch: "hamilton.hand_takedown",
   // Darwin's re-checks of live fees.
   banded_zero: "darwin.banded_zero",
+  tier_incomplete: "darwin.tier_completeness",
   account_benefit_zero: "darwin.account_benefit_zero",
   zero_waiver_row: "darwin.zero_waiver_row",
   free_list_item: "darwin.free_list_item",
@@ -321,7 +322,7 @@ export const TAKEDOWN_REASON_CHECKS: Readonly<Record<string, string>> = {
   audience_section_untagged: "darwin.section_misread",
   stop_payment_variant: "darwin.section_misread",
   deposited_card_return: "darwin.section_misread",
-  // v5 (Knox v182, live slice dry run and cross-category scan).
+  // v5 (Knox v184, live slice dry run and cross-category scan).
   wire_service_monthly_fee: "darwin.section_misread",
   read_name_review: "darwin.section_misread",
   return_beside_nsf: "darwin.section_misread",

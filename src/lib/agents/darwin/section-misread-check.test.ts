@@ -210,7 +210,7 @@ describe("Darwin's section misread re-check (Knox v177)", () => {
     expect(new RegExp(FEE_CARD_TEXT_SQL, "i").test(`Fees\n${esl}`)).toBe(true);
   });
 
-  it("version 5 (Knox v182): matches a wire service's monthly charge, a read the name review drops or re-files, and a plain return beside a free NSF fee", () => {
+  it("version 5 (Knox v184): matches a wire service's monthly charge, a read the name review drops or re-files, and a plain return beside a free NSF fee", () => {
     // Ameris Bank text 1338, Cornerstone Community FCU (live 128047's line), America's FCU text 29839, First State Bank
     // and Trust text 22671, and the page live 133756 was read from (lines as printed).
     const sibling = (key: string, name: string, amount: number) => ({ fee_name: name, amount, canonical_fee_key: key });

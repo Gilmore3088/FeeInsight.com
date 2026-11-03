@@ -119,7 +119,8 @@ export interface ExtractedFeeCandidate extends Partial<FeeApplicability> {
 }
 
 /** `untraced`: a read whose name and price don't trace to one row of the text (Knox's self-check). */
-export type HeldShape = "zero" | "range" | "percentage" | "unclassified" | "untraced" | "varies" | "eligibility" | "periodic_program";
+/** v183 (#1092): `tier_incomplete`, a fee priced in tiers whose tiers Knox could not all read (`tier-names.ts`). */
+export type HeldShape = "zero" | "range" | "percentage" | "unclassified" | "untraced" | "varies" | "eligibility" | "periodic_program" | "tier_incomplete";
 
 export interface HeldFeeCandidate extends Partial<FeeApplicability> {
   /** Eligibility holds retain their complete own-price policy and independent event key. */
@@ -1419,7 +1420,7 @@ export function headingName(rawLine: string): string | null | undefined {
  */
 
 function plainHeadingName(rawLine: string): string | null | undefined {
-  // v182 (Knox slice dry run, St. Cloud Financial FCU text 21575): an account's code in brackets ("Wincentive
+  // v184 (Knox slice dry run, St. Cloud Financial FCU text 21575): an account's code in brackets ("Wincentive
   // Savings Account (S40)") is no figure: the line is a title, and it ends the reach of the heading above it, so
   // "*First withdrawal $10.00" under it is never read under "Visa Gift Card".
   const line = /^[A-Z][^$%]*\([A-Z]{0,3}\d{1,4}\)\s*$/.test(rawLine) ? rawLine.replace(/\s*\([A-Z]{0,3}\d{1,4}\)\s*$/, "") : rawLine;
@@ -1616,7 +1617,7 @@ export function readUnderHeading(segment: string, heading: string): ExtractedFee
   // A label with its own colon, or a title of three or more capitalized words ("Picture Check
   // Card:", "RBD Scanner Replacement"), is another fee's row, not a row of this heading.
   if (/:\s*$/.test(line.slice(0, amounts[0].start).replace(/[\s|]+$/, ""))) return [];
-  // v182 (Knox slice dry run, Crow Wing Power CU text 23340): a wire's own row ("WIRE TRANSFER – $20") under
+  // v184 (Knox slice dry run, Crow Wing Power CU text 23340): a wire's own row ("WIRE TRANSFER – $20") under
   // another fee's heading ("SUBORDINATION REQUEST & PARTIAL", the other column) is never that fee's row.
   if (FEE_FAMILY_HEADING.test(label) && !FEE_FAMILY_HEADING.test(heading)) return [];
   // v80: a wire's currency and direction is a row of its wire heading ("Foreign Currency Outgoing").
@@ -1853,7 +1854,7 @@ const SUBSCRIPTION_PRICE_AFTER = /^\W*(?:fees?\b|\(?\s*(?:per\s+month|monthly|mo
 const SUBSCRIPTION_PRICE_BEFORE = /\b(?:base|monthly)\s+(?:wire\s+(?:transfer\s+)?)?$/i;
 const MODULE_IS_HEAD = /\b(?:wires?|wire\s+transfers?|transfers?)\s+$/i;
 /**
- * v182 (Knox slice dry run, Ameris Bank text 1338): a monthly or maintenance charge for a wire service ("Online Wire
+ * v184 (Knox slice dry run, Ameris Bank text 1338): a monthly or maintenance charge for a wire service ("Online Wire
  * Monthly Maintenance Fee") is the wire service's subscription, never an account's monthly fee. A name that names an
  * account ("Checking") is the account's.
  */
@@ -2882,7 +2883,7 @@ function stackedVariantReads(segment: string, cells: string[] | null, priceCount
  * electronic one ("$4 for paper statement or $3 for estatement") stays maintenance.
  */
 export function paperStatementRead(candidate: ExtractedFeeCandidate, segment: string): ExtractedFeeCandidate {
-  // v182 (Knox slice dry run, Austin Bank text 25416): a check image read whose name offers paper statements at
+  // v184 (Knox slice dry run, Austin Bank text 25416): a check image read whose name offers paper statements at
   // the price ("Free eStatements (Paper statements without check images are available for a $3 monthly fee)") is
   // that paper statement charge, named by its paper words.
   // Only a name that offers the paper statements: "Paper statement with check images" stays the image charge.
@@ -2897,7 +2898,7 @@ export function paperStatementRead(candidate: ExtractedFeeCandidate, segment: st
   return { ...candidate, lineup: undefined, canonicalHint: "paper_statement", feeName };
 }
 
-/** v182: a check image read's name that offers paper statements ("Free eStatements (Paper statements ... are available for a"). */
+/** v184: a check image read's name that offers paper statements ("Free eStatements (Paper statements ... are available for a"). */
 export const PAPER_OFFER_NAME = /\bavailable\b|^\W*free\b/i;
 
 /** A read already named for its paper statement ("Paper statements", "Paper (mailed) Statement Fee"). */

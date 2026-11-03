@@ -4,7 +4,7 @@ import { passesDarwinChecks } from "@/lib/agents/knox/layout";
 import { splitLiveCategory } from "@/lib/fee-fold";
 
 /**
- * v182 (Knox slice dry run and cross-category scan, Nov 3): the last look at each read's name and category before
+ * v184 (Knox slice dry run and cross-category scan, Nov 3): the last look at each read's name and category before
  * Darwin, for words another part of the page lent it. Each rule names the class it fixes; every one is pure, reads
  * only the read and the text Knox read, and leaves any other read as it is.
  *

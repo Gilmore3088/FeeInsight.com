@@ -271,7 +271,7 @@ function valueCellIndex(cells: string[], from: number): number {
 }
 
 /**
- * v182 (Knox slice dry run, Advia FCU text 30743): two columns stacked label over price ("Account History Print |
+ * v184 (Knox slice dry run, Advia FCU text 30743): two columns stacked label over price ("Account History Print |
  * Loan Skip Pay" over "$1/page | $35 where regionally offered") are two rows, each label over its own column's
  * price, never the nearer label over the first price. Only when every label cell names no price and the price
  * cells, one per label, follow them.
@@ -327,7 +327,7 @@ export function extractFromTableRows(inputRows: KnoxTableRow[]): ExtractionRules
     let hint = classifyFeeText(name);
     let feeName = name;
     const stopPaymentHeading = row.heading != null && classifyFeeText(row.heading) === "stop_payment";
-    // v182 (Knox slice dry run, Crow Wing Power CU text 23340): a wire's own row ("WIRE TRANSFER – $20") never borrows
+    // v184 (Knox slice dry run, Crow Wing Power CU text 23340): a wire's own row ("WIRE TRANSFER – $20") never borrows
     // another fee's heading ("SUBORDINATION REQUEST & PARTIAL", the other column's).
     const wireBesideHeading = WIRE_WORD.test(name) && !WIRE_WORD.test(row.heading ?? "");
     if (!hint && row.heading && !wireBesideHeading && (row.headingNames || composableTail(name) || (stopPaymentHeading && composableTail(name, STOP_PAYMENT_ITEM_WORDS)))) {
