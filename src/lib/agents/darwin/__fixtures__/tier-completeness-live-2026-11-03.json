@@ -1,0 +1,1146 @@
+{
+ "note": "Darwin tier completeness dry run, prod read-only, 2026-11-03 (tier-completeness-check.ts v1 SQL shape: every live fee above $0 whose Knox excerpt states a threshold, a 900-character window of Knox's text on each side of its line, and the live fees of the same document and category; findTierGaps decides). Switch off: nothing written.",
+ "checked": 2981,
+ "tiered": 88,
+ "matched": 50,
+ "institutions": 35,
+ "by_kind": {
+  "unscoped": 31,
+  "incomplete": 19
+ },
+ "matches": [
+  {
+   "fee_published_id": 18812,
+   "institution_id": 1671,
+   "canonical_fee_key": "cashiers_check",
+   "fee_name": "Cashier's Check (Per Check) Under $1000.00",
+   "amount": 3,
+   "kind": "incomplete",
+   "tiers": [
+    {
+     "condition": "Under $1000.00",
+     "price": 3,
+     "live": true
+    },
+    {
+     "condition": "$1000.00 and Over",
+     "price": 5,
+     "live": false
+    }
+   ]
+  },
+  {
+   "fee_published_id": 22129,
+   "institution_id": 2621,
+   "canonical_fee_key": "cashiers_check",
+   "fee_name": "Official Check and above",
+   "amount": 10,
+   "kind": "unscoped",
+   "tiers": [
+    {
+     "condition": "up to $999.99",
+     "price": 5,
+     "live": false
+    },
+    {
+     "condition": "$1,000 and above",
+     "price": 10,
+     "live": false
+    }
+   ]
+  },
+  {
+   "fee_published_id": 34461,
+   "institution_id": 6880,
+   "canonical_fee_key": "late_payment",
+   "fee_name": "Late Charge – Organizational Loan Less Than K",
+   "amount": 25,
+   "kind": "unscoped",
+   "tiers": [
+    {
+     "condition": "Less Than $50K",
+     "price": 25,
+     "live": false
+    },
+    {
+     "condition": "More Than $50K",
+     "price": 100,
+     "live": false
+    }
+   ]
+  },
+  {
+   "fee_published_id": 37262,
+   "institution_id": 6755,
+   "canonical_fee_key": "cashiers_check",
+   "fee_name": "Official Check Fee- less than $1,000.00",
+   "amount": 3,
+   "kind": "incomplete",
+   "tiers": [
+    {
+     "condition": "less than $1,000.00",
+     "price": 3,
+     "live": true
+    },
+    {
+     "condition": "$1,000.00 and over",
+     "price": 5,
+     "live": false
+    }
+   ]
+  },
+  {
+   "fee_published_id": 55140,
+   "institution_id": 5644,
+   "canonical_fee_key": "money_order",
+   "fee_name": "Money Order Fee up to =",
+   "amount": 1,
+   "kind": "unscoped",
+   "tiers": [
+    {
+     "condition": "up to $1000",
+     "price": 1,
+     "live": false
+    },
+    {
+     "condition": "over $1001",
+     "price": 1.5,
+     "live": false
+    }
+   ]
+  },
+  {
+   "fee_published_id": 68550,
+   "institution_id": 624,
+   "canonical_fee_key": "cashiers_check",
+   "fee_name": "Cashier’s checks $1,000.00 or less per item",
+   "amount": 5,
+   "kind": "incomplete",
+   "tiers": [
+    {
+     "condition": "$1,000.00 or less",
+     "price": 5,
+     "live": true
+    },
+    {
+     "condition": "over $1,000.00",
+     "price": 10,
+     "live": false
+    }
+   ]
+  },
+  {
+   "fee_published_id": 68551,
+   "institution_id": 624,
+   "canonical_fee_key": "cashiers_check",
+   "fee_name": "Cashier’s checks over per item",
+   "amount": 10,
+   "kind": "unscoped",
+   "tiers": [
+    {
+     "condition": "$1,000.00 or less",
+     "price": 5,
+     "live": true
+    },
+    {
+     "condition": "over $1,000.00",
+     "price": 10,
+     "live": false
+    }
+   ]
+  },
+  {
+   "fee_published_id": 72020,
+   "institution_id": 6859,
+   "canonical_fee_key": "cashiers_check",
+   "fee_name": "BFCU Official Check Fee (Member)",
+   "amount": 3,
+   "kind": "unscoped",
+   "tiers": [
+    {
+     "condition": "$1 to $499.99",
+     "price": 3,
+     "live": false
+    },
+    {
+     "condition": "$500 to $999.99",
+     "price": 5,
+     "live": false
+    }
+   ]
+  },
+  {
+   "fee_published_id": 72021,
+   "institution_id": 6859,
+   "canonical_fee_key": "cashiers_check",
+   "fee_name": "BFCU Official Check Fee (Member)",
+   "amount": 5,
+   "kind": "unscoped",
+   "tiers": [
+    {
+     "condition": "$1 to $499.99",
+     "price": 3,
+     "live": false
+    },
+    {
+     "condition": "$500 to $999.99",
+     "price": 5,
+     "live": false
+    }
+   ]
+  },
+  {
+   "fee_published_id": 74644,
+   "institution_id": 1369,
+   "canonical_fee_key": "cashiers_check",
+   "fee_name": "Cashier's Check ($1000.01 or more)",
+   "amount": 5,
+   "kind": "incomplete",
+   "tiers": [
+    {
+     "condition": "$1,000.00 and under",
+     "price": 2.5,
+     "live": false
+    },
+    {
+     "condition": "$1000.01 or more",
+     "price": 5,
+     "live": true
+    }
+   ]
+  },
+  {
+   "fee_published_id": 75943,
+   "institution_id": 6501,
+   "canonical_fee_key": "gift_card_purchase",
+   "fee_name": "Prepaid Visa Card",
+   "amount": 4,
+   "kind": "unscoped",
+   "tiers": [
+    {
+     "condition": "up to $500.00",
+     "price": 4,
+     "live": false
+    },
+    {
+     "condition": "$500.01 to $1,000.00",
+     "price": 6,
+     "live": false
+    }
+   ]
+  },
+  {
+   "fee_published_id": 80578,
+   "institution_id": 2621,
+   "canonical_fee_key": "cashiers_check",
+   "fee_name": "Official Check",
+   "amount": 5,
+   "kind": "unscoped",
+   "tiers": [
+    {
+     "condition": "up to $999.99",
+     "price": 5,
+     "live": false
+    },
+    {
+     "condition": "$1,000 and above",
+     "price": 10,
+     "live": false
+    }
+   ]
+  },
+  {
+   "fee_published_id": 81377,
+   "institution_id": 5102,
+   "canonical_fee_key": "check_cashing",
+   "fee_name": "Check Cashing Fee (Non-Use of Account) $500.01 - $1,000.00",
+   "amount": 5,
+   "kind": "incomplete",
+   "tiers": [
+    {
+     "condition": "$0 - $500.00",
+     "price": 2.5,
+     "live": false
+    },
+    {
+     "condition": "$500.01 - $1,000.00",
+     "price": 5,
+     "live": true
+    }
+   ]
+  },
+  {
+   "fee_published_id": 81422,
+   "institution_id": 7198,
+   "canonical_fee_key": "wire_intl_outgoing",
+   "fee_name": "Wire Transfer (International) fee",
+   "amount": 50,
+   "kind": "unscoped",
+   "tiers": [
+    {
+     "condition": "less than $10,000",
+     "price": 50,
+     "live": false
+    },
+    {
+     "condition": "$10,000 or more",
+     "price": 100,
+     "live": false
+    }
+   ]
+  },
+  {
+   "fee_published_id": 81866,
+   "institution_id": 56,
+   "canonical_fee_key": "collection_item",
+   "fee_name": "Foreign Currency Buy Back Collection Fee (amounts and up)",
+   "amount": 10,
+   "kind": "unscoped",
+   "tiers": [
+    {
+     "condition": "$50-$299.99",
+     "price": 17,
+     "live": false
+    },
+    {
+     "condition": "$300 and up",
+     "price": 10,
+     "live": false
+    }
+   ]
+  },
+  {
+   "fee_published_id": 83996,
+   "institution_id": 4390,
+   "canonical_fee_key": "collection_item",
+   "fee_name": "Foreign Check Collections (US & Non-US Dollars)",
+   "amount": 25,
+   "kind": "unscoped",
+   "tiers": [
+    {
+     "condition": "Up to $2,500",
+     "price": 25,
+     "live": false
+    },
+    {
+     "condition": "Over $2,500",
+     "price": 75,
+     "live": false
+    }
+   ]
+  },
+  {
+   "fee_published_id": 83997,
+   "institution_id": 4390,
+   "canonical_fee_key": "collection_item",
+   "fee_name": "Foreign Check Collections (US & Non-US Dollars) Over",
+   "amount": 75,
+   "kind": "unscoped",
+   "tiers": [
+    {
+     "condition": "Up to $2,500",
+     "price": 25,
+     "live": false
+    },
+    {
+     "condition": "Over $2,500",
+     "price": 75,
+     "live": false
+    }
+   ]
+  },
+  {
+   "fee_published_id": 84084,
+   "institution_id": 8219,
+   "canonical_fee_key": "check_cashing",
+   "fee_name": "Non-member check cashing fee",
+   "amount": 5,
+   "kind": "unscoped",
+   "tiers": [
+    {
+     "condition": "up to $4,999.99",
+     "price": 5,
+     "live": false
+    },
+    {
+     "condition": "over $5,000.00",
+     "price": 10,
+     "live": true
+    }
+   ]
+  },
+  {
+   "fee_published_id": 84085,
+   "institution_id": 8219,
+   "canonical_fee_key": "check_cashing",
+   "fee_name": "Non-member check cashing fee over $5,000.00",
+   "amount": 10,
+   "kind": "incomplete",
+   "tiers": [
+    {
+     "condition": "up to $4,999.99",
+     "price": 5,
+     "live": false
+    },
+    {
+     "condition": "over $5,000.00",
+     "price": 10,
+     "live": true
+    }
+   ]
+  },
+  {
+   "fee_published_id": 84502,
+   "institution_id": 321,
+   "canonical_fee_key": "collection_item",
+   "fee_name": "Collection Items - Outgoing for Immediate Credit: $5,000 or less",
+   "amount": 12.5,
+   "kind": "incomplete",
+   "tiers": [
+    {
+     "condition": "$5,000 or less",
+     "price": 12.5,
+     "live": true
+    },
+    {
+     "condition": "Over $5,000",
+     "price": 30,
+     "live": false
+    }
+   ]
+  },
+  {
+   "fee_published_id": 89440,
+   "institution_id": 6846,
+   "canonical_fee_key": "overdraft",
+   "fee_name": "Overdraft Protection Items - Negative from $50.01 and more",
+   "amount": 35,
+   "kind": "incomplete",
+   "tiers": [
+    {
+     "condition": "$25.01 to $50",
+     "price": 20,
+     "live": false
+    },
+    {
+     "condition": "$50.01 and more",
+     "price": 35,
+     "live": true
+    }
+   ]
+  },
+  {
+   "fee_published_id": 89748,
+   "institution_id": 4108,
+   "canonical_fee_key": "stop_payment",
+   "fee_name": "Stop Payments for over $100.00",
+   "amount": 20,
+   "kind": "incomplete",
+   "tiers": [
+    {
+     "condition": "$100.00 or less",
+     "price": 10,
+     "live": false
+    },
+    {
+     "condition": "over $100.00",
+     "price": 20,
+     "live": true
+    }
+   ]
+  },
+  {
+   "fee_published_id": 91565,
+   "institution_id": 6880,
+   "canonical_fee_key": "late_payment",
+   "fee_name": "Late Charge – Organizational Loan More Than $50K",
+   "amount": 100,
+   "kind": "incomplete",
+   "tiers": [
+    {
+     "condition": "Less Than $50K",
+     "price": 25,
+     "live": false
+    },
+    {
+     "condition": "More Than $50K",
+     "price": 100,
+     "live": true
+    }
+   ]
+  },
+  {
+   "fee_published_id": 95341,
+   "institution_id": 8162,
+   "canonical_fee_key": "collection_item",
+   "fee_name": "Collection Items (domestic) $25 to $99.99",
+   "amount": 25,
+   "kind": "incomplete",
+   "tiers": [
+    {
+     "condition": "Under $25",
+     "price": 25,
+     "live": true
+    },
+    {
+     "condition": "$25 to $99.99",
+     "price": 25,
+     "live": true
+    },
+    {
+     "condition": "$100 or more",
+     "price": 25,
+     "live": false
+    }
+   ]
+  },
+  {
+   "fee_published_id": 96889,
+   "institution_id": 991,
+   "canonical_fee_key": "overdraft",
+   "fee_name": "Overdraft Fee - Transactions greater than",
+   "amount": 30,
+   "kind": "unscoped",
+   "tiers": [
+    {
+     "condition": "greater than $50",
+     "price": 30,
+     "live": false
+    },
+    {
+     "condition": "$50 or less",
+     "price": 15,
+     "live": false
+    }
+   ]
+  },
+  {
+   "fee_published_id": 101785,
+   "institution_id": 5432,
+   "canonical_fee_key": "other_lending_fee",
+   "fee_name": "Skip-a-Payment Fee-if monthly loan payment",
+   "amount": 35,
+   "kind": "unscoped",
+   "tiers": [
+    {
+     "condition": "$350 or less",
+     "price": 35,
+     "live": false
+    },
+    {
+     "condition": "over $350",
+     "price": 55,
+     "live": true
+    }
+   ]
+  },
+  {
+   "fee_published_id": 101786,
+   "institution_id": 5432,
+   "canonical_fee_key": "other_lending_fee",
+   "fee_name": "Skip-a-Payment Fee -if monthly loan payment is over $350",
+   "amount": 55,
+   "kind": "incomplete",
+   "tiers": [
+    {
+     "condition": "$350 or less",
+     "price": 35,
+     "live": false
+    },
+    {
+     "condition": "over $350",
+     "price": 55,
+     "live": true
+    }
+   ]
+  },
+  {
+   "fee_published_id": 102393,
+   "institution_id": 1467,
+   "canonical_fee_key": "check_cashing",
+   "fee_name": "Check Cashing / Non-Customer / On Us Only",
+   "amount": 5,
+   "kind": "unscoped",
+   "tiers": [
+    {
+     "condition": "$250-$9,999.99",
+     "price": 5,
+     "live": false
+    },
+    {
+     "condition": "≥$10",
+     "price": 100,
+     "live": false
+    }
+   ]
+  },
+  {
+   "fee_published_id": 102642,
+   "institution_id": 1639,
+   "canonical_fee_key": "check_cashing",
+   "fee_name": "Tax Refund Check Cashing (Fed or MO State)",
+   "amount": 5,
+   "kind": "unscoped",
+   "tiers": [
+    {
+     "condition": "$1000.00 or less",
+     "price": 5,
+     "live": false
+    },
+    {
+     "condition": "over $1000.00",
+     "price": 25,
+     "live": false
+    }
+   ]
+  },
+  {
+   "fee_published_id": 103056,
+   "institution_id": 3734,
+   "canonical_fee_key": "cashiers_check",
+   "fee_name": "Cashier’s Check",
+   "amount": 3,
+   "kind": "unscoped",
+   "tiers": [
+    {
+     "condition": "$500.00-$1,000.00",
+     "price": 3,
+     "live": false
+    },
+    {
+     "condition": "Over $1,000.00",
+     "price": 5,
+     "live": true
+    }
+   ]
+  },
+  {
+   "fee_published_id": 103078,
+   "institution_id": 3734,
+   "canonical_fee_key": "cashiers_check",
+   "fee_name": "Cashier’s Check Over $1,000.00",
+   "amount": 5,
+   "kind": "incomplete",
+   "tiers": [
+    {
+     "condition": "$500.00-$1,000.00",
+     "price": 3,
+     "live": false
+    },
+    {
+     "condition": "Over $1,000.00",
+     "price": 5,
+     "live": true
+    }
+   ]
+  },
+  {
+   "fee_published_id": 104534,
+   "institution_id": 884,
+   "canonical_fee_key": "collection_item",
+   "fee_name": "Collection items up to (per item)",
+   "amount": 24,
+   "kind": "unscoped",
+   "tiers": [
+    {
+     "condition": "up to $299.99",
+     "price": 24,
+     "live": false
+    },
+    {
+     "condition": "$300.00 or greater",
+     "price": 60,
+     "live": false
+    }
+   ]
+  },
+  {
+   "fee_published_id": 104545,
+   "institution_id": 884,
+   "canonical_fee_key": "collection_item",
+   "fee_name": "Collection items or greater (per item)",
+   "amount": 60,
+   "kind": "unscoped",
+   "tiers": [
+    {
+     "condition": "up to $299.99",
+     "price": 24,
+     "live": false
+    },
+    {
+     "condition": "$300.00 or greater",
+     "price": 60,
+     "live": false
+    }
+   ]
+  },
+  {
+   "fee_published_id": 110375,
+   "institution_id": 4778,
+   "canonical_fee_key": "overdraft",
+   "fee_name": "Courtesy Pay Fee (negative balance $300.01 – $500.00)",
+   "amount": 35,
+   "kind": "incomplete",
+   "tiers": [
+    {
+     "condition": "$0.01 – $25.00",
+     "price": 5,
+     "live": false
+    },
+    {
+     "condition": "$25.01 – $75.00",
+     "price": 10,
+     "live": false
+    },
+    {
+     "condition": "$75.01 – $150.00",
+     "price": 15,
+     "live": false
+    },
+    {
+     "condition": "$150.01 – $225.00",
+     "price": 20,
+     "live": false
+    },
+    {
+     "condition": "$225.01 – $300.00",
+     "price": 25,
+     "live": false
+    },
+    {
+     "condition": "$300.01 – $500.00",
+     "price": 35,
+     "live": true
+    }
+   ]
+  },
+  {
+   "fee_published_id": 115586,
+   "institution_id": 6375,
+   "canonical_fee_key": "dormant_account",
+   "fee_name": "Escheatment Processing",
+   "amount": 10,
+   "kind": "unscoped",
+   "tiers": [
+    {
+     "condition": "under $50",
+     "price": 10,
+     "live": false
+    },
+    {
+     "condition": "$50 or more",
+     "price": 20,
+     "live": false
+    }
+   ]
+  },
+  {
+   "fee_published_id": 116120,
+   "institution_id": 4108,
+   "canonical_fee_key": "stop_payment",
+   "fee_name": "Stop Payments",
+   "amount": 10,
+   "kind": "unscoped",
+   "tiers": [
+    {
+     "condition": "$100.00 or less",
+     "price": 10,
+     "live": false
+    },
+    {
+     "condition": "over $100.00",
+     "price": 20,
+     "live": false
+    }
+   ]
+  },
+  {
+   "fee_published_id": 116685,
+   "institution_id": 3457,
+   "canonical_fee_key": "overdraft",
+   "fee_name": "Overdraft fee per item per presentment",
+   "amount": 30,
+   "kind": "unscoped",
+   "tiers": [
+    {
+     "condition": "$30.00 or less",
+     "price": 15,
+     "live": false
+    },
+    {
+     "condition": "More than $30.00",
+     "price": 30,
+     "live": false
+    }
+   ]
+  },
+  {
+   "fee_published_id": 120265,
+   "institution_id": 2256,
+   "canonical_fee_key": "dormant_account",
+   "fee_name": "Dormant Account, balance below $50",
+   "amount": 10,
+   "kind": "incomplete",
+   "tiers": [
+    {
+     "condition": "below $50",
+     "price": 10,
+     "live": true
+    },
+    {
+     "condition": "$50 or greater",
+     "price": 20,
+     "live": false
+    }
+   ]
+  },
+  {
+   "fee_published_id": 120270,
+   "institution_id": 2256,
+   "canonical_fee_key": "dormant_account",
+   "fee_name": "Dormant Account Fee, balance",
+   "amount": 20,
+   "kind": "unscoped",
+   "tiers": [
+    {
+     "condition": "below $50",
+     "price": 10,
+     "live": false
+    },
+    {
+     "condition": "$50 or greater",
+     "price": 20,
+     "live": false
+    }
+   ]
+  },
+  {
+   "fee_published_id": 121611,
+   "institution_id": 6193,
+   "canonical_fee_key": "check_cashing",
+   "fee_name": "Check Cashing Fee Member",
+   "amount": 2,
+   "kind": "unscoped",
+   "tiers": [
+    {
+     "condition": "between $100.01 and $499",
+     "price": 2,
+     "live": false
+    },
+    {
+     "condition": "over $500",
+     "price": 5,
+     "live": false
+    }
+   ]
+  },
+  {
+   "fee_published_id": 124568,
+   "institution_id": 3353,
+   "canonical_fee_key": "money_order",
+   "fee_name": "Money Order Fee up",
+   "amount": 3,
+   "kind": "unscoped",
+   "tiers": [
+    {
+     "condition": "up to $500.00",
+     "price": 3,
+     "live": false
+    },
+    {
+     "condition": "$500.01 to $1,000.00",
+     "price": 4,
+     "live": false
+    },
+    {
+     "condition": "$1,000.01 and greater",
+     "price": 5,
+     "live": false
+    }
+   ]
+  },
+  {
+   "fee_published_id": 126548,
+   "institution_id": 321,
+   "canonical_fee_key": "collection_item",
+   "fee_name": "Collection Items - Outgoing for Immediate Credit: Over $5,000",
+   "amount": 30,
+   "kind": "incomplete",
+   "tiers": [
+    {
+     "condition": "$5,000 or less",
+     "price": 12.5,
+     "live": false
+    },
+    {
+     "condition": "Over $5,000",
+     "price": 30,
+     "live": true
+    }
+   ]
+  },
+  {
+   "fee_published_id": 127659,
+   "institution_id": 2341,
+   "canonical_fee_key": "wire_domestic_incoming",
+   "fee_name": "Wire Transfer (Incoming) - up",
+   "amount": 15,
+   "kind": "unscoped",
+   "tiers": [
+    {
+     "condition": "up to $100,000",
+     "price": 15,
+     "live": false
+    },
+    {
+     "condition": "over $100,000",
+     "price": 18,
+     "live": true
+    }
+   ]
+  },
+  {
+   "fee_published_id": 127660,
+   "institution_id": 2341,
+   "canonical_fee_key": "wire_domestic_incoming",
+   "fee_name": "Wire Transfer (Incoming) - over $100,000",
+   "amount": 18,
+   "kind": "incomplete",
+   "tiers": [
+    {
+     "condition": "up to $100,000",
+     "price": 15,
+     "live": false
+    },
+    {
+     "condition": "over $100,000",
+     "price": 18,
+     "live": true
+    }
+   ]
+  },
+  {
+   "fee_published_id": 132800,
+   "institution_id": 5917,
+   "canonical_fee_key": "other_lending_fee",
+   "fee_name": "LOAN APPLICATION FEE - Business",
+   "amount": 699,
+   "kind": "unscoped",
+   "tiers": [
+    {
+     "condition": "under $100K",
+     "price": 699,
+     "live": false
+    },
+    {
+     "condition": "over $100K",
+     "price": 899,
+     "live": false
+    }
+   ]
+  },
+  {
+   "fee_published_id": 136874,
+   "institution_id": 8323,
+   "canonical_fee_key": "overdraft",
+   "fee_name": "Overdraft",
+   "amount": 5,
+   "kind": "unscoped",
+   "tiers": [
+    {
+     "condition": "over $29.99",
+     "price": 30,
+     "live": false
+    },
+    {
+     "condition": "$10.00 – $29.99",
+     "price": 5,
+     "live": false
+    }
+   ]
+  },
+  {
+   "fee_published_id": 136933,
+   "institution_id": 8723,
+   "canonical_fee_key": "money_order",
+   "fee_name": "Money order (over $300)",
+   "amount": 5,
+   "kind": "incomplete",
+   "tiers": [
+    {
+     "condition": "$300 or less",
+     "price": 2,
+     "live": false
+    },
+    {
+     "condition": "over $300",
+     "price": 5,
+     "live": true
+    }
+   ]
+  },
+  {
+   "fee_published_id": 148646,
+   "institution_id": 4902,
+   "canonical_fee_key": "overdraft",
+   "fee_name": "ATM Share Overdraft (Balance Below $25.00)",
+   "amount": 35,
+   "kind": "incomplete",
+   "tiers": [
+    {
+     "condition": "Below $25.00",
+     "price": 35,
+     "live": true
+    },
+    {
+     "condition": "Below $0.00",
+     "price": 35,
+     "live": false
+    }
+   ]
+  },
+  {
+   "fee_published_id": 159922,
+   "institution_id": 321,
+   "canonical_fee_key": "collection_item",
+   "fee_name": "Collection Items - Outgoing for Immediate Credit",
+   "amount": 12.5,
+   "kind": "unscoped",
+   "tiers": [
+    {
+     "condition": "$5,000 or less",
+     "price": 12.5,
+     "live": false
+    },
+    {
+     "condition": "Over $5,000",
+     "price": 30,
+     "live": false
+    }
+   ]
+  },
+  {
+   "fee_published_id": 165707,
+   "institution_id": 321,
+   "canonical_fee_key": "collection_item",
+   "fee_name": "Collection Items - Outgoing for Immediate Credit: Over",
+   "amount": 30,
+   "kind": "unscoped",
+   "tiers": [
+    {
+     "condition": "$5,000 or less",
+     "price": 12.5,
+     "live": true
+    },
+    {
+     "condition": "Over $5,000",
+     "price": 30,
+     "live": false
+    }
+   ]
+  }
+ ],
+ "rows": [
+  {
+   "fee_published_id": 116685,
+   "fee_verified_id": 180007,
+   "institution_id": 3457,
+   "source_document_id": 35684,
+   "canonical_fee_key": "overdraft",
+   "fee_name": "Overdraft fee per item per presentment",
+   "amount": "30.00",
+   "excerpt": "More than $30.00 – Overdraft fee per item per presentment.",
+   "window_lines": "Images sent with statements | $3.00\n\nNon-Sufficient Funds (NSF) Return Item Fee / Overdraft Fees: A fee may be imposed for each withdrawal attempt when your account does not have sufficient funds to cover that item. A maximum of $150 in overdraft and/or NSF item fees is assessed per business day per account. Be aware each time the item is presented for payment you may be charged a fee. This applies to consumer and business accounts except as prohibited by law, whether the withdrawal attempt is in person, by check, or other electronic means as follows:\n\nIf your check/item is returned for insufficient funds (NSF) and overdraft balance at the end of business day is:\n\n$30.00 or less – Overdraft fee per item per presentment. | $15.00 per item\n\nMore than $30.00 – Overdraft fee per item per presentment. | $30.00 per item\n\nIf your check/item is returned for insufficient funds (NSF) and overdraft balance at the end of business day is:\n\n$30.00 or less | $15.00 per item\n\nMore than $30.00 | $30.00 per item\n\nIndemnity Bonds ( Lost Certificate of Deposit) | $10.00",
+   "siblings": [
+    {
+     "amount": 30,
+     "fee_name": "Overdraft fee per item per presentment"
+    }
+   ]
+  },
+  {
+   "fee_published_id": 68550,
+   "fee_verified_id": 191403,
+   "institution_id": 624,
+   "source_document_id": 37511,
+   "canonical_fee_key": "cashiers_check",
+   "fee_name": "Cashier’s checks $1,000.00 or less per item",
+   "amount": "5.00",
+   "excerpt": "Cashier’s checks $1,000.00 or less per item | $5.00",
+   "window_lines": "Returned NSF/OD Fee (Insufficient Funds/Overdraft Fee, per item) *Per item - created by check, in-person withdrawal, ATM withdrawal, or other electronic means, as applicable | $32.00\n\nInstant statement | $1.00\n\nSpecial statement production, per statement | $5.00\n\nReturned check charge | $7.00\n\nCashier’s checks $1,000.00 or less per item | $5.00\n\nCashier’s checks over $1,000.00 per item | $10.00\n\nResearch and/or Reconciliation per hour | $25.00\n\nStop payment fee, per item | $32.00\n\nOverdraft Protection per transfer | $10.00",
+   "siblings": [
+    {
+     "amount": 5,
+     "fee_name": "Cashier’s checks $1,000.00 or less per item"
+    },
+    {
+     "amount": 10,
+     "fee_name": "Cashier’s checks over per item"
+    }
+   ]
+  },
+  {
+   "fee_published_id": 68551,
+   "fee_verified_id": 191404,
+   "institution_id": 624,
+   "source_document_id": 37511,
+   "canonical_fee_key": "cashiers_check",
+   "fee_name": "Cashier’s checks over per item",
+   "amount": "10.00",
+   "excerpt": "Cashier’s checks over $1,000.00 per item | $10.00",
+   "window_lines": "Instant statement | $1.00\n\nSpecial statement production, per statement | $5.00\n\nReturned check charge | $7.00\n\nCashier’s checks $1,000.00 or less per item | $5.00\n\nCashier’s checks over $1,000.00 per item | $10.00\n\nResearch and/or Reconciliation per hour | $25.00\n\nStop payment fee, per item | $32.00\n\nOverdraft Protection per transfer | $10.00\n\nReturn Mail Fee (per month) | $5.00",
+   "siblings": [
+    {
+     "amount": 5,
+     "fee_name": "Cashier’s checks $1,000.00 or less per item"
+    },
+    {
+     "amount": 10,
+     "fee_name": "Cashier’s checks over per item"
+    }
+   ]
+  },
+  {
+   "fee_published_id": 127659,
+   "fee_verified_id": 140214,
+   "institution_id": 2341,
+   "source_document_id": 25743,
+   "canonical_fee_key": "wire_domestic_incoming",
+   "fee_name": "Wire Transfer (Incoming) - up",
+   "amount": "15.00",
+   "excerpt": "Wire Transfer (Incoming) - up to $100,000 | $15",
+   "window_lines": "Lost Passbook | $30\nMail-in Deposits | $1\nMoney Order | $10\nNo Passbook Deposit (Passbook Account only) | $5 per item\nOfficial Check | $15\nReturn Mail for Incorrect Address | $10 per statement\nStop Payment Order (Checks / ACH) | $35\nTemporary Checks (3 checks) | $6\nWire Transfer (Incoming) - up to $100,000 | $15\nWire Transfer (Incoming) - over $100,000 | $18\nWire Transfer (Outgoing) - domestic | $20\nWire Transfer (Outgoing) - international | $35\nWire Transfer Amendment | $15\n\nGeneral Questions:\n1-212-285-4770\nMon - Fri : 9 am to 5 pm ET Sat and Sun : 10 am to 3 pm ET",
+   "siblings": [
+    {
+     "amount": 15,
+     "fee_name": "Wire Transfer (Incoming) - up"
+    },
+    {
+     "amount": 18,
+     "fee_name": "Wire Transfer (Incoming) - over $100,000"
+    }
+   ]
+  },
+  {
+   "fee_published_id": 127660,
+   "fee_verified_id": 140215,
+   "institution_id": 2341,
+   "source_document_id": 25743,
+   "canonical_fee_key": "wire_domestic_incoming",
+   "fee_name": "Wire Transfer (Incoming) - over $100,000",
+   "amount": "18.00",
+   "excerpt": "Wire Transfer (Incoming) - over $100,000 | $18",
+   "window_lines": "Mail-in Deposits | $1\nMoney Order | $10\nNo Passbook Deposit (Passbook Account only) | $5 per item\nOfficial Check | $15\nReturn Mail for Incorrect Address | $10 per statement\nStop Payment Order (Checks / ACH) | $35\nTemporary Checks (3 checks) | $6\nWire Transfer (Incoming) - up to $100,000 | $15\nWire Transfer (Incoming) - over $100,000 | $18\nWire Transfer (Outgoing) - domestic | $20\nWire Transfer (Outgoing) - international | $35\nWire Transfer Amendment | $15\n\nGeneral Questions:\n1-212-285-4770\nMon - Fri : 9 am to 5 pm ET Sat and Sun : 10 am to 3 pm ET\nOr visit us at www.abacusbank.com.",
+   "siblings": [
+    {
+     "amount": 15,
+     "fee_name": "Wire Transfer (Incoming) - up"
+    },
+    {
+     "amount": 18,
+     "fee_name": "Wire Transfer (Incoming) - over $100,000"
+    }
+   ]
+  }
+ ]
+}

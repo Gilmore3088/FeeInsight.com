@@ -442,6 +442,8 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   PRODUCT_SPLIT_CHECK_VERSION: "First version: each verify step re-reads every pair of live dollar fees of one institution, category, variant and amount under different products whose stored lines fold to the same words, on one document or an older copy and its current copy (no cursor, 119 pairs on Nov 3); its switch (PRODUCT_SPLIT_MERGE_LIVE) is off, so it only reports; nothing older to replay.",
   // v1 (#1882): a live $0 overdraft that is only the smallest band of a priced cell or row.
   BANDED_ZERO_CHECK_VERSION: "First version: each verify step re-reads every live $0 overdraft, NSF and continuous overdraft fee (about 140 rows, no cursor); its switch is on (Oct 26), so matches come down after the second look; nothing older to replay.",
+  // v1 (#1110, Knox v183): a live fee that is one tier of a fee priced in tiers whose name hides its tier, or whose sibling tiers are not all live.
+  TIER_COMPLETENESS_CHECK_VERSION: "First version (Knox v183, owner's audit Nov 3): each verify step re-reads every live dollar fee whose stored line carries a balance, amount or count condition beside its price (no cursor, at most 6,000 rows) against its document's stored text: a fee that is one tier of a group whose name does not state its tier, or one whose group's other tiers are not all live under scoped names, is matched. Its switch (TIER_COMPLETENESS_TAKEDOWN_LIVE) is off, so it only reports. Dry run Nov 3 (prod, read-only): 2,981 candidates, 88 in a tier group, 50 matched at 35 institutions (31 unscoped, 19 incomplete), Moose Lake's live 116685 among them; nothing older to replay.",
   // v1 (#1397): a live $0 that is an item in one named account's list of benefits (Knox rules v157 holds new ones).
   ACCOUNT_BENEFIT_ZERO_CHECK_VERSION: "First version: each verify step re-reads every live $0 fee whose stored line is a free item (no cursor, 142 rows on Nov 1); its switch (DARWIN_ACCOUNT_BENEFIT_ZERO_LIVE) is off, so it only reports; nothing older to replay. v2 (Nov 3, Knox v171): also reads an item under \"This account also includes:\" and a perk an account's own cell of a comparison table prices free, and selects live $0 cell rows on texts with an account header (308 candidates on Nov 3, the same 12 matches as v1, none new); still a report while the switch is off, re-read every step, nothing to replay.",
   SERVICE_MAINTENANCE_CHECK_VERSION: "First version: each verify step re-reads every live flat monthly maintenance fee whose text prints a service's words (no cursor; not yet counted on prod); its switch (SERVICE_MAINTENANCE_TAKEDOWN_LIVE) is off, so it only reports; nothing older to replay.",
@@ -936,6 +938,10 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
     // v109 (Nov 3, with Knox v178): od_protection_transfer accepts an automatic transfer from savings or shares
     // named alone ("Automatic transfers from shares"); accept-only, so 0 live fees come down or re-file on the
     // dry run (18 live names say such a transfer, all already filed there and accepted; a savings club's is left out).
+    // v110 (Nov 3, with Knox v183; #1110): a priced fee's own trailing tier bracket ("(overdraft balance $30.00 or
+    // less)") is no waiver or exclusion word for the guard's exclude rules; includes still read the whole name.
+    // Dry run Nov 3 (prod, read-only): of 1,038 live priced names ending in a bracket with a condition, the bracket is
+    // read off 408 and the guard's verdict changes on 0 (v109 vs v110), so 0 come down or re-file.
     {
       key: "hamilton.guard_catch_up",
       owner: "hamilton",

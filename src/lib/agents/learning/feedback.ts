@@ -305,6 +305,7 @@ export const TAKEDOWN_REASON_CHECKS: Readonly<Record<string, string>> = {
   source_mismatch: "hamilton.hand_takedown",
   // Darwin's re-checks of live fees.
   banded_zero: "darwin.banded_zero",
+  tier_incomplete: "darwin.tier_completeness",
   account_benefit_zero: "darwin.account_benefit_zero",
   zero_waiver_row: "darwin.zero_waiver_row",
   free_list_item: "darwin.free_list_item",

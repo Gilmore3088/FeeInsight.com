@@ -1,5 +1,6 @@
 import { BANDED_ZERO_CATEGORIES } from "@/lib/banded-zero";
 import { BANDED_ZERO_TAKEDOWN_LIVE, findBandedZeros } from "@/lib/agents/darwin/banded-zero-check";
+import { findTierGaps, TIER_COMPLETENESS_TAKEDOWN_LIVE } from "@/lib/agents/darwin/tier-completeness-check";
 import { findRateFloors, RATE_FLOOR_TAKEDOWN_LIVE } from "@/lib/agents/darwin/rate-floor-check";
 import { findLateChargeBounds, LATE_CHARGE_BOUND_TAKEDOWN_LIVE } from "@/lib/agents/darwin/late-charge-bound-check";
 import { findNoFeeSentences, NO_FEE_SENTENCE_TAKEDOWN_LIVE } from "@/lib/agents/darwin/no-fee-sentence-check";
@@ -118,6 +119,21 @@ export const SWEEP_REPLAYS: readonly SweepReplay[] = [
       const rows = fees.flatMap((fee, index) => fee.amountCents === 0 && BANDED_ZERO_CATEGORIES.has(fee.canonicalFeeKey ?? "")
         ? [{ ...base(fee, index), source_line: note(fee), document_lines: nameLines(c.text, fee.feeName ?? "") }] : []);
       return findBandedZeros(rows).matches.map((m) => ({ index: indexOf(m.feePublishedId), action: "takedown", reason: m.reason }));
+    },
+  },
+  {
+    check: "darwin.tier_completeness",
+    switches: { TIER_COMPLETENESS_TAKEDOWN_LIVE },
+    scope: "sweep, partial",
+    replays: "Darwin's tier completeness re-check (`findTierGaps`) on every published fee above $0, with the whole text as its window and the member's other published fees of its category as its siblings",
+    keepsCodeValue: NO_OTHER_ROWS,
+    run(fees, c, on) {
+      if (!on("TIER_COMPLETENESS_TAKEDOWN_LIVE")) return [];
+      const rows = fees.flatMap((fee, index) => flatPriced(fee) ? [{
+        ...base(fee, index), source_document_id: DOCUMENT_ID, excerpt: fee.excerpt ?? null, window_lines: c.text,
+        siblings: fees.filter((other) => other.canonicalFeeKey === fee.canonicalFeeKey).map((other) => ({ fee_name: other.feeName, amount: dollars(other.amountCents) })),
+      }] : []);
+      return findTierGaps(rows).matches.map((m) => ({ index: indexOf(m.feePublishedId), action: "takedown", reason: m.reason }));
     },
   },
   {
