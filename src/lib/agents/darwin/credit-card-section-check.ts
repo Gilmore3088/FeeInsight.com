@@ -3,7 +3,7 @@ import { invalidatePublicReadCache } from "@/lib/data-store/fee-cache";
 import { inSavepoint } from "@/lib/agents/savepoint";
 import { secondLook } from "@/lib/agents/hamilton/second-look";
 import { excerptOf } from "@/lib/agents/hamilton/frequency-fill";
-import { creditCardSectionColumns, creditCardSectionRead } from "@/lib/agents/knox/credit-card-section";
+import { creditCardSectionColumns, creditCardSectionRead, creditCardStatementRead } from "@/lib/agents/knox/credit-card-section";
 
 type SqlTag = typeof sql;
 
@@ -28,14 +28,23 @@ type SqlTag = typeof sql;
  * default), it only reports.
  *
  * Dry run, prod read-only, 2026-11-03: see docs/project/findings/2026-11-03-knox-backlog-dry-run-6-misfiles.md.
+ *
+ * v2 (Knox v176, backlog dry run 7): it also reads every live flat paper statement fee whose own name opens
+ * with a credit card (`CARD_STATEMENT_NAME_SQL`, then Knox's `creditCardStatementRead` on the name): USF FCU's
+ * "Visa Monthly Paper Statement Fee" $1.25 is the card's statement, not the deposit paper statement. The rule
+ * reads the name alone, so such a fee needs only its artifact, not a stored line or a text naming a credit
+ * card. Dry run, prod read-only, 2026-11-03: see
+ * docs/project/findings/2026-11-03-knox-backlog-dry-run-7-misfiles.md.
  */
 export const CREDIT_CARD_SECTION_CHECK = "darwin.credit_card_section";
-export const CREDIT_CARD_SECTION_CHECK_VERSION = 1;
+export const CREDIT_CARD_SECTION_CHECK_VERSION = 2;
 /** The switch: off, the step only reports; on, matches come down after the second look. */
 export const CREDIT_CARD_SECTION_TAKEDOWN_LIVE = false;
 export const CREDIT_CARD_SECTION_REASON = "credit_card_section";
 export const CREDIT_CARD_SECTION_FLAG = "credit_card_section";
-export const CREDIT_CARD_SECTION_KEYS = ["card_replacement", "rush_card"] as const;
+export const CREDIT_CARD_SECTION_KEYS = ["card_replacement", "rush_card", "paper_statement"] as const;
+/** The key whose fees Knox's name-only rule judges (`creditCardStatementRead`), not the section reader. */
+export const CREDIT_CARD_STATEMENT_KEY = "paper_statement";
 export const CREDIT_CARD_SECTION_LIMIT = 5_000;
 export const CREDIT_CARD_SECTION_SAMPLES = 20;
 /** The most rows one read returns. */
@@ -45,6 +54,8 @@ const TEXT_CHUNK = 50;
 
 /** Postgres pre-filter on the text: it names a credit card somewhere (`creditCardSectionColumns` reads nothing else). */
 export const CREDIT_CARD_TEXT_SQL = String.raw`credit\s+cards?`;
+/** Postgres pre-filter on a paper statement fee's name: it opens with a credit card (`creditCardStatementRead` judges the rest). */
+export const CARD_STATEMENT_NAME_SQL = String.raw`^\W*(visa|master\s?card|amex|american\s+express|discover|credit\s+cards?)`;
 
 export interface CreditCardSectionLiveRow {
   fee_published_id: number | string;
@@ -112,15 +123,20 @@ export function findCreditCardSectionFees(
     const artifactId = num(row.artifact_id);
     const text = artifactId == null ? undefined : texts.get(artifactId);
     const line = excerptOf(row.source_line);
-    if (!text || artifactId == null || !line) {
+    const byName = row.canonical_fee_key === CREDIT_CARD_STATEMENT_KEY;
+    if (artifactId == null || (!byName && (!text || !line))) {
       noText += 1;
       continue;
     }
     const amount = num(row.amount);
     if (amount == null || amount < 0) continue;
     const name = (row.fee_name ?? "").trim();
-    if (!columnsByText.has(artifactId)) columnsByText.set(artifactId, creditCardSectionColumns(text));
-    if (!creditCardSectionRead({ canonicalHint: row.canonical_fee_key, feeName: name, excerpt: line, amount }, text, columnsByText.get(artifactId)!)) continue;
+    if (byName) {
+      if (!creditCardStatementRead({ canonicalHint: row.canonical_fee_key, feeName: name })) continue;
+    } else {
+      if (!columnsByText.has(artifactId)) columnsByText.set(artifactId, creditCardSectionColumns(text!));
+      if (!creditCardSectionRead({ canonicalHint: row.canonical_fee_key, feeName: name, excerpt: line!, amount }, text!, columnsByText.get(artifactId)!)) continue;
+    }
     matches.push({
       feePublishedId: feeId,
       feeVerifiedId: num(row.fee_verified_id),
@@ -129,7 +145,7 @@ export function findCreditCardSectionFees(
       amount,
       canonicalFeeKey: row.canonical_fee_key,
       artifactId,
-      line: line.slice(0, 300),
+      line: (line ?? "").slice(0, 300),
       reason: `${CREDIT_CARD_SECTION_REASON}: "${name.slice(0, 80)}" #${artifactId}`,
     });
   }
@@ -166,6 +182,7 @@ export function creditCardSectionRowsSql(db: SqlTag, options: { institutionId?: 
          AND fp.amount_kind = 'flat'
          AND fp.amount >= 0
          AND fp.canonical_fee_key = ANY(${[...CREDIT_CARD_SECTION_KEYS]}::text[])
+         AND (fp.canonical_fee_key <> ${CREDIT_CARD_STATEMENT_KEY} OR fr.fee_name ~* ${CARD_STATEMENT_NAME_SQL})
          -- notAdminCorrectedSql("fp") (fee-correction-guard), written inline for the tagged template: never take down an admin-corrected fee.
          AND NOT EXISTS (SELECT 1 FROM published_fee_corrections corrected WHERE corrected.fee_published_id = fp.fee_published_id AND corrected.status = 'current')
          AND (${!scoped} OR fp.institution_id = ANY(${ids ?? [0]}::bigint[]))
@@ -176,7 +193,9 @@ export function creditCardSectionRowsSql(db: SqlTag, options: { institutionId?: 
        WHERE a.id IN (SELECT DISTINCT artifact_id FROM candidates WHERE artifact_id IS NOT NULL)
          AND a.normalized_text ~* ${CREDIT_CARD_TEXT_SQL}
     )
-    SELECT c.* FROM candidates c JOIN named ON named.id = c.artifact_id
+    SELECT c.* FROM candidates c
+     WHERE c.artifact_id IN (SELECT id FROM named)
+        OR (c.canonical_fee_key = ${CREDIT_CARD_STATEMENT_KEY} AND c.artifact_id IS NOT NULL)
      ORDER BY c.fee_published_id
      LIMIT ${limit}::int
   `;
@@ -242,7 +261,7 @@ export async function recheckCreditCardSectionFees(
         INSERT INTO agent_run_events (agent_run_id, step_id, event_type, status, message, detail)
         VALUES (
           ${options.runId}, ${options.stepId ?? null}, ${CREDIT_CARD_SECTION_CHECK}, 'completed',
-          ${`Read live card replacements printed in a credit card section: ${result.matched} of ${result.checked} live fee(s) on ${result.documents} document(s); ${live ? `${result.flagged} flagged, ${result.takenDown.length} archived` : "switch off, would take down, nothing written"}`},
+          ${`Read live card replacements printed in a credit card section and credit card statement fees: ${result.matched} of ${result.checked} live fee(s) on ${result.documents} document(s); ${live ? `${result.flagged} flagged, ${result.takenDown.length} archived` : "switch off, would take down, nothing written"}`},
           ${JSON.stringify(creditCardSectionDetail(result))}::jsonb
         )
       `);
@@ -305,7 +324,7 @@ async function recordTakedownEvent(
       INSERT INTO agent_run_events (agent_run_id, step_id, event_type, status, message, detail)
       VALUES (
         ${options.runId}, ${options.stepId ?? null}, 'darwin.credit_card_section_takedown', 'completed',
-        ${`Archived ${archived.length} live card replacement(s) printed in a credit card section, on their second look`},
+        ${`Archived ${archived.length} live card replacement(s) printed in a credit card section or credit card statement fee(s), on their second look`},
         ${JSON.stringify({ version: CREDIT_CARD_SECTION_CHECK_VERSION, taken_down: archived.length, samples: archived.slice(0, 50).map(sampleDetail) })}::jsonb
       )
     `);

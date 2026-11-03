@@ -458,6 +458,10 @@ export function runFamilyExpert(expert: FamilyExpert, windows: PriceWindow[]): E
       if (hint && feeLineName) match = { hint, feeName: feeLineName };
     }
     if (!match) return;
+    // v176 (review of PR #2969): a name that ends in an open bracket ("$25 NSF fee ($35 after 5th occurrence")
+    // is the earlier price's words cut at the next price inside its bracket, never a fee's name. The rules pass
+    // reads the bracket by its own words (`bracketedLaterRead`).
+    if (/\(\s*$/.test(match.feeName)) return;
     // v143: a row whose own words name the transfer ("Overdraft Transfer from Rediline Overdraft Loan
     // $5/advance") is the transfer, though the tail that names it ("Rediline Overdraft Loan") says loan.
     if (match.hint === "overdraft" && cleaned && cleaned !== match.feeName && classifyFor(expert, cleaned) === "od_protection_transfer") {

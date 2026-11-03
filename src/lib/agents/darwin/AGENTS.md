@@ -1887,6 +1887,11 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   through the 12-hour second look (`darwin.credit_card_section`) and is archived with `credit_card_section:
   "<name>" #<text>` (verified row rejected with the `credit_card_section` flag). Step detail
   `credit_card_section_check`. Golden-set replay: the `darwin.credit_card_section` sweep.
+  v2 (Knox v176, seventh re-read backlog dry run, Nov 3): it also reads every live flat `paper_statement` fee
+  whose own name opens with a credit card (`creditCardStatementRead`, the name-only rule Knox v176 applies; USF
+  FCU's "Visa Monthly Paper Statement Fee" $1.25 stood in for its $3.00 deposit fee), needing only the fee's
+  artifact. Dry run Nov 3 (prod, read-only): 2 such candidates, 2 match (94693 "Credit Card Monthly Paper
+  Statement Fee" $3, 135781 "Credit Card Paper Statements" $2), with the switch off.
 - A monthly maintenance fee whose row sits under a service's heading (`service-maintenance-check.ts`,
   #1092, state key 5608): River City Bank's "Consumer Online Banking Services and Mobile Banking Fees" over
   "Monthly Maintenance Fee | No charge" is the online banking service's fee; published as the account's
@@ -2966,7 +2971,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `ZERO_WAIVER_ROW_CHECK_VERSION` | `darwin.zero_waiver_row` | v2 | `darwin/zero-waiver-row-check.ts` |
 | `FREE_LIST_ITEM_CHECK_VERSION` | `darwin.free_list_item` | v1 | `darwin/free-list-item-check.ts` |
 | `NOT_ACCOUNT_FEE_LINE_CHECK_VERSION` | `darwin.not_account_fee_line` | v1 | `darwin/not-account-fee-line-check.ts` |
-| `CREDIT_CARD_SECTION_CHECK_VERSION` | `darwin.credit_card_section` | v1 | `darwin/credit-card-section-check.ts` |
+| `CREDIT_CARD_SECTION_CHECK_VERSION` | `darwin.credit_card_section` | v2 | `darwin/credit-card-section-check.ts` |
 | `SERVICE_MAINTENANCE_CHECK_VERSION` | `darwin.service_maintenance_heading` | v1 | `darwin/service-maintenance-check.ts` |
 | `CARD_PROGRAM_SECTION_CHECK_VERSION` | `darwin.card_program_section` | v1 | `darwin/card-program-section-check.ts` |
 | `LOAN_SECTION_CHECK_VERSION` | `darwin.loan_section` | v1 | `darwin/loan-section-check.ts` |
