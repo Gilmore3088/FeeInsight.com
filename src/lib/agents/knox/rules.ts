@@ -89,6 +89,12 @@ export interface ExtractedFeeCandidate extends Partial<FeeApplicability> {
   lineShare?: string;
   /** Complete bounded own-bullet evidence; retain its conditions beyond the legacy excerpt cap. */
   ownedBullet?: true;
+  /**
+   * v176: the name v175 gave a price-first read that v176 names by its own words (`priceFirstClauseName`,
+   * `maintenanceFromProse`). The text pass restores it when the new name would merge this read with another
+   * line's read of the same name and price (two accounts' "$10.00 monthly service charge" rows).
+   */
+  wholeLineName?: string;
   /** Complete single-column price paragraph with a bounded, explicit exception policy. */
   ownedPolicy?: true;
   /** Bounded literal own-unit evidence; metadata never supplies price/category admission. */
@@ -477,6 +483,21 @@ export function checkingNamePriceAmbiguous(excerpt: string | null | undefined, f
  */
 export const ITEM_INSUFFICIENT = /^(?![^|]*\b(?:deposited|cashed|deposit)\s+(?:items?|checks?|drafts?)\b)(?!(?![^|]*\breturn(?:ed)?\b)[^|]*\b(?:paid|honou?red)\b)[^|]*?(?:\b(?:ACH|checks?|items?|drafts?|debits?)\s*[-–:/]?\s*insufficient\b(?!\s*(?:funds?|balances?|deposits?|collateral)\b)|\binsufficient\s*[-–:/]?\s*(?:ACH|checks?|items?|drafts?|debits?)\b)/i;
 
+/**
+ * v176 (review of PR #2967): the item named insufficient that the bank pays, naming no return ("Insufficient
+ * Check Paid", "Item Insufficient - Paid", "Insufficient Debit Paid"), is the overdraft's row, as the note
+ * above says. `ITEM_INSUFFICIENT` leaves it out and no later rule read it, so it read nothing. Tried right
+ * before `ITEM_INSUFFICIENT`; "Insufficient Funds Check Paid" and "Insufficient Items Paid" are read as the
+ * overdraft by the rules above it, as before.
+ */
+export const ITEM_INSUFFICIENT_PAID = new RegExp(
+  ITEM_INSUFFICIENT.source.replace(
+    "(?!(?![^|]*\\breturn(?:ed)?\\b)[^|]*\\b(?:paid|honou?red)\\b)",
+    "(?![^|]*\\breturn(?:ed)?\\b)(?=[^|]*\\b(?:paid|honou?red)\\b)",
+  ),
+  "i",
+);
+
 /** Review of v175 (PR #2967): a deposited item or check named insufficient ("Deposited Item - Insufficient") is the deposited item return. */
 export const DEPOSITED_ITEM_INSUFFICIENT = /\bdeposit(?:ed)?\s+(?:items?|checks?)\s*[-–:/]?\s*insufficient\b/i;
 
@@ -586,6 +607,7 @@ export const FEE_PATTERNS: FeePattern[] = [
   // unread and its "Returned Check | $ 25.00" stayed NSF beside it (`withReturnBesideNsf` needs that
   // price) while live 149144 files the same line as the deposited item return. A balance, deposit or
   // collateral that is insufficient is no NSF.
+  { key: "overdraft", pattern: ITEM_INSUFFICIENT_PAID },
   { key: "nsf", pattern: ITEM_INSUFFICIENT },
   {
     key: "rush_card",
@@ -656,10 +678,12 @@ export const FEE_PATTERNS: FeePattern[] = [
     pattern: /\b(check images?|check cop(y|ies)|cop(y|ies) of (a |paid |cancell?ed |cleared )?checks?|photocop(y|ies) of (a )?checks?|image of (a )?check)\b/i,
   },
   { key: "check_cashing", pattern: /\b(check cashing|cashing (on-us |an? )?checks?)\b/i },
-  { key: "paper_statement", pattern: /\b(paper|mailed|printed) statements?\b/i },
+  // v176 (backlog dry run 7): a copy of a paper statement is the copy ("Copy of Paper Statement3 | $ 5.00
+  // per statement", doc 40565), not the paper statement fee; its footnote mark used to hide the word.
+  { key: "paper_statement", pattern: /(?<!\bcop(?:y|ies) of (?:an? |the )?)\b(paper|mailed|printed) statements?\b/i },
   {
     key: "document_reproduction",
-    pattern: /\b(statement cop(y|ies)|cop(y|ies) of (a )?statements?|duplicate statements?|statement reprints?|interim statements?|photocop(y|ies))\b/i,
+    pattern: /\b(statement cop(y|ies)|cop(y|ies) of (a )?(?:paper |mailed |printed )?statements?|duplicate statements?|statement reprints?|interim statements?|photocop(y|ies))\b/i,
   },
   { key: "estatement_fee", pattern: /\be[-\s]?statement\b/i },
   { key: "ach_origination", pattern: /\bACH.{0,30}\b(origination|batch)\b/i },
@@ -792,9 +816,16 @@ export const FEE_PATTERNS: FeePattern[] = [
     pattern: /\b(?:additional|duplicate|extra)\b[^|]{0,25}\bstatements?\b|\bcop(?:y|ies) of\b(?![^|]{0,25}\btitles?\b)/i,
   },
   {
-    // "Verification Forms", "Deposit Verification Printout", "Employment Verification".
+    // v176 (backlog dry run 7): verifying a borrower's employment is a loan's underwriting cost, not
+    // confirming an account to a third party. Jax Fire FCU prints "Employment Verification | $256"
+    // under "Real Estate Loans" beside its credit report and appraisal.
+    key: "other_lending_fee",
+    pattern: /\b(?:employment|income|employer) verifications?\b|\bverification of (?:employment|income)\b/i,
+  },
+  {
+    // "Verification Forms", "Deposit Verification Printout".
     key: "account_verification",
-    pattern: /\b(?:deposit|employment|account|balance) verifications?\b|\bverification (?:forms?|letters?)\b/i,
+    pattern: /\b(?:deposit|account|balance) verifications?\b|\bverification (?:forms?|letters?)\b/i,
   },
   {
     // A loan's due date change. A skipped payment stays with the v5 rule above ("skip-a-pay"):
@@ -973,8 +1004,10 @@ const NEGATIVE_FEE_LANGUAGE = /\b(no (?:[a-z]+ ){0,2}(?:fee|charge)s?|free|not c
  * E-Statements) | $6.00"), or that a few are free ("Non-AgFed ATM Withdrawals (3 FREE each month) |
  * $3.50"), waives the price for some; everyone else pays it. It is not "no fee", so the free word in
  * it never drops the row, and the fee is read as waivable.
+ * v176 (backlog dry run 7): so does a note that the electronic statement is free, the way to avoid a
+ * paper statement fee ("Monthly Paper Statement Fee (eStatements are free) ... | $3.00", USF FCU).
  */
-const FREE_FOR_NOTE = /\((?=[^()$]*\b(?:free\s+(?:with|for|to)|(?:\d+|one|two|three|four|five|six)\s+free)\b)[^()$]*\)/gi;
+const FREE_FOR_NOTE = /\((?=[^()$]*\b(?:free\s+(?:with|for|to)|(?:\d+|one|two|three|four|five|six)\s+free|(?:e-?|electronic\s+|online\s+|paperless\s+)statements?\s+(?:are\s+|is\s+)?free)\b)[^()$]*\)/gi;
 /**
  * v147: a counted free allowance in the price's own cell, joined to the price that follows it ("3 free
  * per month (then $1.50 per)", "4 sheets free (then $2.00 per sheet)", "First 5 pages free, then $0.50
@@ -1897,7 +1930,14 @@ const THRESHOLD_WORD_CELL = /^\s*(?:over|under|above|below|(?:less|more)\s+than|
 const THRESHOLD_CELL = /^\s*(?:over|under|above|below|(?:less|more)\s+than)\s+\$\s?\d[\d,]*(?:\.\d{1,2})?\s*$/i;
 
 export function classifyNearest(prefix: string): string | null {
-  return classifyFeeText(nearestFeeText(prefix));
+  // v176 (backlog dry run 7): a footnote number glued to the name's last word ("Overdraft Transfer2,10 |
+  // $8.00", GTE FCU) hid "transfer" from its rule, so the row read as an overdraft beside the table
+  // reader's overdraft transfer and both reads were kept. The name is classified as it is stored,
+  // without the marks (`stripFootnoteMarks`, the same cut `nameFrom` makes).
+  const text = nearestFeeText(prefix);
+  const cells = text.split(CELL_SEPARATOR);
+  const unmarked = [...cells.slice(0, -1), stripFootnoteMarks(cells.at(-1) ?? "")].join(CELL_SEPARATOR);
+  return classifyFeeText(unmarked !== text ? unmarked : text);
 }
 
 export function classifyFeeText(value: string): string | null {
@@ -1910,8 +1950,14 @@ const BRACKETED_WAIVER = /\((?=\s*waiv)[^()|]*\)?/gi;
 
 /** v110 (#1918): "Platinum Checking Fee (waived if $15K in combined balances in | " is "Platinum Checking Fee | ". */
 export function withoutBracketedWaiver(words: string): string {
-  return words.replace(BRACKETED_WAIVER, " ");
+  return words.replace(BRACKETED_WAIVER, " ").replace(STARRED_WAIVER, " ");
 }
+/**
+ * v176 (backlog dry run 7): a footnote-starred waiver note in the name's own cell ("Monthly Paper Statement
+ * Fee (eStatements are free) *Waived for members under 18 and over 65 | $3.00", USF FCU) ends with its
+ * cell, as a bracketed one does: the next cell's price is the fee's.
+ */
+const STARRED_WAIVER = /(?<!\(\s*)\*\s*waiv[^|]*/gi;
 const TABLE_CELL_BREAK = " | ";
 
 /**
@@ -1923,9 +1969,13 @@ const TABLE_CELL_BREAK = " | ";
 export function bracketedWaiverEnd(segment: string, waiverAt: number): number {
   if (!Number.isFinite(waiverAt)) return Number.POSITIVE_INFINITY;
   const cellStart = segment.lastIndexOf(TABLE_CELL_BREAK, waiverAt);
+  const cellEnd = segment.indexOf(TABLE_CELL_BREAK, waiverAt);
+  // v176: "*Waived ..." starred in the name's own cell (not the line's first words) ends with that cell.
+  // Inside a bracket ("(*Waived for ages 16 and under ...)") the bracket rule below decides.
+  const starred = /[^\s(]\s*\*\s*$/.test(segment.slice(Math.max(0, cellStart), waiverAt));
+  if (starred) return cellEnd < 0 ? Number.POSITIVE_INFINITY : cellEnd;
   const open = segment.lastIndexOf("(", waiverAt);
   if (open < 0 || open < cellStart || segment.slice(open, waiverAt).includes(")")) return Number.POSITIVE_INFINITY;
-  const cellEnd = segment.indexOf(TABLE_CELL_BREAK, waiverAt);
   return cellEnd < 0 ? Number.POSITIVE_INFINITY : cellEnd;
 }
 
@@ -2875,6 +2925,85 @@ export function workedExampleAmountAt(textBefore: string, segment: string, amoun
   return inWorkedExample(lineBefore, segment.replace(/\s+/g, " ").trim(), lines[at - 1] ?? null) && examplePriceNotAFee(segment, amount);
 }
 
+/**
+ * v176 (live-site audit, fwccu, live 137329): a line that opens with its price and prints a second figure
+ * ("● $5 monthly fee, waived with minimum balance of $500 or ... direct deposit totaling $500 or more") is
+ * named by the words right after the first price, up to the first clause boundary or the next price, never by
+ * the whole line with its figures deleted ("monthly fee, waived with minimum balance of or ... totalin").
+ * "For each" and "per" end the name, as does a waiver, a condition or a second price's "or". Null when those
+ * words name nothing usable: the line then takes no name of its own, and an unclassified one that says "fee" or
+ * "charge" is held for review under the line's words, as before, never sent on.
+ */
+const PRICE_FIRST_NAME_END = /[,.;:]|\s[-–—]\s|\b(?:if|when|whenever|unless|until|after|once|while|waived|waive|avoid(?:ed)?|with|without|otherwise|or|but|per|for\s+each|each|for\s+(?:balances?|accounts?)\s+(?:below|under|less))\b/i;
+/** A unit right after the price ("$4.00 per month service charge") is the price's, not a boundary of the name. */
+const PRICE_FIRST_UNIT = /^\s*(?:\/\s*mo(?:nth)?\b|(?:per|a|each|every)\s+(?:month|mo\.?|statement(?:\s+cycle)?|cycle|quarter|year)\b|per(?=\s+monthly\b))\.?/i;
+
+export function priceFirstClauseName(segment: string, amounts: readonly AmountMatch[]): string | null {
+  const first = amounts[0];
+  if (!first || amounts.length < 2 || /[a-z]/i.test(segment.slice(0, first.start))) return null;
+  // A separator right after the price ("$10.00 - Monthly Service Fee") opens the name; it does not end it.
+  let words = segment.slice(first.end, amounts[1].start).replace(PRICE_FIRST_UNIT, " ").replace(/^[\s\-–—:|]+/, " ");
+  const end = words.search(PRICE_FIRST_NAME_END);
+  if (end >= 0) words = words.slice(0, end);
+  // A bracket the cut leaves open ("monthly fee (Waived", "service charge (") is no part of the name; a closed
+  // one stays ("Non-Sufficient Funds (NSF) Fee").
+  const open = words.lastIndexOf("(");
+  if (open >= 0 && words.indexOf(")", open) < 0) words = words.slice(0, open);
+  const name = stripFootnoteMarks(normalizeSegment(words.replace(/\|/g, " "))).replace(/^[\s\-–—:]+|[\s\-–—:]+$/g, "");
+  const capped = name.slice(0, MAX_NAME_CHARS).trim();
+  if (!usableName(capped)) return null;
+  return `${capped.charAt(0).toUpperCase()}${capped.slice(1)}`;
+}
+
+/**
+ * v176 (review of PR #2969): a later price that opens a bracket on a price-first line, read by the words in
+ * that bracket. "note" when they price the same fee for an age, membership or other eligibility ("($6 if age
+ * 55+)", "($8 for members 62 and older)", "($6 for e-statement customers)") or name nothing; a fee of their own (a fee word and a category:
+ * "($2 paper statement fee if no e-statements)", "($30.00 overdraft fee)", "($50.00 drilling fee)") or another
+ * category ("($35 for international wires)") is read under the bracket's own words; a tier of the earlier fee
+ * ("($35 after the 3rd item)", "each additional") keeps the earlier fee's words without the open bracket.
+ */
+const BRACKET_ELIGIBILITY_NOTE = /\b(?:age[sd]?|years?|yrs?|older|younger|seniors?|members?|military|students?|youth|minors?|juniors?|employees?|veterans?)\b|\d+\s*\+|[<>]\s*\d+|\b(?:over|under)\s+\d+|\bfor\s+(?:[\w-]+\s+){0,3}(?:customers?|members?|accounts?|account\s*holders?|households?)\b/i;
+const BRACKET_TIER = /^\s*(?:after|beyond|over|above|for\s+each\s+additional|each\s+additional|per\s+additional|thereafter|starting|beginning)\b/i;
+
+export function bracketedLaterRead(segment: string, amount: AmountMatch, earlierWords: string, earlierHint: string): "note" | { name: string; hint: string } {
+  const close = segment.indexOf(")", amount.end);
+  const inner = segment.slice(amount.end, close < 0 ? segment.length : close).replace(PRICE_FIRST_UNIT, " ");
+  if (BRACKET_ELIGIBILITY_NOTE.test(inner)) return "note";
+  const end = inner.search(PRICE_FIRST_NAME_END);
+  const own = normalizeSegment((end >= 0 ? inner.slice(0, end) : inner).replace(/^\s*for\s+/i, " ")).replace(/^[\s\-–—:]+|[\s\-–—:]+$/g, "");
+  const ownHint = usableName(own) && !BARE_FEE_NAME.test(own) ? classifyFeeText(own) : null;
+  if (ownHint && (ownHint !== earlierHint || /\b(?:fee|charge)s?\b/i.test(own))) {
+    return { name: `${own.charAt(0).toUpperCase()}${own.slice(1)}`, hint: ownHint };
+  }
+  if (BRACKET_TIER.test(inner)) {
+    const cut = earlierWords.search(PRICE_FIRST_NAME_END);
+    const name = (cut >= 0 ? earlierWords.slice(0, cut) : earlierWords).replace(/[\s(]+$/, "").trim();
+    if (usableName(name)) return { name: `${name.charAt(0).toUpperCase()}${name.slice(1)}`, hint: earlierHint };
+  }
+  return "note";
+}
+
+/**
+ * v176: a bare fee word ("Fee", "Charges", "Service charge") names no fee of its own (`GENERIC_FEE_NAME`,
+ * families.ts). A price-first line `priceFirstClauseName` would name that way keeps its v175 name.
+ */
+const BARE_FEE_NAME = /^(?:service\s+)?(?:charges?|fees?)$/i;
+
+/**
+ * v176: true when naming a price-first line by its whole text (`nameFrom`) would delete a later figure that
+ * is a condition (a balance, a threshold) and keep the words around it ("waived with minimum balance of or
+ * ..."). A later figure that is another fee's price ("$30.00 - NSF Fee, $30.00 Overdraft Fee") or one a
+ * threshold bracket keeps ("(per item; maximum $125 per day)") leaves the whole-line name as it was. Review of
+ * PR #2969: so does one that opens a bracket the whole-line name would leave empty ("$5 monthly fee ($2 paper
+ * statement fee ...)" is not "monthly fee ( paper statement fee ...)").
+ */
+function wholeLineNameDropsCondition(segment: string, amounts: readonly AmountMatch[]): boolean {
+  const whole = nameFrom(segment);
+  return amounts.slice(1).some((amount) => !whole.includes(segment.slice(amount.start, amount.end).trim()) &&
+    (isConditionAmount(segment, amount) || /\(\s*$/.test(segment.slice(0, amount.start))));
+}
+
 function readPlainSegment(segment: string): ExtractionRulesResult {
   const result: ExtractionRulesResult = { candidates: [], held: [] };
 
@@ -2898,7 +3027,14 @@ function readPlainSegment(segment: string): ExtractionRulesResult {
   }
   const prefix = firstAmount ? segment.slice(0, allowanceAt ?? firstAmount.start) : segment;
   // v147: a line that is only an allowance and its price ("5 free - $0.25/after") takes no name from the allowance.
-  const name = usableName(nameFrom(prefix)) ? nameFrom(prefix) : allowanceAt != null ? "" : nameFrom(segment);
+  // v176: a price-first line whose whole-line name would delete a condition figure is named by its own words
+  // after the price (`priceFirstClauseName`, `wholeLineNameDropsCondition`).
+  // A clause name that is only a bare fee word ("Fee", `BARE_FEE_NAME`) keeps the v175 whole-line name.
+  const v175Name = usableName(nameFrom(prefix)) ? nameFrom(prefix) : allowanceAt != null ? "" : nameFrom(segment);
+  const clauseName = !usableName(nameFrom(prefix)) && allowanceAt == null && amounts.length >= 2 && !/[a-z]/i.test(prefix) &&
+    wholeLineNameDropsCondition(segment, amounts) ? priceFirstClauseName(segment, amounts) ?? "" : null;
+  const name = clauseName != null && !BARE_FEE_NAME.test(clauseName) ? clauseName : v175Name;
+  let ownWordsName: string | null = clauseName != null && name === clauseName && clauseName !== v175Name && usableName(clauseName) ? clauseName : null;
   // Words after the price belong to the next fee, so they classify a line only when it
   // opens with its price ("$5.00 Monthly fee for paper statements").
   const priceFirst = firstAmount != null && !/[a-z]/i.test(prefix);
@@ -3162,6 +3298,18 @@ function readPlainSegment(segment: string): ExtractionRulesResult {
   };
   const firstName = nameFrom(ownWords(0, feeAmounts[0]));
   let feeName = usableName(firstName) ? firstName : name;
+  const v175FeeName = usableName(firstName) ? firstName : v175Name;
+  // v176 (live-site audit, fwccu, live 137329): a price-first monthly fee line with a second figure (a waiver
+  // balance, a reduced price: "$15 monthly fee waived with a $2,500 minimum balance") is named by the fee's own
+  // words right after the first price (`maintenanceFromProse`: "Monthly fee"), never the whole line.
+  if (hint === "monthly_maintenance" && priceFirst && amounts.length >= 2 && feeAmounts[0] === firstAmount) {
+    const prose = maintenanceFromProse(segment, cells);
+    // A bare fee word ("Service charge", `BARE_FEE_NAME`) never renames it: the v175 name stays.
+    if (prose && prose.amount === firstAmount.value && !BARE_FEE_NAME.test(prose.feeName)) {
+      feeName = prose.feeName;
+      ownWordsName = feeName !== v175FeeName ? feeName : null;
+    }
+  }
   // v68: the free column is not part of the name ("Stop Payment | FREE | $25" is "Stop Payment").
   if (freeColumns && usableName(nameFrom(cells![0]))) feeName = nameFrom(cells![0]);
   // v68: a box size row priced per year ("2×5 | $ 25/Year") is named by its size: the unit
@@ -3262,7 +3410,10 @@ function readPlainSegment(segment: string): ExtractionRulesResult {
     const nonFee = feeWord
       ? BALANCE_REQUIREMENT.test(feeName) ? "balance_requirement" : feeAmounts[0].value > MAX_REASONABLE_FEE_AMOUNT ? "over_max_amount" : null
       : nonFeeReason(feeName, feeAmounts[0].value);
-    if (!usableName(feeName)) {
+    if (!usableName(feeName) && feeWord && priceFirst && amounts.length >= 2 && usableName(nameFrom(segment))) {
+      // v176: a price-first line `priceFirstClauseName` names nothing is held for review, untraced, as before.
+      result.held.push({ shape: "unclassified", feeName: nameFrom(segment), amount: feeAmounts[0].value, amountMax: null, percent: null, frequency, canonicalHint: null, excerpt: segment });
+    } else if (!usableName(feeName)) {
       countDrop(result, "no_name");
     } else if (nonFee) {
       countDrop(result, nonFee);
@@ -3308,14 +3459,22 @@ function readPlainSegment(segment: string): ExtractionRulesResult {
     const titledLater = index > 0 && chunkRead ? titledPriceRead(ownWords(ownStart, amount), segment.slice(amount.end), amount.value, chunkRead) : null;
     const chunkHint = titledLater?.hint ?? chunkRead;
     if (index > 0 && (!chunk || !usableName(chunk) || !chunkHint)) return;
+    // v176 (review of PR #2969): on a line that opens with its price, a later price that opens a bracket right
+    // after the earlier fee's words is read by its own words in the bracket (`bracketedLaterRead`): an age or
+    // member price ("$8 monthly service charge ($6 if age 55+)") or words that name nothing are a note; a fee of
+    // its own ("($2 paper statement fee if no e-statements)", "($50.00 drilling fee)") is read under its own name;
+    // a tier of the same fee ("($35 after the 3rd item)") keeps the earlier fee's name without the bracket.
+    const bracketed = index > 0 && priceFirst && /\(\s*$/.test(segment.slice(ownStart, amount.start))
+      ? bracketedLaterRead(segment, amount, chunk as string, chunkHint as string) : null;
+    if (bracketed === "note") return;
     // v22: "... you will be assessed a fee of $25.00 on the 7th day. This fee is in addition to
     // any Overdraft Fees assessed. | $25.00": the row's price cell repeats the price in its own cell.
     const priceCellAt = segment.lastIndexOf(CELL_SEPARATOR);
     // #1196: not when the earlier price ends on its own unit ("$25.00/hr Wire message | $25.00").
     if (index > 0 && !unitAfterPrevious && cells && amount.value === feeAmounts[index - 1].value && amount.start > priceCellAt &&
       PRICE_ONLY_CELL.test(cells.at(-1) ?? "") && segment.lastIndexOf(CELL_SEPARATOR, priceCellAt - 1) < feeAmounts[index - 1].start) return;
-    const candidateName = index === 0 ? feeName : titledLater?.name ?? (chunk as string);
-    const canonicalHint = index === 0 ? hint : (chunkHint as string);
+    const candidateName = index === 0 ? feeName : bracketed ? bracketed.name : titledLater?.name ?? (chunk as string);
+    const canonicalHint = index === 0 ? hint : bracketed ? bracketed.hint : (chunkHint as string);
     if (!usableName(candidateName) || amount.value <= 0 || amount.value > MAX_REASONABLE_FEE_AMOUNT) return;
     if (segment.slice(amount.end, amount.end + 3).includes("%")) return;
     result.candidates.push({
@@ -3326,6 +3485,7 @@ function readPlainSegment(segment: string): ExtractionRulesResult {
       confidence: confidenceFor(segment),
       excerpt: segment,
       waivable: waivable || ownsAllowance(amount),
+      ...(index === 0 && ownWordsName != null && candidateName === ownWordsName && usableName(v175FeeName) && v175FeeName !== candidateName ? { wholeLineName: v175FeeName } : {}),
       ...(ownsAllowance(amount) ? { allowancePrice: true, allowanceRow: allowanceRow ?? undefined, ...(allowanceRead?.read === "per_item" ? { allowancePerItem: true } : {}) } : {}),
     });
   });
@@ -3900,7 +4060,26 @@ export function extractCandidatesFromText(input: string): ExtractionRulesResult 
       if (!headed) continue;
       const candidate = boxLateFee(headed, headingKind === "safe_deposit_box" && !crossedBefore ? headingKind : previousKind);
       const key = `fee:${candidate.canonicalHint}:${candidate.feeName.toLowerCase()}:${candidate.amount}`;
-      if (seen.has(key) || result.candidates.length >= MAX_FEES_PER_DOCUMENT) continue;
+      if (result.candidates.length >= MAX_FEES_PER_DOCUMENT) continue;
+      if (seen.has(key)) {
+        // v176: a read v176 renamed (`wholeLineName`) never merges with another line's read of the same name and
+        // price: the renamed one keeps its v175 name, so the rename itself never merges two lines' rows.
+        const renamedAt = result.candidates.findIndex((earlier) => earlier.wholeLineName && earlier.excerpt !== candidate.excerpt &&
+          `fee:${earlier.canonicalHint}:${earlier.feeName.toLowerCase()}:${earlier.amount}` === key);
+        const restore = (read: ExtractedFeeCandidate) => `fee:${read.canonicalHint}:${read.wholeLineName!.toLowerCase()}:${read.amount}`;
+        if (candidate.wholeLineName && candidate.excerpt !== result.candidates.find((earlier) =>
+          `fee:${earlier.canonicalHint}:${earlier.feeName.toLowerCase()}:${earlier.amount}` === key)?.excerpt && !seen.has(restore(candidate))) {
+          seen.add(restore(candidate));
+          const { wholeLineName, ...read } = candidate;
+          result.candidates.push({ ...read, feeName: wholeLineName });
+        } else if (renamedAt >= 0 && !seen.has(restore(result.candidates[renamedAt]))) {
+          const { wholeLineName, ...earlier } = result.candidates[renamedAt];
+          seen.add(restore(result.candidates[renamedAt]));
+          result.candidates[renamedAt] = { ...earlier, feeName: wholeLineName! };
+          result.candidates.push(candidate);
+        }
+        continue;
+      }
       seen.add(key);
       result.candidates.push(candidate);
     }

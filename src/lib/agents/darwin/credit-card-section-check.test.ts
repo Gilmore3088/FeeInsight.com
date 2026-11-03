@@ -1,6 +1,8 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
 import {
+  CARD_STATEMENT_NAME_SQL,
+  CREDIT_CARD_SECTION_CHECK_VERSION,
   CREDIT_CARD_SECTION_TAKEDOWN_LIVE,
   CREDIT_CARD_TEXT_SQL,
   creditCardSectionDetail,
@@ -88,5 +90,36 @@ describe("Darwin's credit card section re-check (Knox v175, live 73521)", () => 
     const result = await recheckCreditCardSectionFees(fakeDb(calls), { runId: 1, dryRun: true, live: true });
     expect(result.matched).toBe(2);
     expect(calls.some((call) => /UPDATE|INSERT/.test(call))).toBe(false);
+  });
+});
+
+describe("Darwin's credit card statement re-check (v2, Knox v176, USF FCU)", () => {
+  // USF FCU (doc 42298): the card's statement fee under "Loans*", and the deposit fee it stood in for.
+  const STATEMENTS: CreditCardSectionLiveRow[] = [
+    row(700, 42298, "paper_statement", "Visa Monthly Paper Statement Fee", 1.25, "Visa Monthly Paper Statement Fee | $1.25"),
+    row(701, 42298, "paper_statement", "Monthly Paper Statement Fee (eStatements are free)", 3, null),
+    // A deposit statement fee that only excludes card statements: kept (live 43451's form).
+    row(702, 42298, "paper_statement", "Paper Statement Fee (excludes Visa statements)", 2, null),
+    // The rule reads the name alone: no stored line and no text is needed, only the artifact.
+    row(703, 42299, "paper_statement", "Credit Card Paper Statements", 2, null),
+    row(704, null, "paper_statement", "Visa Paper Statement", 1, null),
+  ];
+
+  it("is version 2", () => {
+    expect(CREDIT_CARD_SECTION_CHECK_VERSION).toBe(2);
+  });
+
+  it("takes a paper statement fee its own name gives to a credit card and keeps the deposit ones", () => {
+    const found = findCreditCardSectionFees(STATEMENTS, new Map());
+    expect(found.matches.map((fee) => fee.feePublishedId)).toEqual([700, 703]);
+    expect(found.noText).toBe(1);
+    expect(found.matches[0]?.reason).toBe('credit_card_section: "Visa Monthly Paper Statement Fee" #42298');
+  });
+
+  it("pre-filters names that open with a card", () => {
+    const named = new RegExp(CARD_STATEMENT_NAME_SQL, "i");
+    expect(named.test("Visa Monthly Paper Statement Fee")).toBe(true);
+    expect(named.test("Credit Card Paper Statements")).toBe(true);
+    expect(named.test("Paper Statement Fee (excludes Visa statements)")).toBe(false);
   });
 });

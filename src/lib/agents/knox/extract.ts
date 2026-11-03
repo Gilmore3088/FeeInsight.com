@@ -165,6 +165,18 @@ export const KNOX_LINEUP_READ_BELOW_VERSION = 73;
  */
 export const KNOX_TWIN_READ_BELOW_VERSION = 82;
 /**
+ * v176 (live-site audit, fwccu, live 137329): a current copy with a live Knox fee read from a line that opens
+ * with its price and prints a second figure, last read below this version, is read again once, so the fee is
+ * named by its own words after the price (`priceFirstClauseName`, `maintenanceFromProse`) rather than the whole
+ * line with its figures deleted ("monthly fee, waived with minimum balance of or ... totalin"). Free: rules
+ * only. It waits for the re-read floor like every class (a text read at v167 or later in the last 14 days comes
+ * back inside `KNOX_REREAD_REFRESH_DAYS`), so the floor itself is not raised. On prod (read-only, Nov 3) 293
+ * current-copy texts at 265 institutions match, 288 of them due now.
+ */
+export const KNOX_PRICE_FIRST_NAME_READ_BELOW_VERSION = 176;
+/** Postgres regex on a Knox note: the stored line opens with its price (no letter before it) and prints a second figure. */
+export const PRICE_FIRST_MULTI_AMOUNT_NOTE_SQL = String.raw`excerpt="[^A-Za-z"$]*\$\s?[0-9][^"$]*\$\s?[0-9]`;
+/**
  * The re-read floor (Nov 2, replay backlog review). The re-read classes that used to come back at
  * every rules version (a thin or empty read, a $10B+ bank's page, a current copy whose older copy
  * still carries live fees, a priority bank or market leader) are read again only when their last
@@ -694,6 +706,40 @@ export function textArtifactQuery(
                   AND recent.input_fingerprint = adt.text_hash
                   AND recent.strategy = '${KNOX_RULES_STRATEGY.strategy}'
                   AND recent.strategy_version >= ${twinParam}
+             )
+           )`;
+    }
+    // v176: a current copy with a live fee read from a price-first line with a second figure is read again once
+    // (`KNOX_PRICE_FIRST_NAME_READ_BELOW_VERSION`), so the fee takes its own name.
+    if (currentCopy) {
+      const priceFirstParam = `$${params.push(KNOX_PRICE_FIRST_NAME_READ_BELOW_VERSION)}`;
+      const noteParam = `$${params.push(PRICE_FIRST_MULTI_AMOUNT_NOTE_SQL)}`;
+      thinTextReextract += `
+           OR (
+             EXISTS (
+               SELECT 1
+                 FROM published_fee_records price_first_live
+                 JOIN verified_fee_observations price_first_verified
+                   ON price_first_verified.fee_verified_id = price_first_live.lineage_ref
+                 JOIN raw_fee_observations price_first_raw
+                   ON price_first_raw.fee_raw_id = price_first_verified.fee_raw_id
+                WHERE price_first_live.rolled_back_at IS NULL
+                  AND price_first_raw.source = 'knox'
+                  AND price_first_raw.source_document_id = adt.source_document_id
+                  AND price_first_raw.extraction_note ~ ${noteParam}
+             )
+             AND NOT EXISTS (
+               SELECT 1 FROM source_documents copy
+                WHERE copy.id = adt.source_document_id
+                  AND copy.superseded_by_id IS NOT NULL
+             )
+             AND NOT EXISTS (
+               SELECT 1 FROM pipeline_attempts recent
+                WHERE recent.stage = 'extract'
+                  AND recent.institution_id = adt.institution_id
+                  AND recent.input_fingerprint = adt.text_hash
+                  AND recent.strategy = '${KNOX_RULES_STRATEGY.strategy}'
+                  AND recent.strategy_version >= ${priceFirstParam}
              )
            )`;
     }

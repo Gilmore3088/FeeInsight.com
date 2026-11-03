@@ -447,7 +447,7 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   SERVICE_MAINTENANCE_CHECK_VERSION: "First version: each verify step re-reads every live flat monthly maintenance fee whose text prints a service's words (no cursor; not yet counted on prod); its switch (SERVICE_MAINTENANCE_TAKEDOWN_LIVE) is off, so it only reports; nothing older to replay.",
   NOT_ACCOUNT_FEE_LINE_CHECK_VERSION: "First version: each verify step re-reads every live flat fee whose Knox line says no dividend or interest is earned, and every live monthly maintenance fee on a text that prints an online services section title (no cursor; 493 rows on Nov 2, 2 matches, live 73916 and 152003); its switch (NOT_ACCOUNT_FEE_LINE_TAKEDOWN_LIVE) is off, so it only reports; nothing older to replay.",
   FREE_LIST_ITEM_CHECK_VERSION: "First version: each verify step re-reads every live flat priced fee whose Knox line joins a name line to a price line on a text that prints a free services list heading (no cursor; 39 rows on Nov 2, 1 match, live 159428); its switch (FREE_LIST_ITEM_TAKEDOWN_LIVE) is off, so it only reports; nothing older to replay.",
-  CREDIT_CARD_SECTION_CHECK_VERSION: "First version: each verify step re-reads every live flat card replacement and rush card fee on a text that names a credit card with Knox v175's credit card section reader (no cursor; 2,347 rows on Nov 3, 75 matches on 62 texts); its switch (CREDIT_CARD_SECTION_TAKEDOWN_LIVE) is off, so it only reports; nothing older to replay.",
+  CREDIT_CARD_SECTION_CHECK_VERSION: "First version: each verify step re-reads every live flat card replacement and rush card fee on a text that names a credit card with Knox v175's credit card section reader (no cursor; 2,347 rows on Nov 3, 75 matches on 62 texts); its switch (CREDIT_CARD_SECTION_TAKEDOWN_LIVE) is off, so it only reports; nothing older to replay. v2 (Knox v176, backlog dry run 7): it also reads live flat paper statement fees whose own name opens with a credit card, by Knox's name-only creditCardStatementRead (2 candidates on Nov 3, 2 matches: 94693, 135781); the switch stays off, so it only reports.",
   ZERO_WAIVER_ROW_CHECK_VERSION: "First version: each verify step re-reads every live flat $0 fee whose stored line opens with a no-fee phrase or says \"to avoid / to waive\" (no cursor; not yet counted on prod); its switch (ZERO_WAIVER_ROW_TAKEDOWN_LIVE) is off, so it only reports; nothing older to replay. v2 (Nov 2, Knox v168): also reads a $0 whose free word is advice in a \"Ways to Avoid\" section (avoid_fee_advice); read-only on prod, 2 live fees match (89909, 105000 at Financial Health FCU), reported only while the switch is off.",
   // v2 (#1673): the same-line restore follows the older line's replacement before bringing a copy back.
   SAME_LINE_DUPLICATE_RESTORE_VERSION: "Each publish step re-reads every same-line takedown whose older line is down (no cursor), so v2's replacement check reaches every pending restore on the next step; the copies v1 already restored are read by Darwin's same-line replacement re-check.",
@@ -790,7 +790,20 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
     // needs a named second cell and the list's own price. Darwin's live re-check (`darwin.credit_card_section`,
     // CREDIT_CARD_SECTION_TAKEDOWN_LIVE off) reports the 75 live credit card section replacements (62 texts).
     // No replay. Floor stays v97.
-    // v177 (#1092, class R1; v176 is open PR #2969): a priced row whose own name files nowhere is read under the
+    // v176 (seventh re-read backlog dry run, Nov 3): employment verification files other lending; a credit
+    // card's statement fee is left out (`creditCardStatementRead`); a starred waiver note ends with its cell and
+    // "(eStatements are free)" is a free-for note, so USF's $3.00 paper statement is read; a footnote glued to the
+    // name's last word no longer hides it (`classifyNearest`); a dash qualifier leaves the account name; review of
+    // #2967: a paid insufficient item reads overdraft (`ITEM_INSUFFICIENT_PAID`). Live-site audit (fwccu, live
+    // 137329): a price-first line with a second figure is named by its own words after the price
+    // (`priceFirstClauseName`, `maintenanceFromProse`), and its pages are read again once
+    // (`KNOX_PRICE_FIRST_NAME_READ_BELOW_VERSION`, 293 texts on Nov 3). Harnesses rb..rb7 (v175 at 5c5c8c757 vs
+    // v176): live fees not reproduced 286 to 286; rb7's wrong row re-filed, Visa statement gone, $3.00 read, GTE's
+    // duplicate gone, Bay State's product named; rb gains a business paper statement $3, rb2 a "Verification of
+    // Employment" $79; 5 price-first maintenance reads renamed, products kept; a bare fee word never renames a read, and a
+    // rename that would merge two rows keeps the v175 name. Darwin's credit card section re-check v2 reports the
+    // 2 live credit card paper statement fees. No replay.
+    // v177 (#1092, class R1; v176 is #2969): a priced row whose own name files nowhere is read under the
     // real HTML heading or table header the text's heading-context trailer names (`withHeadingCategoryReads`).
     // Only a text Rosetta read with HTML_HEADING_CONTEXT_LIVE on carries a trailer, and the switch is off, so no
     // stored text reads differently; the flip re-reads HTML pages through HTML_READ_VERSION, and Knox reads each
