@@ -110,5 +110,8 @@ continuous overdraft fee) and #52129 (an official check re-filed as an outgoing 
 lesson as the 5 wrong re-reads: the later read is not always right, so the switch needs a sampled
 verdict on these before it goes on, and the wrong later reads go back to Knox as read fixes.
 
+**Guard:** `src/lib/agents/hamilton/reread-category-move.test.ts` and `src/lib/agents/darwin/reread-category-move-check.test.ts`.
+**Agent lesson:** hamilton/publish-reread-category-is-not-line-identity
+
 **Status:** Shipped off. Next: Knox's fix for the 5 wrong re-reads, then a sample of the 101 live pairs;
 turning `REREAD_CATEGORY_MOVE_LIVE` on is James's call on that dry run.
