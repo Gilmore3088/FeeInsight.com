@@ -7,6 +7,7 @@ import { findZeroWaiverRows, ZERO_WAIVER_ROW_TAKEDOWN_LIVE } from "@/lib/agents/
 import { findFreeListItems, FREE_LIST_ITEM_PREFILTER, FREE_LIST_ITEM_TAKEDOWN_LIVE } from "@/lib/agents/darwin/free-list-item-check";
 import { findNotAccountFeeLines, NOT_ACCOUNT_FEE_LINE_TAKEDOWN_LIVE } from "@/lib/agents/darwin/not-account-fee-line-check";
 import { CREDIT_CARD_SECTION_KEYS, CREDIT_CARD_SECTION_TAKEDOWN_LIVE, findCreditCardSectionFees } from "@/lib/agents/darwin/credit-card-section-check";
+import { findSectionMisreads, SECTION_MISREAD_TAKEDOWN_LIVE } from "@/lib/agents/darwin/section-misread-check";
 import { findServiceMaintenance, SERVICE_MAINTENANCE_TAKEDOWN_LIVE } from "@/lib/agents/darwin/service-maintenance-check";
 import { findLoanPaymentExamples, LOAN_PAYMENT_EXAMPLE_TAKEDOWN_LIVE } from "@/lib/agents/darwin/loan-payment-example-check";
 import { canadianDocument, CANADIAN_DOCUMENT_TAKEDOWN_LIVE } from "@/lib/agents/darwin/canadian-document-check";
@@ -201,6 +202,19 @@ export const SWEEP_REPLAYS: readonly SweepReplay[] = [
       const rows = fees.flatMap((fee, index) => fee.amountCents != null && fee.amountCents >= 0 && fee.canonicalFeeKey != null && keys.has(fee.canonicalFeeKey)
         ? [{ ...base(fee, index), source_line: note(fee), artifact_id: DOCUMENT_ID }] : []);
       return findCreditCardSectionFees(rows, new Map([[DOCUMENT_ID, c.text]])).matches
+        .map((m) => ({ index: indexOf(m.feePublishedId), action: "takedown", reason: m.reason }));
+    },
+  },
+  {
+    check: "darwin.section_misread",
+    switches: { SECTION_MISREAD_TAKEDOWN_LIVE },
+    scope: "sweep",
+    replays: "Darwin's section misread re-check (`findSectionMisreads`, Knox v177's rules) on every published flat fee, with the member's text as the artifact Knox read: a waiver column's advice as the name, a front-matter name, a wire service's monthly module, and an early closure printed only in an IRA's section",
+    run(fees, c, on) {
+      if (!on("SECTION_MISREAD_TAKEDOWN_LIVE")) return [];
+      const rows = fees.flatMap((fee, index) => fee.amountCents != null && fee.amountCents >= 0
+        ? [{ ...base(fee, index), artifact_id: DOCUMENT_ID }] : []);
+      return findSectionMisreads(rows, new Map([[DOCUMENT_ID, c.text]])).matches
         .map((m) => ({ index: indexOf(m.feePublishedId), action: "takedown", reason: m.reason }));
     },
   },

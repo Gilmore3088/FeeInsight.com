@@ -26,6 +26,7 @@ import { ZERO_WAIVER_ROW_CHECK, ZERO_WAIVER_ROW_REASON } from "@/lib/agents/darw
 import { FREE_LIST_ITEM_CHECK, FREE_LIST_ITEM_REASON } from "@/lib/agents/darwin/free-list-item-check";
 import { CREDIT_CARD_SECTION_CHECK, CREDIT_CARD_SECTION_REASON } from "@/lib/agents/darwin/credit-card-section-check";
 import { NOT_ACCOUNT_FEE_LINE_CHECK, DIVIDEND_THRESHOLD_REASON, ONLINE_SERVICE_MONTHLY_REASON } from "@/lib/agents/darwin/not-account-fee-line-check";
+import { SECTION_MISREAD_CHECK, SECTION_MISREAD_REASONS } from "@/lib/agents/darwin/section-misread-check";
 import { SERVICE_MAINTENANCE_CHECK, SERVICE_MAINTENANCE_REASON } from "@/lib/agents/darwin/service-maintenance-check";
 import { LOAN_PAYMENT_EXAMPLE_CHECK, LOAN_PAYMENT_EXAMPLE_REASON } from "@/lib/agents/darwin/loan-payment-example-check";
 import { WORKED_EXAMPLE_CHECK, WORKED_EXAMPLE_REASON } from "@/lib/agents/darwin/worked-example-check";
@@ -105,6 +106,7 @@ const PRODUCERS: Record<string, Producer[]> = {
   "agents/darwin/zero-waiver-row-check.ts": [{ check: ZERO_WAIVER_ROW_CHECK, reasons: [ZERO_WAIVER_ROW_REASON] }],
   "agents/darwin/free-list-item-check.ts": [{ check: FREE_LIST_ITEM_CHECK, reasons: [FREE_LIST_ITEM_REASON] }],
   "agents/darwin/credit-card-section-check.ts": [{ check: CREDIT_CARD_SECTION_CHECK, reasons: [`${CREDIT_CARD_SECTION_REASON}: "Card Replacement" #1`] }],
+  "agents/darwin/section-misread-check.ts": [{ check: SECTION_MISREAD_CHECK, reasons: SECTION_MISREAD_REASONS.map((kind) => `${kind}: "x"`) }],
   "agents/darwin/not-account-fee-line-check.ts": [{ check: NOT_ACCOUNT_FEE_LINE_CHECK, reasons: [`${DIVIDEND_THRESHOLD_REASON}: "x"`, `${ONLINE_SERVICE_MONTHLY_REASON}: "x" under "Online Fees"`] }],
   "agents/darwin/service-maintenance-check.ts": [{ check: SERVICE_MAINTENANCE_CHECK, reasons: [SERVICE_MAINTENANCE_REASON] }],
   "agents/darwin/loan-payment-example-check.ts": [{ check: LOAN_PAYMENT_EXAMPLE_CHECK, reasons: [LOAN_PAYMENT_EXAMPLE_REASON] }],

@@ -1434,4 +1434,14 @@ export const KNOX_LESSONS: AgentLesson[] = [
     appliesTo: ["extract"],
     since: "2026-11-03",
   },
+  {
+    id: "backlog-dry-run-8-2026-11-03-the-rows-own-part-of-the-page",
+    agent: "knox",
+    stage: "extract",
+    lesson: "Name and file a price from its own part of the page, and never from a neighbouring part that only sits on the same line or above it. On a line that runs a fee, its price, a \"how to avoid it\" column and then the other column's bullet item and price, the second price belongs to the bullet item; advice on avoiding a fee (\"Use Online BillPay ...\", \"Enroll in eStatements\") never names a fee, so a price that only advice names is held. A charge printed in an IRA's own section is the IRA's, however the row words it. A page's front matter repeats its words run together with no cells, so it is no place to read a fee from. A monthly module or package that lets a customer send wires is a subscription, not a wire's price. A sentence that states the minimum balance gives a balance, not a price, unless it names the charge for falling below it. Prose from the next column after the last price sets no unit, a product card's marketing labels describe the account above them, and the last entry of a product tab list is a menu item, not the fee's account. Each of these misreads came from words outside the fee's own row, so check the row's boundary first when a name or category looks wrong.",
+    why: "The eighth dry run for KNOX_REREAD_BACKLOG_LIVE (40 backlog texts, Nov 3, Knox v176) found 5 wrong and 12 doubtful reads of 112 changed rows: Honor FCU's \"Verification of Deposits\" $25 named \"Use Online BillPay, HonorPay or Account-To-Account Transfers: ...\" and filed bill_pay, with a $50 the waiver column alone named; Mattel FCU's IRA \"Early Closure Fee (if <59 1/2 )\" $30 filed early closure; Crosbyton's cashier check rate cap read as a flat $10 from the meta description; First-Citizens' domestic wire base module (per month) read as a domestic wire; and Primis, Elkhorn, Mattel and First-Citizens doubtful products and units. Knox v177 reads each right on the same texts. Live: 12 fees (6 by name, 6 IRA section closings) are reported by Darwin's section misread re-check, switch off.",
+    evidence: { issues: [1026], prs: [2969], files: ["src/lib/agents/knox/rules.ts", "src/lib/agents/knox/specialists.ts", "src/lib/agents/knox/lineup.ts", "src/lib/custom-report/ira-section-fee.ts", "src/lib/custom-report/own-wire-scope.ts", "src/lib/agents/darwin/section-misread-check.ts", "src/lib/agents/knox/backlog-dry-run-8.test.ts", "docs/project/findings/2026-11-03-knox-backlog-dry-run-8-misreads.md"] },
+    appliesTo: ["extract"],
+    since: "2026-11-03",
+  },
 ];

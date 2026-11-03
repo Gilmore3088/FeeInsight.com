@@ -1422,6 +1422,7 @@
   "not_a_fee:wrong_amount:100162|forbid|wire_domestic_incoming:0",
   "not_a_fee:wrong_amount:100816|forbid|check_cashing:500",
   "not_a_fee:wrong_amount:103410|forbid|cash_advance:400",
+  "not_a_fee:wrong_amount:17477|forbid|early_closure:50000",
   "not_a_fee:wrong_amount:29509|forbid|cash_advance:1000",
   "not_a_fee:wrong_amount:51566|forbid|stop_payment:2500",
   "not_a_fee:wrong_amount:51567|forbid|wire_domestic_outgoing:5500",

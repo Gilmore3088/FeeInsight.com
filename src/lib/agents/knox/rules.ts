@@ -1,3 +1,4 @@
+import { IRA_SECTION_TARGET, iraSectionClosingFee } from "@/lib/custom-report/ira-section-fee";
 import { scopedFeeStatements, type FeeApplicability } from "@/lib/fee-audience";
 import { CELL_SEPARATOR } from "@/lib/agents/rosetta/html-dom";
 import { composableTail, LEADER_PRICE_WORDS, nameAfterPrice, passesDarwinChecks, QUALIFIER, splitCapsHeading, titleTail } from "@/lib/agents/knox/layout";
@@ -1721,6 +1722,49 @@ export function loanSectionFeeRead(candidate: ExtractedFeeCandidate, text: strin
 }
 
 /**
+ * v177 (backlog dry run 8, First-Citizens Bank text 40703, line 718): a wire service's monthly module or package
+ * ("Domestic wire transfer base module (per month)D | $20.00", "International Wire Module | $20.00 | Per Month",
+ * "Premium Package (per month) (includes ACH & Domestic Wire access)") is a subscription to send wires, not the
+ * price of a wire; no type of the 50 holds it. Only a price for the module itself is held (review of #2973): a
+ * base module, a module, package or subscription priced per month or monthly, a package or module fee, or a
+ * name whose head is the module ("International Wire Module", "Wire Transfer Package"). A wire's price that
+ * names the module its sender has is a wire's price: "Outgoing Domestic Wire - Premium Package customers",
+ * "Outgoing domestic wire, Business Package", "Outgoing international wire – Treasury Module", "Domestic Wire
+ * Out (subscription required)", "Outgoing Domestic Wire through Wire Module", "Outgoing Online Module Wire
+ * Transfer", "Non-Module Wire Transfer".
+ */
+const WIRE_SUBSCRIPTION = /\b(?:module|package|subscription)\b/gi;
+const SUBSCRIPTION_PRICE_AFTER = /^\W*(?:fees?\b|\(?\s*(?:per\s+month|monthly|month(?:ly)?\s+fee|\/\s*mo(?:nth)?\b))/i;
+const SUBSCRIPTION_PRICE_BEFORE = /\b(?:base|monthly)\s+(?:wire\s+(?:transfer\s+)?)?$/i;
+const MODULE_IS_HEAD = /\b(?:wires?|wire\s+transfers?|transfers?)\s+$/i;
+export function wireServiceSubscription(name: string): boolean {
+  for (const match of name.matchAll(WIRE_SUBSCRIPTION)) {
+    const at = match.index ?? 0;
+    const before = name.slice(Math.max(0, at - 24), at);
+    if (/\b(?:through|via|using|by|with|online|non)\W*(?:\w+\W+)?$/i.test(before) || /non-$/i.test(before)) continue;
+    const rest = name.slice(at + match[0].length);
+    const after = rest.replace(/\([^()]*\)/g, " ");
+    if (/\b(?:wires?|transfers?)\b/i.test(after)) continue;
+    if (SUBSCRIPTION_PRICE_AFTER.test(rest) || SUBSCRIPTION_PRICE_BEFORE.test(before)) return true;
+    // The module is the name's head ("International Wire Module", "Wire Transfer Package (per month)").
+    if (MODULE_IS_HEAD.test(before) && /^\W*(?:\([^()]*\)\W*)*[A-Z]?$/.test(rest.trim())) return true;
+  }
+  return false;
+}
+
+/**
+ * v177 (backlog dry run 8, Mattel FCU text 12602): an early closure read whose every priced line sits in an
+ * IRA's own section ("Individual Retirement Account (IRA) Fees | Elite" / "Early Closure Fee (if <59 1/2 ) |
+ * $ 30") is the IRA's closing fee, filed as `ira_termination` whichever specialist read it, when that type
+ * passes the name (`iraSectionClosingFee` in `@/lib/custom-report/ira-section-fee`, shared with Darwin's live
+ * re-check). The name and price stay the page's own.
+ */
+export function iraSectionClosingRead(candidate: ExtractedFeeCandidate, text: string): ExtractedFeeCandidate {
+  if (!iraSectionClosingFee(text, candidate.feeName, candidate.amount, candidate.canonicalHint)) return candidate;
+  return passesDarwinChecks(IRA_SECTION_TARGET, candidate.feeName, candidate.amount) ? { ...candidate, canonicalHint: IRA_SECTION_TARGET } : candidate;
+}
+
+/**
  * v131 (#1912): an NSF read of a bill pay return charge whose own line, or the note wrapped onto the
  * next line, says the payee returned it is the bill pay service's charge: filed as `bill_pay`,
  * whichever specialist read it, when that type passes the name. Bellco's table pass read "Bill Pay
@@ -2024,6 +2068,20 @@ const BY_THE_MONTH_AFTER = /^\s*(?:\/\s*(?:mo|month)\b|per month\b)/i;
 export const STILL_A_BALANCE_AFTER = /^\s*max(?:imum)?\b|^\s*(?:\/\s*(?:mo|month)\b|per\s+month\b|monthly\b)?\s*(?:avg|average|daily balance)\b|^[^|$]{0,12}\b(?:fee|charge)s?\b[^|$]{0,12}\$\s?\d/i;
 export const BALANCE_WORD_PRICE_LIMIT = 100;
 
+/**
+ * v177 (backlog dry run 8 gates, golden-set case wrong_amount:17477): a sentence that states the account's minimum
+ * balance ("IRA Closing Fee | $50.00 if closed within two years. Minimum balance is $500.00 if not on direct
+ * deposit.") gives a balance, not a price. A sentence that charges for falling below it ("Penalty for falling below
+ * the minimum balance is $8.00", live 137774) names its charge before the words and is a price.
+ */
+const MINIMUM_BALANCE_IS = /\bminimum(?:\s+(?:daily|average))?\s+(?:balance|deposit)\s+is\s*[-–(]?\s*$/i;
+function minimumBalanceStated(text: string, start: number): boolean {
+  const before = text.slice(Math.max(0, start - 120), start);
+  if (!MINIMUM_BALANCE_IS.test(before)) return false;
+  const clause = before.split(/[.;|]\s+|\n/).pop() ?? before;
+  return !/\b(?:penalty|fees?|charges?)\b/i.test(clause);
+}
+
 export function isConditionAmount(text: string, amount: Pick<AmountMatch, "start" | "end">): boolean {
   const before = text.slice(Math.max(0, amount.start - 40), amount.start);
   const after = text.slice(amount.end, amount.end + 40);
@@ -2033,6 +2091,7 @@ export function isConditionAmount(text: string, amount: Pick<AmountMatch, "start
     return false;
   }
   return INCREMENT_BEFORE.test(text.slice(Math.max(0, amount.start - 40), amount.start)) ||
+    minimumBalanceStated(text, amount.start) ||
     CONDITION_BEFORE.test(text.slice(Math.max(0, amount.start - 40), amount.start)) ||
     CONDITION_AFTER.test(text.slice(amount.end, amount.end + 30)) ||
     (MAX_AFTER.test(text.slice(amount.end, amount.end + 12)) && EARLIER_PRICE.test(text.slice(0, amount.start)));
@@ -3004,6 +3063,73 @@ function wholeLineNameDropsCondition(segment: string, amounts: readonly AmountMa
     (isConditionAmount(segment, amount) || /\(\s*$/.test(segment.slice(0, amount.start))));
 }
 
+/**
+ * v177 (backlog dry run 8, Honor FCU text 4644, lines 183-193): a three-column schedule prints each fee, its
+ * price, a "how to avoid it" column and then the other column's bullet item and price on one stored line:
+ * "Wire Transfer Fee - Domestic | $20.00 per wire | Use Online BillPay, HonorPay or Account-To-Account
+ * Transfers | • Verification of Deposits | $25.00 each". The second price is the bullet item's, so its own
+ * words start at the last bullet cell after the first price ("Verification of Deposits"), never at the waiver
+ * column, which named it "Use Online BillPay, ...: Verification of Deposits" and filed it bill_pay. Words with
+ * no bullet cell are returned whole.
+ */
+const BULLET_CELL_OPEN = /(?:^|\|)\s*[•∙●▪■◦·]\s*(?=[A-Za-z(])/gu;
+export function laterPriceOwnWords(words: string): string {
+  let at = -1;
+  for (const match of words.matchAll(BULLET_CELL_OPEN)) at = match.index ?? at;
+  return at > 0 ? words.slice(at).replace(/^\s*\|/, "") : words;
+}
+/**
+ * v177: a name that is only a waiver column's advice on avoiding a fee ("Use Online BillPay, HonorPay or
+ * Account-To-Account Transfers", "Use Online Banking and enroll in eStatements", "Maintain positive balance to
+ * cover pending purchases"). A name that names the service it uses ("Use of Foreign ATM", "Use at NON-MCU ATM",
+ * "Use our money order ...") or the fee or its charge ("Enroll in free eStatements, or request a paper
+ * statement for a") is a fee name.
+ */
+const WAIVER_ADVICE_OPEN = /^\W*(?:use|enroll\s+in|sign\s+up\s+for|switch\s+to|maintain|keep)\s+(?!of\b|at\b|our\s+money|an?\s+(?:non|foreign|out|other))/i;
+const NAMES_A_CHARGE = /\b(?:fees?|charges?|cost|request|for\s+an?|per)\b|\$/i;
+/** Advice that offers a choice of ways ("Use Online BillPay, HonorPay or Account-To-Account Transfers"). */
+const ADVICE_CHOICES = /,|\b(?:or|and)\b/i;
+export function waiverAdviceName(name: string): boolean {
+  if (!WAIVER_ADVICE_OPEN.test(name) || NAMES_A_CHARGE.test(name)) return false;
+  // Review of #2973: advice naming one fee's service is that fee's name ("Use Non-Network ATM | $2.50" is
+  // atm_non_network, "Switch to paper statements | $5.00" is paper_statement); only advice that names no type,
+  // or offers a choice of ways to avoid a fee, names no fee.
+  return classifyFeeText(name) == null || ADVICE_CHOICES.test(name);
+}
+/**
+ * v177: a name composed from a waiver column's advice and the item after it ("Use Online BillPay, HonorPay or
+ * Account-To-Account Transfers: Verification of Deposits"): the advice and the item's own words.
+ */
+export function waiverAdvicePrefix(name: string): { advice: string; item: string } | null {
+  const at = name.indexOf(": ");
+  if (at < 0) return null;
+  const advice = name.slice(0, at).trim();
+  const item = name.slice(at + 2).trim();
+  return item && waiverAdviceName(advice) ? { advice, item } : null;
+}
+
+/**
+ * v177 (backlog dry run 8, Mattel FCU text 12602): prose from the next column printed after the last price
+ * ("Real Estate Reconveyance (up to...) $ 300 $ 300 | due date each month. We will be charging interest on cash
+ * advances and") sets no unit for the fee: "each month" there is a card's payment due date, not a monthly
+ * reconveyance. Each cell after the last price that reads as a sentence (six words or more, with a sentence
+ * word) and carries on another column's sentence (opens in lower case) is left out of the frequency text; a
+ * unit cell ("| per month", "| Monthly") and the fee's own terms ("| You will be charged each month") stay.
+ */
+const TRAILING_PROSE_WORDS = /\b(?:we|you|your|will|is|are|our|if|when|may|must)\b/i;
+/** Review of #2973: only a cell that carries on another column's sentence (it opens in lower case) is the next
+ * column's; "You will be charged each month ..." and "Charged monthly if ..." are the fee's own terms. */
+const CONTINUED_SENTENCE = /^[a-z]/;
+function withoutTrailingProse(segment: string, amounts: readonly AmountMatch[]): string {
+  const last = amounts[amounts.length - 1];
+  if (!last || !segment.includes(CELL_SEPARATOR)) return segment;
+  const cut = segment.indexOf(CELL_SEPARATOR, last.end);
+  if (cut < 0) return segment;
+  const tail = segment.slice(cut).split(CELL_SEPARATOR).map((cell) => cell.trim()).filter(Boolean);
+  const prose = tail.length > 0 && tail.every((cell) => CONTINUED_SENTENCE.test(cell) && cell.split(/\s+/).length >= 6 && TRAILING_PROSE_WORDS.test(cell));
+  return prose ? segment.slice(0, cut) : segment;
+}
+
 function readPlainSegment(segment: string): ExtractionRulesResult {
   const result: ExtractionRulesResult = { candidates: [], held: [] };
 
@@ -3015,7 +3141,8 @@ function readPlainSegment(segment: string): ExtractionRulesResult {
   // price after a count of free uses is charged per use unless its own unit says otherwise
   // (`allowancePriceFrequency`): "3 free per month (then $1.50 per)" is not monthly.
   const allowanceAt = firstAmount ? freeAllowanceBefore(segment, firstAmount.start) : null;
-  const frequency = detectFrequency(allowanceAt != null && firstAmount ? segment.slice(0, allowanceAt) + segment.slice(firstAmount.start) : segment);
+  const frequencyText = withoutTrailingProse(segment, amounts);
+  const frequency = detectFrequency(allowanceAt != null && firstAmount ? frequencyText.slice(0, allowanceAt) + frequencyText.slice(firstAmount.start) : frequencyText);
   const allowanceRead = allowanceAt != null && firstAmount ? allowanceBaseRow(segment, allowanceAt, firstAmount, amounts) : null;
   const allowanceRow = allowanceRead?.row ?? null;
   const allowanceFrequency = allowanceRead == null ? null : allowanceRead.read === "per_item" ? "per_item" : detectFrequency(allowanceRead.row);
@@ -3448,7 +3575,9 @@ function readPlainSegment(segment: string): ExtractionRulesResult {
     // $15.00 per month Nonsufficient funds | $35.00"), not the next fee's name or period.
     const unitAfterPrevious = index === 0 ? null : segment.slice(feeAmounts[index - 1].end, amount.start).match(PRICE_UNIT_AFTER);
     const ownStart = index === 0 ? 0 : feeAmounts[index - 1].end + (unitAfterPrevious?.[0].length ?? 0);
-    const between = index === 0 ? null : nameFrom(ownWords(ownStart, amount));
+    // v177 (backlog dry run 8, Honor FCU t4644): a later price's own words start at the last bullet cell after
+    // the earlier price (`laterPriceOwnWords`), never at the waiver column between them.
+    const between = index === 0 ? null : nameFrom(laterPriceOwnWords(ownWords(ownStart, amount)));
     const ownFrequency = ownsAllowance(amount) ? allowanceFrequency : unitAfterPrevious ? detectFrequency(segment.slice(ownStart)) : frequency;
     // v19: "$30.00 - fee assessed for each item paid1 Continuous Overdraft Fee ..... $5.00":
     // the lowercase words finish the earlier price's terms; the title that ends them is the name.
@@ -3458,6 +3587,12 @@ function readPlainSegment(segment: string): ExtractionRulesResult {
     // v120 (#1513): a later price's titled fee ("... per day. For ATM ..., there will be a $1 Overdraft Transfer Fee.").
     const titledLater = index > 0 && chunkRead ? titledPriceRead(ownWords(ownStart, amount), segment.slice(amount.end), amount.value, chunkRead) : null;
     const chunkHint = titledLater?.hint ?? chunkRead;
+    // v177: a later price named only by a waiver column's advice ("Use Online BillPay, HonorPay or
+    // Account-To-Account Transfers | $50.00 per month") names no fee: it is held, unclassified, for review.
+    if (index > 0 && chunk && waiverAdviceName(chunk)) {
+      result.held.push({ shape: "unclassified", feeName: chunk.replace(/^[\s|:]+/, ""), amount: amount.value, amountMax: null, percent: null, frequency: ownFrequency, canonicalHint: null, excerpt: segment });
+      return;
+    }
     if (index > 0 && (!chunk || !usableName(chunk) || !chunkHint)) return;
     // v176 (review of PR #2969): on a line that opens with its price, a later price that opens a bracket right
     // after the earlier fee's words is read by its own words in the bracket (`bracketedLaterRead`): an age or

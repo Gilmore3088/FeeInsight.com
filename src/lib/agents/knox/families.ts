@@ -15,6 +15,7 @@ import {
   loanPaymentExample,
   RANGE_JOINER,
   WAIVER_LANGUAGE,
+  waiverAdviceName,
   type ExtractionRulesResult,
 } from "@/lib/agents/knox/rules";
 import {
@@ -462,6 +463,9 @@ export function runFamilyExpert(expert: FamilyExpert, windows: PriceWindow[]): E
     // is the earlier price's words cut at the next price inside its bracket, never a fee's name. The rules pass
     // reads the bracket by its own words (`bracketedLaterRead`).
     if (/\(\s*$/.test(match.feeName)) return;
+    // v177 (backlog dry run 8, Honor FCU): a name that is only a waiver column's advice ("Use Online BillPay,
+    // HonorPay or Account-To-Account Transfers | $50.00 per month") names no fee (`waiverAdviceName`).
+    if (waiverAdviceName(match.feeName)) return;
     // v143: a row whose own words name the transfer ("Overdraft Transfer from Rediline Overdraft Loan
     // $5/advance") is the transfer, though the tail that names it ("Rediline Overdraft Loan") says loan.
     if (match.hint === "overdraft" && cleaned && cleaned !== match.feeName && classifyFor(expert, cleaned) === "od_protection_transfer") {

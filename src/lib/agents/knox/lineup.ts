@@ -349,6 +349,36 @@ export function headingWithoutMark(line: string): string {
   return line.replace(GLUED_HEADING_MARK, "").trim();
 }
 
+/** v177: a product card's marketing label opening the line ("BEST FOR ...", "STANDOUT BENEFIT ..."). */
+const MARKETING_LABEL = /^(?:BEST FOR|IDEAL FOR|PERFECT FOR|GREAT FOR|STANDOUT BENEFITS?|KEY BENEFITS?|KEY FEATURES?|WHY (?:WE|YOU)\b[^a-z]*)\b/;
+/** v177: a short title line: at most four words, no sentence punctuation, digits, price or cell. */
+function shortTitleLine(line: string | undefined): boolean {
+  if (!line || /[$|.!?,;:\d]/.test(line)) return false;
+  const words = line.trim().split(/\s+/);
+  return words.length >= 1 && words.length <= 4;
+}
+/** v177: a line that heads an account by itself ("MONEY MARKET", "CERTIFICATE OF DEPOSIT", "Premium Checking"). */
+function accountTitleLine(line: string | undefined): boolean {
+  if (!line) return false;
+  const kind = line.replace(/[\s:]+$/, "");
+  return ACCOUNT_KIND_HEADING.test(kind) || ACCOUNT_TYPE_HEADING.test(kind) || distinctAccountName(kind) != null;
+}
+/**
+ * v177: the line at `index` is one entry of a product tab list: it and the three lines above it are short title
+ * lines, and three of the four head an account ("LITTLE EAGLES SAVINGS" / "CERTIFICATE OF DEPOSIT" / "HSA" /
+ * "IRA"). A section title over one product ("Personal Accounts" / "Basic Checking") is no list, and a title that
+ * repeats a tab just above it is the selected product's own.
+ */
+const TAB_LIST_LINES = 12;
+function inProductTabList(lines: readonly string[], index: number): boolean {
+  const run = [lines[index], lines[index - 1], lines[index - 2], lines[index - 3]];
+  if (!run.every(shortTitleLine) || run.filter(accountTitleLine).length < 3) return false;
+  // The selected product's own title under the list repeats its tab ("Small Business Checking" / "Select
+  // Checking" / ... / "Premier Checking" / "Small Business Checking", CBC Bank text 40459): that is the account.
+  const own = lines[index].toLowerCase();
+  return !lines.slice(Math.max(0, index - TAB_LIST_LINES), index).some((line) => line.toLowerCase() === own);
+}
+
 function accountBlock(text: string, excerpt: string): AccountBlock | null {
   const printed = text.split(/\n+/).map(squash).filter(Boolean);
   const at = feeLineIndex(printed, excerpt);
@@ -371,6 +401,19 @@ function accountBlock(text: string, excerpt: string): AccountBlock | null {
   for (let index = at - 1; index >= Math.max(0, at - HEADING_LOOKBACK_LINES); index -= 1) {
     const line = lines[index];
     if (line.includes("$") || line.includes("|")) continue;
+    // v177 (backlog dry run 8, Primis Bank text 30162): a product card's marketing label ("BEST FOR People
+    // who ... want their checking balance to earn interest.", "STANDOUT BENEFIT ...") describes the account
+    // named above it; it neither names an account nor ends the lookback.
+    if (MARKETING_LABEL.test(line)) continue;
+    // v177 (backlog dry run 8, Elkhorn Valley Bank text 21910): a product in a tab list ("PERSONAL SAVINGS
+    // ACCOUNT" / "MONEY MARKET" / ... / "HSA" / "IRA") is a menu entry, not the fee's account: the fee
+    // under the list is the page's selected product, which the list does not say. A tab entry printed right
+    // above the fee's own line ("Student Checking" / ... / "Premier Checking" / "Monthly Service Charge $10",
+    // review of #2973) is the nearest heading and still owns the fee.
+    if (index < at - 1 && inProductTabList(lines, index)) {
+      accountStopped = true;
+      break;
+    }
     // v141 (review of #2812): a numbered feature line ("24 Hour Account Access", "10 Free Checking
     // Transactions", "10 Checking Account Benefits") is one of the account's features: it neither
     // names the account nor ends the lookback, so the heading above it still owns the fee.
