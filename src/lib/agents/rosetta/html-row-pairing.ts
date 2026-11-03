@@ -12,7 +12,9 @@
  * one other cell is a label with no price of its own, so a row of pricing cards stays as it was.
  *
  * Off by default (`HTML_ROW_PAIRING_LIVE`): a reader change alters the text of every page read
- * after it. Pure; no network or database.
+ * after it. Turning it on bumps `HTML_READ_VERSION` (reader-versions.ts) from 1 to 2 in the same
+ * change, so reader replay re-reads the HTML pages already read, and no PDF
+ * (reader-replay.test.ts fails otherwise). Pure; no network or database.
  */
 
 export const HTML_ROW_PAIRING_LIVE = false;

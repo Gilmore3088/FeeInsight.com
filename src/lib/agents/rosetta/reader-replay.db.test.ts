@@ -8,7 +8,8 @@ import { JSON_TEXT_PASSTHROUGH, NUMERIC_AS_NUMBER, TEXT_WITHOUT_NUL } from "@/li
 import { rosettaReadCandidatesQuery } from "./read";
 import { READER_REPLAY_EVENT } from "./reader-replay";
 import { OCR_STRATEGY } from "./ocr";
-import { ROSETTA_OCR_VERSION, ROSETTA_READ_VERSION } from "./reader-versions";
+import { JS_FALLBACK_STRATEGY } from "./js-fallback";
+import { HTML_READ_BASE_VERSION, ROSETTA_JS_FALLBACK_VERSION, ROSETTA_OCR_VERSION, ROSETTA_READ_VERSION } from "./reader-versions";
 
 const connection = process.env.E2E_DATABASE_URL;
 const INST = 20690001, DOC = 20690101, RUN = 20690201;
@@ -19,8 +20,8 @@ const TEXT = Array.from({ length: 12 }, (_, i) => `Service fee ${i + 1} $${i + 5
 describe.skipIf(!connection)("Rosetta replays older-reader documents on a reader version bump (#2069)", () => {
   let raw: postgres.Sql<{ numeric: number; json: unknown; text: string }>;
 
-  async function selected(mode: "only" | "exclude"): Promise<number[]> {
-    const { query, params } = rosettaReadCandidatesQuery(10, true, INST, undefined, false, false, true, true, "exclude", mode);
+  async function selected(mode: "only" | "exclude", htmlReadVersion?: number): Promise<number[]> {
+    const { query, params } = rosettaReadCandidatesQuery(10, true, INST, undefined, false, false, true, true, "exclude", mode, htmlReadVersion);
     const rows = await raw.unsafe(query, params as never[]);
     return rows.map((row) => Number(row.source_document_id));
   }
@@ -110,6 +111,60 @@ describe.skipIf(!connection)("Rosetta replays older-reader documents on a reader
               VALUES (${RUN}, ${READER_REPLAY_EVENT}, 'skipped', 'fixture',
                       ${raw.json({ source_document_id: DOC, source_hash: HASH, reader_version: ROSETTA_READ_VERSION, ocr_version: ROSETTA_OCR_VERSION })})`;
     expect(await selected("only")).toEqual([]);
+  });
+
+  describe("an HTML reader version bump (#1092: HTML_ROW_PAIRING_LIVE)", () => {
+    const BUMPED = HTML_READ_BASE_VERSION + 1;
+    const asReader = (reader: string | null) =>
+      raw`UPDATE agent_source_texts SET reader = ${reader} WHERE source_document_id = ${DOC}`;
+    const attempt = (strategy: string, version: number, detail: Record<string, unknown> = {}) =>
+      raw`INSERT INTO pipeline_attempts (institution_id, source_document_id, stage, strategy, strategy_version, input_fingerprint, outcome, detail)
+          VALUES (${INST}, ${DOC}, 'read', ${strategy}, ${version}, ${HASH}, 'ok', ${raw.json(detail as never)})`;
+
+    it("selects the same rows as before while the version is at its base", async () => {
+      // The fixture's older-version PDF is due either way; settled, it is due at neither.
+      expect(await selected("only", HTML_READ_BASE_VERSION)).toEqual(await selected("only"));
+      expect(await selected("only", HTML_READ_BASE_VERSION)).toEqual([DOC]);
+      await readAt(ROSETTA_READ_VERSION);
+      await asReader("read.html_dom");
+      expect(await selected("only", HTML_READ_BASE_VERSION)).toEqual([]);
+      expect(await selected("only")).toEqual([]);
+    });
+
+    it("replays a current-version html_dom text once, until a read or receipt at the HTML version", async () => {
+      await asReader("read.html_dom");
+      await attempt("read.html_dom", ROSETTA_READ_VERSION, { reader: "read.html_dom" });
+      expect(await selected("only")).toEqual([]);
+      expect(await selected("only", BUMPED)).toEqual([DOC]);
+      expect(await selected("exclude", BUMPED)).toEqual([]);
+      await attempt("read.html_dom", ROSETTA_READ_VERSION, { reader: "read.html_dom", html_read: BUMPED });
+      expect(await selected("only", BUMPED)).toEqual([]);
+    });
+
+    it("is settled by its receipt at the HTML version, whatever the read's outcome", async () => {
+      await asReader("read.html_dom");
+      await attempt("read.html_dom", ROSETTA_READ_VERSION, { reader: "read.html_dom" });
+      await raw`INSERT INTO agent_run_events (agent_run_id, event_type, status, message, detail)
+                VALUES (${RUN}, ${READER_REPLAY_EVENT}, 'skipped', 'fixture',
+                        ${raw.json({ source_document_id: DOC, source_hash: HASH, reader_version: ROSETTA_READ_VERSION, html_read_version: BUMPED })})`;
+      expect(await selected("only", BUMPED)).toEqual([]);
+    });
+
+    it("replays a current-version JavaScript-fallback text too", async () => {
+      await asReader(JS_FALLBACK_STRATEGY);
+      await attempt("read.html_dom", ROSETTA_READ_VERSION, { reader: JS_FALLBACK_STRATEGY });
+      await attempt(JS_FALLBACK_STRATEGY, ROSETTA_JS_FALLBACK_VERSION);
+      expect(await selected("only")).toEqual([]);
+      expect(await selected("only", BUMPED)).toEqual([DOC]);
+    });
+
+    it("leaves PDF, plain-text and legacy texts at the current reader version untouched", async () => {
+      await readAt(ROSETTA_READ_VERSION);
+      for (const reader of ["read.pdf_layout", "read.plain_text", null]) {
+        await asReader(reader);
+        expect(await selected("only", BUMPED)).toEqual([]);
+      }
+    });
   });
 
   it("leaves a superseded copy alone", async () => {
