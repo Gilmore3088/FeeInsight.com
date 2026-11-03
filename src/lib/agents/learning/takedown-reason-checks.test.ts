@@ -24,6 +24,7 @@ import { NO_FEE_SENTENCE_CHECK, NO_FEE_SENTENCE_REASON } from "@/lib/agents/darw
 import { ZERO_WAIVER_ROW_CHECK, ZERO_WAIVER_ROW_REASON } from "@/lib/agents/darwin/zero-waiver-row-check";
 import { FREE_LIST_ITEM_CHECK, FREE_LIST_ITEM_REASON } from "@/lib/agents/darwin/free-list-item-check";
 import { NOT_ACCOUNT_FEE_LINE_CHECK, DIVIDEND_THRESHOLD_REASON, ONLINE_SERVICE_MONTHLY_REASON } from "@/lib/agents/darwin/not-account-fee-line-check";
+import { SERVICE_MAINTENANCE_CHECK, SERVICE_MAINTENANCE_REASON } from "@/lib/agents/darwin/service-maintenance-check";
 import { LOAN_PAYMENT_EXAMPLE_CHECK, LOAN_PAYMENT_EXAMPLE_REASON } from "@/lib/agents/darwin/loan-payment-example-check";
 import { WORKED_EXAMPLE_CHECK, WORKED_EXAMPLE_REASON } from "@/lib/agents/darwin/worked-example-check";
 import { STALE_COPY_CHECK, STALE_COPY_DROPPED_REASON_PREFIX, STALE_COPY_TWIN_REASON_PREFIX } from "@/lib/agents/darwin/stale-copy-check";
@@ -101,6 +102,7 @@ const PRODUCERS: Record<string, Producer[]> = {
   "agents/darwin/zero-waiver-row-check.ts": [{ check: ZERO_WAIVER_ROW_CHECK, reasons: [ZERO_WAIVER_ROW_REASON] }],
   "agents/darwin/free-list-item-check.ts": [{ check: FREE_LIST_ITEM_CHECK, reasons: [FREE_LIST_ITEM_REASON] }],
   "agents/darwin/not-account-fee-line-check.ts": [{ check: NOT_ACCOUNT_FEE_LINE_CHECK, reasons: [`${DIVIDEND_THRESHOLD_REASON}: "x"`, `${ONLINE_SERVICE_MONTHLY_REASON}: "x" under "Online Fees"`] }],
+  "agents/darwin/service-maintenance-check.ts": [{ check: SERVICE_MAINTENANCE_CHECK, reasons: [SERVICE_MAINTENANCE_REASON] }],
   "agents/darwin/loan-payment-example-check.ts": [{ check: LOAN_PAYMENT_EXAMPLE_CHECK, reasons: [LOAN_PAYMENT_EXAMPLE_REASON] }],
   "agents/darwin/worked-example-check.ts": [{ check: WORKED_EXAMPLE_CHECK, reasons: [WORKED_EXAMPLE_REASON] }],
   "agents/darwin/stale-copy-check.ts": [{ check: STALE_COPY_CHECK, reasons: [`${STALE_COPY_TWIN_REASON_PREFIX}5 (#1 -> #2)`, `${STALE_COPY_DROPPED_REASON_PREFIX}2 (Knox v156; read from #1)`] }],

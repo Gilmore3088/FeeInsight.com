@@ -8,6 +8,7 @@ import { addSectionPathDocument, emptySectionPathSummary, replaySectionPathDocum
 import { summarizeHtmlExposure, type HtmlRowPairingSummary } from "./html-row-pairing";
 import { addZeroWaiverRows, emptyZeroWaiverRowSummary, type ZeroWaiverRowSummary } from "./zero-waiver-row";
 import { ZERO_WAIVER_ROW_MAX_ROWS, type ZeroWaiverRowLiveRow } from "@/lib/agents/darwin/zero-waiver-row-check";
+import { serviceMaintenanceSection, type ServiceMaintenanceSection } from "./service-maintenance";
 import { bounded, type Bounded, type LiveFeeRow, type SwitchAuditOptions, type SwitchAuditReader } from "./types";
 
 /**
@@ -59,6 +60,7 @@ export interface SwitchDryRunReport {
   };
   zeroWaiverRow: { switch: "ZERO_WAIVER_ROW_TAKEDOWN_LIVE"; issue: number; rowsRead: Bounded; summary: ZeroWaiverRowSummary };
   htmlRowPairing: { switch: "HTML_ROW_PAIRING_LIVE"; issue: number; summary: HtmlRowPairingSummary };
+  serviceMaintenance: ServiceMaintenanceSection;
   liveAccuracy: LiveAccuracy;
 }
 
@@ -241,6 +243,7 @@ export async function runSwitchDryRuns(reader: SwitchAuditReader, options: Switc
     heldVocabulary: await heldVocabulary(reader, options),
     zeroWaiverRow: await zeroWaiverRow(reader, options),
     htmlRowPairing: { switch: "HTML_ROW_PAIRING_LIVE", issue: 1092, summary: summarizeHtmlExposure(await reader.htmlReaderExposure()) },
+    serviceMaintenance: await serviceMaintenanceSection(reader, options),
     liveAccuracy: liveAccuracyFrom(await reader.freshAudit(options.accuracySample)),
   };
 }

@@ -1394,4 +1394,14 @@ export const KNOX_LESSONS: AgentLesson[] = [
     appliesTo: ["extract"],
     since: "2026-11-03",
   },
+  {
+    id: "issue-1092-service-maintenance-heading-held",
+    agent: "knox",
+    stage: "extract",
+    lesson: "A monthly maintenance row belongs to whatever its own nearest heading names. When that heading names a service rather than an account (\"Consumer Online Banking Services and Mobile Banking Fees\", \"Bill Pay\", \"Treasury Management Services\") the row is that service's own monthly fee, not the checking account's, whether it says \"No charge\" or a price: hold it for a person and never file it as the account's maintenance fee; the taxonomy has no category for a service's monthly fee, so do not re-file it either. Read the heading structurally: pass over sibling rows, values and a stacked row's label (\"Set Up Fee\" over \"No charge\"), and refuse rather than match when the heading is in doubt: an account's name that mentions a service (\"Checking with Online Banking\"), a description saying a service is included, an account's list of features printed as short lines, a service line right under an account heading or a list lead, or a note naming an account between the heading and the row. A maintenance row under an account heading stays the account's even when an online banking section follows it.",
+    why: "River City Bank (state key 5608) prints its online banking section's \"Monthly Maintenance Fee | No charge\" as a table row once Rosetta pairs the page's DOM rows; Knox's free read filed it as monthly_maintenance $0, which would tell readers the bank has free checking. The row's own words name no service, so the name rule for a service's monthly charge (guard v102) could not see it, and classifyFeeText gives the heading no category.",
+    evidence: { issues: [1092], prs: [], files: ["src/lib/service-maintenance-heading.ts", "src/lib/agents/knox/extract.ts", "src/lib/service-maintenance-heading.test.ts", "src/lib/agents/knox/service-maintenance-hold.test.ts", "docs/project/findings/2026-11-02-service-maintenance-heading.md"] },
+    appliesTo: ["extract"],
+    since: "2026-11-02",
+  },
 ];

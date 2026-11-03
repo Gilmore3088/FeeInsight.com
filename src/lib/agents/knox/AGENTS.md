@@ -2695,6 +2695,29 @@ keep their thresholds, each now tracing, and none is added, held or dropped. Ans
 Darwin's verify refuses (2) and (3), and its live re-check (`darwin.not_account_fee_line`,
 `NOT_ACCOUNT_FEE_LINE_TAKEDOWN_LIVE` off) reports the live ones (73916, 152003). The guard is unchanged
 (v108). The stale-read floor stays at v97.
+v174 (#1092, state key 5608, Nov 2; v164-v172 are on main, v173 is #2967's): a monthly maintenance read, $0 or priced, whose row sits under a heading
+that names a service rather than an account is held as a range for review instead of going to Darwin as the
+account's fee (`serviceMaintenanceOf` in `@/lib/service-maintenance-heading`, flag
+`knox_service_maintenance:<services>`; the $0 read in `insertHeldCandidate`, the priced one in
+`holdServiceMaintenanceCandidate`). River City Bank prints "Consumer Online Banking Services and Mobile
+Banking Fees" over "Set Up Fee | No charge" and "Monthly Maintenance Fee | No charge": read as
+`monthly_maintenance` $0, it tells readers the bank has free checking. The row names no service, so the
+name rule (`SERVICE_MONTHLY_CHARGE_NAME`, guard v102) cannot see it, and `classifyFeeText` gives the heading
+no category. The nearest heading is the first heading-shaped line above the row that is not a stacked row's
+label; it must name only services (online, mobile, internet or text banking, bill pay, e-statements, remote
+deposit, Zelle, treasury) with audience and schedule words beside them, open its own section (no heading or
+list lead right above it), and have no note naming an account between it and the row; the row's own label
+names no account, and every printing of the row must pass. "Checking with Online Banking", "Online Banking
+Included", an account's list of features ("Premier Checking" / "Free Online Banking" / "Mobile Banking") and
+an online banking section after an account's row are refused. Held, never re-filed: the taxonomy has no
+category for a service's monthly fee (guard v102 files a bill payer's or a mobile check deposit's monthly
+charge by its name; online banking has no type of the 50). On the 291 frozen texts no read changes (the
+River City text stacks label and value, which Knox does not read as a row), so the gates and the lab do not
+move; with the open Rosetta DOM row pairing (`HTML_ROW_PAIRING_LIVE`, branch `feat/rosetta-html-row-pairing`)
+the River City row is the one read of 23 monthly maintenance reads on the 38 re-read source documents that it
+holds. Darwin's verify refuses the same reads (`service_maintenance_heading`) and its live re-check reports what
+is live (`SERVICE_MAINTENANCE_TAKEDOWN_LIVE`, off). The shared check is unchanged. The stale-read floor stays at
+v97.
 
 v172 (fifth Knox re-read backlog dry run, Nov 3; 40 backlog texts at v171, six wrong rows of 99 changed,
 each against the bank's own line): (1) a statement's copy priced per item is document reproduction: the
@@ -3307,7 +3330,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v3 | `knox/paid-extract.ts` |
 | `KNOX_PAID_FIND_MISS_VERSION` | — | v1 | `knox/paid-find-misses.ts` |
 | `TWO_READ_AGREEMENT_STRATEGY` | `knox.two_read_agreement` | v2 | `knox/two-read-agreement.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v172 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v174 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v13 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v2 | `knox/takedown-lessons.ts` |

@@ -73,6 +73,18 @@ describe("shadow lab variants", () => {
     expect(verified.ok && verified.fee.frequency).toBe("hourly");
   });
 
+  it("should_hold_a_monthly_maintenance_row_under_a_service_heading_as_knox_v174_does", () => {
+    // State key 5608 (River City Bank) as a table read pairs its rows (#1092).
+    const text = "Consumer Online Banking Services and Mobile Banking Fees\n\nSet Up Fee | No charge\n\nMonthly Maintenance Fee | No charge\n\nMonthly Statement Fee | $3.00";
+    const read = currentVariant.extract(text);
+    expect(read.dropped).toContainEqual(expect.objectContaining({ canonicalFeeKey: "monthly_maintenance", amountCents: 0, reason: "held:service_maintenance" }));
+    expect(read.passed.some((fee) => fee.canonicalFeeKey === "monthly_maintenance")).toBe(false);
+    const off = experimentalVariant(EXPERIMENTS["service-maintenance-hold-off"]);
+    expect(off.extract(text).passed).toContainEqual(expect.objectContaining({ canonicalFeeKey: "monthly_maintenance", amountCents: 0 }));
+    const fee: StageFee = { canonicalFeeKey: "monthly_maintenance", feeName: "Monthly Maintenance Fee", amountCents: 0, frequency: null, excerpt: "Monthly Maintenance Fee | No charge", reason: null };
+    expect(currentVariant.verify(fee, text)).toEqual({ ok: false, reason: "service_maintenance_heading" });
+  });
+
   it("should_run_the_publish_category_guard_as_production_does", () => {
     const text = "Early withdrawal $25.004: Stop payment order | $25.00";
     const fee = { canonicalFeeKey: "stop_payment", feeName: "Early withdrawal $25.004: Stop payment order", amountCents: 2500, frequency: null, excerpt: text, reason: null };

@@ -35,6 +35,7 @@ import { mayHaveCapFirstItemPrice } from "@/lib/custom-report/stacked-fee-prices
 import { bandedZeroOf } from "@/lib/banded-zero";
 import { accountBenefitZeroOf } from "@/lib/account-benefit-zero";
 import { zeroWaiverRowOf } from "@/lib/zero-waiver-row";
+import { SERVICE_MAINTENANCE_CATEGORY, serviceMaintenanceOf, type ServiceMaintenance } from "@/lib/service-maintenance-heading";
 import { withPublishedIdentityWrite } from "@/lib/agents/hamilton/published-identity";
 import { knoxLayoutFingerprint, layoutSignature, thinLayouts, type LayoutYield } from "@/lib/agents/knox/layout-signature";
 import { calibratedConfidence, calibrationKey, loadKnoxCalibration, PUBLISH_FLOOR } from "@/lib/agents/knox/calibration";
@@ -232,6 +233,16 @@ export const NO_CHARGE_CONFLICT_FLAG = "knox_no_charge_conflict";
 export const ACCOUNT_BENEFIT_ZERO_HOLD_FLAG = "knox_account_benefit_zero";
 /** v163 (#1092): a $0 held because its own line is a no-fee sentence or a waiver requirement row (`zeroWaiverRowOf`), with its kind after a colon. */
 export const ZERO_WAIVER_ROW_HOLD_FLAG = "knox_zero_waiver_row";
+/**
+ * v174 (#1092): a monthly maintenance read held because its row sits under a service's heading
+ * (`serviceMaintenanceOf`), with the services the heading names after a colon ("online_banking+mobile_banking").
+ */
+export const SERVICE_MAINTENANCE_HOLD_FLAG = "knox_service_maintenance";
+
+/** The hold's flag for one match. */
+export function serviceMaintenanceHoldFlag(found: ServiceMaintenance): string {
+  return `${SERVICE_MAINTENANCE_HOLD_FLAG}:${found.services.join("+")}`;
+}
 
 /**
  * True when the institution charges a fee in one of the categories (the NSF family, `NSF_FAMILY_KEYS`):
@@ -1239,6 +1250,25 @@ export async function insertFreePathLessonHold(db: SqlTag, options: CandidateIns
   return written.inserted;
 }
 
+/**
+ * v174 (#1092): a priced monthly maintenance read whose row sits under a service's heading ("Online
+ * Banking" over "Monthly Maintenance Fee | $3.00") is that service's own fee, not the account's: held as
+ * a range for review, never sent to Darwin. The $0 read is held the same way in `insertHeldCandidate`.
+ * Null when the rule does not apply; the read then takes its usual path.
+ */
+async function holdServiceMaintenanceCandidate(db: SqlTag, options: CandidateInsertOptions): Promise<boolean | null> {
+  const candidate = options.candidate;
+  if (candidate.canonicalHint !== SERVICE_MAINTENANCE_CATEGORY) return null;
+  const sourceRow = await monthlySourceRow(db, options.row, candidate.canonicalHint);
+  const found = sourceRow ? serviceMaintenanceOf({ line: candidate.excerpt, canonicalFeeKey: candidate.canonicalHint,
+    documentText: sourceRow.normalized_text }) : null;
+  if (!sourceRow || !found) return null;
+  return insertHeldCandidate(db, { runId: options.runId, row: sourceRow,
+    extraFlags: [...(options.extraFlags ?? []).filter((flag) => flag !== "needs_darwin_verification"), serviceMaintenanceHoldFlag(found)],
+    held: { shape: "range", feeName: candidate.feeName, amount: candidate.amount, amountMax: null, percent: null,
+      frequency: candidate.frequency, canonicalHint: candidate.canonicalHint, excerpt: candidate.excerpt, lineShare: candidate.lineShare } });
+}
+
 /** Ordinary callers cannot supply an unvalidated learned-hold flag. */
 export async function insertCandidate(db:SqlTag,options:CandidateInsertOptions):Promise<boolean> {
   const internationalHeld = await holdInternationalWireCandidate(db, options);
@@ -1249,6 +1279,8 @@ export async function insertCandidate(db:SqlTag,options:CandidateInsertOptions):
   if (capHeld !== null) return capHeld;
   const held = await holdAmbiguousMonthlyCandidate(db, options);
   if (held !== null) return held;
+  const serviceHeld = await holdServiceMaintenanceCandidate(db, options);
+  if (serviceHeld !== null) return serviceHeld;
   return (await writeCandidate(db,{...options,takenDownBy:null})).inserted;
 }
 export interface CandidateLearningReceipt { inserted:boolean; takenDownBy:string|null; declinedReason:string|null }
@@ -1272,6 +1304,8 @@ export async function insertCandidateWithLearning(db:SqlTag,options:CandidateIns
   if (capHeld !== null) return {inserted:capHeld,takenDownBy:null,declinedReason:capHeld?null:"cap_scope_declined"};
   const held = await holdAmbiguousMonthlyCandidate(db, options);
   if (held !== null) return {inserted:held,takenDownBy:null,declinedReason:null};
+  const serviceHeld = await holdServiceMaintenanceCandidate(db, options);
+  if (serviceHeld !== null) return {inserted:serviceHeld,takenDownBy:null,declinedReason:null};
   const matches=takedownLessonsFor(options.candidate,lessons,options.row);
   if (matches.length===0) return {inserted:await insertCandidate(db,options),takenDownBy:null,declinedReason:null};
   return withPublishedIdentityWrite(db,async transaction=>{
@@ -1633,6 +1667,14 @@ export async function insertHeldCandidate(
   const waiverRow = held.shape === "zero" && held.amount === 0 ? zeroWaiverRowOf({ line: held.excerpt, amount: 0,
     documentText: sourceRow.normalized_text ?? options.row.normalized_text ?? null }) : null;
   if (waiverRow) held = { ...held, shape: "range", amountMax: null };
+  // v174 (#1092): a $0 monthly maintenance read whose row sits under a service's heading ("Consumer
+  // Online Banking Services and Mobile Banking Fees" over "Monthly Maintenance Fee | No charge") is that
+  // service's fee, not free checking: held as a range for review, never sent to Darwin. A priced one is
+  // held in `holdServiceMaintenanceCandidate`; Darwin's verify and live re-check apply the same test.
+  const serviceMaintenance = held.shape === "zero" && held.canonicalHint === SERVICE_MAINTENANCE_CATEGORY
+    ? serviceMaintenanceOf({ line: held.excerpt, canonicalFeeKey: held.canonicalHint,
+      documentText: sourceRow.normalized_text ?? options.row.normalized_text ?? null }) : null;
+  if (serviceMaintenance) held = { ...held, shape: "range", amountMax: null };
   const applicability = feeApplicability(held.feeName, held.excerpt, held.amount);
   const agentEventId = stableUuid(
     `knox:held:${options.runId}:${documentTextId}:${sourceDocumentId}:${held.shape}:${held.feeName}:${held.amount}:${held.percent}`,
@@ -1643,6 +1685,7 @@ export async function insertHeldCandidate(
   if (noChargeConflict) flags.push(NO_CHARGE_CONFLICT_FLAG);
   if (accountBenefit) flags.push(`${ACCOUNT_BENEFIT_ZERO_HOLD_FLAG}:${accountBenefit.kind}`);
   if (waiverRow) flags.push(`${ZERO_WAIVER_ROW_HOLD_FLAG}:${waiverRow.kind}`);
+  if (serviceMaintenance) flags.push(serviceMaintenanceHoldFlag(serviceMaintenance));
   if (capOwner) flags.push(CAP_FIRST_ELIGIBILITY_FLAG);
   if (symbolicOwner) flags.push(SYMBOLIC_LESSER_ELIGIBILITY_FLAG);
   if (internationalOwner) flags.push(INTERNATIONAL_WIRE_ELIGIBILITY_FLAG);
