@@ -35,6 +35,8 @@ export type SourceRead =
 export interface SourceReadOptions {
   /** `HTML_ROW_PAIRING_LIVE` held on or off for this read (rosetta/html-row-pairing.ts). */
   htmlRowPairing?: boolean;
+  /** `PDF_TEXT_DIRECTION_LIVE` held on or off for this read (rosetta/pdf-text-direction.ts). */
+  pdfTextDirection?: boolean;
 }
 
 /**
@@ -51,7 +53,7 @@ export async function readSourceBytes(
 ): Promise<SourceRead> {
   const format = detectFormat(bytes, contentType, url);
   if (format === "pdf") {
-    const extracted = await extractPdfDocumentText(bytes);
+    const extracted = await extractPdfDocumentText(bytes, { textDirection: options.pdfTextDirection });
     const text = normalizeWhitespace(extracted.text);
     if (text.length === 0 || isLikelyScannedPdf(text, extracted.totalPages)) return { ok: false, reason: "scanned PDF: needs OCR" };
     return { ok: true, text, reader: "read.pdf_layout" };
@@ -120,6 +122,22 @@ export function sameDocument(score: Similarity): boolean {
   return score.tokens >= MIN_TOKEN_SIMILARITY && score.numbers >= MIN_NUMBER_SIMILARITY && score.dollarsEqual;
 }
 
+/**
+ * An Internet Archive capture of the bank's own page, fetched raw (the `id_` form: the bytes the
+ * bank's server sent the archive's crawler, without the Wayback toolbar). Recorded beside the
+ * bank's URL so the copy is never mistaken for a fetch from the bank itself.
+ */
+export interface ArchiveCapture {
+  /** The raw capture URL, `https://web.archive.org/web/<timestamp>id_/<sourceUrl>`. */
+  captureUrl: string;
+  /** The capture's 14-digit Wayback timestamp (UTC). */
+  timestamp: string;
+  /** The capture's SHA-1 digest as the CDX index lists it (base32). */
+  cdxDigest: string;
+  sha256: string;
+  similarity: Similarity;
+}
+
 export interface AcceptedSource {
   caseKey: string;
   institution: string;
@@ -131,9 +149,11 @@ export interface AcceptedSource {
   urlFrom: string;
   contentType: string | null;
   fetchedAt: string;
-  fetchedWith: "http" | "chromium";
+  fetchedWith: "http" | "chromium" | "archive";
   reader: string;
   similarity: Similarity;
+  /** Set when the bytes are an Internet Archive capture of the bank's page (`fetchedWith: "archive"`). */
+  archive?: ArchiveCapture;
   /** What differs from the frozen text when the document passed but is not identical (a printed date, a revision). */
   note?: string;
 }
@@ -149,6 +169,10 @@ export interface RejectedSource {
   finalUrl?: string;
   reason: string;
   similarity: Similarity | null;
+  /** Internet Archive captures of the same URL that were scored and also failed the test. */
+  archiveTried?: ArchiveCapture[];
+  /** What the archive search found, when it says more than the scores (the bytes the key was made from). */
+  archiveNote?: string;
 }
 
 export interface SourceBytesManifest {
@@ -156,7 +180,7 @@ export interface SourceBytesManifest {
   thresholdsNote: string;
   holdoutDocuments: number;
   /** How the bytes were fetched: the HTTP request and the Chromium settings, as recorded. */
-  fetch: Record<"http" | "chromium", Record<string, unknown>>;
+  fetch: Record<"http" | "chromium" | "archive", Record<string, unknown>>;
   accepted: AcceptedSource[];
   rejected: RejectedSource[];
   /** Holdout documents not fetched, each with why (a key marked as not a fee schedule). */

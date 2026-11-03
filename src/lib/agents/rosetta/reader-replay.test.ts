@@ -8,8 +8,9 @@ import { rosettaReadCandidatesQuery, runRosettaRead } from "./read";
 import { JS_FALLBACK_STRATEGY } from "./js-fallback";
 import { OCR_STRATEGY } from "./ocr";
 import { HTML_ROW_PAIRING_LIVE } from "./html-row-pairing";
-import { PDF_CELL_REPLAY_LIVE, READER_REPLAY_EVENT, READER_REPLAY_HTML, READER_REPLAY_OWN_VERSIONS, READER_REPLAY_PDF_LAYOUT, READER_REPLAY_PER_RUN, READER_REPLAY_READERS, readerReplayDueSql, recordReaderReplay } from "./reader-replay";
-import { HTML_READ_BASE_VERSION, HTML_READ_READERS, HTML_READ_VERSION, PDF_LAYOUT_REPLAY_VERSION, PDF_LAYOUT_VERSION, ROSETTA_JS_FALLBACK_VERSION, ROSETTA_OCR_VERSION, ROSETTA_READ_VERSION } from "./reader-versions";
+import { PDF_TEXT_DIRECTION_LIVE } from "./pdf-text-direction";
+import { PDF_CELL_REPLAY_LIVE, READER_REPLAY_EVENT, READER_REPLAY_HTML, READER_REPLAY_OWN_VERSIONS, READER_REPLAY_PDF, READER_REPLAY_PDF_LAYOUT, READER_REPLAY_PER_RUN, READER_REPLAY_READERS, readerReplayDueSql, recordReaderReplay } from "./reader-replay";
+import { HTML_READ_BASE_VERSION, HTML_READ_READERS, HTML_READ_VERSION, PDF_LAYOUT_REPLAY_VERSION, PDF_LAYOUT_VERSION, PDF_READ_BASE_VERSION, PDF_READ_READERS, PDF_READ_VERSION, ROSETTA_JS_FALLBACK_VERSION, ROSETTA_OCR_VERSION, ROSETTA_READ_VERSION } from "./reader-versions";
 
 type DbMock = ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn>; begin?: unknown };
 
@@ -122,6 +123,45 @@ describe("reader replay selection", () => {
     expect(rosettaReadCandidatesQuery(10, true, undefined, undefined, true, true, true, true, "exclude", "exclude", bumped).query).not.toContain("html_read");
   });
 
+  it("moves the PDF reader version with PDF_TEXT_DIRECTION_LIVE, so flipping the switch replays PDFs", () => {
+    // Turning sideways pages upright without this bump would re-read nothing; PDF_LAYOUT_VERSION
+    // replays only texts with a cell break, and ROSETTA_READ_VERSION would replay every HTML page too
+    // (#1092, docs/project/findings/2026-11-03-pdf-word-gaps.md).
+    expect(PDF_READ_VERSION).toBe(PDF_TEXT_DIRECTION_LIVE ? PDF_READ_BASE_VERSION + 1 : PDF_READ_BASE_VERSION);
+    expect([...PDF_READ_READERS]).toEqual(["read.pdf_layout"]);
+    expect(READER_REPLAY_PDF).toEqual({ readers: PDF_READ_READERS, version: PDF_READ_VERSION, receiptKey: "pdf_read_version" });
+  });
+
+  it("selects exactly as before while the PDF reader version is at its base", () => {
+    const params = { readers: "$1", version: "$2", event: "$3" };
+    const unbumped = readerReplayDueSql("t", params, "TRUE", false, HTML_READ_BASE_VERSION, PDF_READ_BASE_VERSION);
+    expect(unbumped).toBe(readerReplayDueSql("t", params, "TRUE", false));
+    expect(unbumped).not.toContain("pdf_read");
+    for (const mode of ["only", "include", "exclude"] as const) {
+      const at = (version?: number) => rosettaReadCandidatesQuery(10, true, undefined, undefined, true, true, true, true, "exclude", mode, undefined, version);
+      expect(at(PDF_READ_BASE_VERSION)).toEqual(at());
+      expect(at().query).not.toContain("pdf_read");
+    }
+  });
+
+  it("on a PDF bump, makes PDF-read texts due and leaves HTML, plain-text, DOCX, OCR and legacy texts to their own versions", () => {
+    const bumped = PDF_READ_BASE_VERSION + 1;
+    const due = readerReplayDueSql("t", { readers: "$1", version: "$2", event: "$3" }, "TRUE", false, HTML_READ_BASE_VERSION, bumped);
+    const pdf = due.slice(due.indexOf("t.reader IN ('read.pdf_layout')"));
+    expect(due).toContain("t.reader IN ('read.pdf_layout')");
+    expect(due).toContain(`COALESCE((pdf_read.detail->>'pdf_read')::int, ${PDF_READ_BASE_VERSION}) >= ${bumped}`);
+    expect(due).toContain(`(replayed.detail->>'pdf_read_version')::int >= ${bumped}::int`);
+    // The PDF branch names no other reader, and a text with no reader (the legacy reader) is not in it.
+    for (const other of ["read.html_dom", "read.js_fallback", "read.plain_text", "read.docx_text", OCR_STRATEGY]) expect(pdf).not.toContain(other);
+    expect(pdf).not.toContain("IS NULL");
+    // No cell-break filter: a sideways page's text need not hold one.
+    expect(pdf).not.toContain("position(' | '");
+    const { query } = rosettaReadCandidatesQuery(10, true, undefined, undefined, true, true, true, true, "exclude", "only", undefined, bumped);
+    expect(query).toContain("pdf_read.detail->>'pdf_read'");
+    // The ordinary selection leaves replays to their lane, bumped or not.
+    expect(rosettaReadCandidatesQuery(10, true, undefined, undefined, true, true, true, true, "exclude", "exclude", undefined, bumped).query).not.toContain("pdf_read");
+  });
+
   it("lets an OCR or fallback replay past its bytes' scanned_pdf or js_required primary read", () => {
     const { query } = select("only");
     const failedRead = query.slice(query.indexOf("OR NOT EXISTS (\n           SELECT 1\n             FROM pipeline_attempts pa") - 400);
@@ -175,6 +215,18 @@ describe("recordReaderReplay", () => {
     }
     for (const reader of [null, OCR_STRATEGY, "read.pdf_layout", "read.plain_text"]) {
       expect(await detail(reader)).not.toHaveProperty("html_read_version");
+    }
+  });
+
+  it("stamps the PDF reader version only on a PDF-read text's receipt", async () => {
+    const detail = async (reader: string | null) => {
+      const { db, calls } = receiptDb({ text_hash: "new", status: "completed" });
+      await recordReaderReplay(db, { runId: 1, stepId: 2 }, { ...row, reader_replay_reader: reader }, { status: "completed", attemptOutcome: "ok" });
+      return JSON.parse(String(calls.find((call) => call.sql.includes("INSERT INTO agent_run_events"))!.values[5]));
+    };
+    expect(await detail("read.pdf_layout")).toMatchObject({ pdf_read_version: PDF_READ_VERSION });
+    for (const reader of [null, OCR_STRATEGY, "read.html_dom", JS_FALLBACK_STRATEGY, "read.plain_text"]) {
+      expect(await detail(reader)).not.toHaveProperty("pdf_read_version");
     }
   });
 

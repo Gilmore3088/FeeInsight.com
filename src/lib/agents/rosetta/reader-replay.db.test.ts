@@ -9,7 +9,7 @@ import { rosettaReadCandidatesQuery } from "./read";
 import { READER_REPLAY_EVENT } from "./reader-replay";
 import { OCR_STRATEGY } from "./ocr";
 import { JS_FALLBACK_STRATEGY } from "./js-fallback";
-import { HTML_READ_BASE_VERSION, ROSETTA_JS_FALLBACK_VERSION, ROSETTA_OCR_VERSION, ROSETTA_READ_VERSION } from "./reader-versions";
+import { HTML_READ_BASE_VERSION, PDF_READ_BASE_VERSION, ROSETTA_JS_FALLBACK_VERSION, ROSETTA_OCR_VERSION, ROSETTA_READ_VERSION } from "./reader-versions";
 
 const connection = process.env.E2E_DATABASE_URL;
 const INST = 20690001, DOC = 20690101, RUN = 20690201;
@@ -20,8 +20,8 @@ const TEXT = Array.from({ length: 12 }, (_, i) => `Service fee ${i + 1} $${i + 5
 describe.skipIf(!connection)("Rosetta replays older-reader documents on a reader version bump (#2069)", () => {
   let raw: postgres.Sql<{ numeric: number; json: unknown; text: string }>;
 
-  async function selected(mode: "only" | "exclude", htmlReadVersion?: number): Promise<number[]> {
-    const { query, params } = rosettaReadCandidatesQuery(10, true, INST, undefined, false, false, true, true, "exclude", mode, htmlReadVersion);
+  async function selected(mode: "only" | "exclude", htmlReadVersion?: number, pdfReadVersion?: number): Promise<number[]> {
+    const { query, params } = rosettaReadCandidatesQuery(10, true, INST, undefined, false, false, true, true, "exclude", mode, htmlReadVersion, pdfReadVersion);
     const rows = await raw.unsafe(query, params as never[]);
     return rows.map((row) => Number(row.source_document_id));
   }
@@ -163,6 +163,50 @@ describe.skipIf(!connection)("Rosetta replays older-reader documents on a reader
       for (const reader of ["read.pdf_layout", "read.plain_text", null]) {
         await asReader(reader);
         expect(await selected("only", BUMPED)).toEqual([]);
+      }
+    });
+  });
+
+  describe("a PDF reader version bump (#1092: PDF_TEXT_DIRECTION_LIVE)", () => {
+    const BUMPED = PDF_READ_BASE_VERSION + 1;
+    const pdfAt = (version?: number) => selected("only", undefined, version);
+    const asReader = (reader: string | null) =>
+      raw`UPDATE agent_source_texts SET reader = ${reader} WHERE source_document_id = ${DOC}`;
+    const attempt = (strategy: string, version: number, detail: Record<string, unknown> = {}) =>
+      raw`INSERT INTO pipeline_attempts (institution_id, source_document_id, stage, strategy, strategy_version, input_fingerprint, outcome, detail)
+          VALUES (${INST}, ${DOC}, 'read', ${strategy}, ${version}, ${HASH}, 'ok', ${raw.json(detail as never)})`;
+
+    it("selects the same rows as before while the version is at its base", async () => {
+      expect(await pdfAt(PDF_READ_BASE_VERSION)).toEqual(await selected("only"));
+      expect(await pdfAt(PDF_READ_BASE_VERSION)).toEqual([DOC]);
+      await readAt(ROSETTA_READ_VERSION);
+      expect(await pdfAt(PDF_READ_BASE_VERSION)).toEqual([]);
+      expect(await selected("only")).toEqual([]);
+    });
+
+    it("replays a current-version pdf_layout text once, until a read or receipt at the PDF version", async () => {
+      await attempt("read.pdf_layout", ROSETTA_READ_VERSION, { reader: "read.pdf_layout", pdf_layout: 6 });
+      expect(await selected("only")).toEqual([]);
+      expect(await pdfAt(BUMPED)).toEqual([DOC]);
+      expect(await selected("exclude", undefined, BUMPED)).toEqual([]);
+      await attempt("read.pdf_layout", ROSETTA_READ_VERSION, { reader: "read.pdf_layout", pdf_read: BUMPED });
+      expect(await pdfAt(BUMPED)).toEqual([]);
+    });
+
+    it("is settled by its receipt at the PDF version, whatever the read's outcome", async () => {
+      await attempt("read.pdf_layout", ROSETTA_READ_VERSION, { reader: "read.pdf_layout" });
+      await raw`INSERT INTO agent_run_events (agent_run_id, event_type, status, message, detail)
+                VALUES (${RUN}, ${READER_REPLAY_EVENT}, 'skipped', 'fixture',
+                        ${raw.json({ source_document_id: DOC, source_hash: HASH, reader_version: ROSETTA_READ_VERSION, pdf_read_version: BUMPED })})`;
+      expect(await pdfAt(BUMPED)).toEqual([]);
+    });
+
+    it("leaves HTML, JavaScript-fallback, plain-text and legacy texts at the current reader version untouched", async () => {
+      await readAt(ROSETTA_READ_VERSION);
+      await attempt(JS_FALLBACK_STRATEGY, ROSETTA_JS_FALLBACK_VERSION);
+      for (const reader of ["read.html_dom", JS_FALLBACK_STRATEGY, "read.plain_text", null]) {
+        await asReader(reader);
+        expect(await pdfAt(BUMPED)).toEqual([]);
       }
     });
   });

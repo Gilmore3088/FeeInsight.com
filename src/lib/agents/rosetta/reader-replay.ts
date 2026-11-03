@@ -12,6 +12,8 @@
  * - every JavaScript-fallback text with no fallback read of its bytes at ROSETTA_JS_FALLBACK_VERSION,
  * - above its base, every HTML-read text with no read of its bytes recording HTML_READ_VERSION
  *   (#1092; v2 is HTML_ROW_PAIRING_LIVE), so an HTML change replays no PDF,
+ * - above its base, every PDF-read text with no read of its bytes recording PDF_READ_VERSION
+ *   (#1092; v2 is PDF_TEXT_DIRECTION_LIVE), so a PDF change replays no HTML page,
  * on the bank's current copy (not superseded, not a duplicate), including a copy whose link has a
  * newer download, since its fees are still live. The paid pass (read.paid_transcribe) is left out:
  * re-reading it would be a paid provider call.
@@ -45,6 +47,9 @@ import {
   HTML_READ_READERS,
   HTML_READ_VERSION,
   PDF_LAYOUT_REPLAY_VERSION,
+  PDF_READ_BASE_VERSION,
+  PDF_READ_READERS,
+  PDF_READ_VERSION,
   ROSETTA_JS_FALLBACK_VERSION,
   ROSETTA_OCR_VERSION,
   ROSETTA_READ_VERSION,
@@ -94,10 +99,22 @@ export const READER_REPLAY_HTML = {
 } as const;
 
 /**
+ * PDF reader version (#1092): above PDF_READ_BASE_VERSION, a current completed text a PDF reader
+ * wrote (`read.pdf_layout`) with no read attempt on its bytes recording `detail.pdf_read` at the
+ * version is replayed once. A legacy text (no reader) is not, as for HTML.
+ */
+export const READER_REPLAY_PDF = {
+  readers: PDF_READ_READERS,
+  version: PDF_READ_VERSION,
+  receiptKey: "pdf_read_version",
+} as const;
+
+/**
  * SQL: true when the stored text `alias` came from an older version of its reader and has not
  * been replayed at the current version. `notSettled` is the read step's "no settled read of these
  * bytes at the current primary reader version" test for the same alias. At HTML_READ_BASE_VERSION
- * the HTML branch is left out, so the SQL is the same text as before the HTML version existed.
+ * and PDF_READ_BASE_VERSION their branches are left out, so the SQL is the same text as before
+ * those versions existed.
  */
 export function readerReplayDueSql(
   alias: string,
@@ -105,6 +122,7 @@ export function readerReplayDueSql(
   notSettled: string,
   pdfCellReplay: boolean = PDF_CELL_REPLAY_LIVE,
   htmlReadVersion: number = HTML_READ_VERSION,
+  pdfReadVersion: number = PDF_READ_VERSION,
 ): string {
   const notReplayed = (key: string, version: string) => `NOT EXISTS (
                   SELECT 1 FROM agent_run_events replayed
@@ -157,6 +175,21 @@ export function readerReplayDueSql(
                   )
                   AND ${notReplayed(READER_REPLAY_HTML.receiptKey, String(html))}
                 )` : "";
+  const pdf = Number(pdfReadVersion);
+  const pdfReaders = READER_REPLAY_PDF.readers.map((reader) => `'${reader}'`).join(", ");
+  // Any read of these bytes that recorded the PDF version settles it; none recorded means the base.
+  const pdfReplay = pdf > PDF_READ_BASE_VERSION ? `
+                OR (
+                  ${alias}.reader IN (${pdfReaders})
+                  AND NOT EXISTS (
+                    SELECT 1 FROM pipeline_attempts pdf_read
+                     WHERE pdf_read.stage = 'read'
+                       AND pdf_read.institution_id = ${alias}.institution_id
+                       AND pdf_read.input_fingerprint = ${alias}.source_hash
+                       AND COALESCE((pdf_read.detail->>'pdf_read')::int, ${PDF_READ_BASE_VERSION}) >= ${pdf}
+                  )
+                  AND ${notReplayed(READER_REPLAY_PDF.receiptKey, String(pdf))}
+                )` : "";
   return `(
                 ${alias}.status = 'completed'
                 AND ((
@@ -164,7 +197,7 @@ export function readerReplayDueSql(
                   AND ${notSettled}
                   AND ${notReplayed("reader_version", params.version)}
                 )
-                OR ${ownReaders}${layoutReplay}${htmlReplay})
+                OR ${ownReaders}${layoutReplay}${htmlReplay}${pdfReplay})
               )`;
 }
 
@@ -211,6 +244,9 @@ export async function recordReaderReplay(
     // Only an HTML reader's text is an HTML replay.
     html_read_version: row.reader_replay_reader != null && READER_REPLAY_HTML.readers.includes(row.reader_replay_reader)
       ? HTML_READ_VERSION : undefined,
+    // Only a PDF reader's text is a PDF replay.
+    pdf_read_version: row.reader_replay_reader != null && READER_REPLAY_PDF.readers.includes(row.reader_replay_reader)
+      ? PDF_READ_VERSION : undefined,
     from_reader: row.reader_replay_reader ?? null,
     from_reader_version: row.reader_replay_from_version == null ? null : Number(row.reader_replay_from_version),
     institution_id: Number(row.institution_id),

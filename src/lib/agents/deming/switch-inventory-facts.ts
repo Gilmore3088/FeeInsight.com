@@ -117,6 +117,7 @@ export const SWITCH_FACTS: Readonly<Record<string, SwitchFacts>> = {
   OWN_UNIT_BLANK_PART_HOUR_LIVE: { firstSeen: "2026-11-01 ffa09bf5b" },
   OWN_UNIT_REFILE_LIVE: { firstSeen: "2026-10-30 960e4798b" },
   PAGE_COPY_COLLAPSE_LIVE: { firstSeen: "2026-10-15 ef0a33099" },
+  PDF_TEXT_DIRECTION_LIVE: { note: "flip only with PDF_READ_VERSION 1 -> 2 (reader-replay.test.ts), so every current read.pdf_layout text is re-read once and no HTML page" },
   PRODUCT_PAGE_CONFLICT_LIVE: { firstSeen: "2026-10-12 1f284a651" },
   PRODUCT_PAGE_REPEAT_TAKEDOWN_LIVE: { firstSeen: "2026-10-21 5f8364567" },
   PROTECTION_ITEM_REFILE_LIVE: { firstSeen: "2026-11-01 e0d8cdc44" },

@@ -96,6 +96,21 @@ describe("source-bytes fixtures", () => {
     for (const entry of manifest.rejected) {
       expect(entry.reason, entry.caseKey).toMatch(/^(changed since frozen|not read)/);
       if (entry.similarity) expect(sameDocument(entry.similarity), entry.caseKey).toBe(false);
+      for (const capture of entry.archiveTried ?? []) {
+        expect(capture.captureUrl, entry.caseKey).toBe(`https://web.archive.org/web/${capture.timestamp}id_/${entry.sourceUrl}`);
+        expect(sameDocument(capture.similarity), `${entry.caseKey} ${capture.timestamp}`).toBe(false);
+      }
+    }
+  });
+
+  it("should_mark_every_archive_copy_with_its_raw_capture_and_the_same_test", () => {
+    for (const entry of manifest.accepted) {
+      expect(entry.fetchedWith === "archive", entry.caseKey).toBe(entry.archive !== undefined);
+      if (!entry.archive) continue;
+      expect(entry.archive.captureUrl, entry.caseKey).toBe(`https://web.archive.org/web/${entry.archive.timestamp}id_/${entry.sourceUrl}`);
+      expect(entry.archive.timestamp, entry.caseKey).toMatch(/^\d{14}$/);
+      expect(entry.archive.sha256, entry.caseKey).toBe(entry.sha256);
+      expect(entry.archive.similarity, entry.caseKey).toEqual(entry.similarity);
     }
   });
 });
