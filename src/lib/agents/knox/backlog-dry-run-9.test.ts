@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { checkFeeCategory, CATEGORY_GUARD_VERSION } from "@/lib/fee-category-guard";
 import { iraSectionClosingFee } from "@/lib/custom-report/ira-section-fee";
-import { accountlessMonthlyReason } from "./accountless-monthly";
+import { accountlessMonthlyOnPage, accountlessMonthlyReason } from "./accountless-monthly";
 import { tidyFeeName } from "./layout";
 import { withLineupFromText, type AccountLineup } from "./lineup";
 import { classifyFeeText, returnedItemServiceName, waiverAdviceName } from "./rules";
@@ -147,5 +147,68 @@ describe("review of #2973 follow-ups", () => {
     expect(waiverAdviceName("Use Online BillPay, HonorPay or Account-To-Account Transfers")).toBe(true);
     expect(waiverAdviceName("Use Online BillPay or Account-To-Account Transfers")).toBe(true);
     expect(reads("Fees\nATM Fees | $1.00 | Use Non-Network ATM or Foreign ATM | $2.50")).toContainEqual(["Use Non-Network ATM or Foreign ATM", 2.5, "atm_non_network"]);
+  });
+});
+
+describe("review of #2976", () => {
+  const monthly = (found: ReturnType<typeof run>, amount: number) =>
+    found.candidates.find((read) => read.canonicalHint === "monthly_maintenance" && read.amount === amount);
+  const heldMonthly = (found: ReturnType<typeof run>, amount: number) =>
+    found.held.some((read) => read.canonicalHint === "monthly_maintenance" && read.amount === amount);
+  const productOf = (text: string, read: { feeName: string; excerpt: string; amount: number }) =>
+    withLineupFromText<{ canonicalHint: string; feeName: string; excerpt: string; amount: number; lineup?: AccountLineup | null }>(
+      { canonicalHint: "monthly_maintenance", feeName: read.feeName, excerpt: read.excerpt, amount: read.amount }, text).lineup?.productName ?? null;
+
+  it("never holds the page's own row when a \"Your $10\" sentence prints the same price first", () => {
+    const text = ["Premier Checking", "Your $10 monthly maintenance fee is waived when you maintain $1,500.", "Monthly maintenance fee | $10.00"].join("\n");
+    const found = run(text);
+    const read = monthly(found, 10);
+    expect(read).toBeDefined();
+    expect(heldMonthly(found, 10)).toBe(false);
+    expect(read?.excerpt).toBe("Monthly maintenance fee | $10.00");
+    expect(productOf(text, read!)).toBe("Premier Checking");
+  });
+
+  it("never holds the page's own row when a reward bullet prints the same price first, and reads it under its account", () => {
+    const text = ["Rewards", "Waived $5.00 monthly maintenance fee", "Premier Checking", "Monthly maintenance fee | $5.00"].join("\n");
+    const found = run(text);
+    const read = monthly(found, 5);
+    expect(read).toBeDefined();
+    expect(heldMonthly(found, 5)).toBe(false);
+    expect(productOf(text, read!)).toBe("Premier Checking");
+  });
+
+  it("reads a \"Your $10\" sentence under the account heading printed right above it (decided: not held)", () => {
+    const text = ["Premier Checking", "Your $10 monthly service charge can be avoided with direct deposit."].join("\n");
+    const found = run(text);
+    const read = monthly(found, 10);
+    expect(read).toBeDefined();
+    expect(heldMonthly(found, 10)).toBe(false);
+    expect(productOf(text, read!)).toBe("Premier Checking");
+  });
+
+  it("keeps a reward bullet's fee when a product table prints it at that price (Trumark FCU, live 117986)", () => {
+    const text = ["$10 or $0 | Monthly Fee | $0", "Monthly Fee", "$10 or $0", "Benefits tied to meeting these requirements include:", "Waived $10 monthly maintenance fee"].join("\n");
+    const bullet = { canonicalHint: "monthly_maintenance", excerpt: "Waived $10 monthly maintenance fee", amount: 10 };
+    expect(accountlessMonthlyOnPage(text, bullet)).toEqual({ hold: false, row: "$10 or $0 | Monthly Fee | $0" });
+    expect(accountlessMonthlyOnPage(["Monthly Fee", "$10 or $0", "Benefits:", "Waived $10 monthly maintenance fee"].join("\n"), bullet)).toEqual({ hold: false, row: "$10 or $0" });
+    expect(accountlessMonthlyOnPage(["Benefits:", "Waived $10 monthly maintenance fee", "ATM refunds up to $10"].join("\n"), bullet)).toEqual({ hold: true, reason: "reward_bullet" });
+  });
+
+  it("reads a returned item charge noted as special handling, and still holds the handling itself", () => {
+    expect(returnedItemServiceName("Returned Item Charge (Special Handling)")).toBe(false);
+    expect(reads("Returned Item Charge (Special Handling) | $15.00")).toContainEqual([expect.stringMatching(/^Returned Item Charge/), 15, "nsf"]);
+    // Live 105649: the handling is the fee's own name.
+    expect(returnedItemServiceName("Special Handling of return check")).toBe(true);
+  });
+
+  it("never files a savings club's automatic transfer as the overdraft protection transfer", () => {
+    expect(classifyFeeText("Automatic Transfer from Savings (Christmas Club)")).not.toBe("od_protection_transfer");
+    expect(classifyFeeText("Automatic Transfer from Savings (to cover overdrafts)")).toBe("od_protection_transfer");
+  });
+
+  it("keeps the nearer plain heading when the fee's own line prints one column", () => {
+    const text = ["Premier Checking", "Money Market Savings | Money Orders | $5.00", "Monthly maintenance fee | $5.00"].join("\n");
+    expect(product(text, "Monthly maintenance fee | $5.00", 5)).toBe("Premier Checking");
   });
 });

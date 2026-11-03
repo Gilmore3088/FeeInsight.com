@@ -411,7 +411,11 @@ function accountBlock(text: string, excerpt: string, amount?: number | null): Ac
   };
   // v178: the fee is its line's first column's when its price is the line's first price ("– Monthly Maintenance
   // Service Charge | $ 15.00 | – Monthly Maintenance Service Charge* | $ 4.95": the $4.95 is the next column's).
-  const feeInFirstColumn = amount != null && lines[at].includes("|") && amountsIn(lines[at])[0]?.value === amount;
+  // Review of #2976: and only when the fee's own line prints the other column too (a second price after the fee's):
+  // under "Premier Checking", "Money Market Savings | Money Orders | $5.00" over a one-column "Monthly maintenance
+  // fee | $5.00" is no two-column layout, so the nearer plain heading keeps the fee.
+  const feePrices = amount != null && lines[at].includes("|") ? amountsIn(lines[at]) : [];
+  const feeInFirstColumn = feePrices.length >= 2 && feePrices[0].value === amount;
   for (let index = at - 1; index >= Math.max(0, at - HEADING_LOOKBACK_LINES); index -= 1) {
     let line = lines[index];
     // v178 (backlog dry run 9, Clinton Savings Bank text 7843, line 17): a two-column line's first cell can be

@@ -89,9 +89,20 @@ describe("Darwin's section misread re-check (Knox v177)", () => {
       row(108799, 1, "nsf", "Non-Sufficient Funds (NSF)/Special Handling", 25),
       { ...row(117986, 1, "monthly_maintenance", "Monthly maintenance fee", 10), source_line: 'rules read; artifact #1; excerpt="Waived $10 monthly maintenance fee"' },
       { ...row(5, 1, "monthly_maintenance", "Monthly maintenance fee", 10), source_line: 'excerpt="Monthly maintenance fee | $10.00"' },
+      // The same bullet on a page that prints the fee as a row at that price, or under an account heading: kept.
+      { ...row(6, 2, "monthly_maintenance", "Monthly maintenance fee", 10), source_line: 'excerpt="Waived $10 monthly maintenance fee"' },
+      { ...row(7, 3, "monthly_maintenance", "Monthly service charge", 10), source_line: 'excerpt="Your $10 monthly service charge can be avoided with direct deposit."' },
+      // Its text is gone: not judged.
+      { ...row(8, 4, "monthly_maintenance", "Monthly maintenance fee", 10), source_line: 'excerpt="Waived $10 monthly maintenance fee"' },
     ];
-    const found = findSectionMisreads(rows, new Map());
+    const texts = new Map([
+      [1, "Earn these rewards each month:\nWaived $10 monthly maintenance fee\nRefunded ATM fees"],
+      [2, "Rewards\nWaived $10 monthly maintenance fee\nPremier Checking\nMonthly maintenance fee | $10.00"],
+      [3, "Premier Checking\nYour $10 monthly service charge can be avoided with direct deposit."],
+    ]);
+    const found = findSectionMisreads(rows, texts);
     expect(found.matches.map((fee) => [fee.feePublishedId, fee.kind])).toEqual([[21594, "returned_item_service"], [117986, "accountless_monthly_sentence"]]);
+    expect(found.noText).toBe(1);
     expect(new RegExp(RETURNED_ITEM_SERVICE_NAME_SQL, "i").test("Returned Item Special Handling Item")).toBe(true);
     expect(new RegExp(ACCOUNTLESS_MONTHLY_LINE_SQL, "i").test('excerpt="Waived $10 monthly maintenance fee"')).toBe(true);
   });

@@ -68,14 +68,17 @@ reads stayed fixed.
 **Live fees (read-only, Nov 3, prod `rmhwbbjjctzfaqjyhomu`, SELECT only):**
 
 - Returned item services: 3 live fees match (21594, 102861, 105649), none admin-corrected. 108799 says NSF and stays.
-- Accountless monthly sentences: 1 live fee matches (117986, "Waived $10 monthly maintenance fee").
-- Automatic transfers from savings or shares: 18 live names match, all already od_protection_transfer, so guard
-  v109 takes down 0 and re-files 0.
+- Accountless monthly sentences: 1 live fee's stored line is one (117986, "Waived $10 monthly maintenance fee",
+  Trumark FCU text 32377), and after the review of #2976 it is kept: its page's product table prints "$10 or $0 |
+  Monthly Fee | $0" and "Monthly Fee" / "$10 or $0". So 0 match.
+- Automatic transfers from savings or shares: 18 live names say one (6 match the new include itself; none names a
+  savings club), all already od_protection_transfer and all accepted by guard v109, so it takes down 0 and
+  re-files 0.
 - IRA section follow-up: 2 more live early closure fees become candidates (158072, 165843); neither matches, so the
   IRA count stays 6.
 - Waiver choices: the waiver rule still matches the same 2 live fees (77750, 68504).
-- So Darwin's re-check reports 16 live fees (2 waiver, 2 front matter, 2 wire modules, 6 IRA, 3 returned item
-  services, 1 accountless monthly); the take-down waits for James's yes. The lineup, name tidy and twin fixes take
+- So Darwin's re-check reports 15 live fees (2 waiver, 2 front matter, 2 wire modules, 6 IRA, 3 returned item
+  services); the take-down waits for James's yes. The lineup, name tidy and twin fixes take
   down no live fee: Knox never retires a verified row.
 
 **Re-run after the fix (the dry-run harness, `currentVariant` on the same stored texts, v177 vs v178):**
@@ -87,6 +90,26 @@ reads stayed fixed.
 - rb, rb6 and rb8 each change one row's product only (each checked against its text and right); rb2, rb3, rb4,
   rb5 and rb7 do not change.
 - Live fees not reproduced stay 313 across rb to rb8 and 24 in rb9. No right read is lost.
+
+**Review of #2976 (fixed in the same PR):**
+
+- Blocker: the reward bullet and "Your $X" hold judged only the read that survived the duplicate drop, so a
+  sentence printed before the page's real row at the same price ("Your $10 monthly maintenance fee is waived ..." /
+  "Monthly maintenance fee | $10.00") held the real price. `accountlessMonthlyOnPage` now judges the page: a row
+  printing that monthly fee at that price (name before price, a cell of the price's line, or a prices-only line
+  right under the name) keeps the read, which takes the row as its line so the lineup gives the row's account;
+  an account heading right above the sentence ("Premier Checking" / "Your $10 monthly service charge can be avoided
+  with direct deposit.") keeps it under that account (decided: the sentence speaks of the account named right above
+  it). Darwin's rule uses the same function on the text Knox read, which keeps live 117986.
+- "Returned Item Charge (Special Handling) | $15.00" reads as NSF again: special handling in a bracket after the
+  charge is a note. Live 105649 "Special Handling of return check" names the handling itself and is still held by
+  Knox and reported by Darwin; the returned item service count stays 3 (21594, 102861, 105649).
+- "Automatic Transfer from Savings (Christmas Club)" no longer matches the overdraft transfer: a bracket naming a
+  club leaves the name unmatched.
+- A two-column first cell heads the fee only when the fee's own line prints the other column too (a second price
+  after the fee's), so "Premier Checking" / "Money Market Savings | Money Orders | $5.00" / "Monthly maintenance fee
+  | $5.00" stays Premier Checking. Clinton's rows all print both columns and keep their accounts.
+- Re-run: harness rows across rb to rb9 unchanged (rb9 605), live fees not reproduced 313 and 24.
 
 **Left for the Knox tracker:**
 

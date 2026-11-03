@@ -2744,9 +2744,15 @@ product page that names more than one account was tried and dropped, because on 
 reproduce live fees (Byline, Elkhorn, First Interstate) as well as Millersburg's "$4 Monthly Service Charge"; ECA's
 "If all account requirements are not met ..." $5 still publishes with no product; Flora's $7.50 is held untraced;
 Clinton's $3 and $15 now publish under their products while the live rows carry none. Live (SELECT, Nov 3):
-Darwin's section misread re-check v2 (switch off) reports 16 live fees, the 12 of v177 plus 3 returned item
-services and 1 accountless monthly sentence; guard v109 is accept-only (18 live names, all already
-od_protection_transfer). Harnesses rb to rb9 (v177 vs v178): live fees not reproduced 313 (rb to rb8) and 24 (rb9)
+Darwin's section misread re-check v2 (switch off) reports 15 live fees, the 12 of v177 plus 3 returned item
+services; guard v109 is accept-only (18 live names, all already od_protection_transfer and accepted). Review of
+#2976: the reward bullet and "Your $X" hold judges the page, not the sentence: a row printing that monthly fee at
+that price ("Monthly maintenance fee | $10.00", or "$10 or $0 | Monthly Fee | $0") is the fee's line and keeps it
+(Knox reads it from that row), and an account heading right above the sentence ("Premier Checking" / "Your $10
+monthly service charge can be avoided ...") reads it under that account (`accountlessMonthlyOnPage`); "(Special
+Handling)" in a bracket after a returned item charge is a note and the charge reads; a savings club's automatic
+transfer is not the overdraft transfer; and a two-column first cell heads the fee only when the fee's own line
+prints the other column too, so a nearer plain heading keeps a one-column fee. Harnesses rb to rb9 (v177 vs v178): live fees not reproduced 313 (rb to rb8) and 24 (rb9)
 unchanged, no right read lost. The stale-read floor stays at v97.
 
 v177 (eighth Knox re-read backlog dry run, Nov 3; 40 backlog texts at v176, 5 wrong and 12 doubtful rows of 112

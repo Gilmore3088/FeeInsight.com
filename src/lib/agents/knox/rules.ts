@@ -1734,15 +1734,18 @@ export function loanSectionFeeRead(candidate: ExtractedFeeCandidate, text: strin
  * No type of the 50 holds them, so an NSF read of such a name is held unclassified: special handling, a
  * re-clear or a reroute, or a service fee or charge priced per month, in a name that does not say NSF. The
  * page's own "NSF Return Item Fee | $30.00 | Per Item" stays NSF, as does "Non-Sufficient Funds (NSF)/Special
- * Handling" (live 108799).
+ * Handling" (live 108799). Special handling in a bracket after a returned item's own charge ("Returned Item Charge
+ * (Special Handling) | $15.00") is a note on that charge, which still reads (review of #2976); "Special Handling of
+ * return check | $25.00 per item" (live 105649) names the handling itself and is held.
  */
+const BRACKETED_SPECIAL_HANDLING = /\(\s*special\s+handling\s*\)/gi;
 const RETURNED_ITEM_HANDLING = /\bspecial\s+handling\b|\bre-?clear(?:ed|ing|s)?\b|\bre-?rout(?:e|ed|es|ing)\b/i;
 const SERVICE_FEE_WORDS = /\bservice\s+(?:fees?|charges?)\b/i;
 /** A name that says NSF in so many words ("Non-Sufficient Funds (NSF)/Special Handling", live 108799) is the NSF fee. */
 const NAMES_NSF = /\bNSF\b|\bnon[-\s]?sufficient\b|\binsufficient\b/i;
 export function returnedItemServiceName(name: string, frequency?: string | null): boolean {
   if (NAMES_NSF.test(name)) return false;
-  return RETURNED_ITEM_HANDLING.test(name) || (frequency === "monthly" && SERVICE_FEE_WORDS.test(name));
+  return RETURNED_ITEM_HANDLING.test(name.replace(BRACKETED_SPECIAL_HANDLING, " ")) || (frequency === "monthly" && SERVICE_FEE_WORDS.test(name));
 }
 
 /**

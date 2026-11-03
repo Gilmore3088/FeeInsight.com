@@ -43,7 +43,7 @@ import { withoutFeeBullets } from "@/lib/custom-report/fee-bullets";
 import { exclusiveStackedPrices, stackedFeePrices } from "@/lib/custom-report/stacked-fee-prices";
 import { withoutCardProgramSections } from "@/lib/custom-report/card-program-section";
 import { monthlyAccountOwnerReview } from "./monthly-account-owners";
-import { accountlessMonthlyReason } from "./accountless-monthly";
+import { accountlessMonthlyOnPage } from "./accountless-monthly";
 import { ACCOUNT_PRODUCT_CATEGORIES } from "./lineup";
 import { ownFeeUnit, withOwnFeeUnit } from "@/lib/custom-report/own-fee-unit";
 import { withTierColumnRows } from "./tier-columns";
@@ -891,7 +891,7 @@ import { onlineServiceMonthlyFee } from "@/lib/service-monthly-charge";
 // heading's fee: Library of Congress FCU 13456. (3) A two-column line's first cell can head the account (lineup.ts):
 // Clinton Savings Bank 7843. (4) A bracket the name never closes is dropped (`tidyFeeName`): Flora 28783. (5) A
 // monthly maintenance read from a reward bullet or a "Your $12 monthly maintenance fee" sentence is held
-// (`accountlessMonthlyReason`), and a FAQ's second sentence about one free service is one $0 (`tailTwinRead`). (6) Review of #2973: the IRA's
+// (`accountlessMonthlyOnPage`, unless the page prints that fee at that price as a row or names the account right above), and a FAQ's second sentence about one free service is one $0 (`tailTwinRead`). (6) Review of #2973: the IRA's
 // own distribution, transfer-out and IRA-named rows no longer end its section, and waiver choices that each file
 // under the name's type are that fee ("Use Non-Network ATM or Foreign ATM"). The stale-read floor stays at v97.
 export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 178 } as const;
@@ -1706,13 +1706,18 @@ function readFreeText(sourceText: string, discontinuedRows: DiscontinuedTableFla
   }
   // v178 (backlog dry run 9): a monthly maintenance read from a reward bullet ("Waived $5.00 monthly maintenance
   // fee") or a "Your $12 monthly maintenance fee ..." sentence is held for review with its category
-  // (`accountlessMonthlyReason`).
+  // (`accountlessMonthlyOnPage`), unless the page prints that fee at that price as a row of its own (the read
+  // then takes the row as its line, so its account comes from the row) or an account heading sits right above.
   for (const candidate of candidates) {
     if (candidate.eligibilityReview) continue;
-    const reason = accountlessMonthlyReason(candidate);
-    if (!reason) continue;
+    const verdict = accountlessMonthlyOnPage(text, candidate);
+    if (!verdict) continue;
+    if (!verdict.hold) {
+      if (verdict.row) candidate.excerpt = verdict.row;
+      continue;
+    }
     candidate.eligibilityReview = true;
-    candidate.linkedConditions = [candidate.linkedConditions, `accountless_monthly:${reason}`].filter(Boolean).join("\n\n");
+    candidate.linkedConditions = [candidate.linkedConditions, `accountless_monthly:${verdict.reason}`].filter(Boolean).join("\n\n");
   }
   // #2209/#2259: preserve literal product prices without pooling them into standard benchmarks.
   // This explicit shape is not one of the automatic range/name/source promoters' inputs.

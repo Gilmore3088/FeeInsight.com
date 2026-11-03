@@ -1921,11 +1921,15 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   service (special handling, a re-clear, a reroute, or a service fee priced per month; a name that says NSF stays,
   as 108799 "Non-Sufficient Funds (NSF)/Special Handling" does), reason `returned_item_service`, and a monthly
   maintenance fee read from a reward bullet ("Waived $10 monthly maintenance fee") or a "Your $12 monthly
-  maintenance fee ..." sentence, on the line Knox stored, reason `accountless_monthly_sentence`. Dry run Nov 3
-  (prod, read-only): 3 returned item services (21594, 102861, 105649, none admin-corrected) and 1 accountless
-  monthly sentence (117986). The review of #2973's IRA follow-up (the IRA's own distribution, transfer-out and
+  maintenance fee ..." sentence, on the line Knox stored and judged on the text Knox read as Knox judges it
+  (`accountlessMonthlyOnPage`: a row of the page printing that fee at that price, or an account heading right
+  above the sentence, keeps the fee; review of #2976), reason `accountless_monthly_sentence`. Dry run Nov 3
+  (prod, read-only): 3 returned item services (21594, 102861, 105649, none admin-corrected; "Returned Item Charge
+  (Special Handling)", a bracketed note, is no longer one) and 0 accountless monthly sentences: the one stored
+  bullet, 117986 ("Waived $10 monthly maintenance fee", Trumark FCU), sits on a page whose product table prints
+  "$10 or $0 | Monthly Fee | $0", so it stays. The review of #2973's IRA follow-up (the IRA's own distribution, transfer-out and
   IRA-named rows no longer end its section) adds no IRA match: 2 more candidates (158072, 165843), neither
-  matching. So the check reports 16 live fees, switch still off.
+  matching. So the check reports 15 live fees, switch still off.
 - A monthly maintenance fee whose row sits under a service's heading (`service-maintenance-check.ts`,
   #1092, state key 5608): River City Bank's "Consumer Online Banking Services and Mobile Banking Fees" over
   "Monthly Maintenance Fee | No charge" is the online banking service's fee; published as the account's
@@ -2558,7 +2562,9 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
 - The guard is at v109 (`CATEGORY_GUARD_VERSION` in `src/lib/fee-category-guard.ts`). v109 (Nov 3, with
   Knox v178): `od_protection_transfer` also accepts an automatic transfer from savings or shares named alone
   ("Automatic transfers from shares", `AUTOMATIC_TRANSFER_FROM_SAVINGS_ANYWHERE`). Accept-only: on the read-only
-  dry run 18 live names match, all already od_protection_transfer, so 0 come down and 0 re-file. v108 (Nov 2, with
+  dry run 18 live names say an automatic transfer from savings or shares (6 match the new include; none is a
+  savings club's transfer, which is left out), all already od_protection_transfer and all accepted, so 0 come
+  down and 0 re-file. v108 (Nov 2, with
   Knox v168): a wire's confirmation is its notice (`WIRE_NOTIFICATION_NAME`) and fails every wire type with
   no re-file (1 live fee comes down, 131028); a coin counting name carrying a three-dimension box size
   (`BOX_SIZE_3D_NAME`) fails and re-files to safe_deposit_box (97753 and 64741 move onto their live box
