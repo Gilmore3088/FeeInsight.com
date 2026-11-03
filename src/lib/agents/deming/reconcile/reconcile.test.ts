@@ -48,6 +48,11 @@ describe("diffBank", () => {
     ]);
   });
 
+  it("leaves a second shadow row at the same price as new, not swallowed", () => {
+    const kinds = diffBank([fee({})], [fee({}), fee({ audience: "business", feeName: "Business NSF Fee" })]).map((e) => e.kind).sort();
+    expect(kinds).toEqual(["new_in_shadow", "same"]);
+  });
+
   it("puts every fee in exactly one entry", () => {
     const live = [fee({}), fee({ amountCents: 3500 }), fee({ canonicalFeeKey: "x", feeName: "Other" })];
     const shadow = [fee({}), fee({ amountCents: 1 , feeName: "Unrelated words entirely" })];
@@ -58,9 +63,15 @@ describe("diffBank", () => {
 });
 
 describe("decide", () => {
-  it("lets the answer key decide first", () => {
+  it("lets the answer key decide first, only for a version it lists", () => {
     expect(decide("amount_changed", ev({ answerKey: false }), ev({ answerKey: true }))).toEqual({ winner: "shadow", rule: "answer_key" });
     expect(decide("amount_changed", ev({ answerKey: true }), ev({ answerKey: false }))).toEqual({ winner: "live", rule: "answer_key" });
+    // A key that lists neither falls through to the bank's document.
+    expect(decide("missing_in_shadow", ev({ answerKey: false }), null)).toEqual({ winner: "live", rule: "source_check" });
+  });
+  it("prefers a known audience to unknown and sends two known audiences to review", () => {
+    expect(decide("audience_changed", ev({ audience: "unknown" }), ev({ audience: "consumer" }))).toEqual({ winner: "shadow", rule: "audience_evidence" });
+    expect(decide("audience_changed", ev({ audience: "business" }), ev({ audience: "consumer" }))).toEqual({ winner: "review", rule: "tie" });
   });
   it("then the bank's current document, then the category guard, then a tie for review", () => {
     expect(decide("amount_changed", ev({ currentDocument: false }), ev())).toEqual({ winner: "shadow", rule: "source_check" });

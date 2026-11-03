@@ -56,6 +56,8 @@ export interface Evidence {
   answerKey: boolean | null;
   /** The publish category guard accepts its category for its name and amount. */
   categoryOk: boolean;
+  /** The version's audience, for the audience rung. */
+  audience?: SideFee["audience"];
 }
 
 export type PipelineStep = "magellan" | "rosetta" | "knox" | "darwin" | "hamilton";

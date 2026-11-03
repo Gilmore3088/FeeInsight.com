@@ -34,18 +34,21 @@ export function sameFeeWords(a: SideFee, b: SideFee): boolean {
  */
 export function diffBank(live: readonly SideFee[], shadow: readonly SideFee[]): DiffEntry[] {
   const entries: DiffEntry[] = [];
+  // Each shadow fee pairs with at most one live fee: a second shadow row at the same (category,
+  // cents), a business twin say, stays unmatched and shows as new.
   const shadowByKey = new Map<string, SideFee[]>();
   for (const fee of shadow) shadowByKey.set(feeKey(fee), [...(shadowByKey.get(feeKey(fee)) ?? []), fee]);
-  const matchedShadowKeys = new Set<string>();
+  const matched = new Set<SideFee>();
   const liveLeft: SideFee[] = [];
   for (const fee of live) {
-    const same = shadowByKey.get(feeKey(fee));
-    if (!same) { liveLeft.push(fee); continue; }
-    matchedShadowKeys.add(feeKey(fee));
-    const twin = same.find((s) => sameFeeWords(fee, s)) ?? same[0];
+    const open = (shadowByKey.get(feeKey(fee)) ?? []).filter((s) => !matched.has(s));
+    // A live duplicate of a (category, cents) the shadow already matched is the same price, not a miss.
+    const twin = open.find((s) => sameFeeWords(fee, s)) ?? open[0] ?? (shadowByKey.get(feeKey(fee)) ?? [])[0];
+    if (!twin) { liveLeft.push(fee); continue; }
+    matched.add(twin);
     entries.push({ kind: fee.audience !== twin.audience ? "audience_changed" : "same", live: fee, shadow: twin });
   }
-  const shadowLeft = shadow.filter((fee) => !matchedShadowKeys.has(feeKey(fee)));
+  const shadowLeft = shadow.filter((fee) => !matched.has(fee));
   const used = new Set<SideFee>();
   for (const fee of liveLeft) {
     const pair = (match: (s: SideFee) => boolean) => shadowLeft.find((s) => !used.has(s) && match(s) && sameFeeWords(fee, s));
@@ -65,11 +68,13 @@ export function diffBank(live: readonly SideFee[], shadow: readonly SideFee[]): 
 
 /**
  * The reconciliation rule, checked against the bank's own documents, in order:
- *  1. answer key: where the bank has a confirmed key, the version that matches it wins;
+ *  1. answer key: a version the bank's confirmed key lists wins (a version it does not list falls
+ *     through: keys can be incomplete);
  *  2. source check: the version the shared check (`checkFeeAgainstSource`) finds on one of the bank's
  *     current documents wins over one it does not;
  *  3. category guard: of two versions both on the page, the one the publish category guard accepts;
- *  4. audience evidence (audience only): a known audience beats unknown;
+ *  4. audience evidence (audience only): a known audience beats unknown; two known audiences that
+ *     differ go to review;
  *  5. otherwise a tie, sent to review: never decided by which side is newer.
  * A side that is absent (`null`) can only win by the other side failing: a live fee missing from the
  * shadow wins "live" when it passes, and "neither" when it fails (it should come down).
@@ -85,18 +90,22 @@ export function decide(kind: DiffEntry["kind"], live: Evidence | null, shadow: E
     const ok = live ? l : s;
     return { winner: ok ? (live ? "live" : "shadow") : "neither", rule };
   };
-  const keyed = (live?.answerKey ?? shadow?.answerKey) != null;
-  if (keyed) {
-    const decided = pick(live?.answerKey === true, shadow?.answerKey === true, "answer_key");
-    if (decided) return decided;
-    if (live && shadow && live.answerKey && shadow.answerKey) return { winner: "both", rule: "answer_key" };
-  }
+  // The key decides only for a version it confirms: a key can be incomplete, so a fee it does not
+  // list falls through to the bank's document.
+  const keyedLive = live?.answerKey === true;
+  const keyedShadow = shadow?.answerKey === true;
+  if (keyedLive && keyedShadow) return { winner: "both", rule: "answer_key" };
+  if (keyedLive) return { winner: "live", rule: "answer_key" };
+  if (keyedShadow) return { winner: "shadow", rule: "answer_key" };
   const bySource = pick(Boolean(live?.currentDocument), Boolean(shadow?.currentDocument), "source_check");
   if (bySource) return bySource;
   if (live && shadow) {
     const byGuard = pick(live.categoryOk, shadow.categoryOk, "category_guard");
     if (byGuard) return byGuard;
-    if (kind === "audience_changed") return { winner: "both", rule: "audience_evidence" };
+    if (kind === "audience_changed" && live.audience !== shadow.audience) {
+      if (live.audience === "unknown") return { winner: "shadow", rule: "audience_evidence" };
+      if (shadow.audience === "unknown") return { winner: "live", rule: "audience_evidence" };
+    }
   }
   return { winner: "review", rule: "tie" };
 }

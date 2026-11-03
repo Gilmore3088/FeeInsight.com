@@ -22,6 +22,11 @@ export interface LiveInput extends SideFee {
   ownText: string | null;
 }
 
+/** Thrown when the step's time runs out mid-bank. */
+export class ShadowOutOfTime extends Error {
+  constructor() { super("shadow read out of time"); }
+}
+
 export interface ShadowRead {
   fees: SideFee[];
   drops: ShadowDrop[];
@@ -35,11 +40,13 @@ export interface ShadowRead {
  * such as Knox's learned lessons and Darwin's peer check are not replayed). Audience is Darwin's
  * prospective decision (`darwinAudience`) on the shadow's traced line. Writes nothing.
  */
-export function readShadow(texts: readonly CurrentText[], variant: PipelineVariant = currentVariant): ShadowRead {
+export function readShadow(texts: readonly CurrentText[], variant: PipelineVariant = currentVariant, deadline: (() => boolean) | null = null): ShadowRead {
   const fees: SideFee[] = [];
   const drops: ShadowDrop[] = [];
   let skipped = 0;
   for (const doc of texts) {
+    // Out of time: the bank is not recorded, so the next step reads it whole.
+    if (deadline?.()) throw new ShadowOutOfTime();
     const c: ShadowCase = {
       caseKey: `doc-${doc.sourceDocumentId}`,
       scenario: "live_audit",
@@ -112,8 +119,9 @@ export function reconcileBank(input: {
     ownDocument: checkFeeAgainstSource(ownText.get(fee) ?? null, fee.feeName, fee.amountCents / 100, ".", fee.canonicalFeeKey).ok,
     answerKey: keyMatch(keys, fee),
     categoryOk: categoryOk(fee),
+    audience: fee.audience,
   });
-  const shadowEvidence = (fee: SideFee): Evidence => ({ currentDocument: onAny(current, fee), answerKey: keyMatch(keys, fee), categoryOk: categoryOk(fee) });
+  const shadowEvidence = (fee: SideFee): Evidence => ({ currentDocument: onAny(current, fee), answerKey: keyMatch(keys, fee), categoryOk: categoryOk(fee), audience: fee.audience });
 
   const result: BankReconciliation = {
     institutionId: input.institutionId,

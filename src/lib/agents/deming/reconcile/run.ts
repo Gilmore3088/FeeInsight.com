@@ -3,7 +3,7 @@ import { inSavepoint } from "@/lib/agents/savepoint";
 import { eligibleReferences, loadReferenceInputs, readReferenceEligibility } from "@/lib/data-store/answer-key-reference-store";
 import type { ReferenceKeySnapshot } from "@/lib/data-store/answer-key-eligibility";
 import { FIXED_ANSWER_KEY_COHORT } from "@/lib/agents/deming/fixed-cohort";
-import { readShadow, reconcileBank, type CurrentText, type LiveInput } from "./bank";
+import { readShadow, reconcileBank, ShadowOutOfTime, type CurrentText, type LiveInput } from "./bank";
 import { gradeReconciliation, gradeSummary, type KeyedBank, type ReconcileGrade } from "./grade";
 import type { BankReconciliation, SideFee } from "./types";
 
@@ -22,6 +22,8 @@ export const RECONCILE_SOURCE = "deming.reconcile";
 export const RECONCILE_STEP_KEY = "deming-reconcile";
 export const RECONCILE_BANK_EVENT = "deming.reconcile_bank";
 export const RECONCILE_GRADE_EVENT = "deming.reconcile_grade";
+/** A bank whose read failed: counted as done, so one bad bank never holds the batch open. */
+export const RECONCILE_FAILED_EVENT = "deming.reconcile_bank_failed";
 export const RECONCILE_VERSION = 1;
 
 /**
@@ -34,7 +36,8 @@ export const RECONCILE_BATCH_INSTITUTIONS: readonly number[] = FIXED_ANSWER_KEY_
 
 /** Banks a step reconciles at most, and the time after which it starts no new bank. */
 export const RECONCILE_BANKS_PER_STEP = 12;
-export const RECONCILE_STOP_AFTER_MS = 150_000;
+/** No bank starts, and no document of a bank is read, after this long; a bank cut short is read again next step. */
+export const RECONCILE_STOP_AFTER_MS = 120_000;
 /** One stored text is read at most this long (characters): a few schedules run to 300k. */
 const MAX_TEXT_CHARS = 400_000;
 const READ_TIMEOUT_MS = 20_000;
@@ -49,10 +52,16 @@ const num = (value: unknown): number | null => (value == null || value === "" ||
 const AUDIENCES = new Set(["consumer", "business", "both"]);
 const audienceOf = (value: unknown): SideFee["audience"] => (typeof value === "string" && AUDIENCES.has(value) ? (value as SideFee["audience"]) : "unknown");
 
+/** Runs `work` under a statement timeout, then puts the step transaction's own timeout back. */
 async function withTimeout<T>(db: SqlTag, work: (scope: SqlTag) => Promise<T>): Promise<T> {
   return inSavepoint(db, async (scope) => {
+    const [before] = await scope<Array<{ value: string }>>`SELECT current_setting('statement_timeout') AS value`;
     await scope.unsafe(`SET LOCAL statement_timeout = ${READ_TIMEOUT_MS}`);
-    return work(scope);
+    try {
+      return await work(scope);
+    } finally {
+      await scope`SELECT set_config('statement_timeout', ${before?.value ?? "0"}, true)`;
+    }
   });
 }
 
@@ -61,21 +70,22 @@ export async function readLiveFees(db: SqlTag, institutionId: number): Promise<L
   const rows = await db<Array<{
     fee_published_id: number | string; fee_name: string | null; amount: number | string | null; canonical_fee_key: string | null;
     fee_audience: string | null; source_document_id: number | string | null; conditions: string | null; superseded: boolean | null;
-    own_text: string | null;
   }>>`
     SELECT c.fee_published_id, c.fee_name, c.amount, c.canonical_fee_key, c.fee_audience, c.source_document_id,
-           r.conditions, (d.superseded_by_id IS NOT NULL) AS superseded,
-           left(t.normalized_text, ${MAX_TEXT_CHARS}) AS own_text
+           COALESCE(c.conditions, r.conditions) AS conditions, (d.superseded_by_id IS NOT NULL) AS superseded
       FROM published_fee_catalog c
       LEFT JOIN raw_fee_observations r ON r.fee_raw_id = c.fee_raw_id
       LEFT JOIN source_documents d ON d.id = c.source_document_id
-      LEFT JOIN LATERAL (
-        SELECT normalized_text FROM agent_source_texts t
-         WHERE t.source_document_id = c.source_document_id AND t.status = 'completed' AND t.char_count > 0
-         ORDER BY t.id DESC LIMIT 1
-      ) t ON true
      WHERE c.institution_id = ${institutionId} AND c.amount IS NOT NULL AND c.canonical_fee_key IS NOT NULL
      ORDER BY c.fee_published_id`;
+  // Each document's text once, however many fees it carries.
+  const documentIds = [...new Set(rows.map((row) => num(row.source_document_id)).filter((id): id is number => id != null))];
+  const texts = documentIds.length === 0 ? [] : await db<Array<{ source_document_id: number | string; text: string }>>`
+    SELECT DISTINCT ON (source_document_id) source_document_id, left(normalized_text, ${MAX_TEXT_CHARS}) AS text
+      FROM agent_source_texts
+     WHERE source_document_id = ANY(${documentIds}::bigint[]) AND status = 'completed' AND char_count > 0
+     ORDER BY source_document_id, id DESC`;
+  const textOf = new Map(texts.map((row) => [Number(row.source_document_id), row.text]));
   return rows.map((row) => ({
     canonicalFeeKey: String(row.canonical_fee_key),
     feeName: row.fee_name ?? "",
@@ -85,7 +95,7 @@ export async function readLiveFees(db: SqlTag, institutionId: number): Promise<L
     sourceDocumentId: num(row.source_document_id),
     feePublishedId: num(row.fee_published_id),
     onSupersededCopy: row.superseded === true,
-    ownText: row.own_text,
+    ownText: textOf.get(num(row.source_document_id) ?? -1) ?? null,
   }));
 }
 
@@ -119,7 +129,7 @@ async function doneInstitutions(db: SqlTag, batchId: string): Promise<Set<number
   const rows = await db<Array<{ institution_id: number | string }>>`
     SELECT DISTINCT (detail->>'institutionId')::int AS institution_id
       FROM agent_run_events
-     WHERE event_type = ${RECONCILE_BANK_EVENT} AND detail->>'batch' = ${batchId}`;
+     WHERE event_type = ANY(${[RECONCILE_BANK_EVENT, RECONCILE_FAILED_EVENT]}::text[]) AND detail->>'batch' = ${batchId}`;
   return new Set(rows.map((row) => Number(row.institution_id)));
 }
 
@@ -161,12 +171,13 @@ export async function runReconcileStep({ db = sql, runId, stepId, dryRun, batchI
   const reconciled: number[] = [];
   const failed: ReconcileStepResult["failed"] = [];
   let stoppedForTime = false;
+  const outOfTime = () => now() - started > RECONCILE_STOP_AFTER_MS;
   for (const institutionId of todo) {
-    if (now() - started > RECONCILE_STOP_AFTER_MS) { stoppedForTime = true; break; }
+    if (outOfTime()) { stoppedForTime = true; break; }
     try {
       const bankStarted = now();
       const [live, current] = await withTimeout(db, async (scope) => [await readLiveFees(scope, institutionId), await readCurrentTexts(scope, institutionId)] as const);
-      const shadow = readShadow(current);
+      const shadow = readShadow(current, undefined, outOfTime);
       const result = reconcileBank({ institutionId, live, current, shadow, keys: keyByBank.get(institutionId) ?? null, ms: now() - bankStarted });
       if (!dryRun) {
         await inSavepoint(db, (scope) => scope`
@@ -177,7 +188,17 @@ export async function runReconcileStep({ db = sql, runId, stepId, dryRun, batchI
       }
       reconciled.push(institutionId);
     } catch (error) {
-      failed.push({ institutionId, error: error instanceof Error ? error.message.slice(0, 300) : String(error) });
+      if (error instanceof ShadowOutOfTime) { stoppedForTime = true; break; }
+      const message = error instanceof Error ? error.message.slice(0, 300) : String(error);
+      failed.push({ institutionId, error: message });
+      // Recorded as done, so the batch moves on and ends; the grade counts it as failed, never as clean.
+      if (!dryRun) {
+        await inSavepoint(db, (scope) => scope`
+          INSERT INTO agent_run_events (agent_run_id, step_id, event_type, status, message, detail)
+          VALUES (${runId}, ${stepId}, ${RECONCILE_FAILED_EVENT}, 'failed', ${`Bank ${institutionId}: reconcile failed: ${message}`},
+                  ${JSON.stringify({ batch: batchId, version: RECONCILE_VERSION, institutionId, error: message })}::jsonb)`)
+          .catch((recordError: unknown) => console.error("Reconcile: failed bank could not be recorded", recordError));
+      }
     }
   }
   let grade: ReconcileGrade | null = null;
@@ -199,7 +220,7 @@ export async function runReconcileStep({ db = sql, runId, stepId, dryRun, batchI
   } catch (error) {
     gradeError = error instanceof Error ? error.message.slice(0, 300) : String(error);
   }
-  const banksLeft = batch.length - done.size - reconciled.length;
+  const banksLeft = Math.max(0, batch.length - done.size - reconciled.length - failed.length);
   const head = `Reconcile ${batchId}: ${reconciled.length} banks this step${failed.length ? `, ${failed.length} failed` : ""}, ${banksLeft} left${stoppedForTime ? " (stopped for time)" : ""}.`;
   return {
     batch: batchId, version: RECONCILE_VERSION, dryRun, reconciled, failed, banksLeft, stoppedForTime, grade, gradeError,
