@@ -2723,6 +2723,32 @@ holds. Darwin's verify refuses the same reads (`service_maintenance_heading`) an
 is live (`SERVICE_MAINTENANCE_TAKEDOWN_LIVE`, off). The shared check is unchanged. The stale-read floor stays at
 v97.
 
+v178 (ninth Knox re-read backlog dry run, Nov 3; 40 backlog texts at v177, 2 wrong and 5 doubtful of 91 changed
+rows, each against the bank's own line): (1) A returned item's handling service is no NSF fee and is held
+unclassified (`returnedItemServiceName` in `rules.ts`: special handling, a re-clear, a reroute, or a service fee
+priced per month; a name that says NSF stays NSF): First Bank 4694's "Returned Items Special Handling Service Fee1
+(Business) | $30.00 | Per Month". (2) An automatic transfer from savings or shares named alone is the overdraft
+protection transfer (`AUTOMATIC_TRANSFER_FROM_SAVINGS` in `fee-fold.ts`, guard v109), so the name classifies on
+its own and never takes its "ATM / VISA DEBIT CARD" heading: Library of Congress FCU 13456's "Automatic transfers
+from shares | $2.00". (3) A two-column line's first cell, printed right above a fee in the first column, can head
+the account (`twoColumnAccountCell`, lineup.ts): Clinton Savings Bank 7843's "Basic Checking Account | ATM/Debit Card
+Replacement | $ 10.00" over its $5 monthly charge. (4) A bracket the name opens with an article and never closes is dropped (`tidyFeeName`): Flora Bank &
+Trust 28783's "(A service charge". (5) A monthly maintenance read from a reward bullet ("Waived $5.00 monthly
+maintenance fee") or a "Your $12 monthly maintenance fee ..." sentence names no account and is held for review
+(`accountlessMonthlyReason`, `accountless-monthly.ts`): ECA FCU 26750 and U.S. Bank 39773; a FAQ's second
+sentence about one free service is the same $0 and is dropped (`tailTwinRead`): Clearview FCU 22205. (6) Review
+of #2973: the IRA's own distribution, transfer-out and IRA-named rows no longer end its section; waiver choices
+that each file under the whole name's type are that fee ("Use Non-Network ATM or Foreign ATM | $2.50" is
+atm_non_network again), while Honor's choice of ways stays held. Not fixed: holding a monthly maintenance read on a
+product page that names more than one account was tried and dropped, because on the harness it held 8 reads that
+reproduce live fees (Byline, Elkhorn, First Interstate) as well as Millersburg's "$4 Monthly Service Charge"; ECA's
+"If all account requirements are not met ..." $5 still publishes with no product; Flora's $7.50 is held untraced;
+Clinton's $3 and $15 now publish under their products while the live rows carry none. Live (SELECT, Nov 3):
+Darwin's section misread re-check v2 (switch off) reports 16 live fees, the 12 of v177 plus 3 returned item
+services and 1 accountless monthly sentence; guard v109 is accept-only (18 live names, all already
+od_protection_transfer). Harnesses rb to rb9 (v177 vs v178): live fees not reproduced 313 (rb to rb8) and 24 (rb9)
+unchanged, no right read lost. The stale-read floor stays at v97.
+
 v177 (eighth Knox re-read backlog dry run, Nov 3; 40 backlog texts at v176, 5 wrong and 12 doubtful rows of 112
 changed, each against the bank's own line, each named or filed by words outside the fee's own row): (1) A later
 price on a line that runs on into a waiver column and the other column's bullet item takes its words from the last
@@ -3443,7 +3469,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v3 | `knox/paid-extract.ts` |
 | `KNOX_PAID_FIND_MISS_VERSION` | — | v1 | `knox/paid-find-misses.ts` |
 | `TWO_READ_AGREEMENT_STRATEGY` | `knox.two_read_agreement` | v2 | `knox/two-read-agreement.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v177 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v178 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v13 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v2 | `knox/takedown-lessons.ts` |

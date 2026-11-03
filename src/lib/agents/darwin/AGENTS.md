@@ -1917,6 +1917,15 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   look (`darwin.section_misread`) and is archived with its reason (verified row rejected with the reason's flag);
   the bank's next read files the row by Knox v177. Step detail `section_misread_check`. Golden-set replay: the
   `darwin.section_misread` sweep.
+  Version 2 (Knox v178, backlog dry run 9) adds two rules: an NSF name that prices a returned item's handling
+  service (special handling, a re-clear, a reroute, or a service fee priced per month; a name that says NSF stays,
+  as 108799 "Non-Sufficient Funds (NSF)/Special Handling" does), reason `returned_item_service`, and a monthly
+  maintenance fee read from a reward bullet ("Waived $10 monthly maintenance fee") or a "Your $12 monthly
+  maintenance fee ..." sentence, on the line Knox stored, reason `accountless_monthly_sentence`. Dry run Nov 3
+  (prod, read-only): 3 returned item services (21594, 102861, 105649, none admin-corrected) and 1 accountless
+  monthly sentence (117986). The review of #2973's IRA follow-up (the IRA's own distribution, transfer-out and
+  IRA-named rows no longer end its section) adds no IRA match: 2 more candidates (158072, 165843), neither
+  matching. So the check reports 16 live fees, switch still off.
 - A monthly maintenance fee whose row sits under a service's heading (`service-maintenance-check.ts`,
   #1092, state key 5608): River City Bank's "Consumer Online Banking Services and Mobile Banking Fees" over
   "Monthly Maintenance Fee | No charge" is the online banking service's fee; published as the account's
@@ -2546,7 +2555,10 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
 - Guard v35 (2026-10-08) accepts a per-item overdraft or NSF fee whose note states the daily cap: a dollar cap above the row's own price ("NSF Returned Item(s) Charge (NSF charge maximum of $100 per day)" $25, First State Bank of Rosemount), and a cap note that names the returned items sharing it ("Overdraft Fee ... (Consumer Accts: 5 max total OD or Returned Item fees daily)", BankIowa).
 - Guard v36 (2026-10-08) changes no rule: PRs 665 and 668 both shipped v35, so rows rejected between their deploys are re-checked under both.
 - Guard v42 (2026-10-08; v40 and v41 are Accuracy's, PR 682) files an NSF item marked paid after a dash or in brackets ("NSF Fee Charge - Paid (per item)", "Nonsufficient Funds Fee-Paid", "Insufficient Funds Charge (Check Paid, Per Item)") as the overdraft fee and re-files it there from NSF; "per non-paid item", "Paid from other ... account" and "We will not assess ..." stay out. "Overdraft Privilege Standard or Extended Coverage" names the program, not an extended overdraft fee.
-- The guard is at v108 (`CATEGORY_GUARD_VERSION` in `src/lib/fee-category-guard.ts`). v108 (Nov 2, with
+- The guard is at v109 (`CATEGORY_GUARD_VERSION` in `src/lib/fee-category-guard.ts`). v109 (Nov 3, with
+  Knox v178): `od_protection_transfer` also accepts an automatic transfer from savings or shares named alone
+  ("Automatic transfers from shares", `AUTOMATIC_TRANSFER_FROM_SAVINGS_ANYWHERE`). Accept-only: on the read-only
+  dry run 18 live names match, all already od_protection_transfer, so 0 come down and 0 re-file. v108 (Nov 2, with
   Knox v168): a wire's confirmation is its notice (`WIRE_NOTIFICATION_NAME`) and fails every wire type with
   no re-file (1 live fee comes down, 131028); a coin counting name carrying a three-dimension box size
   (`BOX_SIZE_3D_NAME`) fails and re-files to safe_deposit_box (97753 and 64741 move onto their live box
@@ -2997,7 +3009,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `FREE_LIST_ITEM_CHECK_VERSION` | `darwin.free_list_item` | v1 | `darwin/free-list-item-check.ts` |
 | `NOT_ACCOUNT_FEE_LINE_CHECK_VERSION` | `darwin.not_account_fee_line` | v1 | `darwin/not-account-fee-line-check.ts` |
 | `CREDIT_CARD_SECTION_CHECK_VERSION` | `darwin.credit_card_section` | v2 | `darwin/credit-card-section-check.ts` |
-| `SECTION_MISREAD_CHECK_VERSION` | `darwin.section_misread` | v1 | `darwin/section-misread-check.ts` |
+| `SECTION_MISREAD_CHECK_VERSION` | `darwin.section_misread` | v2 | `darwin/section-misread-check.ts` |
 | `SERVICE_MAINTENANCE_CHECK_VERSION` | `darwin.service_maintenance_heading` | v1 | `darwin/service-maintenance-check.ts` |
 | `CARD_PROGRAM_SECTION_CHECK_VERSION` | `darwin.card_program_section` | v1 | `darwin/card-program-section-check.ts` |
 | `LOAN_SECTION_CHECK_VERSION` | `darwin.loan_section` | v1 | `darwin/loan-section-check.ts` |

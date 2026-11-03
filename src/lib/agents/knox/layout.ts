@@ -299,6 +299,11 @@ export function tidyFeeName(raw: string, options: { nameBoxSize?: boolean } = {}
     for (let pass = 0; pass < 2; pass += 1) name = trimEnd(name.replace(DANGLING_END, ""));
   }
   name = name.replace(NAME_LABEL, "");
+  // v178 (backlog dry run 9, Flora Bank & Trust text 28783): a bracket the name never closes opened the clause
+  // the price sits in ("Minimum Opening Balance2: $50.00 (A service charge of $7.50 will be charged ..." named
+  // "(A service charge"); the bracket is no part of the name. Only a bracket that opens on an article and a fee's
+  // words: "$6.50 (If you are enrolled in ...)" keeps its name as before.
+  if (/^\(\s*(?:A|An|The)\s+[a-z]/.test(name) && !name.includes(")")) name = name.slice(1).trim();
   const joined = LEADING_DISCOURSE.test(name);
   name = name.replace(LEADING_DISCOURSE, "");
   name = name.replace(joined ? /^(?:A|An|The)\s+(?=[a-z])([a-z])/i : /^(?:A|An|The)\s+(?=[a-z])([a-z])/, (_, first: string) => first.toUpperCase());

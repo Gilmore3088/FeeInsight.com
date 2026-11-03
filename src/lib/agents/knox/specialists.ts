@@ -20,6 +20,7 @@ import {
   type ExtractionRulesResult,
   type HeldFeeCandidate,
   wireServiceSubscription,
+  returnedItemServiceName,
 } from "@/lib/agents/knox/rules";
 import { withoutGluedPricePairs } from "@/lib/custom-report/glued-price-pair";
 import { heldWireClausePrices } from "@/lib/custom-report/wire-clause-prices";
@@ -42,6 +43,8 @@ import { withoutFeeBullets } from "@/lib/custom-report/fee-bullets";
 import { exclusiveStackedPrices, stackedFeePrices } from "@/lib/custom-report/stacked-fee-prices";
 import { withoutCardProgramSections } from "@/lib/custom-report/card-program-section";
 import { monthlyAccountOwnerReview } from "./monthly-account-owners";
+import { accountlessMonthlyReason } from "./accountless-monthly";
+import { ACCOUNT_PRODUCT_CATEGORIES } from "./lineup";
 import { ownFeeUnit, withOwnFeeUnit } from "@/lib/custom-report/own-fee-unit";
 import { withTierColumnRows } from "./tier-columns";
 import { mayHaveSymbolicLesserFee, symbolicLesserOfReview } from "./symbolic-lesser-of";
@@ -881,7 +884,17 @@ import { onlineServiceMonthlyFee } from "@/lib/service-monthly-charge";
 // marketing label ("BEST FOR", "STANDOUT BENEFIT") no longer ends the account lookback and a product tab list's last
 // entry is no account (lineup.ts). (6) A sentence stating the minimum balance gives no price unless its clause names
 // a charge (`minimumBalanceStated`; golden-set case wrong_amount:17477). The shared check is unchanged. The stale-read floor stays at v97.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 177 } as const;
+// v178 (ninth re-read backlog dry run, Nov 3; 40 texts at v177, 2 wrong and 5 doubtful of 91 changed rows): (1) A
+// returned item's handling service (special handling, a re-clear, a reroute, a service fee priced per month) is no
+// NSF fee and is held (`returnedItemServiceName`): First Bank 4694. (2) An automatic transfer from savings or shares
+// named alone is the overdraft protection transfer (`AUTOMATIC_TRANSFER_FROM_SAVINGS`, guard v109), never its "ATM"
+// heading's fee: Library of Congress FCU 13456. (3) A two-column line's first cell can head the account (lineup.ts):
+// Clinton Savings Bank 7843. (4) A bracket the name never closes is dropped (`tidyFeeName`): Flora 28783. (5) A
+// monthly maintenance read from a reward bullet or a "Your $12 monthly maintenance fee" sentence is held
+// (`accountlessMonthlyReason`), and a FAQ's second sentence about one free service is one $0 (`tailTwinRead`). (6) Review of #2973: the IRA's
+// own distribution, transfer-out and IRA-named rows no longer end its section, and waiver choices that each file
+// under the name's type are that fee ("Use Non-Network ATM or Foreign ATM"). The stale-read floor stays at v97.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 178 } as const;
 
 export interface SpecialistRun {
   strategy: string;
@@ -1176,6 +1189,27 @@ export function withoutFrontMatterLines(text: string): string {
   return changed ? lines.join("\n") : text;
 }
 
+/**
+ * v178 (backlog dry run 9, Clearview FCU text 22205): a later $0 read that is an earlier read's fee again: the
+ * same category, price and audience, one name the other's tail (whole words), both read from prose sentences (no
+ * cells). A FAQ page repeats one free service ("There is no fee for an Overdraft Protection transfer", "... for a
+ * traditional Overdraft Protection transfer"). Table rows ("Online Check Copies | No Charge" and "Executive Online
+ * Check Copies | No Charge") are distinct services, and an account's own $0 monthly fee names its account, so
+ * neither is matched.
+ */
+const squashWords = (value: string) => value.toLowerCase().replace(/[^a-z0-9$.]+/g, " ").trim();
+const PROSE_SENTENCE_WORDS = 8;
+const proseSentence = (excerpt: string) => !excerpt.includes("|") && excerpt.trim().split(/\s+/).length >= PROSE_SENTENCE_WORDS;
+export function tailTwinRead(prior: ExtractedFeeCandidate, later: ExtractedFeeCandidate): boolean {
+  if (prior.canonicalHint !== later.canonicalHint || prior.amount !== later.amount || prior.feeAudience !== later.feeAudience) return false;
+  if (later.amount !== 0 || ACCOUNT_PRODUCT_CATEGORIES.has(later.canonicalHint)) return false;
+  if (!proseSentence(prior.excerpt) || !proseSentence(later.excerpt)) return false;
+  const a = squashWords(prior.feeName);
+  const b = squashWords(later.feeName);
+  if (!a || !b || a === b) return false;
+  return a.endsWith(` ${b}`) || b.endsWith(` ${a}`);
+}
+
 export function runFreeSpecialists(rawText: string, options: FreeSpecialistOptions = {}): FreeExtractionResult {
   const storedText = withoutFrontMatterLines(rawText);
   // #2070: a discontinued account's table is flagged before any specialist reads the text
@@ -1382,7 +1416,12 @@ function readFreeText(sourceText: string, discontinuedRows: DiscontinuedTableFla
       // v177 (backlog dry run 8, First-Citizens text 40703): a wire service's monthly module or package ("Domestic
       // wire transfer base module (per month)D | $20.00") is no wire's price and no type of the 50: held
       // unclassified for review, as its international module already is (`wireServiceSubscription`).
-      if (read.canonicalHint?.startsWith("wire_") && wireServiceSubscription(feeName)) {
+      // v178 (backlog dry run 9, First Bank text 4694): a returned item's handling service ("Returned Items Special
+      // Handling Service Fee1 (Business) | $30.00 | Per Month", "Returned Item-Recleared Fee1", "Returned
+      // Item-Reroute of Return Fee1") is no NSF fee and no type of the 50: held unclassified for review
+      // (`returnedItemServiceName`).
+      if ((read.canonicalHint?.startsWith("wire_") && wireServiceSubscription(feeName)) ||
+        (read.canonicalHint === "nsf" && returnedItemServiceName(feeName, read.frequency))) {
         const row: HeldFeeCandidate = { shape: "unclassified", feeName, amount: read.amount, amountMax: null, percent: null, frequency: read.frequency, canonicalHint: null, excerpt: read.excerpt };
         const key = heldKey(row);
         if (!seenHeld.has(key) && held.filter(prior => !unpricedHalf(prior)).length < MAX_HELD_PER_DOCUMENT) {
@@ -1659,6 +1698,22 @@ function readFreeText(sourceText: string, discontinuedRows: DiscontinuedTableFla
     candidate.eligibilityReview = true;
     candidate.linkedConditions = [candidate.linkedConditions, owners].filter(Boolean).join("\n\n");
   }
+  // v178 (backlog dry run 9, Clearview FCU): a FAQ's second sentence about one free service is that $0 again
+  // ("There is no fee for an Overdraft Protection transfer", "... for a traditional Overdraft Protection
+  // transfer"); the later read is dropped (`tailTwinRead`).
+  for (let at = candidates.length - 1; at > 0; at--) {
+    if (candidates.slice(0, at).some((prior) => tailTwinRead(prior, candidates[at]))) candidates.splice(at, 1);
+  }
+  // v178 (backlog dry run 9): a monthly maintenance read from a reward bullet ("Waived $5.00 monthly maintenance
+  // fee") or a "Your $12 monthly maintenance fee ..." sentence is held for review with its category
+  // (`accountlessMonthlyReason`).
+  for (const candidate of candidates) {
+    if (candidate.eligibilityReview) continue;
+    const reason = accountlessMonthlyReason(candidate);
+    if (!reason) continue;
+    candidate.eligibilityReview = true;
+    candidate.linkedConditions = [candidate.linkedConditions, `accountless_monthly:${reason}`].filter(Boolean).join("\n\n");
+  }
   // #2209/#2259: preserve literal product prices without pooling them into standard benchmarks.
   // This explicit shape is not one of the automatic range/name/source promoters' inputs.
   for (let at = candidates.length - 1; at >= 0; at--) {
@@ -1745,6 +1800,16 @@ function readFreeText(sourceText: string, discontinuedRows: DiscontinuedTableFla
     const read = candidates[at];
     const renamed = withThresholdFigures(read.feeName, read.excerpt, read.amount);
     if (renamed !== read.feeName && passesDarwinChecks(read.canonicalHint, renamed, read.amount)) candidates[at] = { ...read, feeName: renamed };
+  }
+  // v178 (backlog dry run 9, Clearview FCU text 22205): a held $0 that is an earlier read's or hold's fee again
+  // under a longer or shorter name ("Overdraft Protection transfer", then "traditional Overdraft Protection
+  // transfer") is one free service (`tailTwinRead`).
+  for (let at = stillHeld.length - 1; at >= 0; at--) {
+    const row = stillHeld[at];
+    if (row.shape !== "zero" || row.amount !== 0 || !row.canonicalHint) continue;
+    const asRead = { ...row, amount: 0, canonicalHint: row.canonicalHint } as unknown as ExtractedFeeCandidate;
+    const earlier = [...candidates, ...stillHeld.slice(0, at).filter((prior) => prior.shape === "zero" && prior.canonicalHint)] as unknown as ExtractedFeeCandidate[];
+    if (earlier.some((prior) => tailTwinRead({ ...prior, feeAudience: asRead.feeAudience }, asRead))) stillHeld.splice(at, 1);
   }
   const unitHolds = stillHeld.map(row => row.shape === "zero" && row.canonicalHint && row.amount != null
     ? withOwnFeeUnit({ ...row, amount: row.amount, canonicalHint: row.canonicalHint }, sourceText) : row);
