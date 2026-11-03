@@ -2,10 +2,12 @@ import type { sql } from "@/lib/data-store/connection";
 import { invalidatePublicReadCache } from "@/lib/data-store/fee-cache";
 import { inSavepoint } from "@/lib/agents/savepoint";
 import { secondLook } from "@/lib/agents/hamilton/second-look";
-import { classifyFeeText, returnedItemServiceName, waiverAdviceName, waiverAdvicePrefix, wireServiceSubscription, zeroPrintedForRead, zeroPrintedOnLine } from "@/lib/agents/knox/rules";
+import { classifyFeeText, returnedItemServiceName, waiverAdviceName, waiverAdvicePrefix, wireServiceMonthlyName, wireServiceSubscription, zeroPrintedForRead, zeroPrintedOnLine } from "@/lib/agents/knox/rules";
 import { accountlessMonthlyExcerpt, accountlessMonthlyOnPage } from "@/lib/agents/knox/accountless-monthly";
 import { excerptOf } from "@/lib/agents/hamilton/frequency-fill";
-import { depositedCardReturnRead, frontMatterName } from "@/lib/agents/knox/specialists";
+import { depositedCardReturnRead, frontMatterName, withReturnBesideNsf } from "@/lib/agents/knox/specialists";
+import { reviewReadName } from "@/lib/agents/knox/read-name-review";
+import { PLAIN_RETURNED_ITEM } from "@/lib/fee-category-guard";
 import { withoutOcrLeaderNoise } from "@/lib/agents/knox/ocr-leader-noise";
 import { STOP_PAYMENT_VARIANT, stopPaymentVariantFor, stopPaymentVariantName } from "@/lib/custom-report/stop-payment-variant";
 import { iraSectionClosingFee } from "@/lib/custom-report/ira-section-fee";
@@ -74,6 +76,21 @@ type SqlTag = typeof sql;
  *   Fee" $10, "For each item you deposit or cash that is returned unpaid" (68629). Knox v181 files it as the
  *   deposited item return.
  *
+ * Version 5 (Knox v184, slice dry run and cross-category scan, Nov 3) adds three rules Knox v184 holds, re-files or
+ * drops new reads by, judged with the same shared functions:
+ *
+ * - `wire_service_monthly_fee`: a wire service's own monthly charge filed as an account's monthly fee
+ *   (`wireServiceMonthlyName`: Ameris Bank's "Online Wire Monthly Maintenance Fee | $25.00"), which no type holds.
+ * - `read_name_review`: a live fee Knox's last name review drops or re-files (`reviewReadName`, on the stored line and
+ *   the text Knox read): a price the line says is a deposit to open or join ("Only a $25 membership deposit to get
+ *   started"), a capitals label whose price sits in the next cell's own label ("COUNTER CHECKS | PER DEBIT ITEM •
+ *   $32"), a box's late charge filed as a loan's ("Box Late Fee"), or paper statements offered in a check image's
+ *   name. A rename alone is no match.
+ * - `return_beside_nsf`: a plain returned check or item filed as NSF that Knox v184 files as the deposited item
+ *   return (`withReturnBesideNsf`, with the live NSF and deposited item return fees read from the same text as the
+ *   page's other reads): beside an NSF fee the schedule prints free ("Insufficient Funds (NSF) | $0" over "Returned
+ *   Check | $20", 133756), or beside a deposited item return at its own price and an NSF fee above it.
+ *
  * Without this check a re-read would publish the right fee beside the live wrong one: Darwin's re-read category
  * check (`reread-category-check.ts`) judges only fees with a settled Knox re-read request, and these have none.
  * Version 4 also compares a stored line and the text with OCR leader noise blanked in both (`ocrComparable`).
@@ -90,7 +107,7 @@ type SqlTag = typeof sql;
  * Dry run, prod read-only, 2026-11-03: see docs/project/findings/2026-11-03-knox-backlog-dry-run-8-misreads.md.
  */
 export const SECTION_MISREAD_CHECK = "darwin.section_misread";
-export const SECTION_MISREAD_CHECK_VERSION = 4;
+export const SECTION_MISREAD_CHECK_VERSION = 5;
 /** The switch: off, the step only reports; on, matches come down after the second look. */
 export const SECTION_MISREAD_TAKEDOWN_LIVE = false;
 export const WAIVER_COLUMN_NAME_REASON = "waiver_column_name";
@@ -103,7 +120,10 @@ export const ZERO_NOT_PRINTED_REASON = "zero_not_printed";
 export const AUDIENCE_SECTION_UNTAGGED_REASON = "audience_section_untagged";
 export const STOP_PAYMENT_VARIANT_REASON = "stop_payment_variant";
 export const DEPOSITED_CARD_RETURN_REASON = "deposited_card_return";
-export const SECTION_MISREAD_REASONS = [WAIVER_COLUMN_NAME_REASON, FRONT_MATTER_NAME_REASON, WIRE_SUBSCRIPTION_REASON, IRA_SECTION_CLOSING_REASON, RETURNED_ITEM_SERVICE_REASON, ACCOUNTLESS_MONTHLY_REASON, ZERO_NOT_PRINTED_REASON, AUDIENCE_SECTION_UNTAGGED_REASON, STOP_PAYMENT_VARIANT_REASON, DEPOSITED_CARD_RETURN_REASON] as const;
+export const WIRE_SERVICE_MONTHLY_REASON = "wire_service_monthly_fee";
+export const READ_NAME_REVIEW_REASON = "read_name_review";
+export const RETURN_BESIDE_NSF_REASON = "return_beside_nsf";
+export const SECTION_MISREAD_REASONS = [WAIVER_COLUMN_NAME_REASON, FRONT_MATTER_NAME_REASON, WIRE_SUBSCRIPTION_REASON, IRA_SECTION_CLOSING_REASON, RETURNED_ITEM_SERVICE_REASON, ACCOUNTLESS_MONTHLY_REASON, ZERO_NOT_PRINTED_REASON, AUDIENCE_SECTION_UNTAGGED_REASON, STOP_PAYMENT_VARIANT_REASON, DEPOSITED_CARD_RETURN_REASON, WIRE_SERVICE_MONTHLY_REASON, READ_NAME_REVIEW_REASON, RETURN_BESIDE_NSF_REASON] as const;
 export type SectionMisreadKind = (typeof SECTION_MISREAD_REASONS)[number];
 export const SECTION_MISREAD_LIMIT = 10_000;
 export const SECTION_MISREAD_SAMPLES = 20;
@@ -128,6 +148,15 @@ export const STOP_PAYMENT_TEXT_SQL = String.raw`stop\s*-?\s*pay`;
 /** Version 4: a text with a labeled fee card ("Fee TypeReturned Item Fee") that says deposit or cash. */
 export const FEE_CARD_TEXT_SQL = String.raw`(^|\n)\s*fee\s*(type|name)`;
 export const DEPOSIT_OR_CASH_TEXT_SQL = String.raw`(deposit|cash)`;
+/** Version 5: a monthly fee's name that names a wire (a superset of `wireServiceMonthlyName`). */
+export const WIRE_MONTHLY_NAME_SQL = String.raw`\mwires?\M`;
+/** Version 5: a stored line or name `reviewReadName` could drop or re-file by (supersets of its rules). */
+export const OPENING_DEPOSIT_LINE_SQL = String.raw`(membership|opening|initial)\s+deposit|deposit\s+(to|will)\s+(open|join|get\s+started)|(deposit|open\s+(an?\s+)?(account|membership))\s+(of|with)\s`;
+export const CAPS_CELL_LINE_SQL = String.raw`\|\s*[A-Z][A-Z0-9 &/'’-]{3,}\s*[•:–-]\s*\$`;
+export const BOX_NAME_SQL = String.raw`\mbox`;
+export const PAPER_OFFER_SQL = String.raw`(paper|printed|mailed)[^|]{0,12}statement`;
+/** Version 5: a plain returned check or item (`PLAIN_RETURNED_ITEM`). */
+export const PLAIN_RETURN_NAME_SQL = String.raw`^\s*return(ed)?\s+(check|item)s?(\s+(fee|charge)s?)?\s*:?\s*$`;
 /** Knox stores at most 180 characters of a held read's line, and a cut line can end in its dot leader. */
 const STORED_LINE_CUT = 180;
 const DOT_LEADER_END = /(?:(?:\.\s?){2,}|…)\s*$/;
@@ -147,6 +176,8 @@ export interface SectionMisreadRow {
   source_line?: string | null;
   /** Version 3: the fee has no product and the bank has a live fee of its name, with no product, at another price. */
   audience_candidate?: boolean | null;
+  /** Version 5: the other live NSF and deposited item return fees read from the same text (a plain return's page reads). */
+  siblings?: Array<{ fee_published_id?: number | string | null; fee_name: string | null; amount: number | string | null; canonical_fee_key: string | null }> | null;
 }
 
 export interface SectionMisreadMatch {
@@ -190,7 +221,7 @@ function num(value: number | string | null | undefined): number | null {
 }
 
 function emptyKinds(): Record<SectionMisreadKind, number> {
-  return { waiver_column_name: 0, front_matter_name: 0, wire_subscription: 0, ira_section_closing: 0, returned_item_service: 0, accountless_monthly_sentence: 0, zero_not_printed: 0, audience_section_untagged: 0, stop_payment_variant: 0, deposited_card_return: 0 };
+  return { waiver_column_name: 0, front_matter_name: 0, wire_subscription: 0, ira_section_closing: 0, returned_item_service: 0, accountless_monthly_sentence: 0, zero_not_printed: 0, audience_section_untagged: 0, stop_payment_variant: 0, deposited_card_return: 0, wire_service_monthly_fee: 0, read_name_review: 0, return_beside_nsf: 0 };
 }
 
 /**
@@ -209,6 +240,54 @@ function variantCandidate(row: SectionMisreadRow): boolean {
 /** Version 4: a live NSF fee, judged by its labeled fee card's description. */
 function cardCandidate(row: SectionMisreadRow): boolean {
   return row.canonical_fee_key === "nsf";
+}
+
+/** Version 5: a live fee `reviewReadName` could drop or re-file, with a stored line. */
+function reviewCandidate(row: SectionMisreadRow): boolean {
+  const name = (row.fee_name ?? "").trim();
+  const line = row.source_line ?? "";
+  if (!excerptOf(row.source_line)) return false;
+  if (row.canonical_fee_key === "late_payment") return /\bbox/i.test(name);
+  if (row.canonical_fee_key === "check_image") return /(?:paper|printed|mailed)[^|]{0,12}statement/i.test(name);
+  return (num(row.amount) ?? 0) > 0 && (new RegExp(OPENING_DEPOSIT_LINE_SQL, "i").test(line) || (!/[a-z]/.test(name) && new RegExp(CAPS_CELL_LINE_SQL).test(line)));
+}
+
+/** Version 5: a live plain returned check or item filed as NSF. */
+function returnCandidate(row: SectionMisreadRow): boolean {
+  return row.canonical_fee_key === "nsf" && (num(row.amount) ?? 0) > 0 && PLAIN_RETURNED_ITEM.test((row.fee_name ?? "").trim());
+}
+
+/**
+ * Pure, version 5: Knox v184's last name review of a live fee on its stored line and the text Knox read, when it drops
+ * the read or files it elsewhere (a rename alone is no match), or null.
+ */
+export function reviewedReadKind(row: SectionMisreadRow, text: string): { kind: SectionMisreadKind; evidence: string } | null {
+  const line = excerptOf(row.source_line);
+  const key = row.canonical_fee_key;
+  const amount = num(row.amount);
+  if (!line || !key || amount == null) return null;
+  const name = (row.fee_name ?? "").trim();
+  const reviewed = reviewReadName({ canonicalHint: key, feeName: name, amount, excerpt: line }, withoutOcrLeaderNoise(text));
+  if (!reviewed) return null;
+  if (reviewed.read == null) return { kind: READ_NAME_REVIEW_REASON, evidence: `${reviewed.rule}: ${line.slice(0, 70)}` };
+  if (reviewed.read.canonicalHint !== key) return { kind: READ_NAME_REVIEW_REASON, evidence: `${reviewed.rule}: ${name.slice(0, 50)} is ${reviewed.read.canonicalHint}, not ${key}` };
+  return null;
+}
+
+/**
+ * Pure, version 5: a live plain returned item filed as NSF that Knox v184 files as the deposited item return, judged
+ * with `withReturnBesideNsf` on the live fee and the other live NSF and deposited item return fees from its text.
+ */
+export function returnBesideNsfKind(row: SectionMisreadRow, text: string | undefined): { kind: SectionMisreadKind; evidence: string } | null {
+  if (!returnCandidate(row)) return null;
+  const name = (row.fee_name ?? "").trim();
+  const amount = num(row.amount) as number;
+  const read = { feeName: name, amount, canonicalHint: "nsf" as string | null };
+  const others = (row.siblings ?? []).filter((sibling) => String(sibling.fee_published_id ?? "") !== String(row.fee_published_id)).map((sibling) => ({ feeName: (sibling.fee_name ?? "").trim(), amount: num(sibling.amount), canonicalHint: sibling.canonical_fee_key }));
+  const [filed] = withReturnBesideNsf([read, ...others], [], text);
+  return filed.canonicalHint === "deposited_item_return"
+    ? { kind: RETURN_BESIDE_NSF_REASON, evidence: `${name.slice(0, 50)} $${amount} beside ${others.map((other) => `${other.canonicalHint} $${other.amount}`).join(", ").slice(0, 80) || "a free NSF fee"}` }
+    : null;
 }
 
 /**
@@ -276,6 +355,7 @@ export function nameMisreadKind(name: string, key: string | null, frequency?: st
   }
   if (key?.startsWith("wire_") && wireServiceSubscription(name)) return { kind: WIRE_SUBSCRIPTION_REASON, evidence: name.slice(0, 80) };
   if (key === "nsf" && returnedItemServiceName(name, frequency)) return { kind: RETURNED_ITEM_SERVICE_REASON, evidence: name.slice(0, 80) };
+  if (key === "monthly_maintenance" && wireServiceMonthlyName(name)) return { kind: WIRE_SERVICE_MONTHLY_REASON, evidence: name.slice(0, 80) };
   return null;
 }
 
@@ -313,6 +393,15 @@ export function findSectionMisreads(
       const artifactId = num(row.artifact_id);
       const text = artifactId == null ? undefined : texts.get(artifactId);
       const judged = text ? textMisreadKind(row, text) : null;
+      if (judged) {
+        matches.push({ ...base, kind: judged.kind, reason: `${judged.kind}: "${judged.evidence}"` });
+        continue;
+      }
+    }
+    if (returnCandidate(row) || reviewCandidate(row)) {
+      const artifactId = num(row.artifact_id);
+      const text = artifactId == null ? undefined : texts.get(artifactId);
+      const judged = returnBesideNsfKind(row, text) ?? (text && reviewCandidate(row) ? reviewedReadKind(row, text) : null);
       if (judged) {
         matches.push({ ...base, kind: judged.kind, reason: `${judged.kind}: "${judged.evidence}"` });
         continue;
@@ -429,6 +518,17 @@ export function sectionMisreadRowsSql(db: SqlTag, options: { institutionId?: num
           OR (live.canonical_fee_key = 'nsf' AND live.fee_name ~* ${RETURNED_ITEM_SERVICE_NAME_SQL})
           OR (live.canonical_fee_key = 'monthly_maintenance' AND live.source_line ~* ${ACCOUNTLESS_MONTHLY_LINE_SQL})
           OR (live.amount = 0 AND live.source_line ~ ${STORED_LINE_SQL})
+          OR (live.canonical_fee_key = 'monthly_maintenance' AND live.fee_name ~* ${WIRE_MONTHLY_NAME_SQL})
+    ),
+    reviewed AS (
+      -- Version 5: a live fee Knox v184's name review or plain-return rule could drop or re-file.
+      SELECT live.* FROM live
+       WHERE (live.canonical_fee_key = 'nsf' AND live.amount > 0 AND live.fee_name ~* ${PLAIN_RETURN_NAME_SQL})
+          OR (live.source_line ~ ${STORED_LINE_SQL} AND (
+               (live.canonical_fee_key = 'late_payment' AND live.fee_name ~* ${BOX_NAME_SQL})
+            OR (live.canonical_fee_key = 'check_image' AND live.fee_name ~* ${PAPER_OFFER_SQL})
+            OR (live.amount > 0 AND live.source_line ~* ${OPENING_DEPOSIT_LINE_SQL})
+            OR (live.amount > 0 AND live.fee_name !~ '[a-z]' AND live.source_line ~ ${CAPS_CELL_LINE_SQL})))
     ),
     closing AS (
       SELECT live.* FROM live
@@ -457,15 +557,36 @@ export function sectionMisreadRowsSql(db: SqlTag, options: { institutionId?: num
           OR (live.canonical_fee_key = 'nsf'
               AND a.normalized_text ~* ${FEE_CARD_TEXT_SQL}
               AND a.normalized_text ~* ${DEPOSIT_OR_CASH_TEXT_SQL})
+    ),
+    picked AS (
+      SELECT * FROM named
+      UNION
+      SELECT * FROM closing
+      UNION
+      SELECT * FROM audience
+      UNION
+      SELECT * FROM retextured
+      UNION
+      SELECT * FROM reviewed
+    ),
+    -- Version 5: a plain return's page reads, the live NSF and deposited item return fees from its text, gathered
+    -- once per text (one hash join, not a scan of live per row); the fee itself is left out in findSectionMisreads.
+    return_texts AS (
+      SELECT DISTINCT reviewed.artifact_id FROM reviewed
+       WHERE reviewed.canonical_fee_key = 'nsf' AND reviewed.artifact_id IS NOT NULL
+    ),
+    text_siblings AS (
+      SELECT other.artifact_id,
+             jsonb_agg(jsonb_build_object('fee_published_id', other.fee_published_id, 'fee_name', other.fee_name, 'amount', other.amount, 'canonical_fee_key', other.canonical_fee_key)) AS siblings
+        FROM live other
+        JOIN return_texts r ON r.artifact_id = other.artifact_id
+       WHERE other.canonical_fee_key IN ('nsf', 'deposited_item_return')
+       GROUP BY other.artifact_id
     )
-    SELECT * FROM named
-    UNION
-    SELECT * FROM closing
-    UNION
-    SELECT * FROM audience
-    UNION
-    SELECT * FROM retextured
-     ORDER BY fee_published_id
+    SELECT picked.*, CASE WHEN picked.canonical_fee_key = 'nsf' THEN text_siblings.siblings END AS siblings
+      FROM picked
+      LEFT JOIN text_siblings ON text_siblings.artifact_id = picked.artifact_id
+     ORDER BY picked.fee_published_id
      LIMIT ${limit}::int
   `;
 }
@@ -502,7 +623,7 @@ export async function recheckSectionMisreads(
     rows = await inSavepoint(db, (scope) => sectionMisreadRowsSql(scope, { institutionId: options.institutionId, limit: options.limit }));
     const artifactIds = rows
       .filter((row) => !nameMisreadKind((row.fee_name ?? "").trim(), row.canonical_fee_key, row.frequency) &&
-        (row.canonical_fee_key === "early_closure" || zeroLineCandidate(row) || audienceCandidate(row) || variantCandidate(row) || cardCandidate(row) ||
+        (row.canonical_fee_key === "early_closure" || zeroLineCandidate(row) || audienceCandidate(row) || variantCandidate(row) || cardCandidate(row) || returnCandidate(row) || reviewCandidate(row) ||
           (row.canonical_fee_key === "monthly_maintenance" && accountlessMonthlyExcerpt(excerptOf(row.source_line)) != null)))
       .map((row) => num(row.artifact_id))
       .filter((id): id is number => id != null);

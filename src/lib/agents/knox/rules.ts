@@ -1419,7 +1419,11 @@ export function headingName(rawLine: string): string | null | undefined {
  * any heading above it.
  */
 
-function plainHeadingName(line: string): string | null | undefined {
+function plainHeadingName(rawLine: string): string | null | undefined {
+  // v184 (Knox slice dry run, St. Cloud Financial FCU text 21575): an account's code in brackets ("Wincentive
+  // Savings Account (S40)") is no figure: the line is a title, and it ends the reach of the heading above it, so
+  // "*First withdrawal $10.00" under it is never read under "Visa Gift Card".
+  const line = /^[A-Z][^$%]*\([A-Z]{0,3}\d{1,4}\)\s*$/.test(rawLine) ? rawLine.replace(/\s*\([A-Z]{0,3}\d{1,4}\)\s*$/, "") : rawLine;
   if (line.includes("$") || PERCENT_PATTERN.test(line) || /\d/.test(line.replace(/[¹²³⁴⁵⁶⁷⁸⁹⁰]/g, ""))) return undefined;
   // A row of the heading's own table ("Cashier’s Checks" / "Performance Select Checking ......No
   // charge") keeps the heading for the rows under it; a row naming a fee of its own ends it.
@@ -1613,6 +1617,9 @@ export function readUnderHeading(segment: string, heading: string): ExtractedFee
   // A label with its own colon, or a title of three or more capitalized words ("Picture Check
   // Card:", "RBD Scanner Replacement"), is another fee's row, not a row of this heading.
   if (/:\s*$/.test(line.slice(0, amounts[0].start).replace(/[\s|]+$/, ""))) return [];
+  // v184 (Knox slice dry run, Crow Wing Power CU text 23340): a wire's own row ("WIRE TRANSFER – $20") under
+  // another fee's heading ("SUBORDINATION REQUEST & PARTIAL", the other column) is never that fee's row.
+  if (FEE_FAMILY_HEADING.test(label) && !FEE_FAMILY_HEADING.test(heading)) return [];
   // v80: a wire's currency and direction is a row of its wire heading ("Foreign Currency Outgoing").
   const wireRow = FEE_FAMILY_HEADING.test(heading) && WIRE_ROW_LABEL.test(label);
   if (!wireRow && (label.replace(/\([^)]*\)/g, " ").match(/\b[A-Z][\w'’&/-]*/g) ?? []).length > 2) return [];
@@ -1846,6 +1853,16 @@ const WIRE_SUBSCRIPTION = /\b(?:module|package|subscription)\b/gi;
 const SUBSCRIPTION_PRICE_AFTER = /^\W*(?:fees?\b|\(?\s*(?:per\s+month|monthly|month(?:ly)?\s+fee|\/\s*mo(?:nth)?\b))/i;
 const SUBSCRIPTION_PRICE_BEFORE = /\b(?:base|monthly)\s+(?:wire\s+(?:transfer\s+)?)?$/i;
 const MODULE_IS_HEAD = /\b(?:wires?|wire\s+transfers?|transfers?)\s+$/i;
+/**
+ * v184 (Knox slice dry run, Ameris Bank text 1338): a monthly or maintenance charge for a wire service ("Online Wire
+ * Monthly Maintenance Fee") is the wire service's subscription, never an account's monthly fee. A name that names an
+ * account ("Checking") is the account's.
+ */
+const WIRE_SERVICE_MONTHLY = /\bwires?\b(?:\s+(?:transfers?|services?|module|access))?\s+(?:monthly\s+)?(?:maintenance|monthly|subscription)\b|\b(?:monthly|maintenance)\b[^|]{0,20}\bfor\s+(?:online\s+)?wires?\b/i;
+export function wireServiceMonthlyName(name: string): boolean {
+  return WIRE_SERVICE_MONTHLY.test(name) && !/\b(?:checking|savings|account|share|money\s+market)\b/i.test(name);
+}
+
 export function wireServiceSubscription(name: string): boolean {
   for (const match of name.matchAll(WIRE_SUBSCRIPTION)) {
     const at = match.index ?? 0;
@@ -2866,12 +2883,23 @@ function stackedVariantReads(segment: string, cells: string[] | null, priceCount
  * electronic one ("$4 for paper statement or $3 for estatement") stays maintenance.
  */
 export function paperStatementRead(candidate: ExtractedFeeCandidate, segment: string): ExtractedFeeCandidate {
-  if (candidate.canonicalHint !== "monthly_maintenance" || !paperStatementPriceOnLine(segment, candidate.amount)) return candidate;
-  const feeName = PAPER_STATEMENT_NAME.test(candidate.feeName) ? candidate.feeName : "Paper statement fee";
+  // v184 (Knox slice dry run, Austin Bank text 25416): a check image read whose name offers paper statements at
+  // the price ("Free eStatements (Paper statements without check images are available for a $3 monthly fee)") is
+  // that paper statement charge, named by its paper words.
+  // Only a name that offers the paper statements: "Paper statement with check images" stays the image charge.
+  const offeredImage = candidate.canonicalHint === "check_image" && PAPER_STATEMENT_NAME.test(candidate.feeName) && PAPER_OFFER_NAME.test(candidate.feeName);
+  if ((candidate.canonicalHint !== "monthly_maintenance" && !offeredImage) || !paperStatementPriceOnLine(segment, candidate.amount)) return candidate;
+  // The paper words alone: "without check images" would file the name as the image charge it is not.
+  const paperWords = candidate.feeName.match(/\b(?:paper|printed|mailed)\s+statements?/i)?.[0];
+  const feeName = !PAPER_STATEMENT_NAME.test(candidate.feeName) ? "Paper statement fee"
+    : PAPER_OFFER_NAME.test(candidate.feeName) && paperWords ? paperWords.charAt(0).toUpperCase() + paperWords.slice(1) : candidate.feeName;
   if (!passesDarwinChecks("paper_statement", feeName, candidate.amount)) return candidate;
   // The account lineup belongs to a maintenance read only.
   return { ...candidate, lineup: undefined, canonicalHint: "paper_statement", feeName };
 }
+
+/** v184: a check image read's name that offers paper statements ("Free eStatements (Paper statements ... are available for a"). */
+export const PAPER_OFFER_NAME = /\bavailable\b|^\W*free\b/i;
 
 /** A read already named for its paper statement ("Paper statements", "Paper (mailed) Statement Fee"). */
 const PAPER_STATEMENT_NAME = /\b(?:paper|printed|mailed)\b[^|]{0,12}\bstatements?\b/i;
