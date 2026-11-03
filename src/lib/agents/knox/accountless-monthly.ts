@@ -1,4 +1,4 @@
-import { explicitAccountHeading } from "./lineup";
+import { accountHeadingAbove, explicitAccountHeading } from "./lineup";
 import { amountsIn, classifyFeeText, type ExtractedFeeCandidate } from "./rules";
 
 /**
@@ -51,21 +51,50 @@ const monthlyFeeName = (words: string): boolean =>
 const PRICES_ONLY = /^(?:\s|\$\s?\d[\d,]*(?:\.\d{1,2})?|\bor\b|\/|[-–—])*$/i;
 
 /**
- * The page's own row for a monthly fee at this price, never a sentence form: the name before the price
- * ("Monthly maintenance fee | $10.00"), a cell of the price's line naming it ("$10 or $0 | Monthly Fee | $0", a
- * product table with its columns swapped), or a line of prices only right under the name ("Monthly Fee" / "$10 or
- * $0", Trumark FCU's Momentum Checking, live 117986).
+ * The page's own row for a monthly fee at this price, never a sentence form, whose own name is the monthly fee:
+ * the name before the price ("Monthly maintenance fee | $10.00"); a line that opens on the price, every other
+ * cell of which names the monthly fee ("$10 or $0 | Monthly Fee | $0", a product table with its columns swapped);
+ * or a line of prices only right under the name ("Monthly Fee" / "$10 or $0", Trumark FCU's Momentum Checking,
+ * live 117986). A line naming another product before its price ("Safe Deposit Box 3x5 | $10.00 | Monthly Fee",
+ * "Online Bill Pay | $5.95 | Monthly fee") is that product's row, whatever a later cell says (review of #2976).
  */
-function monthlyFeeRowLine(lines: readonly string[], skip: number, amount: number): string | null {
+function monthlyFeeRow(lines: readonly string[], index: number, skip: number, amount: number): boolean {
+  const line = lines[index];
+  if (index === skip || accountlessMonthlyExcerpt(line)) return false;
+  const price = amountsIn(line).find((match) => match.value === amount);
+  if (!price) return false;
+  const before = line.slice(0, price.start).replace(/[\s|:–—-]+$/, "").trim();
+  if (before) return monthlyFeeName(before) || monthlyFeeName(before.split("|").pop()?.trim() ?? "");
+  if (line.includes("|")) {
+    const named = line.split("|").map((cell) => cell.trim()).filter((cell) => cell && !PRICES_ONLY.test(cell));
+    return named.length > 0 && named.every(monthlyFeeName);
+  }
+  return PRICES_ONLY.test(line) && index > 0 && index - 1 !== skip && monthlyFeeName(lines[index - 1].replace(/[\s:]+$/, ""));
+}
+
+/** The account a row belongs to: its own first cell when that titles an account ("Basic Savings | ..."), else the heading above it. */
+function rowAccount(text: string, line: string): string | null {
+  const first = line.includes("|") ? line.split("|")[0].trim() : "";
+  if (first && !first.includes("$") && !monthlyFeeName(first)) {
+    const own = explicitAccountHeading(first);
+    if (own) return own;
+  }
+  return accountHeadingAbove(text, line);
+}
+
+const sameAccount = (a: string | null, b: string | null): boolean =>
+  a == null || b == null || a.replace(/\s+/g, " ").toLowerCase() === b.replace(/\s+/g, " ").toLowerCase();
+
+/**
+ * The first such row that sits under the sentence's own account (review of #2976): a row another account's heading
+ * or first cell owns ("Basic Savings | Monthly maintenance fee | $10.00" against a bullet under "Rewards
+ * Checking") is that account's fee and never stands for the sentence. When either account is unknown, the row stands.
+ */
+function monthlyFeeRowLine(text: string, lines: readonly string[], skip: number, amount: number): string | null {
+  const sentenceAccount = skip >= 0 ? accountHeadingAbove(text, lines[skip]) : null;
   for (let index = 0; index < lines.length; index++) {
-    if (index === skip) continue;
-    const line = lines[index];
-    if (accountlessMonthlyExcerpt(line)) continue;
-    const price = amountsIn(line).find((match) => match.value === amount);
-    if (!price) continue;
-    if (monthlyFeeName(line.slice(0, price.start).replace(/[\s|:–—-]+$/, "").trim())) return line;
-    if (line.includes("|") && line.split("|").some((cell) => !cell.includes("$") && monthlyFeeName(cell.trim()))) return line;
-    if (PRICES_ONLY.test(line) && index > 0 && index - 1 !== skip && monthlyFeeName(lines[index - 1].replace(/[\s:]+$/, ""))) return line;
+    if (!monthlyFeeRow(lines, index, skip, amount)) continue;
+    if (sameAccount(sentenceAccount, rowAccount(text, lines[index]))) return lines[index];
   }
   return null;
 }
@@ -89,7 +118,7 @@ export function accountlessMonthlyOnPage(
   const probe = (candidate.excerpt ?? "").trim().slice(0, 40);
   const at = probe ? lines.findIndex((line) => line.includes(probe)) : -1;
   if (candidate.amount != null) {
-    const row = monthlyFeeRowLine(lines, at, candidate.amount);
+    const row = monthlyFeeRowLine(text, lines, at, candidate.amount);
     if (row) return { hold: false, row };
   }
   if (at > 0 && explicitAccountHeading(lines[at - 1])) return { hold: false, row: null };

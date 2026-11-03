@@ -109,7 +109,14 @@ reads stayed fixed.
 - A two-column first cell heads the fee only when the fee's own line prints the other column too (a second price
   after the fee's), so "Premier Checking" / "Money Market Savings | Money Orders | $5.00" / "Monthly maintenance fee
   | $5.00" stays Premier Checking. Clinton's rows all print both columns and keep their accounts.
-- Re-run: harness rows across rb to rb9 unchanged (rb9 605), live fees not reproduced 313 and 24.
+- Re-review nits: a row stands for the sentence only when its own name is the monthly fee (the words before
+  its price, or every named cell of a line that opens on its price), so "Safe Deposit Box 3x5 | $10.00 | Monthly
+  Fee" and "Online Bill Pay | $5.95 | Monthly fee" leave a "Your $X" sentence held and never become its line; and
+  the row must sit under the sentence's own account (its first cell or the heading above it, against the heading
+  above the sentence; either unknown counts as the same), so "Basic Savings | Monthly maintenance fee | $10.00"
+  leaves a bullet under "Rewards Checking" held. Trumark's table rows still stand, so live 117986 stays kept.
+- Re-run: harness rows across rb to rb9 unchanged (rb9 605), live fees not reproduced 313 and 24; live counts
+  unchanged (section misread 15, guard v109 re-files 0).
 
 **Left for the Knox tracker:**
 

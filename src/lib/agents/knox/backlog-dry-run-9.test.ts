@@ -195,6 +195,37 @@ describe("review of #2976", () => {
     expect(accountlessMonthlyOnPage(["Benefits:", "Waived $10 monthly maintenance fee", "ATM refunds up to $10"].join("\n"), bullet)).toEqual({ hold: true, reason: "reward_bullet" });
   });
 
+  it("never takes another product's row for the monthly fee because a later cell says \"Monthly Fee\"", () => {
+    const your10 = { canonicalHint: "monthly_maintenance", excerpt: "Your $10 monthly maintenance fee is waived when you maintain $1,500.", amount: 10 };
+    expect(accountlessMonthlyOnPage([your10.excerpt, "Safe Deposit Box 3x5 | $10.00 | Monthly Fee"].join("\n"), your10)).toEqual({ hold: true, reason: "your_fee_sentence" });
+    const your595 = { canonicalHint: "monthly_maintenance", excerpt: "Your $5.95 monthly service fee is waived with eStatements.", amount: 5.95 };
+    expect(accountlessMonthlyOnPage([your595.excerpt, "Online Bill Pay | $5.95 | Monthly fee"].join("\n"), your595)).toEqual({ hold: true, reason: "your_fee_sentence" });
+    const found = run(["Overview", your10.excerpt, "Safe Deposit Box 3x5 | $10.00 | Monthly Fee"].join("\n"));
+    expect(found.candidates.some((read) => read.canonicalHint === "monthly_maintenance" && /Safe Deposit/.test(read.excerpt))).toBe(false);
+  });
+
+  it("never lets another account's row stand for a reward bullet", () => {
+    const bullet = { canonicalHint: "monthly_maintenance", excerpt: "Waived $10 monthly maintenance fee", amount: 10 };
+    const text = ["Rewards Checking", "Earn these rewards each month:", "Waived $10 monthly maintenance fee", "Refunded ATM fees", "Basic Savings | Monthly maintenance fee | $10.00"].join("\n");
+    expect(accountlessMonthlyOnPage(text, bullet)).toEqual({ hold: true, reason: "reward_bullet" });
+    const own = ["Rewards Checking", "Monthly maintenance fee | $10.00", "Earn these rewards each month:", "Waived $10 monthly maintenance fee"].join("\n");
+    expect(accountlessMonthlyOnPage(own, bullet)).toEqual({ hold: false, row: "Monthly maintenance fee | $10.00" });
+  });
+
+  it("keeps Trumark FCU's bullet on its own page (text 32377, lines 86-135 and 196-216)", () => {
+    const text = [
+      "Checking Account Options", "Checking options built for your everyday life", "Open an Account", "Home", "Checking Accounts", "Checking That Works the Way You Do",
+      "Compare Checking Accounts", "Momentum Checking Account Learn More | Features | Balance Checking Account Learn More", "$10 or $0 | Monthly Fee | $0",
+      "2 Annual Overdraft Fee Reimbursements", "$0 | Minimum Balance | $0", "Debit Card Rewards", "Features", "Momentum Checking Account", "Learn More", "Monthly Fee", "$10 or $0",
+      "2 Annual Overdraft Fee Reimbursements", "Minimum Balance", "$0", "Show Details", "Hide Details", "Balance Checking Account", "Learn More", "Monthly Fee", "$0",
+      "Momentum Checking FAQs", "Are there any current offers?", "How do I qualify for the Momentum Checking account benefits?",
+      "Receive at least $1,000 in electronic deposits, or", "Complete 15 qualifying debit and/or credit card transactions, or", "Be 26 years of age or younger",
+      "These requirements are evaluated monthly, and thresholds reset at the start of each new month.", "Benefits tied to meeting these requirements include:",
+      "Waived $10 monthly maintenance fee", "Refunds of Trumark out-of-network ATM fees",
+    ].join("\n");
+    expect(accountlessMonthlyOnPage(text, { canonicalHint: "monthly_maintenance", excerpt: "Waived $10 monthly maintenance fee", amount: 10 })?.hold).toBe(false);
+  });
+
   it("reads a returned item charge noted as special handling, and still holds the handling itself", () => {
     expect(returnedItemServiceName("Returned Item Charge (Special Handling)")).toBe(false);
     expect(reads("Returned Item Charge (Special Handling) | $15.00")).toContainEqual([expect.stringMatching(/^Returned Item Charge/), 15, "nsf"]);
