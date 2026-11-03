@@ -248,7 +248,13 @@ export function priceWindows(text: string): PriceWindow[] {
       // on First Visa Debit Card.", `freeWordOnItem`): Citizens Bank of Ada's perk "Monthly Statements
       // with Check Images" took the debit card's "No Charge" as a $0 check image fee (doc 41229).
       const stacked = !priceFirst && opensLine && pending != null && !(value.zero && freeWordOnItem(line.slice(value.start)));
-      const rawName = priceFirst ?? (stacked ? `${pending} ${own}` : own);
+      // v184 (Knox slice dry run, Advia FCU text 30743): labels in columns over prices in the same columns ("Account
+      // History Print | Loan Skip Pay" over "$1/page | $35 where regionally offered"): the first price is the first
+      // column's, never the label nearest it.
+      const pendingCells = stacked && pending != null ? pending.split(CELL_SEPARATOR).map((cell) => cell.trim()).filter(Boolean) : [];
+      const lineCells = line.split(CELL_SEPARATOR).map((cell) => cell.trim()).filter(Boolean);
+      const columnLabel = pendingCells.length >= 2 && lineCells.length === pendingCells.length && lineCells.every((cell) => /^\W*\$\s?\d/.test(cell)) ? pendingCells[0] : null;
+      const rawName = priceFirst ?? (stacked ? (columnLabel ? `${columnLabel} ${own}` : `${pending} ${own}`) : own);
       if (priceFirst) priceFirstLine = true;
       windows.push({
         rawName,
@@ -263,7 +269,7 @@ export function priceWindows(text: string): PriceWindow[] {
         ...(priceFirst ? { priceFirst: true } : {}),
         excerpt: priceFirst
           ? line.slice(0, 280)
-          : `${stacked ? `${pending} / ` : ""}${line.slice(value.start - own.length, value.end + qualifier.length)}`.trim().slice(-280),
+          : `${stacked ? `${columnLabel ?? pending} / ` : ""}${line.slice(value.start - own.length, value.end + qualifier.length)}`.trim().slice(-280),
       });
       if (condition) {
         afterCondition = value.end + qualifier.length;
@@ -360,6 +366,8 @@ function matchFor(expert: FamilyExpert, name: string, heading: string | null, pe
   if (hint) return { hint, feeName: name };
   // A name the rules already file elsewhere never borrows this family's heading.
   if (!heading || !composableTail(name) || classifyPatternKey(name)) return null;
+  // v184: a wire's own row never borrows another fee's heading (Crow Wing Power CU's "WIRE TRANSFER – $20").
+  if (/\bwires?\b/i.test(name) && !/\bwires?\b/i.test(heading)) return null;
   const headed = classifyFor(expert, `${heading} ${name}`);
   return headed ? { hint: headed, feeName: `${heading}: ${name}` } : null;
 }

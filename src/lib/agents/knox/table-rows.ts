@@ -270,9 +270,32 @@ function valueCellIndex(cells: string[], from: number): number {
   return -1;
 }
 
+/**
+ * v184 (Knox slice dry run, Advia FCU text 30743): two columns stacked label over price ("Account History Print |
+ * Loan Skip Pay" over "$1/page | $35 where regionally offered") are two rows, each label over its own column's
+ * price, never the nearer label over the first price. Only when every label cell names no price and the price
+ * cells, one per label, follow them.
+ */
+/** A label that wraps onto the next line ("ACH Transfer Origination - per", "Daily Overdraft Fee (Overdrawn Account after"). */
+const WRAPPED_LABEL_END = /(?:[-–/(,&]|\b(?:per|of|for|after|before|and|or|the|a|an|to|with|in|on|by|from|than))\s*$|\([^)]*$/i;
+
+export function parallelColumnRows(row: KnoxTableRow): KnoxTableRow[] {
+  const cells = row.cells.flatMap((cell) => cell.split(CELL_SEPARATOR)).map((cell) => cell.trim()).filter(Boolean);
+  const firstValue = cells.findIndex((cell) => amountsIn(cell).length > 0);
+  if (firstValue < 2 || cells.length !== firstValue * 2) return [row];
+  const labels = cells.slice(0, firstValue);
+  const values = cells.slice(firstValue);
+  if (!labels.every((cell) => /[a-z]{3,}/i.test(cell) && amountsIn(cell).length === 0 && !ZERO_WORD.test(cell) && !WRAPPED_LABEL_END.test(cell))) return [row];
+  if (!values.every((cell) => /^\W*\$\s?\d/.test(cell))) return [row];
+  return labels.map((label, index) => ({ ...row, cells: [label, values[index]] }));
+}
+
+const WIRE_WORD = /\bwires?\b/i;
+
 /** Name and price pairing for structured rows. */
-export function extractFromTableRows(rows: KnoxTableRow[]): ExtractionRulesResult {
+export function extractFromTableRows(inputRows: KnoxTableRow[]): ExtractionRulesResult {
   const result: ExtractionRulesResult = { candidates: [], held: [] };
+  const rows = inputRows.flatMap(parallelColumnRows);
   for (const row of rows) {
     const firstName = row.cells.findIndex((cell) => /[a-z]/i.test(cell) && amountsIn(cell).length === 0);
     if (firstName < 0) continue;
@@ -304,7 +327,10 @@ export function extractFromTableRows(rows: KnoxTableRow[]): ExtractionRulesResul
     let hint = classifyFeeText(name);
     let feeName = name;
     const stopPaymentHeading = row.heading != null && classifyFeeText(row.heading) === "stop_payment";
-    if (!hint && row.heading && (row.headingNames || composableTail(name) || (stopPaymentHeading && composableTail(name, STOP_PAYMENT_ITEM_WORDS)))) {
+    // v184 (Knox slice dry run, Crow Wing Power CU text 23340): a wire's own row ("WIRE TRANSFER – $20") never borrows
+    // another fee's heading ("SUBORDINATION REQUEST & PARTIAL", the other column's).
+    const wireBesideHeading = WIRE_WORD.test(name) && !WIRE_WORD.test(row.heading ?? "");
+    if (!hint && row.heading && !wireBesideHeading && (row.headingNames || composableTail(name) || (stopPaymentHeading && composableTail(name, STOP_PAYMENT_ITEM_WORDS)))) {
       hint = classifyFeeText(`${row.heading} ${name}`);
       feeName = `${row.heading}: ${name}`;
     }

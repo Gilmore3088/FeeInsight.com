@@ -16,6 +16,10 @@ import {
   STOP_PAYMENT_VARIANT_NAME_SQL,
   STOP_PAYMENT_TEXT_SQL,
   FEE_CARD_TEXT_SQL,
+  WIRE_MONTHLY_NAME_SQL,
+  PLAIN_RETURN_NAME_SQL,
+  OPENING_DEPOSIT_LINE_SQL,
+  CAPS_CELL_LINE_SQL,
   type SectionMisreadRow,
 } from "@/lib/agents/darwin/section-misread-check";
 
@@ -73,7 +77,7 @@ describe("Darwin's section misread re-check (Knox v177)", () => {
     ]);
     expect(found.checked).toBe(10);
     expect(found.noText).toBe(1);
-    expect(found.byKind).toEqual({ waiver_column_name: 2, front_matter_name: 1, wire_subscription: 1, ira_section_closing: 1, returned_item_service: 0, accountless_monthly_sentence: 0, zero_not_printed: 0, audience_section_untagged: 0, stop_payment_variant: 0, deposited_card_return: 0 });
+    expect(found.byKind).toEqual({ waiver_column_name: 2, front_matter_name: 1, wire_subscription: 1, ira_section_closing: 1, returned_item_service: 0, accountless_monthly_sentence: 0, zero_not_printed: 0, audience_section_untagged: 0, stop_payment_variant: 0, deposited_card_return: 0, wire_service_monthly_fee: 0, read_name_review: 0, return_beside_nsf: 0 });
     expect(found.matches[1].reason).toBe('waiver_column_name: "Verification of Deposits is account_verification, not bill_pay"');
   });
 
@@ -204,6 +208,55 @@ describe("Darwin's section misread re-check (Knox v177)", () => {
     expect(new RegExp(STOP_PAYMENT_VARIANT_NAME_SQL, "i").test("Corporate Check")).toBe(true);
     expect(new RegExp(STOP_PAYMENT_TEXT_SQL, "i").test(stLouis)).toBe(true);
     expect(new RegExp(FEE_CARD_TEXT_SQL, "i").test(`Fees\n${esl}`)).toBe(true);
+  });
+
+  it("version 5 (Knox v184): matches a wire service's monthly charge, a read the name review drops or re-files, and a plain return beside a free NSF fee", () => {
+    // Ameris Bank text 1338, Cornerstone Community FCU (live 128047's line), America's FCU text 29839, First State Bank
+    // and Trust text 22671, and the page live 133756 was read from (lines as printed).
+    const sibling = (key: string, name: string, amount: number) => ({ fee_name: name, amount, canonical_fee_key: key });
+    const rows: SectionMisreadRow[] = [
+      { ...row(1, 1338, "monthly_maintenance", "Online Wire Monthly Maintenance Fee", 25), source_line: 'excerpt="Online Wire Monthly Maintenance Fee | $25.00"' },
+      { ...row(2, 24203, "late_payment", "Box Late Fee", 20), source_line: 'excerpt="Box Late Fee | $20.00"' },
+      { ...row(3, 29839, "monthly_maintenance", "No monthly maintenance fees: Only", 25), source_line: 'excerpt="Only a $25 membership deposit to get started"' },
+      { ...row(4, 22671, "counter_check", "COUNTER CHECKS", 32), source_line: 'excerpt="COUNTER CHECKS | PER DEBIT ITEM • $32 | DEPOSIT"' },
+      { ...row(133756, 8514, "nsf", "Returned Check", 20), source_line: 'excerpt="Returned Check | $20"', siblings: [sibling("nsf", "Insufficient Funds (NSF)", 0)] },
+      // TXN Bank text 10944: beside its own NSF fee and a deposited item return at its own price.
+      { ...row(141626, 10944, "nsf", "Return Items", 10), source_line: 'excerpt="Return Items | $10.00"', siblings: [sibling("nsf", "NSF", 30), sibling("deposited_item_return", "Charge Backs", 10)] },
+      // Parthenon FCU text 5186: the page prints its own deposited item return at another price: the member's item, kept.
+      { ...row(5, 5186, "nsf", "Returned Item Fee", 30), source_line: 'excerpt="Returned Item Fee- | $30.00/item"', siblings: [sibling("nsf", "NSF Fee", 33), sibling("deposited_item_return", "Deposited Item Return Fee", 25)] },
+      // NSF at the return's own price: one fee under two names, kept.
+      { ...row(6, 7, "nsf", "Returned Item", 30), source_line: 'excerpt="Returned Item | $30"', siblings: [sibling("nsf", "NSF", 30), sibling("deposited_item_return", "Deposited Item Return", 30)] },
+      // A renamed read is no match ("NSF FEE: g" loses its glyph), and an advice name keeps its fee.
+      { ...row(7, 27330, "nsf", "NON-SUFFICIENT FUNDS FEE (NSF): g", 35), source_line: 'excerpt="NON-SUFFICIENT FUNDS FEE (NSF) | g$35.00"' },
+      { ...row(135372, 35000, "paper_statement", "To avoid a monthly paper statement fee", 3), source_line: 'excerpt="To avoid a monthly paper statement fee of $3.00, the account must be enrolled in electronic statements"' },
+    ];
+    const texts = new Map<number, string>([
+      [1338, "Account Activity/Statement Print Out | $5.00 | Online Wire Monthly Maintenance Fee | $25.00"],
+      [24203, "Safe Deposit Boxes\nBox Late Fee | $20.00"],
+      [29839, "No monthly maintenance fees\nOnly a $25 membership deposit to get started"],
+      [22671, "COUNTER CHECKS | PER DEBIT ITEM • $32 | DEPOSIT"],
+      [8514, "Returned Check | $20\nOverdraft Transfer | $2.50\nInsufficient Funds (NSF) | $0"],
+      [10944, "NSF | $30.00\nReturn Items | $10.00\nCharge Backs | $10/Item"],
+      [5186, "NSF Fee- | $33.00/item\nReturned Item Fee- | $30.00/item\nDeposited Item Return Fee- | $25.00/item"],
+      [7, "NSF | $30\nReturned Item | $30\nDeposited Item Return | $30"],
+      [27330, "NON-SUFFICIENT FUNDS FEE (NSF) | g$35.00"],
+      [35000, "To avoid a monthly paper statement fee of $3.00, the account must be enrolled in electronic statements"],
+    ]);
+    const found = findSectionMisreads(rows, texts);
+    expect(found.matches.map((fee) => [fee.feePublishedId, fee.kind])).toEqual([
+      [1, "wire_service_monthly_fee"],
+      [2, "read_name_review"],
+      [3, "read_name_review"],
+      [4, "read_name_review"],
+      [133756, "return_beside_nsf"],
+      [141626, "return_beside_nsf"],
+    ]);
+    expect(found.matches[1].reason).toContain("safe_deposit_box");
+    expect(found.byKind).toMatchObject({ wire_service_monthly_fee: 1, read_name_review: 3, return_beside_nsf: 2 });
+    expect(new RegExp(WIRE_MONTHLY_NAME_SQL.replace(/\\[mM]/g, "\\b"), "i").test("Online Wire Monthly Maintenance Fee")).toBe(true);
+    expect(new RegExp(PLAIN_RETURN_NAME_SQL, "i").test("Return Items")).toBe(true);
+    expect(new RegExp(OPENING_DEPOSIT_LINE_SQL, "i").test("Only a $25 membership deposit to get started")).toBe(true);
+    expect(new RegExp(CAPS_CELL_LINE_SQL).test("COUNTER CHECKS | PER DEBIT ITEM • $32 | DEPOSIT")).toBe(true);
   });
 
   it("version 4: finds a stored line with or without OCR leader noise in either text (review of #2979)", () => {
