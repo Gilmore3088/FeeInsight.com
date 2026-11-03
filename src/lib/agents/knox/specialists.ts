@@ -1,4 +1,5 @@
 import { feeApplicability } from "@/lib/fee-audience";
+import { ocrComparable, withoutOcrLeaderNoise } from "@/lib/agents/knox/ocr-leader-noise";
 import {
   billPayByHeading,
   stopPaymentListRead,
@@ -1188,9 +1189,10 @@ const CONDITION_LINE_START = /^(?:when|if|unless|with|provided|for\s+(?:members|
  * holds only on that condition. Pure.
  */
 export function conditionalFreeRow(excerpt: string | null | undefined, text: string): boolean {
-  const probe = (excerpt ?? "").replace(/\s+/g, " ").trim();
+  // Line and text compared with OCR leader noise blanked in both (`ocrComparable`, review of #2979).
+  const probe = ocrComparable(excerpt);
   if (probe.length < 6) return false;
-  const lines = text.split("\n").map((line) => line.replace(/\s+/g, " ").trim());
+  const lines = text.split("\n").map(ocrComparable);
   return lines.some((line, at) => {
     if (line !== probe && !line.startsWith(probe)) return false;
     const next = lines.slice(at + 1).find((later) => later.length > 0);
@@ -1239,28 +1241,8 @@ interface FreeSpecialistOptions {
  */
 const FRONT_MATTER_KEY = /^\s*(?:meta-[\w.:-]*|canonical)\s*:/i;
 const FRONT_MATTER_LINES = 200;
-/**
- * v181 (backlog dry run 12, First Bank & Trust Co. text 12416): a scanned schedule's dot leaders can carry OCR
- * noise, single letters and runs of a few repeated letters ("Paid Item Charge................c......... 30.00",
- * "Sweep Transfer Fee. ....... iii iiieeeeeeaeeeeeaaeaeeaaaaaaa.. | FREE"), which the readers took into the fee's
- * name ("Paid Item Charge c"). A run of such tokens that sits on a leader (dots or an ellipsis before it) and is
- * followed by more leader, a cell break or the price is blanked; a run holding any real word ("see below") is
- * kept. Lines keep their positions. Pure.
- */
-const OCR_NOISE_RUN = /((?:\.{2,}|…)[.…\s]*)((?:[a-z]+[.…\s]+)*?[a-z]+)(?=[.…\s]*(?:\.{2,}|…|\||\$?\d|$))/g;
-/** Real words a leader can lead to that the noise test would otherwise take ("....... free"). */
-const LEADER_WORDS = /^(?:free|fee|fees|see|add|all|off|too|less|need|feed|seen|been|tee|ill)$/;
-function ocrNoiseToken(token: string): boolean {
-  if (token.length === 1) return true;
-  return token.length >= 3 && !LEADER_WORDS.test(token) && new Set(token).size <= 3 && /([a-z])\1/.test(token);
-}
-export function withoutOcrLeaderNoise(text: string): string {
-  if (!/(?:\.{2,}|…)[.…\s]*[a-z]/.test(text)) return text;
-  return text.split("\n").map((line) => line.replace(OCR_NOISE_RUN, (whole, leader: string, run: string) => {
-    const tokens = run.split(/[.…\s]+/).filter(Boolean);
-    return tokens.length > 0 && tokens.every(ocrNoiseToken) ? `${leader}${" ".repeat(run.length)}` : whole;
-  })).join("\n");
-}
+/** v181: OCR noise on a dot leader is blanked before any reader runs (`ocr-leader-noise.ts`). */
+export { withoutOcrLeaderNoise };
 
 /** v177: a fee name read from a front-matter line ("meta-fb:pages: meta-generator: WordPress ...", "canonical: https://..."). */
 export function frontMatterName(name: string): boolean {

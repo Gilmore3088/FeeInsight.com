@@ -319,6 +319,8 @@ export const TAKEDOWN_REASON_CHECKS: Readonly<Record<string, string>> = {
   accountless_monthly_sentence: "darwin.section_misread",
   zero_not_printed: "darwin.section_misread",
   audience_section_untagged: "darwin.section_misread",
+  stop_payment_variant: "darwin.section_misread",
+  deposited_card_return: "darwin.section_misread",
   service_maintenance_heading: "darwin.service_maintenance_heading",
   canadian_document: "darwin.canadian_document",
   old_labelled_document: "darwin.old_labelled_document",

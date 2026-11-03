@@ -1987,16 +1987,22 @@ function statedLineScore(row: string, amount: number, feeName: string, stems: Na
   const name = feeName.toLowerCase();
   const otherType = (label.match(OTHER_FEE_TYPE_WORDS) ?? []).some((word) => !name.includes(word.toLowerCase()));
   // v181 (Knox backlog dry run 12, San Francisco FCU text 33150): of lines whose labels carry as many of the
-  // name's word stems, the one whose label prints the whole name is the fee's own ("Maintenance Fee | $5.00/month"
-  // over "deposit and maintain at least a $5 (par value of a share)", where "maint" reads in "maintain"). A row
-  // counts as opening with the name when its label opens with the name's first word (past a row number), so two
-  // rows that both do ("Monthly Service Charge 0.00 for 1st account" and "Monthly Service Fee $0.00") still keep
-  // the first, as before; only a row that opens elsewhere (a sentence that mentions a stem) gives way. Not for a
-  // $0: which line a free price traces to decides Darwin's conditional $0 hold (#1593), which reads it as before.
+  // name's word stems, the one whose label prints the name is the fee's own ("Maintenance Fee | $5.00/month"
+  // over "deposit and maintain at least a $5 (par value of a share)", where "maint" reads in "maintain"). A
+  // label that prints the whole name, word for word, counts most; one that opens with the name's first word (past a
+  // row number) counts less, so "Wire | Incoming Wire Fee • $10 per transfer" beats "Incoming Wire Return Fee • $10
+  // per request" for "Incoming Wire Fee" (review of #2979, text 3219). Two rows that score alike ("Monthly Service
+  // Charge 0.00 for 1st account" and "Monthly Service Fee $0.00") still keep the first, as before; only a row that
+  // prints less of the name (a sentence that mentions a stem) gives way. Not for a $0: which line a free price
+  // traces to decides Darwin's conditional $0 hold (#1593), which reads it as before.
   const words = (value: string) => comparable(value).replace(/[^a-z0-9' ]/g, " ").replace(/\s+/g, " ").trim();
-  const first = words(feeName).split(" ")[0] ?? "";
-  const opensWithName = amount > 0 && first.length >= 3 && `${words(label).replace(/^\d{1,2} /, "")} `.startsWith(`${first} `);
-  return stemCount(label, stems) - (otherType ? 1000 : 0) + (opensWithName ? 0.5 : 0);
+  const nameWords = words(feeName);
+  const first = nameWords.split(" ")[0] ?? "";
+  // A footnote mark glued to a word ("Non-Truist Domestic ATM Fee6") is no part of it.
+  const labelWords = ` ${words(label).replace(/^\d{1,2} /, "").replace(/([a-z])\d{1,2}(?= |$)/g, "$1")} `;
+  const wholeName = amount > 0 && nameWords.length >= 3 && labelWords.includes(` ${nameWords} `);
+  const opensWithName = amount > 0 && first.length >= 3 && labelWords.startsWith(` ${first} `);
+  return stemCount(label, stems) - (otherType ? 1000 : 0) + (wholeName ? 0.5 : 0) + (opensWithName ? 0.25 : 0);
 }
 
 /**

@@ -75,6 +75,22 @@ export function stopPaymentVariantName(row: StopPaymentVariantRow): string {
   return `${row.heading}: ${row.variant}`;
 }
 
+/**
+ * The one variant row a read is: its name is the variant's label (`name`, already normalized by the caller), at the
+ * variant's price, and its stored line lies on the row, cell bars aside ("• Corporate Check $15.00" on "Savings
+ * accounts | • Corporate Check | $15.00"). Shared by Knox's read (`stopPaymentVariantRead`) and Darwin's live
+ * re-check (`stop_payment_variant`), or null.
+ */
+export function stopPaymentVariantFor(text: string, name: string, amount: number, excerpt: string | null | undefined): StopPaymentVariantRow | null {
+  const flat = (value: string) => value.replace(/\|/g, " ").replace(/\s+/g, " ").trim();
+  const own = flat(excerpt ?? "");
+  if (!own) return null;
+  const wanted = name.replace(/\s+/g, " ").trim().toLowerCase();
+  const rows = stopPaymentVariantRows(text).filter((row) =>
+    row.variant.toLowerCase() === wanted && Math.abs(row.amount - amount) < 0.005 && (flat(row.row).includes(own) || own.includes(flat(row.row))));
+  return rows.length === 1 ? rows[0] : null;
+}
+
 /** The row an admitted variant read traces to, or null. */
 export function stopPaymentVariantRow(text: string, feeName: string, amount: number): string | null {
   const wanted = feeName.replace(/\s+/g, " ").trim().toLowerCase();
