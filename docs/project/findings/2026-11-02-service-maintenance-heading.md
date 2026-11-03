@@ -125,6 +125,22 @@ keys lost, and one publication outside the key added, 5608's "Excessive Withdraw
 "$15 for each excessive item" as unmapped; it is the bank's fee). River City's $0 "Monthly Maintenance Fee"
 is held, not published.
 
+**Overlap with main (#2957, #2963, merged before this PR):** #2963's `onlineServiceMonthlyFee`
+(`service-monthly-charge.ts` v3, Knox v170, Darwin `online_service_monthly` and `darwin.not_account_fee_line`)
+drops a monthly fee under a single online-services section title ("Online Fees", "Personal Online Banking
+Fees", "Electronic Services"). It does not read River City's "Consumer Online Banking Services and Mobile
+Banking Fees", a heading that names two services, nor bill pay, e-statements, remote deposit, Zelle or
+treasury headings: on main 53c80d54e the source replay with `HTML_ROW_PAIRING_LIVE` on still publishes
+5608's "Monthly Maintenance Fee" $0 as monthly maintenance (914 / 1,187, two publications outside the key).
+Both rules stay. Main's runs first (Knox drops the read; verify refuses `online_service_monthly` before
+`service_maintenance_heading`); this one holds what is left. The rules version became v171.
+
+Re-measured on the merged tree (main 53c80d54e against this branch): lab 973 / 1,302, all expected 1,341 /
+1,756 and false publication 31 / 160 on both; Texas 586 / 11 (held out 60 / 4) and seven-state 927 / 28 on
+both; golden 1,341 / 1,766, 1,388 / 1,450 and 256 / 287 on both, switch on identical. Source replay with
+pairing on: 914 / 1,187 on both, but the branch adds only the correct "Excessive Withdrawal Fee" $15 outside
+the key, while main also publishes River City's $0 maintenance fee.
+
 **Live effect:** not counted in this PR. No database was read. Before the switch goes on, run `npm run
 audit:switch-dry-runs` (section 9, read-only) and sample the matches against the banks' text.
 
