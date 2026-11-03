@@ -1602,6 +1602,18 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   them Knox v99's "Safe Deposit Box <size>" beside the older annual read; 6 overdraft), and 16
   groups stay. A seeded sample of 10 plus Access FCU, each read against its stored text, was one
   line read twice in all 11 (finding 2026-10-26-one-line-read-twice).
+- One printed line live under two products (`product-split-check.ts`, v1, Nov 3). A Knox re-read
+  that names a line's product differently than the live row of that line went live beside it, since
+  every identity check compares the product exactly (re-read dry runs 3 and 4). Each step reads the
+  pairs of live dollar fees of one institution, category, variant and amount under different products
+  whose stored lines fold to the same words, on one document or on an older copy and its current copy
+  (`PRODUCT_SPLIT_ROWS_SQL`), and judges each with Hamilton's rule (`readsOneLineTwoProducts`,
+  `productSplitWinner` in `hamilton/product-split.ts`) against the newer document's current text. The
+  loser comes down on its second look (check `darwin.product_split`) as `same_line_duplicate: live fee
+  #<kept>` (batch `darwin-product-split-<run>`, verified row rejected with the `same_line_duplicate`
+  flag), never behind a fee the same pass takes down. `PRODUCT_SPLIT_MERGE_LIVE` is off: the step only
+  reports (`product_split_check`). Dry run 2026-11-03 (prod, read-only): 119 pairs, 65 live fees at 49
+  institutions would come down.
 - Schedule editions (`edition-effective-check.ts`, #1915). Avidia's schedule "Effective December 1,
   2026" went live beside its March 2024 one, so the page showed next year's $35 overdraft. Each
   step reads the edition each document's heading states (`editionStarts` in
@@ -2873,6 +2885,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `HOLD_SOURCE_REREAD_STRATEGY` | `verify.hold_source_reread` | v2 | `darwin/hold-source-reread-switch.ts` |
 | `SAME_LINE_REPLACEMENT_CHECK_VERSION` | `darwin.same_line_replacement` | v1 | `darwin/same-line-replacement-check.ts` |
 | `SAME_LINE_READ_CHECK_VERSION` | `darwin.same_line_read` | v1 | `darwin/same-line-read-check.ts` |
+| `PRODUCT_SPLIT_CHECK_VERSION` | `darwin.product_split` | v1 | `darwin/product-split-check.ts` |
 | `CANADIAN_DOCUMENT_CHECK_VERSION` | `darwin.canadian_document` | v1 | `darwin/canadian-document-check.ts` |
 | `LATE_CHARGE_BOUND_CHECK_VERSION` | `darwin.late_charge_bound` | v1 | `darwin/late-charge-bound-check.ts` |
 | `RATE_FLOOR_CHECK_VERSION` | `darwin.rate_floor` | v1 | `darwin/rate-floor-check.ts` |

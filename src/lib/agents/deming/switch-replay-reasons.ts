@@ -75,6 +75,7 @@ export const NOT_REPLAYABLE_REASONS: Readonly<Record<string, string>> = {
   PDF_CELL_REPLAY_LIVE: "chooses which stored pdf_layout texts Rosetta reads again from their PDF bytes (layout v6 cell ownership); the golden set replays frozen text, never PDF bytes, so the switch cannot change a golden read; the record-only layout recheck (layout-recheck.ts) measures its live fees instead",
   PRODUCT_PAGE_CONFLICT_LIVE: `rolls back a product page's fee that conflicts with the bank's schedule; ${ONE_DOCUMENT}`,
   PRODUCT_PAGE_REPEAT_TAKEDOWN_LIVE: `takes down a product page's repeat of a schedule line (\`scheduleTwin\`); ${ONE_DOCUMENT}`,
+  PRODUCT_SPLIT_MERGE_LIVE: `merges a re-read of a live fee's printed line under another product (publish supersedes or refuses; Darwin takes the loser down); ${ONE_DOCUMENT}; measured instead by a read-only pass over every live pair on prod (Nov 3, off: 119 candidate pairs, 65 fees at 49 institutions would come down)`,
   PUBLISH_REFUSE_DUPLICATES_LIVE: `refuses rows the exact-duplicate collapse would close against live fees from earlier publish steps; ${ONE_DOCUMENT}`,
   PUBLISH_REFUSE_PAGE_COPIES_LIVE: `refuses rows the page-copy collapse would close; ${ONE_DOCUMENT}`,
   PUBLISH_REFUSE_SAME_LINE_READS_LIVE: "not wired yet: refuses a second read of a live fee's printed line at publish; the replayed publish gate does not call it (Darwin's same-line read sweep, which uses the same `readsSameLine`, is replayed)",
