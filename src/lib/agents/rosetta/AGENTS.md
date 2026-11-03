@@ -67,7 +67,23 @@ Rosetta owns source text normalization.
   waits for Knox to hold a $0 maintenance row under an online banking, mobile banking or bill pay
   heading. The PR that flips it bumps `HTML_READ_VERSION` from 1 to 2 in the same change (a test
   fails otherwise), so the flip replays current HTML-read copies once and no PDF (reader replay,
-  below). PDFs rebuild lines from item positions
+  below). Cell-list pairing (`html-cell-list-pairing.ts`, behind `HTML_CELL_LIST_PAIRING_LIVE`,
+  off; #1092, class R3): a body row of a data table with exactly two non-empty `<td>`s whose label
+  cell lists items and whose price cell lists one price per item writes one line per item, "label
+  heading item | price" (St. Cloud's "Safe Deposit Boxes 3 x 5 | $18.00 a year"), each its own
+  stored table row. Only the markup pairs: one `<ul>`/`<ol>` as a direct child of each cell with
+  the same number of `<li>`s (2 to 12), the label cell's inline text before its list as the
+  heading, nothing in the price cell outside its list, or the `<br>` form when both cells split at
+  their own `<br>`s into the same number of non-empty pieces. Every price item starts with its
+  price and states exactly one price or free word (no percentage, at most 60 characters), and no
+  label item or heading states a dollar amount. A count mismatch, a nested list or table, an empty
+  or hidden item, a colspan or rowspan (or a row under one), a third cell, a `<th>`, a block
+  heading, mixed forms, or a table inside `<nav>`/`<footer>` (or `role=navigation`/`contentinfo`)
+  refuses the row, which then reads byte for byte as with the switch off. On St. Cloud's
+  2025-02-09 archived page (a test-only proxy; it fails the same-document test) it writes 25
+  pairs, all with the price the markup gives, and 14 of the page's 22 R3 keys publish; on the
+  source replay it changes no document. The flip bumps `HTML_READ_VERSION` by one, like row
+  pairing. PDFs rebuild lines from item positions
   (`read.pdf_layout`, `pdf-layout.ts`), so a fee name and its amount column share a
   line. A page set in columns of running prose (a deposit agreement in three columns) is
   read column by column instead (layout version 2, `PDF_LAYOUT_VERSION`); read across, a
@@ -199,7 +215,8 @@ Rosetta owns source text normalization.
   v1). Above v1, a current completed text either HTML reader wrote is due once until a read of its
   bytes records the version or a receipt carries it (`html_read_version`); no other reader's text,
   and no legacy text (no reader; already due under `ROSETTA_READ_VERSION`), enters. At v1 the
-  selection SQL is the same text as before the version existed. v2 is `HTML_ROW_PAIRING_LIVE`.
+  selection SQL is the same text as before the version existed. Each HTML reader switch on adds
+  one (`HTML_ROW_PAIRING_LIVE`, `HTML_CELL_LIST_PAIRING_LIVE`; a test fails otherwise).
   PDFs have the same, `PDF_READ_VERSION` (#1092): every `read.pdf_layout` read records it as
   `detail.pdf_read`; above v1 a current completed `read.pdf_layout` text is due once, with no
   cell-break filter, until a read of its bytes records the version or a receipt carries it
@@ -550,7 +567,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `BATCH_REVIEW_VERSION` | — | v1 | `rosetta/batch-review.ts` |
 | `ROSETTA_JS_FALLBACK_VERSION` | — | v3 | `rosetta/reader-versions.ts` |
 | `ROSETTA_OCR_VERSION` | — | v3 | `rosetta/reader-versions.ts` |
-| `HTML_READ_VERSION` | `read.html_dom`, `read.js_fallback` reader replay (`detail.html_read`); v2 with `HTML_ROW_PAIRING_LIVE` | v1 | `rosetta/reader-versions.ts` |
+| `HTML_READ_VERSION` | `read.html_dom`, `read.js_fallback` reader replay (`detail.html_read`); +1 for each of `HTML_ROW_PAIRING_LIVE`, `HTML_CELL_LIST_PAIRING_LIVE` on | v1 | `rosetta/reader-versions.ts` |
 | `PDF_READ_VERSION` | `read.pdf_layout` reader replay (`detail.pdf_read`); v2 with `PDF_TEXT_DIRECTION_LIVE` | v1 | `rosetta/reader-versions.ts` |
 | `ROSETTA_PAID_READ_VERSION` | — | v2 | `rosetta/paid-read.ts` |
 | `PDF_LAYOUT_VERSION` | — | v6 | `rosetta/reader-versions.ts` |

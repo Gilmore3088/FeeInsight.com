@@ -6,7 +6,7 @@
  *   PDF_LAYOUT_VERSION           pdf-layout.ts
  *   ROSETTA_OCR_VERSION          ocr.ts
  *   ROSETTA_JS_FALLBACK_VERSION  js-fallback.ts
- *   HTML_READ_VERSION            html-dom.ts and html-row-pairing.ts (read.html_dom, read.js_fallback)
+ *   HTML_READ_VERSION            html-dom.ts, html-row-pairing.ts, html-cell-list-pairing.ts (read.html_dom, read.js_fallback)
  *   PDF_READ_VERSION             pdf-layout.ts and pdf-text-direction.ts (read.pdf_layout), for replay
  *   ROSETTA_TABLE_ROWS_VERSION   table-rows.ts
  *   PDF_READER_AGREEMENT_VERSION pdf-reader-agreement.ts
@@ -42,9 +42,10 @@ export const ROSETTA_JS_FALLBACK_VERSION = 3;
  * HTML reader wrote with no read of its bytes at this version, and no other reader's text. At its
  * base the replay selection is exactly what it was before this version existed.
  *
- * v2 is `HTML_ROW_PAIRING_LIVE` (html-row-pairing.ts): flipping that switch must move this to 2 in
- * the same PR (reader-replay.test.ts fails otherwise), so turning row pairing on re-reads HTML pages
- * and no PDF. Kept as a literal so this module stays free of imports.
+ * Each HTML reader switch on adds one: `HTML_ROW_PAIRING_LIVE` (html-row-pairing.ts) and
+ * `HTML_CELL_LIST_PAIRING_LIVE` (html-cell-list-pairing.ts). The PR that flips either must move this
+ * up by one in the same change (reader-replay.test.ts fails otherwise), so turning a switch on
+ * re-reads HTML pages and no PDF. Kept as a literal so this module stays free of imports.
  */
 export const HTML_READ_BASE_VERSION: number = 1;
 export const HTML_READ_VERSION: number = 1;

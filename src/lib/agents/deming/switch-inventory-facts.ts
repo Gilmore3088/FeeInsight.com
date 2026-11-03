@@ -82,6 +82,7 @@ export const SWITCH_FACTS: Readonly<Record<string, SwitchFacts>> = {
   HOLD_SOURCE_REREAD_LIVE: { firstSeen: "2026-11-01 ea9a3dc3d" },
   HOURLY_FREQUENCY_LIVE: { firstSeen: "2026-10-16 6739f264d" },
   HOURLY_LINE_LIVE: { firstSeen: "2026-10-18 1626342c7" },
+  HTML_CELL_LIST_PAIRING_LIVE: { note: "flip only with HTML_READ_VERSION one higher (reader-replay.test.ts; each HTML reader switch on adds one), so every current read.html_dom and read.js_fallback text is re-read once and no PDF" },
   INTERNATIONAL_DIRECTION_TAKEDOWN_LIVE: { firstSeen: "2026-10-26 97f32d7d4" },
   INTL_ABBREVIATION_REFILE_LIVE: { firstSeen: "2026-10-25 bd53e94e8" },
   KNOX_ACCOUNT_SUBJECT_CORRECT_LIVE: { firstSeen: "2026-10-26 fa0449fe2" },

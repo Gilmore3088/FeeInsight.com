@@ -37,6 +37,8 @@ export interface SourceReadOptions {
   htmlRowPairing?: boolean;
   /** `PDF_TEXT_DIRECTION_LIVE` held on or off for this read (rosetta/pdf-text-direction.ts). */
   pdfTextDirection?: boolean;
+  /** `HTML_CELL_LIST_PAIRING_LIVE` held on or off for this read (rosetta/html-cell-list-pairing.ts). */
+  htmlCellListPairing?: boolean;
 }
 
 /**
@@ -61,7 +63,7 @@ export async function readSourceBytes(
   if (format !== "html" && format !== "text") return { ok: false, reason: `no offline reader for ${format}` };
   const raw = expandUnicodeLigatures(decodeTextBytes(bytes, contentType));
   if (format === "text") return { ok: true, text: normalizeWhitespace(raw), reader: "read.plain_text" };
-  const text = normalizeWhitespace(extractHtmlDomText(raw, { rowPairing: options.htmlRowPairing }).text);
+  const text = normalizeWhitespace(extractHtmlDomText(raw, { rowPairing: options.htmlRowPairing, cellListPairing: options.htmlCellListPairing }).text);
   if (text.length === 0 || looksLikeJsShell(raw, text)) return { ok: false, reason: "page built by JavaScript: needs the fallback" };
   return { ok: true, text, reader: "read.html_dom" };
 }

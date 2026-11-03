@@ -589,7 +589,15 @@ DATABASE_URL=<prod URL> npm run audit:switch-dry-runs -- --json > switch-dry-run
      (`detail.pdf_text_direction`) and the live fees on them. The audit has no PDF bytes, so it never
      diffs a text; the change is measured on the answer-key documents' bytes (shadow-lab experiment
      `pdf-text-direction`).
-  11. Live accuracy. Deming's fresh audit is re-run on today's seed (`fresh-audit.ts`). It leads
+  11. `HTML_CELL_LIST_PAIRING_LIVE` (#1092, Rosetta `read.html_dom`, `html-cell-list-pairing.ts`).
+     Exposure only, within the institution scope like sections 1-7, 9 and 10: section 8's current
+     HTML-read documents (the flip's `HTML_READ_VERSION` bump re-reads each once), and of those the
+     documents with a stored table row in the switch's one-line shape (two cells, no dollar amount in
+     the first, two or more in the second; `HTML_CELL_LIST_EXPOSURE_SQL`), with the rows and the live
+     fees on them. Stored rows keep cell text, not list markup, so it never says which rows would
+     split; the change is measured on the answer-key documents' bytes (shadow-lab experiment
+     `html-cell-list-pairing`) and on St. Cloud's archived page (`cell-list-proxy.test.ts`).
+  12. Live accuracy. Deming's fresh audit is re-run on today's seed (`fresh-audit.ts`). It leads
      with the daily receipt's own figure (right / scorable), then the amount-and-category-only
      share (`traceLiveFee`, `checkFeeCategory`). This is a stored-copy measure, not a check
      against the bank's current schedule.

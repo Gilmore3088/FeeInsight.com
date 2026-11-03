@@ -7,6 +7,7 @@ import { describe, expect, it, vi } from "vitest";
 import { rosettaReadCandidatesQuery, runRosettaRead } from "./read";
 import { JS_FALLBACK_STRATEGY } from "./js-fallback";
 import { OCR_STRATEGY } from "./ocr";
+import { HTML_CELL_LIST_PAIRING_LIVE } from "./html-cell-list-pairing";
 import { HTML_ROW_PAIRING_LIVE } from "./html-row-pairing";
 import { PDF_TEXT_DIRECTION_LIVE } from "./pdf-text-direction";
 import { PDF_CELL_REPLAY_LIVE, READER_REPLAY_EVENT, READER_REPLAY_HTML, READER_REPLAY_OWN_VERSIONS, READER_REPLAY_PDF, READER_REPLAY_PDF_LAYOUT, READER_REPLAY_PER_RUN, READER_REPLAY_READERS, readerReplayDueSql, recordReaderReplay } from "./reader-replay";
@@ -87,10 +88,13 @@ describe("reader replay selection", () => {
     expect(on).toContain(`(replayed.detail->>'pdf_layout_version')::int >= ${PDF_LAYOUT_REPLAY_VERSION}::int`);
   });
 
-  it("moves the HTML reader version with HTML_ROW_PAIRING_LIVE, so flipping the switch replays HTML pages", () => {
-    // Turning row pairing on without this bump would re-read nothing; bumping ROSETTA_READ_VERSION
-    // instead would replay every PDF too (#1092, docs/project/findings/2026-11-02-html-reader-version.md).
-    expect(HTML_READ_VERSION).toBe(HTML_ROW_PAIRING_LIVE ? HTML_READ_BASE_VERSION + 1 : HTML_READ_BASE_VERSION);
+  it("moves the HTML reader version with the HTML reader switches, so flipping one replays HTML pages", () => {
+    // Turning row pairing or cell-list pairing on without this bump would re-read nothing; bumping
+    // ROSETTA_READ_VERSION instead would replay every PDF too (#1092,
+    // docs/project/findings/2026-11-02-html-reader-version.md). Each switch on adds one, so the
+    // second flip bumps again and re-reads the pages the first flip's replay already settled.
+    const htmlReaderSwitchesOn = [HTML_ROW_PAIRING_LIVE, HTML_CELL_LIST_PAIRING_LIVE].filter(Boolean).length;
+    expect(HTML_READ_VERSION).toBe(HTML_READ_BASE_VERSION + htmlReaderSwitchesOn);
     expect([...HTML_READ_READERS]).toEqual(["read.html_dom", JS_FALLBACK_STRATEGY]);
     expect(READER_REPLAY_HTML).toEqual({ readers: HTML_READ_READERS, version: HTML_READ_VERSION, receiptKey: "html_read_version" });
   });

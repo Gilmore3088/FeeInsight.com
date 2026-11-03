@@ -1,5 +1,6 @@
 import { parseDocument } from "htmlparser2";
 
+import { HTML_CELL_LIST_PAIRING_LIVE, pairCellLists } from "./html-cell-list-pairing";
 import { HTML_ROW_PAIRING_LIVE, pairDomRow, type PairedRow, type PairingNode } from "./html-row-pairing";
 import type { SourceTableRow } from "./table-rows";
 
@@ -115,8 +116,18 @@ class TextWriter {
   readonly rows: SourceTableRow[] = [];
   tables = 0;
 
-  /** `HTML_ROW_PAIRING_LIVE`: a label and price one DOM row holds share a line (html-row-pairing.ts). */
-  constructor(readonly pairRows = false) {}
+  /** Open `<nav>`/`<footer>` elements around the walk: cell-list pairing never reads page chrome. */
+  chrome = 0;
+
+  /**
+   * `HTML_ROW_PAIRING_LIVE`: a label and price one DOM row holds share a line (html-row-pairing.ts).
+   * `HTML_CELL_LIST_PAIRING_LIVE`: a table row whose two cells list the same number of items writes
+   * one line per item (html-cell-list-pairing.ts).
+   */
+  constructor(
+    readonly pairRows = false,
+    readonly pairCellLists = false,
+  ) {}
 
   write(value: string): void {
     this.parts.push(value);
@@ -164,10 +175,21 @@ function walk(nodes: DomNode[], out: TextWriter): void {
       }
     }
     const block = BLOCK_TAGS.has(name);
+    const chrome = isPageChrome(node);
     if (block) out.break();
+    if (chrome) out.chrome += 1;
     walk(node.children, out);
+    if (chrome) out.chrome -= 1;
     if (block) out.break();
   }
+}
+
+const CHROME_TAGS = new Set(["nav", "footer"]);
+const CHROME_ROLES = new Set(["navigation", "contentinfo"]);
+
+/** Site navigation or a page footer, by tag or ARIA landmark. */
+function isPageChrome(element: DomElement): boolean {
+  return CHROME_TAGS.has(element.name.toLowerCase()) || CHROME_ROLES.has((element.attribs?.role ?? "").trim().toLowerCase());
 }
 
 /** Text of a cell or term on one line: inner blocks and breaks become spaces. */
@@ -338,6 +360,7 @@ function writeTable(table: DomElement, out: TextWriter): void {
     // The nearest header row above names the columns of the rows under it; a one-cell header row
     // is a section heading ("Checking accounts") and names no column.
     if (header && cells.length >= 2) labels = headerLabels(gridRow);
+    if (!header && writeCellListRow(gridRow, tableIndex, width, out)) continue;
     const line = (header ? cells : lineCells(gridRow, labels)).join(CELL_SEPARATOR);
     out.line(line);
     out.tableRows += 1;
@@ -353,6 +376,35 @@ function writeTable(table: DomElement, out: TextWriter): void {
     });
   }
   out.break();
+}
+
+/**
+ * `HTML_CELL_LIST_PAIRING_LIVE`: a body row whose label cell and price cell list the same number of
+ * items is written one item per line ("Safe Deposit Boxes 3 x 5 | $18.00 a year"), each as its own
+ * table row. False, with nothing written, when the switch is off or the row is not on the table's
+ * first two grid columns (a rowspan from above holds one) or sits in page chrome, or when
+ * `pairCellLists` refuses it; the row is then written as before.
+ */
+function writeCellListRow(gridRow: GridRow, tableIndex: number, width: number, out: TextWriter): boolean {
+  if (!out.pairCellLists || out.chrome > 0) return false;
+  const { rowCells, cellColumns, columns } = gridRow;
+  if (rowCells.length !== 2 || columns.length !== 2 || cellColumns.join() !== "0,1") return false;
+  const pairs = pairCellLists(rowCells, inlineNodes);
+  if (!pairs) return false;
+  for (const pair of pairs) {
+    out.line(`${pair.label}${CELL_SEPARATOR}${pair.price}`);
+    out.tableRows += 1;
+    const cells = [pair.label, pair.price];
+    out.rows.push({
+      table: tableIndex,
+      page: null,
+      cells,
+      columns: Array.from({ length: width }, (_, index) => cells[index] ?? ""),
+      header: false,
+      origin: "html_table",
+    });
+  }
+  return true;
 }
 
 function writeDefinitionList(list: DomElement, out: TextWriter, tableIndex?: number): void {
@@ -389,12 +441,14 @@ function writeDefinitionList(list: DomElement, out: TextWriter, tableIndex?: num
 export interface HtmlDomOptions {
   /** Defaults to `HTML_ROW_PAIRING_LIVE`; the shadow lab's source replay sets it to measure the switch. */
   rowPairing?: boolean;
+  /** Defaults to `HTML_CELL_LIST_PAIRING_LIVE`; the shadow lab's source replay sets it to measure the switch. */
+  cellListPairing?: boolean;
 }
 
 /** Raw text with line structure kept; the caller normalizes whitespace. */
 export function extractHtmlDomText(html: string, options: HtmlDomOptions = {}): HtmlDomExtraction {
   const document = parseDocument(html, { decodeEntities: true, lowerCaseTags: true });
-  const out = new TextWriter(options.rowPairing ?? HTML_ROW_PAIRING_LIVE);
+  const out = new TextWriter(options.rowPairing ?? HTML_ROW_PAIRING_LIVE, options.cellListPairing ?? HTML_CELL_LIST_PAIRING_LIVE);
   walk(document.children, out);
   return { text: out.toString(), tableRows: out.tableRows, rows: out.rows };
 }

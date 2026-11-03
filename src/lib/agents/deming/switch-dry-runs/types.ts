@@ -162,10 +162,21 @@ export interface PdfReaderExposureRow {
   sideways_live_fees: number | string;
 }
 
+/** Current HTML-read documents with a stored two-cell row whose price cell prints two or more dollar amounts. */
+export interface HtmlCellListExposureRow {
+  documents: number | string;
+  institutions: number | string;
+  rows: number | string;
+  documents_with_live_fees: number | string;
+  live_fees: number | string;
+}
+
 /** The data-store boundary. Every method reads only; the real one runs in a read-only transaction. */
 export interface SwitchAuditReader {
   /** `PDF_TEXT_DIRECTION_LIVE` (#1092): the PDF exposure (`PDF_READER_EXPOSURE_SQL`). */
   pdfReaderExposure(): Promise<PdfReaderExposureRow[]>;
+  /** `HTML_CELL_LIST_PAIRING_LIVE` (#1092): stored rows in the switch's shape (`HTML_CELL_LIST_EXPOSURE_SQL`). */
+  htmlCellListExposure(): Promise<HtmlCellListExposureRow[]>;
   /** `HTML_ROW_PAIRING_LIVE` (#1092): the HTML exposure by reader (`HTML_READER_EXPOSURE_SQL`). */
   htmlReaderExposure(): Promise<HtmlReaderExposureRow[]>;
   dailyCapRows(limit: number): Promise<DailyCapRow[]>;

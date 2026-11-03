@@ -146,4 +146,53 @@ describe("shadow lab source-bytes replay", () => {
     },
     REPLAY_TIMEOUT_MS,
   );
+
+  it(
+    "should_replay_the_html_cell_list_pairing_experiment_with_row_pairing_off_and_on_with_no_provider_calls",
+    async () => {
+      assertOfflineEnv();
+      const { applyManifest, loadScenarios } = await import("./scenarios");
+      const { currentVariant, EXPERIMENTS, experimentalVariant } = await import("./variants");
+      const { readSourceManifest, rereadAcceptedSources } = await import("./source-bytes");
+      const { replayDelta, replaySources } = await import("./source-replay");
+      const { renderReplayDelta } = await import("./source-replay-report");
+
+      const config = EXPERIMENTS["html-cell-list-pairing"];
+      const frozenManifest = JSON.parse(readFileSync(MANIFEST_PATH, "utf8")) as Record<string, string>;
+      const cases = applyManifest(loadScenarios(), frozenManifest);
+      const manifest = readSourceManifest();
+      const today = await rereadAcceptedSources();
+      const read = (htmlRowPairing: boolean, htmlCellListPairing: boolean) =>
+        rereadAcceptedSources(process.cwd(), { htmlRowPairing, htmlCellListPairing });
+      const off = await read(false, false);
+      const rowsOnly = await read(true, false);
+      // The switch ships off: today's read is the switch-off read for every fixture, HTML and PDF alike.
+      for (const [key, text] of today) expect(off.get(key), key).toEqual(text);
+      expect(off.size).toBe(manifest.accepted.length);
+      // Off also leaves row pairing's own read byte for byte as it was.
+      const rowsBefore = await rereadAcceptedSources(process.cwd(), { htmlRowPairing: true });
+      for (const [key, text] of rowsBefore) expect(rowsOnly.get(key), key).toEqual(text);
+
+      const switchedRun = (rereads: typeof today) => replaySources({ manifest, cases, rereads, variant: experimentalVariant(config) });
+      const sides = [
+        { id: config.id, base: off, on: await read(false, true) },
+        { id: `${config.id}-with-row-pairing`, base: rowsOnly, on: await read(true, true) },
+      ];
+      for (const side of sides) {
+        const base = replaySources({ manifest, cases, rereads: side.base, variant: currentVariant });
+        const switched = switchedRun(side.on);
+        expect(JSON.stringify(switchedRun(side.on))).toBe(JSON.stringify(switched));
+        // Frozen text is the reader's output, so the reader switch cannot move the frozen side.
+        expect(switched.total.frozen).toEqual(base.total.frozen);
+        if (OUT) {
+          const delta = replayDelta(base, switched);
+          mkdirSync(OUT, { recursive: true });
+          writeFileSync(join(OUT, `source-replay-${side.id}.json`), `${JSON.stringify({ total: switched.total, delta }, null, 1)}\n`);
+          writeFileSync(join(OUT, `source-replay-${side.id}.md`), renderReplayDelta(side.id, base, switched, delta));
+        }
+      }
+      expect(provider.calls).toBe(0);
+    },
+    REPLAY_TIMEOUT_MS,
+  );
 });
