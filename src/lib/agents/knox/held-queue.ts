@@ -63,6 +63,12 @@ interface ShapeInfo {
 }
 
 const SHAPES: Record<string, ShapeInfo> = {
+  tier_incomplete: {
+    label: "A fee priced in tiers, not every tier read",
+    owner: "Knox's tier reader (`tier-names.ts`, v183; #1092, #1110)",
+    wayOut: "Each tier of the group is held with its own condition and price. No automatic release: the held re-check does not read this shape. When the page is read again (a new copy or a re-read request) and every tier passes, the whole group goes to Darwin; one tier never publishes alone.",
+    hasExit: false,
+  },
   periodic_program: {
     label: "An annual overdraft program, not a paid-item fee",
     owner: "Knox and Darwin's source/category review (#2240)",

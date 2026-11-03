@@ -1484,4 +1484,14 @@ export const KNOX_LESSONS: AgentLesson[] = [
     appliesTo: ["extract"],
     since: "2026-11-03",
   },
+  {
+    id: "tiered-price-2026-11-03-each-tier-keeps-its-condition",
+    agent: "knox",
+    stage: "extract",
+    lesson: "A fee priced in tiers is one fee per tier. When two or more lines (or clauses of one line) price the same fee under different balance, amount or count conditions (\"$30.00 or less ... $15.00\", \"More than $30.00 ... $30.00\"; \"1-3 items $1.00, 4+ items $2.00\"), read each tier as its own fee under the same category and keep its condition in its name, because a figure in the condition is not a price to drop. Read every tier the page prints; if one cannot be read, hold the whole group rather than send part of it, since one tier alone reads as the bank's only price. A cap (\"maximum $150 per day\"), a waiver threshold (\"waived with $500 balance\"), a $0 band and two different fees on one line are not tiers.",
+    why: "First National Bank of Moose Lake's overdraft fee (doc 35684) prints a $15 tier for an overdraft balance of $30.00 or less and a $30 tier above it. Knox dropped both thresholds as prices: raw 760358 \"or less – Overdraft fee per item per presentment\" was refused, and raw 760359 went live as the bank's only overdraft price (116685). Prod dry run Nov 3: 50 of 2,981 live conditioned fees at 35 institutions are an unscoped or incomplete tier. Knox v183 reads both Moose Lake tiers with their conditions.",
+    evidence: { issues: [1110, 1092, 1026], prs: [], files: ["src/lib/tiered-price.ts", "src/lib/agents/knox/tier-names.ts", "src/lib/agents/knox/tier-names.test.ts", "src/lib/agents/knox/specialists.ts", "docs/project/findings/2026-11-03-tiered-price-conditions.md"] },
+    appliesTo: ["extract"],
+    since: "2026-11-03",
+  },
 ];

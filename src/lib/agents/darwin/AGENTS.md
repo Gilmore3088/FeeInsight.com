@@ -488,6 +488,7 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
 | `outside_envelope` | a positive amount inside its category's range: hand-set (`envelopes.ts`), else learned (`learned-envelopes.ts`), else $0.01-$2,500 | needs_review |
 | `not_in_source` | the fee is stated in the stored text of the document Knox read it from (`checkFeeAgainstSource`, the shared accuracy check; a tiered price counts) | rejected |
 | `peer_outlier` | pass 2: not far outside the state's peer range (below); a district or national comparison never holds | needs_review |
+| `tier_unscoped` | a read that is one tier of a fee priced by a balance, amount or count condition (Knox's own line or the traced line is a tier of a group, `unscopedTierRead` in `tier-scope.ts`, `@/lib/tiered-price`) states that tier's condition in its name. The shared check answers `tiered_fee` for such a row and counts it as stated, so without this the name alone was judged: First National Bank of Moose Lake's $30 tier (raw 760359) went live as the bank's only overdraft price (#1110). Knox v183 names new tier reads by their condition | needs_review |
 | `duplicate_in_batch` | the same fee line (institution, category, amount, frequency, stored document) already verified in this batch | duplicate |
 | `duplicate_verified` | the insert did not conflict with an existing verified row | duplicate |
 | `category_lesson_pending` | the fee name does not match a category lesson the shared guard has not learned yet (`DARWIN_CATEGORY_HOLDS` in `verify.ts`); Darwin never re-files a row itself, so the row waits for the guard | needs_review |
@@ -1776,6 +1777,20 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   25: 53 of 58 live fees at 48 institutions, 2 beside the live rate fee (13406, 68415). Missed: 80150,
   a floor ("C a sh Adva nce. ......$5.00 or 2% whichever is great er", text 242), for a misaligned
   excerpt and spaced OCR text.
+- A live tier of a fee priced by a condition whose name hides its tier, or whose sibling tiers are not
+  all live (`tier-completeness-check.ts`, #1110). First National Bank of Moose Lake's "Overdraft fee per
+  item per presentment" $30 (116685) is the "More than $30.00" tier beside a $15 tier for $30.00 or less,
+  live as the bank's only overdraft price. Each verify step reads every live fee above $0 whose Knox
+  excerpt states a balance, amount or count condition, with a 900-character window of the text Knox read
+  around its line and the live fees of the same document and category; `findTierGaps` decides with the
+  shared reader (`@/lib/tiered-price`): `unscoped` (the name does not state the tier) or `incomplete` (a
+  scoped tier whose other tiers are not all live under scoped names). The switch
+  (`TIER_COMPLETENESS_TAKEDOWN_LIVE`) is off; on, a match goes through the second look
+  (`darwin.tier_completeness`) and is archived with `tier_incomplete: <kind>, k of N tiers live`. A
+  takedown is not replaced until Knox re-reads the text, so pair it with re-read requests. Step detail
+  `tier_completeness_check`. Dry run Nov 3: 50 of 2,981 candidates at 35 institutions (31 unscoped, 19
+  incomplete; 88 in a tier group); 148646, 95341 and 102393 are doubtful
+  (`docs/project/findings/2026-11-03-tiered-price-conditions.md`).
 - A $0 overdraft, NSF or continuous overdraft fee that is not the fee's price (`banded-zero-check.ts`,
   #1882). "Safety Net Overdraft | $0 if the negative balance is $5 or less. $10 if ... $35 per item**"
   went live as a credit union's only overdraft price, $0: the conditional-$0 test reads a price cell of
@@ -2606,7 +2621,13 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
 - Guard v35 (2026-10-08) accepts a per-item overdraft or NSF fee whose note states the daily cap: a dollar cap above the row's own price ("NSF Returned Item(s) Charge (NSF charge maximum of $100 per day)" $25, First State Bank of Rosemount), and a cap note that names the returned items sharing it ("Overdraft Fee ... (Consumer Accts: 5 max total OD or Returned Item fees daily)", BankIowa).
 - Guard v36 (2026-10-08) changes no rule: PRs 665 and 668 both shipped v35, so rows rejected between their deploys are re-checked under both.
 - Guard v42 (2026-10-08; v40 and v41 are Accuracy's, PR 682) files an NSF item marked paid after a dash or in brackets ("NSF Fee Charge - Paid (per item)", "Nonsufficient Funds Fee-Paid", "Insufficient Funds Charge (Check Paid, Per Item)") as the overdraft fee and re-files it there from NSF; "per non-paid item", "Paid from other ... account" and "We will not assess ..." stay out. "Overdraft Privilege Standard or Extended Coverage" names the program, not an extended overdraft fee.
-- The guard is at v109 (`CATEGORY_GUARD_VERSION` in `src/lib/fee-category-guard.ts`). v109 (Nov 3, with
+- The guard is at v110 (`CATEGORY_GUARD_VERSION` in `src/lib/fee-category-guard.ts`). v110 (Nov 3, with
+  Knox v183, #1110): a priced fee whose name ends in its own tier bracket, one balance, amount or count
+  condition after at most four words ("(overdraft balance $30.00 or less)"), is judged without that bracket
+  by the exclusions (`withoutTierScope` in `@/lib/tiered-price`); includes still read the whole name, and a
+  $0, a name with waiver, cap or limit words, and a cut name with no figure are judged as before.
+  Accept-only: on the read-only dry run, of 1,038 live priced names ending in a bracket with a condition
+  the bracket is read off 408 and the verdict changes on 0. v109 (Nov 3, with
   Knox v178): `od_protection_transfer` also accepts an automatic transfer from savings or shares named alone
   ("Automatic transfers from shares", `AUTOMATIC_TRANSFER_FROM_SAVINGS_ANYWHERE`). Accept-only: on the read-only
   dry run 18 live names say an automatic transfer from savings or shares (6 match the new include; none is a
@@ -3058,6 +3079,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `LOAN_PAYMENT_NSF_REFILE_CHECK_VERSION` | `darwin.loan_payment_nsf_refile` | v1 | `darwin/loan-payment-nsf-refile-check.ts` |
 | `INTERNATIONAL_DIRECTION_CHECK_VERSION` | `darwin.international_direction` | v4 | `darwin/international-direction-check.ts` |
 | `BANDED_ZERO_CHECK_VERSION` | `darwin.banded_zero` | v1 | `darwin/banded-zero-check.ts` |
+| `TIER_COMPLETENESS_CHECK_VERSION` | `darwin.tier_completeness` | v1 | `darwin/tier-completeness-check.ts` |
 | `ACCOUNT_BENEFIT_ZERO_CHECK_VERSION` | `darwin.account_benefit_zero` | v2 | `darwin/account-benefit-zero-check.ts` |
 | `ZERO_WAIVER_ROW_CHECK_VERSION` | `darwin.zero_waiver_row` | v2 | `darwin/zero-waiver-row-check.ts` |
 | `FREE_LIST_ITEM_CHECK_VERSION` | `darwin.free_list_item` | v1 | `darwin/free-list-item-check.ts` |

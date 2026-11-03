@@ -119,7 +119,8 @@ export interface ExtractedFeeCandidate extends Partial<FeeApplicability> {
 }
 
 /** `untraced`: a read whose name and price don't trace to one row of the text (Knox's self-check). */
-export type HeldShape = "zero" | "range" | "percentage" | "unclassified" | "untraced" | "varies" | "eligibility" | "periodic_program";
+/** v183 (#1092): `tier_incomplete`, a fee priced in tiers whose tiers Knox could not all read (`tier-names.ts`). */
+export type HeldShape = "zero" | "range" | "percentage" | "unclassified" | "untraced" | "varies" | "eligibility" | "periodic_program" | "tier_incomplete";
 
 export interface HeldFeeCandidate extends Partial<FeeApplicability> {
   /** Eligibility holds retain their complete own-price policy and independent event key. */

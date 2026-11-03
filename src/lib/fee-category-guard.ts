@@ -29,6 +29,7 @@ import { paperStatementPriceOnLine } from "@/lib/paper-statement-price";
 import { BILL_PAYER_NAME, MOBILE_CHECK_DEPOSIT_NAME, SERVICE_MONTHLY_CHARGE_NAME } from "@/lib/service-monthly-charge";
 import { WIRE_NOTIFICATION_NAME } from "@/lib/wire-notification";
 import { ACCOUNT_REACTIVATION_NAME } from "@/lib/account-reactivation";
+import { withoutTierScope } from "@/lib/tiered-price";
 import { abbreviatesInternationalWire, namesWireOutsideUs, wireOutsideUsWords, ATM_ABROAD, AUTOMATIC_TRANSFER_FROM_SAVINGS_ANYWHERE, AUTOMATIC_TRANSFER_TO_CHECKING_ANYWHERE, COLLECTION_ITEM, DRAFT_PROTECTION_FEE, foldRetiredCategory, FOREIGN_DEPOSIT_RETURN, FOREIGN_ITEM_RETURN, INCOMING_WIRE, INTERNATIONAL_ATM, IRA_CLOSING, ITEM_COPY, NIGHT_DEPOSIT_WORDS, RESEARCH_SPLIT_LIVE, SKIP_A_PAY, SUSTAINED_OVERDRAFT } from "@/lib/fee-fold";
 
 export type CategoryGuardCode = "name_contradicts" | "name_unsupported" | "rate_as_amount" | "schedule_contradicts" | "amount_implausible";
@@ -1465,7 +1466,14 @@ export const GUARDED_CATEGORIES: readonly string[] = [...new Set([...Object.keys
 // checking, or one naming a second destination, is not accepted. Accept-only: no rule refuses more.
 // Read-only dry run (Nov 3): 18 live fees' names say an automatic transfer from savings or shares, all already
 // filed od_protection_transfer, so 0 come down and 0 re-file.
-export const CATEGORY_GUARD_VERSION = 109;
+// v110 (Nov 3, with Knox v183 tier names; #1092, #1110, #1026): a priced fee whose name ends in its own tier
+// scope, a bracket that is one balance or count condition after at most four words ("(overdraft balance $30.00
+// or less)"), is judged without that bracket by the exclusions (`withoutTierScope` in `@/lib/tiered-price`), so
+// First National Bank of Moose Lake's $15 overdraft tier is no longer refused as a waiver threshold ("or less").
+// A $0, a name with waiver, cap or limit words, and a cut name with no figure ("or less – Overdraft fee ...",
+// raw 760358) are judged as before. Accept-only: no rule refuses more. Read-only dry run (Nov 3): see the finding
+// `docs/project/findings/2026-11-03-tiered-price-conditions.md`.
+export const CATEGORY_GUARD_VERSION = 110;
 
 /** v87 (#1916): where a late charge printed in a safe deposit box section is filed. */
 export const BOX_LATE_TARGET = "safe_deposit_box";
@@ -1893,13 +1901,17 @@ export function checkFeeCategory(
     return { ok: false, code: byName ? "name_contradicts" : "schedule_contradicts", reason: commercialLockboxReason(name, !byName) };
   }
   const soft = rule.excludeUnless;
+  // v110 (#1092, #1110): a priced fee's own tier scope ("Overdraft fee per item per presentment
+  // (overdraft balance $30.00 or less)" $15, Moose Lake) is the row's threshold, never a waiver or another
+  // fee, so the exclusions read the name without it (`withoutTierScope`). Includes still read the whole name.
+  const excludeName = withoutTierScope(name, context?.amount);
   // A note runs to its closing parenthesis, or to the end of a name cut mid-note.
-  const softName = soft?.outsideNotes ? name.replace(/\([^()]*(?:\)|$)/g, " ") : name;
+  const softName = soft?.outsideNotes ? excludeName.replace(/\([^()]*(?:\)|$)/g, " ") : excludeName;
   const capOnly = capOnlyInNotes(rule, name, context);
   // v35: a daily-cap note may name the other fee it shares the cap with: "Overdraft Fee - each
   // debit or check presentment paid (Consumer Accts: 5 max total OD or Returned Item fees daily)".
-  const softExcluded = soft && !soft.unless.test(softName) ? (capOnly ? softName : name).match(soft.pattern) : null;
-  const matched = (capOnly ? null : name.match(rule.exclude)) ?? softExcluded ?? (rule.excludeExact && /[a-z]/.test(name) ? name.match(rule.excludeExact) : null);
+  const softExcluded = soft && !soft.unless.test(softName) ? (capOnly ? softName : excludeName).match(soft.pattern) : null;
+  const matched = (capOnly ? null : excludeName.match(rule.exclude)) ?? softExcluded ?? (rule.excludeExact && /[a-z]/.test(excludeName) ? excludeName.match(rule.excludeExact) : null);
   const excluded = matched && rule.onlyIfRefiles && !refileTargetAccepts(canonicalFeeKey, name) ? null : matched;
   if (excluded) {
     return {

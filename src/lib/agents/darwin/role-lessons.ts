@@ -960,4 +960,14 @@ export const DARWIN_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-11-03",
   },
+  {
+    id: "tiered-price-2026-11-03-judge-the-whole-row",
+    agent: "darwin",
+    stage: "verify",
+    lesson: "Judge a fee on its whole source row, not its name alone. When the row is one tier of a fee priced by a condition, the read's name must state that tier's condition; a name that does not would publish one tier as the bank's only price, so hold it. A tier's own bracket in the name (\"(overdraft balance $30.00 or less)\") is its scope, not a waiver threshold. A tiered_fee answer from the shared check is not proof the condition was read. Re-check live tiers for a hidden condition or a missing sibling tier behind an off switch, with a dry-run count, before any takedown.",
+    why: "First National Bank of Moose Lake (doc 35684): verify refused the $15 tier (raw 760358) because the guard read \"or less\" as a waiver threshold, and passed the $30 tier (raw 760359) on a tiered_fee answer that verify counts as stated, so the $30 tier went live alone (116685). Prod dry run Nov 3 (read-only): 50 of 2,981 live conditioned fees at 35 institutions match, 31 unscoped and 19 incomplete; the takedown waits behind TIER_COMPLETENESS_TAKEDOWN_LIVE (off).",
+    evidence: { issues: [1110, 1026], prs: [], files: ["src/lib/agents/darwin/tier-scope.ts", "src/lib/agents/darwin/verify.ts", "src/lib/fee-category-guard.ts", "src/lib/agents/darwin/tier-completeness-check.ts", "src/lib/agents/darwin/tier-completeness-check.test.ts", "docs/project/findings/2026-11-03-tiered-price-conditions.md"] },
+    appliesTo: "all",
+    since: "2026-11-03",
+  },
 ];

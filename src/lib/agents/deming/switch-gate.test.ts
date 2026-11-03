@@ -104,7 +104,11 @@ const NO_FEES = "It’s easy to open. It makes banking more convenient. There ar
 const protection = darwinFixture<[number, number, number, string, number, number, string]>("protection-item-live-2026-11-01.json")[0];
 const safeBox = 'Safe deposit box 5x5 | $ 15.00 Charged once each year for renting a safe deposit box of this size.';
 
+const MOOSE_LAKE_TIERS = ["If your check/item is returned for insufficient funds (NSF) and overdraft balance at the end of business day is:", "",
+  "$30.00 or less – Overdraft fee per item per presentment. | $15.00 per item", "", "More than $30.00 – Overdraft fee per item per presentment. | $30.00 per item"].join("\n");
+
 const SWEEP_PROBES: Record<string, () => SweepProbe> = {
+  TIER_COMPLETENESS_TAKEDOWN_LIVE: () => one([pub("overdraft", "Overdraft fee per item per presentment", 3000, "More than $30.00 – Overdraft fee per item per presentment. | $30.00 per item")], MOOSE_LAKE_TIERS),
   BANDED_ZERO_TAKEDOWN_LIVE: () => one([pub("overdraft", "Safety Net Overdraft", 0, SAFETY_NET)], `${SAFETY_NET}\n\nSafety Net Overdraft | $5.01-$20.00 is $10.00 per transaction. $20.01 and over is $35.00 per transaction`),
   RATE_FLOOR_TAKEDOWN_LIVE: () => one([pub("check_cashing", "Merchant Check Cashing", 1000, "Merchant Check Cashing (Greater of 10% of Item or $10)")]),
   LATE_CHARGE_BOUND_TAKEDOWN_LIVE: () => one([pub("late_payment", "Maximum late charge", 3000, "Maximum late charge $30.00")]),

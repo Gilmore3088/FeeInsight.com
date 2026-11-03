@@ -15,6 +15,7 @@ import { freeListItemRead } from "@/lib/free-list-item";
 import { dividendThresholdSentence } from "@/lib/dividend-threshold";
 import { onlineServiceMonthlyFee } from "@/lib/service-monthly-charge";
 import { serviceMaintenanceRead } from "@/lib/service-maintenance-heading";
+import { unscopedTierRead } from "./tier-scope";
 import { requireInternationalVerification } from "./international-verification";
 import { matchOriginalRawSource } from "./locked-raw-source";
 import { paidReturnedCandidateProof, PAID_RETURNED_EVENT_FLAG, PAID_RETURNED_ELIGIBILITY_FLAG } from "@/lib/custom-report/paid-returned-events";
@@ -173,6 +174,7 @@ export type DarwinReasonCode =
   | "dividend_threshold"
   | "online_service_monthly"
   | "service_maintenance_heading"
+  | "tier_unscoped"
   | "name_rule"
   | "maintenance_per_item"
   | "history_jump"
@@ -208,6 +210,7 @@ export const DARWIN_REASON_TEXT: Readonly<Record<DarwinReasonCode, string>> = {
   dividend_threshold: "The balance a rate disclosure says earns no dividend or interest (\"If your average daily balance is below $100.00 ..., no dividends are earned\"), in a sentence that names no charge: no fee",
   online_service_monthly: "A monthly service fee printed in a section of online, electronic or digital services (\"Online Fees\"): that service's charge, not the account's monthly maintenance fee",
   service_maintenance_heading: "A monthly maintenance fee whose row sits under a heading that names a service, not an account (\"Consumer Online Banking Services and Mobile Banking Fees\" over \"Monthly Maintenance Fee | No charge\"): the service's own fee, not the checking account's; held for a person",
+  tier_unscoped: "One tier of a fee priced by a threshold (\"$30.00 or less | $15.00\", \"More than $30.00 | $30.00\") whose name does not state its tier's condition: published so, it would stand for the bank's only price; held for a person",
   name_rule: "The name or line fails a rule Hamilton would take the live fee down for",
   maintenance_per_item: "A monthly maintenance fee whose own line prices it per item (\"$16 each\", \"$1.00 per withdrawal\"): not the account's monthly fee",
   history_jump: "Amount moved sharply from the bank's live value for this fee, and this copy is an earlier edition than the live value's or the same page does not show the change; held for a person to review",
@@ -873,7 +876,7 @@ export function pendingCategoryLesson(canonicalFeeKey: string | null, feeName: s
 
 function decisionFor(code: DarwinReasonCode | null): DarwinDecision {
   if (code == null) return "verified";
-  if (code === "outside_envelope" || code === "peer_outlier" || code === "category_lesson_pending" || code === "conditional_zero" || code === "account_benefit_zero" || code === "zero_waiver_row" || code === "service_maintenance_heading" || code === "maintenance_per_item" || code === "history_jump" || code === "insert_failed") return "needs_review";
+  if (code === "outside_envelope" || code === "peer_outlier" || code === "category_lesson_pending" || code === "conditional_zero" || code === "account_benefit_zero" || code === "zero_waiver_row" || code === "service_maintenance_heading" || code === "tier_unscoped" || code === "maintenance_per_item" || code === "history_jump" || code === "insert_failed") return "needs_review";
   if (code === "duplicate_in_batch" || code === "duplicate_verified") return "duplicate";
   return "rejected";
 }
@@ -2093,6 +2096,12 @@ export async function runDarwinVerify(
         // (`serviceMaintenanceRead`).
         if (!reasonCode && serviceMaintenanceRead({ excerpt: excerptOf(row.conditions), tracedLine, canonicalFeeKey, documentText: sourceText })) {
           reasonCode = "service_maintenance_heading";
+        }
+        // #1110 (Knox v183 names new ones by their tier): a read that is one tier of a fee priced by a threshold,
+        // on Knox's line or the traced line, whose name does not state its tier's condition (`unscopedTierRead`):
+        // Moose Lake's "Overdraft fee per item per presentment" $30, the "More than $30.00" tier beside a $15 one.
+        if (!reasonCode && unscopedTierRead({ feeName: row.fee_name, canonicalFeeKey, amount: normalizedAmount(row.amount), excerpt: excerptOf(row.conditions), tracedLine, documentText: sourceText })) {
+          reasonCode = "tier_unscoped";
         }
         if (!reasonCode && canonicalFeeKey && verifiedInBatch.has(batchKey(row, canonicalFeeKey))) {
           reasonCode = "duplicate_in_batch";
