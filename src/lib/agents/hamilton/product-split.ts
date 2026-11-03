@@ -84,16 +84,28 @@ export function linePrintCount(text: string, excerpt: string): number {
 
 const ANY_PRICE = /\$\s*\d|(?<![\d.,$])\d[\d,]*\.\d{2}(?!\d)/;
 
-const ZERO_WORD = /\b(?:free|none|n\/?c|no\s+charge|waived|no\s+fee)\b/gi;
+const ZERO_WORD = /\b(?:free|none|n\/?c|n\/?a|no\s+charge|waived|no\s+fee)\b/gi;
+/** A table cell that prints a $0 price: a zero word, a zero figure or a dash. */
+const ZERO_CELL = /^(?:\$?\s*0(?:\.0{1,2})?(?![\d.,])|[-–—]+$|(?:free|none|n\/?c|n\/?a|no\s+charge|waived|no\s+fee)\b)/i;
+
+/** Pure: how many $0 prices the line prints: zero cells of a table row, else zero words and zero figures. */
+export function zeroPriceCount(line: string): number {
+  const cells = line.split("|").map((cell) => cell.trim()).filter(Boolean);
+  if (line.includes("|") && cells.length > 1) return cells.slice(1).filter((cell) => ZERO_CELL.test(cell)).length;
+  return (line.match(ZERO_WORD) ?? []).length + (line.match(/\$\s*0(?:\.0{1,2})?(?![\d.,])/g) ?? []).length;
+}
 
 /**
- * Pure: the line prints the amount once, or is a $0 line that prints no figure and at most one
- * zero word ("| None"). "| Monthly Fee | Free | Free |" prints one price per account column: two
- * products, two rows.
+ * Pure: the line prints the amount once, or is a $0 line that prints no other figure. A $0 line must
+ * print at most one $0 price: "| Monthly Fee | Free | None |" or "| Monthly Fee | 0 | - |" prints one
+ * price per account column, two products, two rows.
  */
 export function pricedOnce(line: string, amount: number | string | null): boolean {
-  if (pricePrints(line, amount) === 1) return true;
-  return Number(amount) === 0 && !ANY_PRICE.test(line) && (line.match(ZERO_WORD) ?? []).length <= 1;
+  if (Number(amount) === 0) {
+    if (zeroPriceCount(line) > 1) return false;
+    return pricePrints(line, amount) === 1 || !ANY_PRICE.test(line);
+  }
+  return pricePrints(line, amount) === 1;
 }
 
 const PRODUCT_FILLER = new Set(["account", "accounts", "the", "and", "of", "for"]);
@@ -185,7 +197,8 @@ function wordsWithin(inner: string[], outer: string[]): boolean {
 
 /**
  * Pure: the page names both products for this line, on the line itself or on the one heading the
- * line sits under, and neither name is a part of the other. "Checking and Savings Accounts: Paper
+ * line sits under (the nearest line above with no price that names either), and neither name is a
+ * part of the other. "Checking and Savings Accounts: Paper
  * statement fee $2.00", or a line under "Basic Checking & Student Checking", prices both products:
  * two rows. "Fresh Start Checking" and "Checking" are one name, the shorter a part of the longer:
  * still one line read twice. Two separate headings above the line (an earlier account's section,
@@ -200,8 +213,13 @@ export function namesBothProducts(one: string | null | undefined, two: string | 
   const lines = text.split(/\r?\n/).filter((each) => each.trim() !== "");
   const at = lines.findIndex((each) => lineFold(each) === lineFold(excerpt));
   if (at < 0) return false;
+  // Looser than an account heading for the winner: any priceless line naming either product, so
+  // "Checking and Savings Account Fees", a long list of account names and a table header row
+  // ("| | Basic Checking | Student Checking |") count. Wrongly keeping two rows is the safe side.
   for (let index = at - 1; index >= Math.max(0, at - PRODUCT_HEADING_WINDOW); index -= 1) {
-    if (headingNamesProduct(one, lines[index]) || headingNamesProduct(two, lines[index])) return both(lines[index]);
+    const above = lines[index];
+    if (/\$/.test(above) || ANY_PRICE.test(above)) continue;
+    if (productPrintedOnLine(one, above) || productPrintedOnLine(two, above)) return both(above);
   }
   return false;
 }

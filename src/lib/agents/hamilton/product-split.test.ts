@@ -5,6 +5,7 @@ import {
   lineFold,
   linePrintCount,
   namesBothProducts,
+  zeroPriceCount,
   pricedOnce,
   productDistance,
   productSplitWinner,
@@ -137,5 +138,30 @@ describe("one printed line under two products", () => {
     expect(headingNamesProduct("Account Reconciliation Fee", "Account Reconciliation Fee")).toBe(false);
     expect(headingNamesProduct("Fee Free Checking", "Fee Free Checking")).toBe(true);
     expect(headingNamesProduct("No Fee Savings", "No Fee Savings")).toBe(true);
+  });
+
+  it("second review of #2964: mixed zero words, zero figures and dashes per column are two prices", () => {
+    for (const line of ["| Monthly Fee | Free | None |", "| Monthly Fee | None | No charge |", "| Monthly Fee | Waived | N/C |", "| Monthly Fee | 0 | 0 |", "| Monthly Fee | - | - |", "| Monthly Fee | $0.00 | Free |"]) {
+      expect(zeroPriceCount(line)).toBe(2);
+      expect(pricedOnce(line, 0)).toBe(false);
+    }
+    expect(pricedOnce("| Monthly Fee | $0.00 |", 0)).toBe(true);
+    expect(pricedOnce("Co-Op ATM Fee: | None – machine fees may apply", 0)).toBe(true);
+    expect(pricedOnce("Monthly Service Charge: Free", 0)).toBe(true);
+    const text = ["| | Basic Checking | Student Checking |", "| Monthly Fee | Free | None |"].join("\n");
+    expect(readsOneLineTwoProducts(read("Basic Checking", "| Monthly Fee | Free | None |"), live("Student Checking", "| Monthly Fee | Free | None |"), text, 0)).toBe(false);
+  });
+
+  it("second review of #2964: fee-word headings, long account lists and table header rows name both products", () => {
+    const line = "Paper statement | $2.00";
+    for (const heading of ["Checking and Savings Account Fees", "Checking & Savings Service Charges"]) {
+      expect(namesBothProducts("Checking", "Savings", [heading, line].join("\n"), line)).toBe(true);
+      expect(readsOneLineTwoProducts(read("Checking", line), live("Savings", line), [heading, line].join("\n"), 2)).toBe(false);
+    }
+    expect(namesBothProducts("Regular Savings", "Youth Savings", ["Regular Savings, Holiday Club & Youth Savings Accounts", line].join("\n"), line)).toBe(true);
+    expect(namesBothProducts("Basic Checking", "Senior Checking", ["Basic Checking, Student Checking and Senior Checking", line].join("\n"), line)).toBe(true);
+    expect(namesBothProducts("Basic Checking", "Student Checking", ["Basic Checking | Student Checking", line].join("\n"), line)).toBe(true);
+    // The nearer heading names one product only: it heads the line.
+    expect(namesBothProducts("Basic Checking", "Student Checking", ["Basic Checking & Student Checking", "Student Checking Fees", line].join("\n"), line)).toBe(false);
   });
 });

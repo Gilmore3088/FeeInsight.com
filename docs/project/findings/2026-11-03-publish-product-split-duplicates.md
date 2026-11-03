@@ -40,7 +40,12 @@ page-copy collapses, the same-line read (#1876) and Darwin's stale-copy twin che
   Free | Free |"), and a line that names both products, on the line or on the one heading it sits under
   ("Checking and Savings Accounts: Paper statement fee $2.00", or a line under "Basic Checking &
   Student Checking"), unless one name is part of the other ("Fresh Start Checking" and "Checking" are
-  one name). These two guards came from the independent review; neither matches a live pair today.
+  one name). These two guards came from the independent reviews; neither matches a live pair today.
+  A $0 row counts every $0 price it prints, whatever the word ("| Free | None |", "| 0 | - |"), and
+  the heading checked for both names is the nearest line above with no price that names either one,
+  so "Checking and Savings Account Fees", a long list of account names and a table header row count.
+  A row with no product never "names both": a line under "Basic Checking & Student Checking" read once
+  under no product and once under "Basic Checking" is one fee and keeps "Basic Checking".
 - Whose product stays: a read from an older copy than the live fee never wins. Otherwise the product
   named on the line, or on the nearest heading above it, wins. A heading here is a short line with no
   price, table cell or fee word ("Account Reconciliation Fee" is a fee row's label, not an account),
@@ -54,7 +59,9 @@ page-copy collapses, the same-line read (#1876) and Darwin's stale-copy twin che
   also applies to the existing supersede path. On main a same-amount supersede wrote an "increase" row
   with equal amounts; on prod 0 of 157 `fee_change_records` rows and 0 of 61 "superseded by #N" pairs
   have equal amounts, so it has never fired. If the live row's product wins, the row is refused ("Same printed
-  line as live fee #N under another product"). Counted each step as `product_split_check`.
+  line as live fee #N under another product"). Counted each step as `product_split_check`. With the
+  switch off this read still runs for every row decided new or an additional line: up to three small
+  queries per row (the row's line, live rows of other products, the documents' texts).
 - Darwin: `darwin/product-split-check.ts` reads the pairs already live, on one document or on an older
   copy and its current copy (`superseded_by_id`), with the same rule. The loser comes down on its second
   look as `same_line_duplicate: live fee #<kept>`, so Hamilton's same-line restore brings it back if the

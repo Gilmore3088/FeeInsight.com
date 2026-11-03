@@ -106,8 +106,9 @@ const PRODUCERS: Record<string, Producer[]> = {
   "agents/darwin/stale-copy-check.ts": [{ check: STALE_COPY_CHECK, reasons: [`${STALE_COPY_TWIN_REASON_PREFIX}5 (#1 -> #2)`, `${STALE_COPY_DROPPED_REASON_PREFIX}2 (Knox v156; read from #1)`] }],
   // Re-files in place after its second look; it takes nothing down, so it writes no takedown reason.
   "agents/darwin/od-transfer-refile-check.ts": [{ check: OD_TRANSFER_REFILE_CHECK, reasons: [] }],
-  // Re-files in place after its second look; it takes nothing down, so it writes no takedown reason.
+  // Takes the losing read of one printed line down as a same-line duplicate of the kept fee.
   "agents/darwin/product-split-check.ts": [{ check: PRODUCT_SPLIT_CHECK, reasons: [SAME_LINE_DUPLICATE_REASON], keeps: SAME_LINE_DUPLICATE_CHECK }],
+  // Re-files in place after its second look; it takes nothing down, so it writes no takedown reason.
   "agents/darwin/protection-item-refile-check.ts": [{ check: PROTECTION_ITEM_REFILE_CHECK, reasons: [] }],
   // Re-files in place; a twin of a re-file (or of a live other lending fee) comes down as a duplicate.
   "agents/darwin/loan-payment-nsf-refile-check.ts": [{ check: LOAN_PAYMENT_NSF_REFILE_CHECK, reasons: [LOAN_PAYMENT_NSF_TWIN_REASON] }],
