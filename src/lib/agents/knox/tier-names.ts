@@ -23,7 +23,8 @@ import type { ExtractedFeeCandidate, HeldFeeCandidate } from "./rules";
  * on the same fee's line or row that no reader read gets a read of its own under the same category. When
  * any tier of a group still has no read that passes, or the group's reads sit in two categories, every
  * read of that group is held (`tier_incomplete`) for review instead of sending fewer than all its tiers
- * to Darwin. A cap, a waiver threshold, a $0 band and two different fees on one line are no tiers and are left
+ * to Darwin. A cap, a waiver threshold, a rate's minimum, a $0 band, one price under every condition and two fees on one line
+ * (clauses that each name their own fee) are no tiers and are left
  * alone, and so are monthly maintenance and minimum balance reads, whose balance conditions are each account's
  * own (`TIERLESS_CATEGORIES`).
  */

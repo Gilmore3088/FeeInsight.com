@@ -1788,8 +1788,11 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   (`TIER_COMPLETENESS_TAKEDOWN_LIVE`) is off; on, a match goes through the second look
   (`darwin.tier_completeness`) and is archived with `tier_incomplete: <kind>, k of N tiers live`. A
   takedown is not replaced until Knox re-reads the text, so pair it with re-read requests. Step detail
-  `tier_completeness_check`. Dry run Nov 3: 50 of 2,981 candidates at 35 institutions (31 unscoped, 19
-  incomplete; 88 in a tier group); 148646, 95341 and 102393 are doubtful
+  `tier_completeness_check`. Only the `unscoped` kind is taken down (`TIER_COMPLETENESS_TAKEDOWN_KINDS`);
+  an `incomplete` fee's own name and price are right, so it is counted, report only (review of #2981). The
+  window is whole lines within 900 characters of each side of the fee's line. Dry run Nov 3 (re-run after
+  the review): 48 of 2,982 candidates at 33 institutions (86 in a tier group): 31 unscoped at 26
+  institutions, the switch's, and 17 incomplete, report only; 102393 is doubtful
   (`docs/project/findings/2026-11-03-tiered-price-conditions.md`).
 - A $0 overdraft, NSF or continuous overdraft fee that is not the fee's price (`banded-zero-check.ts`,
   #1882). "Safety Net Overdraft | $0 if the negative balance is $5 or less. $10 if ... $35 per item**"
@@ -2623,11 +2626,13 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
 - Guard v42 (2026-10-08; v40 and v41 are Accuracy's, PR 682) files an NSF item marked paid after a dash or in brackets ("NSF Fee Charge - Paid (per item)", "Nonsufficient Funds Fee-Paid", "Insufficient Funds Charge (Check Paid, Per Item)") as the overdraft fee and re-files it there from NSF; "per non-paid item", "Paid from other ... account" and "We will not assess ..." stay out. "Overdraft Privilege Standard or Extended Coverage" names the program, not an extended overdraft fee.
 - The guard is at v110 (`CATEGORY_GUARD_VERSION` in `src/lib/fee-category-guard.ts`). v110 (Nov 3, with
   Knox v183, #1110): a priced fee whose name ends in its own tier bracket, one balance, amount or count
-  condition after at most four words ("(overdraft balance $30.00 or less)"), is judged without that bracket
+  condition after nothing but the threshold's own noun ("(overdraft balance $30.00 or less)", "(4+ items)"),
+  is judged without that bracket
   by the exclusions (`withoutTierScope` in `@/lib/tiered-price`); includes still read the whole name, and a
-  $0, a name with waiver, cap or limit words, and a cut name with no figure are judged as before.
+  $0, a name with waiver, cap, minimum, limit or rate words, a bracket with any other word ("(international
+  over $1,000)", "(continuous over $5)", review of #2981), and a cut name with no figure are judged as before.
   Accept-only: on the read-only dry run, of 1,038 live priced names ending in a bracket with a condition
-  the bracket is read off 408 and the verdict changes on 0. v109 (Nov 3, with
+  the bracket is read off 137 and the verdict changes on 0. v109 (Nov 3, with
   Knox v178): `od_protection_transfer` also accepts an automatic transfer from savings or shares named alone
   ("Automatic transfers from shares", `AUTOMATIC_TRANSFER_FROM_SAVINGS_ANYWHERE`). Accept-only: on the read-only
   dry run 18 live names say an automatic transfer from savings or shares (6 match the new include; none is a

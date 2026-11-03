@@ -1467,11 +1467,13 @@ export const GUARDED_CATEGORIES: readonly string[] = [...new Set([...Object.keys
 // Read-only dry run (Nov 3): 18 live fees' names say an automatic transfer from savings or shares, all already
 // filed od_protection_transfer, so 0 come down and 0 re-file.
 // v110 (Nov 3, with Knox v183 tier names; #1092, #1110, #1026): a priced fee whose name ends in its own tier
-// scope, a bracket that is one balance or count condition after at most four words ("(overdraft balance $30.00
-// or less)"), is judged without that bracket by the exclusions (`withoutTierScope` in `@/lib/tiered-price`), so
+// scope, a bracket that is one balance or count condition after nothing but the threshold's own noun ("(overdraft
+// balance $30.00 or less)", "(4+ items)"), is judged without that bracket by the exclusions (`withoutTierScope` in `@/lib/tiered-price`), so
 // First National Bank of Moose Lake's $15 overdraft tier is no longer refused as a waiver threshold ("or less").
-// A $0, a name with waiver, cap or limit words, and a cut name with no figure ("or less – Overdraft fee ...",
-// raw 760358) are judged as before. Accept-only: no rule refuses more. Read-only dry run (Nov 3): see the finding
+// A $0, a name with waiver, cap, minimum, limit or rate words, a bracket with any other word ("(international over
+// $1,000)" keeps "international" for the exclusions; review of #2981), and a cut name with no figure ("or less –
+// Overdraft fee ...", raw 760358) are judged as before. Accept-only: no rule refuses more. Read-only dry run (Nov 3):
+// of 1,038 live priced names ending in a bracket with a condition, 137 lose it and 0 change verdict; see the finding
 // `docs/project/findings/2026-11-03-tiered-price-conditions.md`.
 export const CATEGORY_GUARD_VERSION = 110;
 
