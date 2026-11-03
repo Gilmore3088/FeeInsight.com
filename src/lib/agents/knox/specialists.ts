@@ -72,6 +72,7 @@ import { withProtectionItemReads } from "./protection-item";
 import { freeListItemRead } from "@/lib/free-list-item";
 import { withoutColumnLabelEchoes } from "./column-label-echo";
 import { withThresholdFigures } from "./threshold-name";
+import { withTierNames } from "./tier-names";
 import { dividendThresholdSentence } from "@/lib/dividend-threshold";
 import { onlineServiceMonthlyFee } from "@/lib/service-monthly-charge";
 
@@ -927,7 +928,15 @@ import { onlineServiceMonthlyFee } from "@/lib/service-monthly-charge";
 // "Paid Item Charge c". (4) On a stem tie, the source check's line for a priced fee is the row whose label opens with the name (San
 // Francisco FCU). Synergy's "Same Party Check" stays nsf: its page never says the check is deposited. The stale-read
 // floor stays at v97.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 181 } as const;
+// v183 (owner's audit Nov 3, #1110, #1092; First National Bank of Moose Lake 3457, document 35684): a fee priced in
+// tiers by a balance, amount or count condition is read as one fee per tier, each named with its own condition
+// ("Overdraft fee per item per presentment (overdraft balance more than $30.00)"), a tier printed on the same line
+// that no reader read gets its own read, and a group Knox cannot read in full is held as `tier_incomplete`
+// (`withTierNames`, `@/lib/tiered-price`). A cap, a waiver threshold, a rate's minimum, a $0 band, one price under
+// every condition, two fees on one line (clauses that each name their own fee), and monthly
+// maintenance and minimum balance reads are no tiers. v182 is left to the parallel Knox branch. The stale-read
+// floor stays at v97.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 183 } as const;
 
 export interface SpecialistRun {
   strategy: string;
@@ -1885,6 +1894,14 @@ function readFreeText(sourceText: string, discontinuedRows: DiscontinuedTableFla
     if (!onlineService(stillHeld[at])) continue;
     stillHeld.splice(at, 1);
     countDropped("online_service_monthly");
+  }
+  // v183 (#1092, #1110; Moose Lake 3457, artifact 33778): each read that is one tier of a fee priced by a
+  // threshold keeps its own condition in its name, a tier no reader read gets its own read, and a group
+  // that still lacks a tier is held as `tier_incomplete` (`withTierNames`).
+  {
+    const tiered = withTierNames(candidates, stillHeld, sourceText);
+    candidates.splice(0, candidates.length, ...tiered.candidates);
+    stillHeld.splice(0, stillHeld.length, ...tiered.held);
   }
   // v170 (backlog dry run 3, Morton Community Bank doc 40112): a read's name keeps the dollar threshold its
   // own line ties to it ("Cashier's Check more than $1,000 (MCB customers only)"), a rename only, so the

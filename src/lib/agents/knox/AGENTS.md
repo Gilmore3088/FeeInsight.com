@@ -2723,6 +2723,28 @@ holds. Darwin's verify refuses the same reads (`service_maintenance_heading`) an
 is live (`SERVICE_MAINTENANCE_TAKEDOWN_LIVE`, off). The shared check is unchanged. The stale-read floor stays at
 v97.
 
+v183 (owner's audit Nov 3, #1110, #1092; First National Bank of Moose Lake, institution 3457, document 35684,
+artifact 33778): a fee priced in tiers is read as one fee per tier, each named with its own condition, and the tiers
+stay distinct fees under one category (`tier-names.ts`, `@/lib/tiered-price`). Knox's name builders dropped every
+figure as a price, so "$30.00 or less – Overdraft fee per item per presentment. | $15.00 per item" was named "or
+less – Overdraft fee per item per presentment" (raw 760358, refused by the category guard as a waiver threshold) and
+the $30 tier "More than $30.00" lost its condition (raw 760359), which went live as the bank's only overdraft price
+(live 116685). Now: "Overdraft fee per item per presentment (overdraft balance $30.00 or less)" $15 and "... (overdraft
+balance more than $30.00)" $30. A tier group is two or more lines (or clauses of one line) of one fee, each with one
+balance, amount or count condition and its own price above $0. A name that already states its tier keeps it ("Cashier’s
+checks over $1,000.00 per item"); otherwise the figure goes back in its own slot or the condition in brackets. A tier
+printed on the same line that no reader read gets its own read (confidence at most 0.85). A group whose tiers Knox
+cannot all read under Darwin's checks, or whose reads sit in two categories, is held whole as `tier_incomplete`
+(no automatic release). A cap ("maximum $150 per day"), a waiver threshold ("waived with $500 balance"), a rate's
+minimum (a line that prints a percentage or "min"/"minimum": "over $1,000 0.25% with a $50.00 minimum" makes no $50
+fee), a $0 band, one price under every condition, clauses of one line that each name their own fee ("Cashier's check
+over $1,000 $10.00; Money order up to $1,000 $5.00" stays two fees), and monthly maintenance and minimum balance
+reads are left alone (review of #2981). The category guard v110 reads a name without its own trailing tier bracket
+for its exclusions only when the bracket holds nothing but the threshold's noun and its condition. Darwin holds a
+tier read whose name does not state its tier (`tier_unscoped`) and re-checks live fees
+(`TIER_COMPLETENESS_TAKEDOWN_LIVE`, off; Nov 3: 48 of 2,982 candidates at 33 institutions, of which only the 31
+unscoped would come down). The stale-read floor stays at v97.
+
 v181 (twelfth Knox re-read backlog dry run, Nov 3; 40 backlog texts at v180, 2 wrong and 7 doubtful of 72 changed
 rows, each against the bank's own line): (1) A bulleted variant under a stop payment row that prints its own price,
 in the page's last column, is that stop payment's price for the variant (`stopPaymentVariantRead`,
@@ -3533,7 +3555,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v3 | `knox/paid-extract.ts` |
 | `KNOX_PAID_FIND_MISS_VERSION` | — | v1 | `knox/paid-find-misses.ts` |
 | `TWO_READ_AGREEMENT_STRATEGY` | `knox.two_read_agreement` | v2 | `knox/two-read-agreement.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v181 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v183 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v13 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v2 | `knox/takedown-lessons.ts` |
