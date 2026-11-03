@@ -8,6 +8,8 @@ import {
   sectionMisreadDetail,
   WAIVER_ADVICE_NAME_SQL,
   WIRE_SUBSCRIPTION_NAME_SQL,
+  RETURNED_ITEM_SERVICE_NAME_SQL,
+  ACCOUNTLESS_MONTHLY_LINE_SQL,
   type SectionMisreadRow,
 } from "@/lib/agents/darwin/section-misread-check";
 
@@ -65,18 +67,44 @@ describe("Darwin's section misread re-check (Knox v177)", () => {
     ]);
     expect(found.checked).toBe(10);
     expect(found.noText).toBe(1);
-    expect(found.byKind).toEqual({ waiver_column_name: 2, front_matter_name: 1, wire_subscription: 1, ira_section_closing: 1 });
+    expect(found.byKind).toEqual({ waiver_column_name: 2, front_matter_name: 1, wire_subscription: 1, ira_section_closing: 1, returned_item_service: 0, accountless_monthly_sentence: 0 });
     expect(found.matches[1].reason).toBe('waiver_column_name: "Verification of Deposits is account_verification, not bill_pay"');
   });
 
   it("keeps a wire's price that names its sender's package or module, and a single service's advice (review of #2973)", () => {
     const kept = [
+      row(5, 1, "atm_non_network", "Use Non-Network ATM or Foreign ATM", 2.5),
       row(1, 1, "wire_domestic_outgoing", "Outgoing domestic wire, Business Package", 20),
       row(2, 1, "wire_intl_outgoing", "Outgoing international wire – Treasury Module", 45),
       row(3, 1, "atm_non_network", "Use Non-Network ATM", 2.5),
       row(4, 1, "paper_statement", "Switch to paper statements", 5),
     ];
     expect(findSectionMisreads(kept, TEXTS).matches).toEqual([]);
+  });
+
+  it("version 2 (Knox v178): matches a returned item's handling service filed NSF and a reward bullet's monthly fee", () => {
+    const rows: SectionMisreadRow[] = [
+      row(21594, 1, "nsf", "Returned Item Special Handling Item", 10),
+      // Says NSF in so many words: the NSF fee (108799).
+      row(108799, 1, "nsf", "Non-Sufficient Funds (NSF)/Special Handling", 25),
+      { ...row(117986, 1, "monthly_maintenance", "Monthly maintenance fee", 10), source_line: 'rules read; artifact #1; excerpt="Waived $10 monthly maintenance fee"' },
+      { ...row(5, 1, "monthly_maintenance", "Monthly maintenance fee", 10), source_line: 'excerpt="Monthly maintenance fee | $10.00"' },
+      // The same bullet on a page that prints the fee as a row at that price, or under an account heading: kept.
+      { ...row(6, 2, "monthly_maintenance", "Monthly maintenance fee", 10), source_line: 'excerpt="Waived $10 monthly maintenance fee"' },
+      { ...row(7, 3, "monthly_maintenance", "Monthly service charge", 10), source_line: 'excerpt="Your $10 monthly service charge can be avoided with direct deposit."' },
+      // Its text is gone: not judged.
+      { ...row(8, 4, "monthly_maintenance", "Monthly maintenance fee", 10), source_line: 'excerpt="Waived $10 monthly maintenance fee"' },
+    ];
+    const texts = new Map([
+      [1, "Earn these rewards each month:\nWaived $10 monthly maintenance fee\nRefunded ATM fees"],
+      [2, "Rewards\nWaived $10 monthly maintenance fee\nPremier Checking\nMonthly maintenance fee | $10.00"],
+      [3, "Premier Checking\nYour $10 monthly service charge can be avoided with direct deposit."],
+    ]);
+    const found = findSectionMisreads(rows, texts);
+    expect(found.matches.map((fee) => [fee.feePublishedId, fee.kind])).toEqual([[21594, "returned_item_service"], [117986, "accountless_monthly_sentence"]]);
+    expect(found.noText).toBe(1);
+    expect(new RegExp(RETURNED_ITEM_SERVICE_NAME_SQL, "i").test("Returned Item Special Handling Item")).toBe(true);
+    expect(new RegExp(ACCOUNTLESS_MONTHLY_LINE_SQL, "i").test('excerpt="Waived $10 monthly maintenance fee"')).toBe(true);
   });
 
   it("selects the rows by Postgres pre-filters wide enough for each rule", () => {

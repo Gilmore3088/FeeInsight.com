@@ -326,6 +326,26 @@ export const AUTOMATIC_TRANSFER_TO_CHECKING_ANYWHERE = new RegExp(
 );
 
 /**
+ * Knox v178 / guard v109 (backlog dry run 9, Library of Congress FCU text 13456): an automatic transfer from
+ * savings or shares named alone ("Automatic transfers from shares | $2.00", printed under "ATM /VISA DEBIT
+ * CARD") is the overdraft protection transfer, as 18 live fees so named are filed ("Automatic Transfers from
+ * Shares, Overdraft Coverage", "Automatic Transfer from Savings to cover overdraft"). Knox filed it
+ * atm_non_network through its heading, since the name named no type. A transfer to another account than
+ * checking, or one that names a second destination ("... from Savings to Loan", "... from shares or
+ * checking"), is not matched; the to-checking form is `AUTOMATIC_TRANSFER_TO_CHECKING`. Nor is a transfer from a
+ * savings club ("Automatic Transfer from Savings (Christmas Club)", review of #2976): a club account's transfer
+ * pays out the club, not an overdraft.
+ */
+export const AUTOMATIC_TRANSFER_FROM_SAVINGS =
+  /^\W*auto(?:matic|\.)?\s+transfers?\s+(?:of\s+funds\s+)?from\s+(?:an?\s+|your\s+|the\s+)?(?:linked\s+)?(?:savings|shares?)(?:\s+accounts?)?(?:\s+to\s+cover\s+(?:an?\s+)?(?:overdrafts?|over\s?drafts?))?\s*(?:\((?![^()|]*\bclubs?\b)[^()|]*\))?\s*(?=\||$|\$|\d)/i;
+
+/** The same test without the start anchor, for the category guard's `include` (see `AUTOMATIC_TRANSFER_TO_CHECKING_ANYWHERE`). */
+export const AUTOMATIC_TRANSFER_FROM_SAVINGS_ANYWHERE = new RegExp(
+  AUTOMATIC_TRANSFER_FROM_SAVINGS.source.replace(/^\^\\W\*/, "\\b"),
+  "i",
+);
+
+/**
  * Guard v72 (#1788): an overdraft charged for staying overdrawn for days ("7 Day Overdraft Processing
  * Fee", "Overdraft Charge (First assessed on the 6th business day overdrawn)", "Cont OD Charge") is
  * the continuous overdraft fee, not the per-item overdraft fee. A daily cap or a per-day item limit

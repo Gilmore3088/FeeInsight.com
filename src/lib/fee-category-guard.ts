@@ -29,7 +29,7 @@ import { paperStatementPriceOnLine } from "@/lib/paper-statement-price";
 import { BILL_PAYER_NAME, MOBILE_CHECK_DEPOSIT_NAME, SERVICE_MONTHLY_CHARGE_NAME } from "@/lib/service-monthly-charge";
 import { WIRE_NOTIFICATION_NAME } from "@/lib/wire-notification";
 import { ACCOUNT_REACTIVATION_NAME } from "@/lib/account-reactivation";
-import { abbreviatesInternationalWire, namesWireOutsideUs, wireOutsideUsWords, ATM_ABROAD, AUTOMATIC_TRANSFER_TO_CHECKING_ANYWHERE, COLLECTION_ITEM, DRAFT_PROTECTION_FEE, foldRetiredCategory, FOREIGN_DEPOSIT_RETURN, FOREIGN_ITEM_RETURN, INCOMING_WIRE, INTERNATIONAL_ATM, IRA_CLOSING, ITEM_COPY, NIGHT_DEPOSIT_WORDS, RESEARCH_SPLIT_LIVE, SKIP_A_PAY, SUSTAINED_OVERDRAFT } from "@/lib/fee-fold";
+import { abbreviatesInternationalWire, namesWireOutsideUs, wireOutsideUsWords, ATM_ABROAD, AUTOMATIC_TRANSFER_FROM_SAVINGS_ANYWHERE, AUTOMATIC_TRANSFER_TO_CHECKING_ANYWHERE, COLLECTION_ITEM, DRAFT_PROTECTION_FEE, foldRetiredCategory, FOREIGN_DEPOSIT_RETURN, FOREIGN_ITEM_RETURN, INCOMING_WIRE, INTERNATIONAL_ATM, IRA_CLOSING, ITEM_COPY, NIGHT_DEPOSIT_WORDS, RESEARCH_SPLIT_LIVE, SKIP_A_PAY, SUSTAINED_OVERDRAFT } from "@/lib/fee-fold";
 
 export type CategoryGuardCode = "name_contradicts" | "name_unsupported" | "rate_as_amount" | "schedule_contradicts" | "amount_implausible";
 
@@ -834,7 +834,9 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
     // no overdraft; a two-way service is not. Matched anywhere (`AUTOMATIC_TRANSFER_TO_CHECKING_ANYWHERE`),
     // since the source check tests this against the fee's line after the rows above it; Knox's anchored
     // rule decides which names are filed here.
-    include: new RegExp(`(overdraft|\\bod\\b|\\bodp\\b|o\\/d|sweep|protection|sobregir)|${AUTOMATIC_TRANSFER_TO_CHECKING_ANYWHERE.source}`, "i"),
+    // v109 (with Knox v178): an automatic transfer from savings or shares named alone ("Automatic transfers from
+    // shares | $2.00", Library of Congress FCU) too (`AUTOMATIC_TRANSFER_FROM_SAVINGS_ANYWHERE`).
+    include: new RegExp(`(overdraft|\\bod\\b|\\bodp\\b|o\\/d|sweep|protection|sobregir)|${AUTOMATIC_TRANSFER_TO_CHECKING_ANYWHERE.source}|${AUTOMATIC_TRANSFER_FROM_SAVINGS_ANYWHERE.source}`, "i"),
     // v39: "Returned or Paid Checks (OD Privilege Fee/Insufficient Funds/...includes Electronic Funds
     // Transfer Debits)" $30, "Check-Overdraft/NSF/Return Fees" $30 and "Overdraft Fee-Exceeded
     // Reg D Transfers" $20 are the overdraft, NSF and excess withdrawal fees, not a transfer's fee.
@@ -1456,7 +1458,14 @@ export const GUARDED_CATEGORIES: readonly string[] = [...new Set([...Object.keys
 // price (97753 "COINSTAR® Coin Counting Service: 10” x 10” x 24”" $105 beside 46887 "10” x 10” x 24”"
 // $105; 64741 "Coin Counting NC: 5”x 10”x 24”" $40, where coin counting is NC, beside 158517 and 158514
 // "Safe Deposit Box 5”x 10”x 24”" $40). Each was read on its stored source line.
-export const CATEGORY_GUARD_VERSION = 108;
+// v109 (Nov 3, with Knox v178; Knox re-read backlog dry run 9, Library of Congress FCU text 13456):
+// od_protection_transfer also accepts an automatic transfer from savings or shares named alone
+// (`AUTOMATIC_TRANSFER_FROM_SAVINGS_ANYWHERE`: "Automatic transfers from shares | $2.00", which Knox filed
+// atm_non_network through the "ATM /VISA DEBIT CARD" heading above it). A transfer to another account than
+// checking, or one naming a second destination, is not accepted. Accept-only: no rule refuses more.
+// Read-only dry run (Nov 3): 18 live fees' names say an automatic transfer from savings or shares, all already
+// filed od_protection_transfer, so 0 come down and 0 re-file.
+export const CATEGORY_GUARD_VERSION = 109;
 
 /** v87 (#1916): where a late charge printed in a safe deposit box section is filed. */
 export const BOX_LATE_TARGET = "safe_deposit_box";

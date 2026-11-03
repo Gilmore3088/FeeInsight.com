@@ -6,7 +6,7 @@ import type { AccountLineup } from "@/lib/agents/knox/lineup";
 import type { AncillaryProduct } from "@/lib/agents/knox/ancillary-product";
 import { CANONICAL_KEY_MAP } from "@/lib/fee-taxonomy";
 import { CHECKING_ACCOUNT_FEE_NAME, checkingNameCore, namedForCheckingAccount, NON_MONTHLY_PERIOD } from "@/lib/checking-fee-name";
-import { abbreviatesInternationalWire, wireOutsideUsWords, ATM_ADJUSTMENT, AUTOMATIC_TRANSFER_TO_CHECKING, CHECKBOOK_RECONCILIATION, CROSS_BORDER_BUNDLE, DRAFT_PROTECTION_FEE, FAX_SERVICE, INTL_ABBREVIATION, PER_PAGE_COPY, researchSplitTarget } from "@/lib/fee-fold";
+import { abbreviatesInternationalWire, wireOutsideUsWords, ATM_ADJUSTMENT, AUTOMATIC_TRANSFER_FROM_SAVINGS, AUTOMATIC_TRANSFER_TO_CHECKING, CHECKBOOK_RECONCILIATION, CROSS_BORDER_BUNDLE, DRAFT_PROTECTION_FEE, FAX_SERVICE, INTL_ABBREVIATION, PER_PAGE_COPY, researchSplitTarget } from "@/lib/fee-fold";
 import { joinWrappedLeaderNames, parenBalance, stripPriceFootnoteMarks, withDroppedDecimalPoints } from "@/lib/custom-report/source-check";
 import { dropsCondition, FEE_OF_SENTENCE } from "@/lib/agents/knox/cutoff-shape";
 import { paperStatementPriceOnLine } from "@/lib/paper-statement-price";
@@ -569,6 +569,11 @@ export const FEE_PATTERNS: FeePattern[] = [
   // rule, so "for overdraft protection" no longer files it as the overdraft fee. A two-way transfer
   // service is not matched (`AUTOMATIC_TRANSFER_TO_CHECKING`, shared with category guard v105).
   { key: "od_protection_transfer", pattern: AUTOMATIC_TRANSFER_TO_CHECKING },
+  // v178 (backlog dry run 9, Library of Congress FCU text 13456): an automatic transfer from savings or shares
+  // named alone ("Automatic transfers from shares | $2.00") is the transfer, so it classifies on its own and
+  // never takes the heading above it ("ATM /VISA DEBIT CARD"), which filed it atm_non_network
+  // (`AUTOMATIC_TRANSFER_FROM_SAVINGS`, shared with category guard v109).
+  { key: "od_protection_transfer", pattern: AUTOMATIC_TRANSFER_FROM_SAVINGS },
   { key: "ach_return", pattern: /\bACH.{0,30}\b(return|returned)\b/i },
   {
     key: "deposited_item_return",
@@ -1719,6 +1724,28 @@ export function boxSectionLateFeeRead(candidate: ExtractedFeeCandidate, text: st
 export function loanSectionFeeRead(candidate: ExtractedFeeCandidate, text: string): ExtractedFeeCandidate {
   if (!loanSectionFee(text, candidate.feeName, candidate.amount, candidate.canonicalHint)) return candidate;
   return passesDarwinChecks(LOAN_SECTION_TARGET, candidate.feeName, candidate.amount) ? { ...candidate, canonicalHint: LOAN_SECTION_TARGET } : candidate;
+}
+
+/**
+ * v178 (backlog dry run 9, First Bank text 4694, lines 23-25): a returned item's handling service is not the
+ * NSF fee: "Returned Items Special Handling Service Fee1 (Business) | $30.00 | Per Month" is a business's
+ * monthly service for handling its returned deposits, and "Returned Item-Recleared Fee1 (Business) | $4.50" and
+ * "Returned Item-Reroute of Return Fee1 (Business) | $5.66" price re-presenting or rerouting a returned item.
+ * No type of the 50 holds them, so an NSF read of such a name is held unclassified: special handling, a
+ * re-clear or a reroute, or a service fee or charge priced per month, in a name that does not say NSF. The
+ * page's own "NSF Return Item Fee | $30.00 | Per Item" stays NSF, as does "Non-Sufficient Funds (NSF)/Special
+ * Handling" (live 108799). Special handling in a bracket after a returned item's own charge ("Returned Item Charge
+ * (Special Handling) | $15.00") is a note on that charge, which still reads (review of #2976); "Special Handling of
+ * return check | $25.00 per item" (live 105649) names the handling itself and is held.
+ */
+const BRACKETED_SPECIAL_HANDLING = /\(\s*special\s+handling\s*\)/gi;
+const RETURNED_ITEM_HANDLING = /\bspecial\s+handling\b|\bre-?clear(?:ed|ing|s)?\b|\bre-?rout(?:e|ed|es|ing)\b/i;
+const SERVICE_FEE_WORDS = /\bservice\s+(?:fees?|charges?)\b/i;
+/** A name that says NSF in so many words ("Non-Sufficient Funds (NSF)/Special Handling", live 108799) is the NSF fee. */
+const NAMES_NSF = /\bNSF\b|\bnon[-\s]?sufficient\b|\binsufficient\b/i;
+export function returnedItemServiceName(name: string, frequency?: string | null): boolean {
+  if (NAMES_NSF.test(name)) return false;
+  return RETURNED_ITEM_HANDLING.test(name.replace(BRACKETED_SPECIAL_HANDLING, " ")) || (frequency === "monthly" && SERVICE_FEE_WORDS.test(name));
 }
 
 /**
@@ -3089,12 +3116,23 @@ const WAIVER_ADVICE_OPEN = /^\W*(?:use|enroll\s+in|sign\s+up\s+for|switch\s+to|m
 const NAMES_A_CHARGE = /\b(?:fees?|charges?|cost|request|for\s+an?|per)\b|\$/i;
 /** Advice that offers a choice of ways ("Use Online BillPay, HonorPay or Account-To-Account Transfers"). */
 const ADVICE_CHOICES = /,|\b(?:or|and)\b/i;
+const ADVICE_CHOICE_SPLIT = /\s*(?:,|\bor\b|\band\b)\s*/i;
 export function waiverAdviceName(name: string): boolean {
   if (!WAIVER_ADVICE_OPEN.test(name) || NAMES_A_CHARGE.test(name)) return false;
   // Review of #2973: advice naming one fee's service is that fee's name ("Use Non-Network ATM | $2.50" is
   // atm_non_network, "Switch to paper statements | $5.00" is paper_statement); only advice that names no type,
   // or offers a choice of ways to avoid a fee, names no fee.
-  return classifyFeeText(name) == null || ADVICE_CHOICES.test(name);
+  if (classifyFeeText(name) == null) return true;
+  if (!ADVICE_CHOICES.test(name)) return false;
+  // v178 (review of #2973): choices that each file under the one type the whole name files under are that
+  // fee's names ("Use Non-Network ATM or Foreign ATM | $2.50", atm_non_network). Ways that name another type or
+  // none ("Use Online BillPay, HonorPay or Account-To-Account Transfers") are advice on avoiding a fee.
+  return !choicesFileAlike(name);
+}
+function choicesFileAlike(name: string): boolean {
+  const key = classifyFeeText(name);
+  const choices = name.replace(WAIVER_ADVICE_OPEN, "").split(ADVICE_CHOICE_SPLIT).map((choice) => choice.trim()).filter(Boolean);
+  return key != null && choices.length > 1 && choices.every((choice) => classifyFeeText(choice) === key);
 }
 /**
  * v177: a name composed from a waiver column's advice and the item after it ("Use Online BillPay, HonorPay or

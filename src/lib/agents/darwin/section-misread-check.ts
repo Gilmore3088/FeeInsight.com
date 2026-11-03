@@ -2,7 +2,9 @@ import type { sql } from "@/lib/data-store/connection";
 import { invalidatePublicReadCache } from "@/lib/data-store/fee-cache";
 import { inSavepoint } from "@/lib/agents/savepoint";
 import { secondLook } from "@/lib/agents/hamilton/second-look";
-import { classifyFeeText, waiverAdviceName, waiverAdvicePrefix, wireServiceSubscription } from "@/lib/agents/knox/rules";
+import { classifyFeeText, returnedItemServiceName, waiverAdviceName, waiverAdvicePrefix, wireServiceSubscription } from "@/lib/agents/knox/rules";
+import { accountlessMonthlyExcerpt, accountlessMonthlyOnPage } from "@/lib/agents/knox/accountless-monthly";
+import { excerptOf } from "@/lib/agents/hamilton/frequency-fill";
 import { frontMatterName } from "@/lib/agents/knox/specialists";
 import { iraSectionClosingFee } from "@/lib/custom-report/ira-section-fee";
 
@@ -27,9 +29,20 @@ type SqlTag = typeof sql;
  *   (`iraSectionClosingFee`, read on the text Knox read): Progressions CU's "INDIVIDUAL RETIREMENT ACCOUNT (IRA)
  *   FEES" / "Account Closure Fee $25.00" (94053).
  *
+ * Version 2 (Knox v178, re-read backlog dry run 9, Nov 3) adds two rules Knox v178 holds new reads by:
+ *
+ * - `returned_item_service`: an NSF fee whose name is a returned item's handling service, which no type holds
+ *   (`returnedItemServiceName`: special handling, a re-clear, a reroute, or a service fee priced per month, in a
+ *   name that does not say NSF): "Returned Item Special Handling Item" $10 (21594).
+ * - `accountless_monthly_sentence`: a monthly maintenance fee whose stored line is a reward bullet ("Waived $10
+ *   monthly maintenance fee"; live 117986 is one, kept because its page's table prints "$10 or $0 | Monthly Fee") or a "Your $12 monthly maintenance fee ..." sentence
+ *   (`accountlessMonthlyExcerpt`, on Knox's stored `excerpt="..."`), judged on the text Knox read as Knox judges
+ *   it (`accountlessMonthlyOnPage`): a row of the page printing the fee at that price, or an account heading right
+ *   above the sentence, keeps the fee.
+ *
  * Each verify step reads the live flat fees each rule could match (`sectionMisreadRowsSql`: the name pre-filters,
- * and for the IRA rule a text that names an IRA). An admin-corrected fee is never read; an IRA candidate whose
- * text is gone is not judged. An institution-scoped run reads that institution's only. Switched on
+ * and for the IRA rule a text that names an IRA). An admin-corrected fee is never read; an IRA or monthly sentence
+ * candidate whose text is gone is not judged. An institution-scoped run reads that institution's only. Switched on
  * (`SECTION_MISREAD_TAKEDOWN_LIVE`), a match goes through the shared 12-hour second look (check
  * `darwin.section_misread`) and is archived on its second failure: rolled back with its reason, its verified row
  * rejected with the reason's flag so publish does not bring it back, never deleted, and a
@@ -39,14 +52,16 @@ type SqlTag = typeof sql;
  * Dry run, prod read-only, 2026-11-03: see docs/project/findings/2026-11-03-knox-backlog-dry-run-8-misreads.md.
  */
 export const SECTION_MISREAD_CHECK = "darwin.section_misread";
-export const SECTION_MISREAD_CHECK_VERSION = 1;
+export const SECTION_MISREAD_CHECK_VERSION = 2;
 /** The switch: off, the step only reports; on, matches come down after the second look. */
 export const SECTION_MISREAD_TAKEDOWN_LIVE = false;
 export const WAIVER_COLUMN_NAME_REASON = "waiver_column_name";
 export const FRONT_MATTER_NAME_REASON = "front_matter_name";
 export const WIRE_SUBSCRIPTION_REASON = "wire_subscription";
 export const IRA_SECTION_CLOSING_REASON = "ira_section_closing";
-export const SECTION_MISREAD_REASONS = [WAIVER_COLUMN_NAME_REASON, FRONT_MATTER_NAME_REASON, WIRE_SUBSCRIPTION_REASON, IRA_SECTION_CLOSING_REASON] as const;
+export const RETURNED_ITEM_SERVICE_REASON = "returned_item_service";
+export const ACCOUNTLESS_MONTHLY_REASON = "accountless_monthly_sentence";
+export const SECTION_MISREAD_REASONS = [WAIVER_COLUMN_NAME_REASON, FRONT_MATTER_NAME_REASON, WIRE_SUBSCRIPTION_REASON, IRA_SECTION_CLOSING_REASON, RETURNED_ITEM_SERVICE_REASON, ACCOUNTLESS_MONTHLY_REASON] as const;
 export type SectionMisreadKind = (typeof SECTION_MISREAD_REASONS)[number];
 export const SECTION_MISREAD_LIMIT = 5_000;
 export const SECTION_MISREAD_SAMPLES = 20;
@@ -58,6 +73,8 @@ export const WAIVER_ADVICE_NAME_SQL = String.raw`^\W*(use|enroll\s+in|sign\s+up\
 export const FRONT_MATTER_NAME_SQL = String.raw`^\s*(meta-[a-z0-9_.:-]*|canonical)\s*:`;
 export const WIRE_SUBSCRIPTION_NAME_SQL = String.raw`(module|package|subscription)`;
 export const IRA_TEXT_SQL = String.raw`(\mIRAs?\M|individual\s+retirement|retirement\s+(account|plan|savings))`;
+export const RETURNED_ITEM_SERVICE_NAME_SQL = String.raw`(special\s+handling|re-?clear|re-?rout|service\s+(fee|charge))`;
+export const ACCOUNTLESS_MONTHLY_LINE_SQL = String.raw`excerpt="?\W*(waived|no|free|your)\s+\$`;
 
 export interface SectionMisreadRow {
   fee_published_id: number | string;
@@ -68,6 +85,10 @@ export interface SectionMisreadRow {
   canonical_fee_key: string | null;
   /** The artifact Knox's note names: the text Knox read. */
   artifact_id: number | string | null;
+  /** The live fee's frequency (version 2's returned item service rule). */
+  frequency?: string | null;
+  /** Knox's note, with the stored `excerpt="..."` (version 2's monthly sentence rule). */
+  source_line?: string | null;
 }
 
 export interface SectionMisreadMatch {
@@ -83,7 +104,7 @@ export interface SectionMisreadMatch {
 
 export interface SectionMisreadFindings {
   checked: number;
-  /** IRA candidates whose text is gone: not judged. */
+  /** IRA and monthly sentence candidates whose text is gone: not judged. */
   noText: number;
   matched: number;
   byKind: Record<SectionMisreadKind, number>;
@@ -107,7 +128,7 @@ function num(value: number | string | null | undefined): number | null {
 }
 
 function emptyKinds(): Record<SectionMisreadKind, number> {
-  return { waiver_column_name: 0, front_matter_name: 0, wire_subscription: 0, ira_section_closing: 0 };
+  return { waiver_column_name: 0, front_matter_name: 0, wire_subscription: 0, ira_section_closing: 0, returned_item_service: 0, accountless_monthly_sentence: 0 };
 }
 
 /** The name's last words, two or more, file under `key` on their own: the item after the advice is the live fee's. */
@@ -121,7 +142,7 @@ function tailFilesUnder(name: string, key: string | null): boolean {
 }
 
 /** Pure: the rule a live fee's name and key match, without its text. */
-export function nameMisreadKind(name: string, key: string | null): { kind: SectionMisreadKind; evidence: string } | null {
+export function nameMisreadKind(name: string, key: string | null, frequency?: string | null): { kind: SectionMisreadKind; evidence: string } | null {
   if (frontMatterName(name)) return { kind: FRONT_MATTER_NAME_REASON, evidence: name.slice(0, 60) };
   // A name composed from the advice and the next column's item ("...: Verification of Deposits") is judged by
   // the item's own words; any other advice name by its whole words. A name that still files under the live
@@ -136,6 +157,7 @@ export function nameMisreadKind(name: string, key: string | null): { kind: Secti
     if (own !== key) return { kind: WAIVER_COLUMN_NAME_REASON, evidence: `${name.slice(0, 60)} is ${own ?? "no type"}, not ${key ?? "none"}` };
   }
   if (key?.startsWith("wire_") && wireServiceSubscription(name)) return { kind: WIRE_SUBSCRIPTION_REASON, evidence: name.slice(0, 80) };
+  if (key === "nsf" && returnedItemServiceName(name, frequency)) return { kind: RETURNED_ITEM_SERVICE_REASON, evidence: name.slice(0, 80) };
   return null;
 }
 
@@ -162,9 +184,25 @@ export function findSectionMisreads(
       amount,
       canonicalFeeKey: row.canonical_fee_key,
     };
-    const named = nameMisreadKind(name, row.canonical_fee_key);
+    const named = nameMisreadKind(name, row.canonical_fee_key, row.frequency);
     if (named) {
       matches.push({ ...base, kind: named.kind, reason: `${named.kind}: "${named.evidence}"` });
+      continue;
+    }
+    if (row.canonical_fee_key === "monthly_maintenance") {
+      const line = excerptOf(row.source_line);
+      if (!accountlessMonthlyExcerpt(line)) continue;
+      // Judged on the text Knox read, as Knox judges it: a row of the page printing the fee at that price, or an
+      // account heading right above the sentence, keeps the fee.
+      const artifactId = num(row.artifact_id);
+      const text = artifactId == null ? undefined : texts.get(artifactId);
+      if (!text) {
+        noText += 1;
+        continue;
+      }
+      if (accountlessMonthlyOnPage(text, { canonicalHint: "monthly_maintenance", excerpt: line ?? "", amount })?.hold) {
+        matches.push({ ...base, kind: ACCOUNTLESS_MONTHLY_REASON, reason: `${ACCOUNTLESS_MONTHLY_REASON}: "${(line ?? "").slice(0, 80)}"` });
+      }
       continue;
     }
     if (row.canonical_fee_key !== "early_closure") continue;
@@ -201,7 +239,7 @@ export function sectionMisreadRowsSql(db: SqlTag, options: { institutionId?: num
   return db<SectionMisreadRow[]>`
     WITH live AS (
       SELECT fp.fee_published_id, fp.lineage_ref AS fee_verified_id, fp.institution_id, fp.fee_name, fp.amount,
-             fp.canonical_fee_key,
+             fp.canonical_fee_key, fp.frequency, fr.extraction_note AS source_line,
              (substring(fr.extraction_note FROM 'artifact #([0-9]+)'))::bigint AS artifact_id
         FROM published_fee_records fp
         JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
@@ -219,6 +257,8 @@ export function sectionMisreadRowsSql(db: SqlTag, options: { institutionId?: num
        WHERE live.fee_name ~* ${WAIVER_ADVICE_NAME_SQL}
           OR live.fee_name ~* ${FRONT_MATTER_NAME_SQL}
           OR (live.canonical_fee_key LIKE 'wire\_%' AND live.fee_name ~* ${WIRE_SUBSCRIPTION_NAME_SQL})
+          OR (live.canonical_fee_key = 'nsf' AND live.fee_name ~* ${RETURNED_ITEM_SERVICE_NAME_SQL})
+          OR (live.canonical_fee_key = 'monthly_maintenance' AND live.source_line ~* ${ACCOUNTLESS_MONTHLY_LINE_SQL})
     ),
     closing AS (
       SELECT live.* FROM live
@@ -265,7 +305,9 @@ export async function recheckSectionMisreads(
   try {
     rows = await inSavepoint(db, (scope) => sectionMisreadRowsSql(scope, { institutionId: options.institutionId, limit: options.limit }));
     const artifactIds = rows
-      .filter((row) => row.canonical_fee_key === "early_closure" && !nameMisreadKind((row.fee_name ?? "").trim(), row.canonical_fee_key))
+      .filter((row) => !nameMisreadKind((row.fee_name ?? "").trim(), row.canonical_fee_key, row.frequency) &&
+        (row.canonical_fee_key === "early_closure" ||
+          (row.canonical_fee_key === "monthly_maintenance" && accountlessMonthlyExcerpt(excerptOf(row.source_line)) != null)))
       .map((row) => num(row.artifact_id))
       .filter((id): id is number => id != null);
     texts = await inSavepoint(db, (scope) => sectionMisreadTexts(scope, artifactIds));
@@ -294,7 +336,7 @@ export async function recheckSectionMisreads(
         INSERT INTO agent_run_events (agent_run_id, step_id, event_type, status, message, detail)
         VALUES (
           ${options.runId}, ${options.stepId ?? null}, ${SECTION_MISREAD_CHECK}, 'completed',
-          ${`Read live fees named or filed by another part of the page: ${result.matched} of ${result.checked} live fee(s) at ${result.institutions} institution(s) (${SECTION_MISREAD_REASONS.map((kind) => `${result.byKind[kind]} ${kind}`).join(", ")}); ${live ? `${result.flagged} flagged, ${result.takenDown.length} archived` : "switch off, would take down, nothing written"}`},
+          ${`Read live fees named or filed by another part of the page or a held read's words: ${result.matched} of ${result.checked} live fee(s) at ${result.institutions} institution(s) (${SECTION_MISREAD_REASONS.map((kind) => `${result.byKind[kind]} ${kind}`).join(", ")}); ${live ? `${result.flagged} flagged, ${result.takenDown.length} archived` : "switch off, would take down, nothing written"}`},
           ${JSON.stringify(sectionMisreadDetail(result))}::jsonb
         )
       `);

@@ -27,7 +27,8 @@ import { HEADING_SENTENCE_END, loanSectionRow } from "./loan-section-fee";
  * (`opensOtherSection`: a title ending in fees, charges or services, or naming an account kind, "Checking
  * Accounts | Early Account Closure | $25.00", "Money Market | ...", "Share Certificates | ...", "Other Fees (All
  * Accounts) | Stop Payment | $25.00", followed by a label cell), and on the first general service row
- * (`GENERAL_ROW_WORDS`: a wire, copy, money order, stop payment, check, card or statement row), so a closing
+ * (`GENERAL_ROW_WORDS`: a wire, copy, money order, stop payment, check, card or statement row; not the IRA's own
+ * distribution, rollover, contribution or transfer-out row, nor a row naming an IRA, `IRA_OWN_ROW_WORDS`), so a closing
  * after general rows with no heading between is not the IRA's. Under a title line of two section titles ("IRA
  * FEES | CHECKING ACCOUNT FEES"), only the IRA's own column of each row is the IRA's: a row is split into its
  * name-and-price groups and only the group in the IRA's column counts; a row with another number of groups
@@ -56,6 +57,14 @@ const ACCOUNT_KIND_RE = new RegExp(ACCOUNT_KIND_WORDS);
 /** A general service row ends the IRA's block of rows ("Wire Transfer - Outgoing | $25.00", "Copies | $2.00"). */
 export const GENERAL_ROW_WORDS = " (?:wires?|copy|copies|photocop[a-z]*|money orders?|stop payments?|cashier s|cashiers|official checks?|checks?|check cashing|overdrafts?|nsf|non sufficient|insufficient|returned|atm|debit|cards?|research|garnishments?|levy|levies|legal|dormant|inactive|inactivity|notary|safe deposit|coin|fax|statements?|bill pay|ach|courtesy pay|gift|travelers?|chargebacks?) ";
 const GENERAL_ROW_RE = new RegExp(GENERAL_ROW_WORDS);
+/**
+ * Knox v178 (review of #2973): the IRA's own rows that name a general service never end its block: a
+ * distribution, rollover or contribution ("Distribution by check | $5.00", "Excess contribution removal"), a
+ * transfer out to another institution, trustee or custodian ("Transfer to another institution by wire |
+ * $25.00"), or a row whose first cell names an IRA ("IRA Statement Copy | $2.00").
+ */
+export const IRA_OWN_ROW_WORDS = " (?:distributions?|rollovers?|roll overs?|contributions?|trustees?|custodians?|transfers? (?:out|to (?:an?other|other|a new|a different) (?:financial )?(?:institution|trustee|custodian|bank|credit union|plan)))(?: |$)";
+const IRA_OWN_ROW_RE = new RegExp(IRA_OWN_ROW_WORDS);
 const ROW_PRICE_RE = new RegExp(SECTION_ROW_PRICE);
 const HEADER_ROW_RE = new RegExp(SECTION_HEADER_ROW);
 const PRICE_WORD_RE = /^\s*(?:no charge|free|none|varies|n\/a|not applicable)\b/i;
@@ -166,7 +175,8 @@ export function iraSectionRowParts(text: string | null | undefined): Map<number,
       if (groups.length !== columns.columns) continue;
       part = groups[columns.column];
     }
-    if (GENERAL_ROW_RE.test(sectionWords(part.split("|")[0]))) {
+    const rowWords = sectionWords(part.split("|")[0]);
+    if (GENERAL_ROW_RE.test(rowWords) && !IRA_WORDS_RE.test(rowWords) && !IRA_OWN_ROW_RE.test(rowWords)) {
       inIra = false;
       continue;
     }
