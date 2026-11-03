@@ -10,6 +10,8 @@
  *   ROSETTA_READ_VERSION,
  * - every free-OCR text with no OCR read of its bytes at ROSETTA_OCR_VERSION, and
  * - every JavaScript-fallback text with no fallback read of its bytes at ROSETTA_JS_FALLBACK_VERSION,
+ * - above its base, every HTML-read text with no read of its bytes recording HTML_READ_VERSION
+ *   (#1092; v2 is HTML_ROW_PAIRING_LIVE), so an HTML change replays no PDF,
  * on the bank's current copy (not superseded, not a duplicate), including a copy whose link has a
  * newer download, since its fees are still live. The paid pass (read.paid_transcribe) is left out:
  * re-reading it would be a paid provider call.
@@ -38,7 +40,15 @@
  */
 import type { sql } from "@/lib/data-store/connection";
 import { DOCX_STRATEGY } from "./docx";
-import { PDF_LAYOUT_REPLAY_VERSION, ROSETTA_JS_FALLBACK_VERSION, ROSETTA_OCR_VERSION, ROSETTA_READ_VERSION } from "./reader-versions";
+import {
+  HTML_READ_BASE_VERSION,
+  HTML_READ_READERS,
+  HTML_READ_VERSION,
+  PDF_LAYOUT_REPLAY_VERSION,
+  ROSETTA_JS_FALLBACK_VERSION,
+  ROSETTA_OCR_VERSION,
+  ROSETTA_READ_VERSION,
+} from "./reader-versions";
 
 type SqlTag = typeof sql;
 
@@ -72,15 +82,29 @@ export const READER_REPLAY_PDF_LAYOUT = {
 } as const;
 
 /**
+ * HTML reader version (#1092): above HTML_READ_BASE_VERSION, a current completed text an HTML
+ * reader wrote (`read.html_dom`, `read.js_fallback`) with no read attempt on its bytes recording
+ * `detail.html_read` at the version is replayed once. A legacy text (no reader) is not: an HTML
+ * reader did not write it, and it is due under ROSETTA_READ_VERSION until a current-version read.
+ */
+export const READER_REPLAY_HTML = {
+  readers: HTML_READ_READERS,
+  version: HTML_READ_VERSION,
+  receiptKey: "html_read_version",
+} as const;
+
+/**
  * SQL: true when the stored text `alias` came from an older version of its reader and has not
  * been replayed at the current version. `notSettled` is the read step's "no settled read of these
- * bytes at the current primary reader version" test for the same alias.
+ * bytes at the current primary reader version" test for the same alias. At HTML_READ_BASE_VERSION
+ * the HTML branch is left out, so the SQL is the same text as before the HTML version existed.
  */
 export function readerReplayDueSql(
   alias: string,
   params: { readers: string; version: string; event: string },
   notSettled: string,
   pdfCellReplay: boolean = PDF_CELL_REPLAY_LIVE,
+  htmlReadVersion: number = HTML_READ_VERSION,
 ): string {
   const notReplayed = (key: string, version: string) => `NOT EXISTS (
                   SELECT 1 FROM agent_run_events replayed
@@ -118,6 +142,21 @@ export function readerReplayDueSql(
                   )
                   AND ${notReplayed(layout.receiptKey, String(Number(layout.version)))}
                 )` : "";
+  const html = Number(htmlReadVersion);
+  const htmlReaders = READER_REPLAY_HTML.readers.map((reader) => `'${reader}'`).join(", ");
+  // Any read of these bytes that recorded the HTML version settles it; none recorded means the base.
+  const htmlReplay = html > HTML_READ_BASE_VERSION ? `
+                OR (
+                  ${alias}.reader IN (${htmlReaders})
+                  AND NOT EXISTS (
+                    SELECT 1 FROM pipeline_attempts html_read
+                     WHERE html_read.stage = 'read'
+                       AND html_read.institution_id = ${alias}.institution_id
+                       AND html_read.input_fingerprint = ${alias}.source_hash
+                       AND COALESCE((html_read.detail->>'html_read')::int, ${HTML_READ_BASE_VERSION}) >= ${html}
+                  )
+                  AND ${notReplayed(READER_REPLAY_HTML.receiptKey, String(html))}
+                )` : "";
   return `(
                 ${alias}.status = 'completed'
                 AND ((
@@ -125,7 +164,7 @@ export function readerReplayDueSql(
                   AND ${notSettled}
                   AND ${notReplayed("reader_version", params.version)}
                 )
-                OR ${ownReaders}${layoutReplay})
+                OR ${ownReaders}${layoutReplay}${htmlReplay})
               )`;
 }
 
@@ -169,6 +208,9 @@ export async function recordReaderReplay(
     js_fallback_version: ROSETTA_JS_FALLBACK_VERSION,
     // Only a pdf_layout text's replay is a layout replay; OCR and fallback receipts carry none.
     pdf_layout_version: row.reader_replay_reader === READER_REPLAY_PDF_LAYOUT.reader ? PDF_LAYOUT_REPLAY_VERSION : undefined,
+    // Only an HTML reader's text is an HTML replay.
+    html_read_version: row.reader_replay_reader != null && READER_REPLAY_HTML.readers.includes(row.reader_replay_reader)
+      ? HTML_READ_VERSION : undefined,
     from_reader: row.reader_replay_reader ?? null,
     from_reader_version: row.reader_replay_from_version == null ? null : Number(row.reader_replay_from_version),
     institution_id: Number(row.institution_id),

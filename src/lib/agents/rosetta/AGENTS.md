@@ -65,8 +65,9 @@ Rosetta owns source text normalization.
   documents' bytes it publishes 16 more keys and loses none, with one wrong publication (River
   City's online banking "Monthly Maintenance Fee | No charge" read as the account's $0), so it
   waits for Knox to hold a $0 maintenance row under an online banking, mobile banking or bill pay
-  heading; flipping it re-reads nothing by itself (HTML has no reader version of its own yet; a
-  `ROSETTA_READ_VERSION` bump would replay every PDF too). PDFs rebuild lines from item positions
+  heading. The PR that flips it bumps `HTML_READ_VERSION` from 1 to 2 in the same change (a test
+  fails otherwise), so the flip replays current HTML-read copies once and no PDF (reader replay,
+  below). PDFs rebuild lines from item positions
   (`read.pdf_layout`, `pdf-layout.ts`), so a fee name and its amount column share a
   line. A page set in columns of running prose (a deposit agreement in three columns) is
   read column by column instead (layout version 2, `PDF_LAYOUT_VERSION`); read across, a
@@ -182,7 +183,12 @@ Rosetta owns source text normalization.
   `read.pdf_layout` text holding a cell break (" | ") with no layout read of its bytes at
   `PDF_LAYOUT_REPLAY_VERSION` (6) is due too (receipt key `pdf_layout_version`): 3,226 texts with
   30,735 live fees on Nov 2. It turns on once the layout recheck's v6 receipts lose no supported
-  live fee.
+  live fee. HTML has its own version, `HTML_READ_VERSION` (#1092): every read whose reader is
+  `read.html_dom` or `read.js_fallback` records it as `detail.html_read` (none recorded counts as
+  v1). Above v1, a current completed text either HTML reader wrote is due once until a read of its
+  bytes records the version or a receipt carries it (`html_read_version`); no other reader's text,
+  and no legacy text (no reader; already due under `ROSETTA_READ_VERSION`), enters. At v1 the
+  selection SQL is the same text as before the version existed. v2 is `HTML_ROW_PAIRING_LIVE`.
 - Scoped layout 5 repairs (#2219) keep the global reader 3 and prose-layout 4 replay floors
   settled (`PDF_PROSE_REREAD_VERSION`). `PDF_STACKED_REPAIR_VERSION` v1 makes only current
   completed PDF-layout texts with at least three crossed bullet-price cells and three
@@ -528,6 +534,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `BATCH_REVIEW_VERSION` | — | v1 | `rosetta/batch-review.ts` |
 | `ROSETTA_JS_FALLBACK_VERSION` | — | v3 | `rosetta/reader-versions.ts` |
 | `ROSETTA_OCR_VERSION` | — | v3 | `rosetta/reader-versions.ts` |
+| `HTML_READ_VERSION` | `read.html_dom`, `read.js_fallback` reader replay (`detail.html_read`); v2 with `HTML_ROW_PAIRING_LIVE` | v1 | `rosetta/reader-versions.ts` |
 | `ROSETTA_PAID_READ_VERSION` | — | v2 | `rosetta/paid-read.ts` |
 | `PDF_LAYOUT_VERSION` | — | v6 | `rosetta/reader-versions.ts` |
 | `PDF_LAYOUT_REPLAY_VERSION` | `read.pdf_layout` reader replay | v6 | `rosetta/reader-versions.ts` |

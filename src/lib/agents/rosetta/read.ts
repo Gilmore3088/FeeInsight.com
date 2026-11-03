@@ -87,7 +87,7 @@ import { inSavepoint } from "@/lib/agents/savepoint";
 import { extractPdfDocumentText as extractPdfText, type PdfTextExtraction } from "./pdf-document-text";
 import { losslessStackedRecovery, textSha256, type StackedGeometryReceipt } from "./pdf-repair-survival";
 import type { PdfReaderAgreement } from "./pdf-reader-agreement";
-import { GLYPH_REPAIR_VERSION, PDF_PROSE_REREAD_VERSION, PDF_STACKED_REPAIR_VERSION } from "./reader-versions";
+import { GLYPH_REPAIR_VERSION, HTML_READ_READERS, HTML_READ_VERSION, PDF_PROSE_REREAD_VERSION, PDF_STACKED_REPAIR_VERSION } from "./reader-versions";
 import {
   decodeTextBytes, DROPPED_LIGATURE_DUE_PATTERN, DROPPED_LIGATURE_READER, expandUnicodeLigatures, GLYPH_REPAIR_DUE_PATTERN,
   GLYPH_REPAIR_STRATEGY,
@@ -1194,6 +1194,8 @@ export function rosettaReadCandidatesQuery(
   currentCopy = false,
   stackedRepair: "include" | "only" | "exclude" = "include",
   readerReplay: "include" | "only" | "exclude" = "exclude",
+  // The HTML reader version the replay lane compares (reader-replay.ts); tests pass a bump.
+  htmlReadVersion: number = HTML_READ_VERSION,
 ): { query: string; params: Array<number | string | string[]> } {
   const params: Array<number | string | string[]> = [limit];
   const filters: string[] = [];
@@ -1337,11 +1339,14 @@ export function rosettaReadCandidatesQuery(
       const currentText = (alias: string) => `${alias}.source_document_id = cr.id
                 AND ${alias}.source_hash IS NOT DISTINCT FROM cr.content_hash
                 AND cr.superseded_by_id IS NULL AND cr.duplicate_of_id IS NULL`;
-      readerReplayText = `(${currentText("adt")} AND ${readerReplayDueSql("adt", replayParams, notSettledByCurrentReader)})`;
+      // The PDF cell replay keeps its own default (PDF_CELL_REPLAY_LIVE).
+      const replayDue = (alias: string, notSettled: string) =>
+        readerReplayDueSql(alias, replayParams, notSettled, undefined, htmlReadVersion);
+      readerReplayText = `(${currentText("adt")} AND ${replayDue("adt", notSettledByCurrentReader)})`;
       readerReplayDue = `EXISTS (
       SELECT 1 FROM agent_source_texts replay_text
        WHERE ${currentText("replay_text")}
-         AND ${readerReplayDueSql("replay_text", replayParams, notSettledBy("replay_text"))}
+         AND ${replayDue("replay_text", notSettledBy("replay_text"))}
     )`;
       const replayTextColumn = (column: string) => `(SELECT replay_text.${column} FROM agent_source_texts replay_text
                 WHERE ${currentText("replay_text")} AND replay_text.status = 'completed' LIMIT 1)`;
@@ -2932,6 +2937,8 @@ async function settleReadInScope(
         witness_retention: result.witnessRetention,
         pdf_layout: result.reader === PRIMARY_READERS.pdf ? PDF_LAYOUT_VERSION : undefined,
         glyph_repair: result.reader != null && GLYPH_REPAIR_READERS.includes(result.reader) ? GLYPH_REPAIR_VERSION : undefined,
+        // Settles an HTML-read text for reader replay at this HTML version (reader-replay.ts).
+        html_read: result.reader != null && HTML_READ_READERS.includes(result.reader) ? HTML_READ_VERSION : undefined,
         pdf_stacked_requested: row.pdf_stacked_repair_due ? PDF_STACKED_REPAIR_VERSION : undefined,
         pdf_stacked: repairProof && !keepEarlierText ? PDF_STACKED_REPAIR_VERSION : undefined,
         persisted_text_id: repairProof && !keepEarlierText ? repairProof.artifactId : undefined,
