@@ -27,6 +27,13 @@ function reasons(frozen: SideScore, reread: SideScore): string[] {
   ];
 }
 
+function archiveTried(rejected: SourceReplaySummary["rejected"][number]): string {
+  const tried = rejected.archiveTried ?? [];
+  if (tried.length === 0) return "";
+  const scores = tried.map((c) => `${c.timestamp} (token ${c.similarity.tokens}, number ${c.similarity.numbers})`);
+  return `; Internet Archive captures also fail: ${scores.join(", ")}`;
+}
+
 export function renderSourceReplay(summary: SourceReplaySummary): string {
   const { frozen, reread } = summary.total;
   const changed = summary.documents.filter((d) => d.textChanged).length;
@@ -62,7 +69,7 @@ export function renderSourceReplay(summary: SourceReplaySummary): string {
     "## Not reproduced, and copies rejected",
     "",
     ...summary.rejected.map(
-      (r) => `- ${r.caseKey} (${r.institution})${summary.documents.some((d) => d.caseKey === r.caseKey) ? " [another copy is accepted]" : ""}: ${r.reason}${r.similarity ? `; token ${r.similarity.tokens}, number ${r.similarity.numbers}, dollars ${r.similarity.dollarsEqual ? "equal" : "differ"}` : ""}.`,
+      (r) => `- ${r.caseKey} (${r.institution})${summary.documents.some((d) => d.caseKey === r.caseKey) ? " [another copy is accepted]" : ""}: ${r.reason}${r.similarity ? `; token ${r.similarity.tokens}, number ${r.similarity.numbers}, dollars ${r.similarity.dollarsEqual ? "equal" : "differ"}` : ""}${archiveTried(r)}.`,
     ),
     ...summary.notFetched.map((r) => `- ${r.caseKey} (${r.institution}): ${r.reason}.`),
     "",

@@ -15,6 +15,8 @@ answer-key cases. Of the other 17:
   (Georgia United; same form number, but today's PDF reading joins words, token similarity 0.8181),
   state:11477 (4Front; a different page now, 0.7463) and state:9308 (St. Cloud; its rates changed,
   number similarity 0.9164).
+- Later: an Internet Archive capture recovered state:11477; state:9308 and state:60 stay out
+  (`findings/2026-11-03-archived-source-bytes.md`).
 
 **Where the links came from:** 37 links are in the answer-key seed migration
 (`20270110000018_answer_key_seed.sql`), whose notes name the stored text each key was made from. For
