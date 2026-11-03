@@ -2,7 +2,7 @@ import type { sql } from "@/lib/data-store/connection";
 import { invalidatePublicReadCache } from "@/lib/data-store/fee-cache";
 import { inSavepoint } from "@/lib/agents/savepoint";
 import { secondLook } from "@/lib/agents/hamilton/second-look";
-import { classifyFeeText, returnedItemServiceName, waiverAdviceName, waiverAdvicePrefix, wireServiceSubscription } from "@/lib/agents/knox/rules";
+import { classifyFeeText, returnedItemServiceName, waiverAdviceName, waiverAdvicePrefix, wireServiceSubscription, zeroPrintedForRead, zeroPrintedOnLine } from "@/lib/agents/knox/rules";
 import { accountlessMonthlyExcerpt, accountlessMonthlyOnPage } from "@/lib/agents/knox/accountless-monthly";
 import { excerptOf } from "@/lib/agents/hamilton/frequency-fill";
 import { frontMatterName } from "@/lib/agents/knox/specialists";
@@ -40,6 +40,17 @@ type SqlTag = typeof sql;
  *   it (`accountlessMonthlyOnPage`): a row of the page printing the fee at that price, or an account heading right
  *   above the sentence, keeps the fee.
  *
+ * Version 3 (Knox v179, re-read backlog dry run 10, Nov 3) adds a rule on Knox's stored line (`excerpt="..."`),
+ * judged as Knox v179 judges a new read:
+ *
+ * - `zero_not_printed`: a live $0 whose own line prints no free price ("$0", "None", "Free", "No charge", "no fee",
+ *   a "Waived" cell) or offers one against a price ("$0 or $4.95", `zeroPrintedOnLine`): North State Bank's
+ *   "Monthly maintenance fee waived when minimum account balance requirement is met." A stored line that prints no
+ *   free price is judged on the text Knox read, as Knox judges it (`zeroPrintedForRead`): a bare "$0" cell right
+ *   above it on a stacked page keeps the fee ("$0" / "per transfer/advance ..."; live 36427 and
+ *   36428). A stored line that is cut (it ends in a dot leader, or at the 180-character cut) or missing, or whose
+ *   text is gone, is not judged: the price may sit past the cut.
+ *
  * Each verify step reads the live flat fees each rule could match (`sectionMisreadRowsSql`: the name pre-filters,
  * and for the IRA rule a text that names an IRA). An admin-corrected fee is never read; an IRA or monthly sentence
  * candidate whose text is gone is not judged. An institution-scoped run reads that institution's only. Switched on
@@ -52,7 +63,7 @@ type SqlTag = typeof sql;
  * Dry run, prod read-only, 2026-11-03: see docs/project/findings/2026-11-03-knox-backlog-dry-run-8-misreads.md.
  */
 export const SECTION_MISREAD_CHECK = "darwin.section_misread";
-export const SECTION_MISREAD_CHECK_VERSION = 2;
+export const SECTION_MISREAD_CHECK_VERSION = 3;
 /** The switch: off, the step only reports; on, matches come down after the second look. */
 export const SECTION_MISREAD_TAKEDOWN_LIVE = false;
 export const WAIVER_COLUMN_NAME_REASON = "waiver_column_name";
@@ -61,9 +72,10 @@ export const WIRE_SUBSCRIPTION_REASON = "wire_subscription";
 export const IRA_SECTION_CLOSING_REASON = "ira_section_closing";
 export const RETURNED_ITEM_SERVICE_REASON = "returned_item_service";
 export const ACCOUNTLESS_MONTHLY_REASON = "accountless_monthly_sentence";
-export const SECTION_MISREAD_REASONS = [WAIVER_COLUMN_NAME_REASON, FRONT_MATTER_NAME_REASON, WIRE_SUBSCRIPTION_REASON, IRA_SECTION_CLOSING_REASON, RETURNED_ITEM_SERVICE_REASON, ACCOUNTLESS_MONTHLY_REASON] as const;
+export const ZERO_NOT_PRINTED_REASON = "zero_not_printed";
+export const SECTION_MISREAD_REASONS = [WAIVER_COLUMN_NAME_REASON, FRONT_MATTER_NAME_REASON, WIRE_SUBSCRIPTION_REASON, IRA_SECTION_CLOSING_REASON, RETURNED_ITEM_SERVICE_REASON, ACCOUNTLESS_MONTHLY_REASON, ZERO_NOT_PRINTED_REASON] as const;
 export type SectionMisreadKind = (typeof SECTION_MISREAD_REASONS)[number];
-export const SECTION_MISREAD_LIMIT = 5_000;
+export const SECTION_MISREAD_LIMIT = 10_000;
 export const SECTION_MISREAD_SAMPLES = 20;
 export const SECTION_MISREAD_MAX_ROWS = 10_000;
 const TEXT_CHUNK = 50;
@@ -75,6 +87,11 @@ export const WIRE_SUBSCRIPTION_NAME_SQL = String.raw`(module|package|subscriptio
 export const IRA_TEXT_SQL = String.raw`(\mIRAs?\M|individual\s+retirement|retirement\s+(account|plan|savings))`;
 export const RETURNED_ITEM_SERVICE_NAME_SQL = String.raw`(special\s+handling|re-?clear|re-?rout|service\s+(fee|charge))`;
 export const ACCOUNTLESS_MONTHLY_LINE_SQL = String.raw`excerpt="?\W*(waived|no|free|your)\s+\$`;
+/** Version 3: a live $0 with a stored line at all. */
+export const STORED_LINE_SQL = String.raw`excerpt=`;
+/** Knox stores at most 180 characters of a held read's line, and a cut line can end in its dot leader. */
+const STORED_LINE_CUT = 180;
+const DOT_LEADER_END = /(?:(?:\.\s?){2,}|…)\s*$/;
 
 export interface SectionMisreadRow {
   fee_published_id: number | string;
@@ -104,8 +121,10 @@ export interface SectionMisreadMatch {
 
 export interface SectionMisreadFindings {
   checked: number;
-  /** IRA and monthly sentence candidates whose text is gone: not judged. */
+  /** IRA, monthly sentence and version 3 $0 candidates whose text is gone: not judged. */
   noText: number;
+  /** Version 3: live $0 candidates whose stored line is missing or cut: not judged. */
+  cut: number;
   matched: number;
   byKind: Record<SectionMisreadKind, number>;
   institutions: number;
@@ -128,7 +147,26 @@ function num(value: number | string | null | undefined): number | null {
 }
 
 function emptyKinds(): Record<SectionMisreadKind, number> {
-  return { waiver_column_name: 0, front_matter_name: 0, wire_subscription: 0, ira_section_closing: 0, returned_item_service: 0, accountless_monthly_sentence: 0 };
+  return { waiver_column_name: 0, front_matter_name: 0, wire_subscription: 0, ira_section_closing: 0, returned_item_service: 0, accountless_monthly_sentence: 0, zero_not_printed: 0 };
+}
+
+/** Version 3: a live $0 whose stored line prints no free price, judged on its text. */
+function zeroLineCandidate(row: SectionMisreadRow): boolean {
+  const amount = num(row.amount);
+  if (amount !== 0) return false;
+  const stored = storedLineMisreadKind(row.source_line, amount);
+  return stored != null && stored !== "cut" && stored.kind === ZERO_NOT_PRINTED_REASON;
+}
+
+/**
+ * Pure, version 3: the rule a live $0's stored line matches, or "cut" when a live $0's line is missing or cut
+ * and so not judged.
+ */
+export function storedLineMisreadKind(sourceLine: string | null | undefined, amount: number): { kind: SectionMisreadKind; evidence: string } | "cut" | null {
+  const line = excerptOf(sourceLine);
+  if (amount !== 0) return null;
+  if (!line || line.length >= STORED_LINE_CUT || DOT_LEADER_END.test(line)) return "cut";
+  return zeroPrintedOnLine(line) ? null : { kind: ZERO_NOT_PRINTED_REASON, evidence: line.slice(0, 80) };
 }
 
 /** The name's last words, two or more, file under `key` on their own: the item after the advice is the live fee's. */
@@ -169,6 +207,7 @@ export function findSectionMisreads(
   const matches: SectionMisreadMatch[] = [];
   const seen = new Set<number>();
   let noText = 0;
+  let cut = 0;
   for (const row of [...rows].sort((a, b) => Number(a.fee_published_id) - Number(b.fee_published_id))) {
     const feeId = Number(row.fee_published_id);
     if (seen.has(feeId)) continue;
@@ -189,6 +228,21 @@ export function findSectionMisreads(
       matches.push({ ...base, kind: named.kind, reason: `${named.kind}: "${named.evidence}"` });
       continue;
     }
+    const stored = storedLineMisreadKind(row.source_line, amount);
+    if (stored && stored !== "cut") {
+      if (stored.kind === ZERO_NOT_PRINTED_REASON) {
+        const artifactId = num(row.artifact_id);
+        const text = artifactId == null ? undefined : texts.get(artifactId);
+        if (!text) {
+          noText += 1;
+          continue;
+        }
+        if (zeroPrintedForRead(excerptOf(row.source_line), text)) continue;
+      }
+      matches.push({ ...base, kind: stored.kind, reason: `${stored.kind}: "${stored.evidence}"` });
+      continue;
+    }
+    if (stored === "cut") cut += 1;
     if (row.canonical_fee_key === "monthly_maintenance") {
       const line = excerptOf(row.source_line);
       if (!accountlessMonthlyExcerpt(line)) continue;
@@ -220,6 +274,7 @@ export function findSectionMisreads(
   return {
     checked: seen.size,
     noText,
+    cut,
     matched: matches.length,
     byKind,
     institutions: new Set(matches.map((fee) => fee.institutionId)).size,
@@ -259,6 +314,7 @@ export function sectionMisreadRowsSql(db: SqlTag, options: { institutionId?: num
           OR (live.canonical_fee_key LIKE 'wire\_%' AND live.fee_name ~* ${WIRE_SUBSCRIPTION_NAME_SQL})
           OR (live.canonical_fee_key = 'nsf' AND live.fee_name ~* ${RETURNED_ITEM_SERVICE_NAME_SQL})
           OR (live.canonical_fee_key = 'monthly_maintenance' AND live.source_line ~* ${ACCOUNTLESS_MONTHLY_LINE_SQL})
+          OR (live.amount = 0 AND live.source_line ~ ${STORED_LINE_SQL})
     ),
     closing AS (
       SELECT live.* FROM live
@@ -289,7 +345,7 @@ export async function sectionMisreadTexts(db: SqlTag, artifactIds: readonly numb
 }
 
 function emptyResult(live: boolean, dryRun: boolean, scoped: boolean): SectionMisreadResult {
-  return { live, dryRun, scoped, checked: 0, noText: 0, matched: 0, byKind: emptyKinds(), institutions: 0, samples: [], flagged: 0, waiting: 0, takenDown: [] };
+  return { live, dryRun, scoped, checked: 0, noText: 0, cut: 0, matched: 0, byKind: emptyKinds(), institutions: 0, samples: [], flagged: 0, waiting: 0, takenDown: [] };
 }
 
 /** One step's re-check (see the module note). Never throws: a failed read reports nothing, and a failed write leaves the fees as they were. */
@@ -306,7 +362,7 @@ export async function recheckSectionMisreads(
     rows = await inSavepoint(db, (scope) => sectionMisreadRowsSql(scope, { institutionId: options.institutionId, limit: options.limit }));
     const artifactIds = rows
       .filter((row) => !nameMisreadKind((row.fee_name ?? "").trim(), row.canonical_fee_key, row.frequency) &&
-        (row.canonical_fee_key === "early_closure" ||
+        (row.canonical_fee_key === "early_closure" || zeroLineCandidate(row) ||
           (row.canonical_fee_key === "monthly_maintenance" && accountlessMonthlyExcerpt(excerptOf(row.source_line)) != null)))
       .map((row) => num(row.artifact_id))
       .filter((id): id is number => id != null);
@@ -431,6 +487,7 @@ export function sectionMisreadDetail(result: SectionMisreadResult) {
     scoped: result.scoped,
     checked: result.checked,
     no_text: result.noText,
+    cut_line: result.cut,
     matched: result.matched,
     by_kind: result.byKind,
     institutions: result.institutions,

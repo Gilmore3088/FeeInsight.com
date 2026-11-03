@@ -11,7 +11,9 @@ export function candidateWriteFacts(candidate: ExtractedFeeCandidate) {
     ? { ...stated, feeAudience: candidate.audienceLesson.audience, audienceEvidence: candidate.audienceLesson.evidence }
     : stated;
   const read = ACCOUNT_PRODUCT_CATEGORIES.has(candidate.canonicalHint) ? (candidate.lineup ?? null)
-    : owner ? { productName: owner.productName, minBalanceToAvoid: null, minOpeningDeposit: null, waiverText: null } : null;
+    : owner ? { productName: owner.productName, minBalanceToAvoid: null, minOpeningDeposit: null, waiverText: null }
+    // v179: an audience section's row records that audience as its product (`audienceSectionHeading`).
+    : candidate.audienceSection ? { productName: candidate.audienceSection, minBalanceToAvoid: null, minOpeningDeposit: null, waiverText: null } : null;
   const lineup = read && candidate.canonicalHint !== LINEUP_CATEGORY
     ? { productName: read.productName, minBalanceToAvoid: null, minOpeningDeposit: null, waiverText: null } : read;
   const ownedPrice = candidate.ownedBullet || candidate.ownedPolicy || candidate.ownUnit || candidate.ownCondition;

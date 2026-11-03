@@ -25,8 +25,11 @@
 const MONEY = /\$\s?(\d{1,3}(?:,\d{3})+(?:\.\d{1,2})?|\d+(?:\.\d{1,2})?|\.\d{1,2})(?![\d.,]\d)/g;
 const PERCENT = /(?<!\d|\d\.)(\d{1,3}(?:\.\d{1,4})?)\s*(?:%|percent\b)/gi;
 const BOUND_WORDS = /\b(?:min|minimum|max|maximum)\b/i;
-/** Min/max wording right before the figure: "minimum charge of ", "with max of ", "(or minimum of) | ". */
-const BOUND_BEFORE = /\b(min(?:imum)?|max(?:imum)?)\.?(?:\s+(?:charge|fee|amount))?(?:\s+of)?[\s:)(|–-]*$/i;
+/**
+ * Min/max wording right before the figure: "minimum charge of ", "with max of ", "(or minimum of) | ", and (v2, Knox
+ * v179) a bound joined to its figure by "or" ("Cash Advance Fee | 2% minimum or $2, maximum fee of $10").
+ */
+const BOUND_BEFORE = /\b(min(?:imum)?|max(?:imum)?)\.?(?:\s+(?:charge|fee|amount))?(?:\s+of)?(?:\s+or)?[\s:)(|–-]*$/i;
 /** A minimum or maximum of time or count, not of a charge: "(1 hour minimum) $25.00 per hour", "(2 item max)". */
 const UNIT_BOUND = /\b(?:hours?|hrs?|minutes?|mins?|items?|days?|checks?|months?|years?|weeks?|pages?|copies|copy|transactions?|units?|visits?)\.?\s+(?:min(?:imum)?|max(?:imum)?)\.?[\s:)(|–-]*$/i;
 /** Min/max wording right after the figure: "$5 min", "($50 maximum)", "$2.00 min" — never a balance or payment. */

@@ -51,10 +51,11 @@ const ACCOUNT_FEES = new Set(["monthly_maintenance", "minimum_balance"]);
 const PRICE = /\$\s*\.?\d/;
 /**
  * Words that say whom a fee is for; dropping them would publish an audience's price as the general
- * fee. Shared with the live rename (`bulletItemName` in name-retidy.ts).
+ * fee. Shared with the live rename (`bulletItemName` in name-retidy.ts). v179 (backlog dry run 10): any age with a
+ * plus or "& over" ("60 & Over", "62+", "65 and older"), not only 55, 60, 62 and 65 with a plus.
  */
 export const AUDIENCE_WORDS =
-  /\b(?:business(?:es)?|commercial|corporate|corporations?|organi[sz]ations?|non[- ]?profits?|treasury|merchants?|non[- ]?(?:customers?|members?|depositors?|clients?|account\s*holders?)|customers?|members?|clients?|consumers?|personal|retail|students?|seniors?|youth|minors?|kids?|employees?|staff|military|premier|private\s+bank(?:ing)?)\b|\b(?:5[05]|6[025])\s*\+/i;
+  /\b(?:business(?:es)?|commercial|corporate|corporations?|organi[sz]ations?|non[- ]?profits?|treasury|merchants?|non[- ]?(?:customers?|members?|depositors?|clients?|account\s*holders?)|customers?|members?|clients?|consumers?|personal|retail|students?|seniors?|youth|minors?|kids?|employees?|staff|military|premier|private\s+bank(?:ing)?)\b|\b\d{2}\s*(?:\+|&\s*(?:over|older|up)\b|and\s+(?:over|older|up)\b)/i;
 
 /** Where the bullet item's own cell starts in `line` (a character offset), or -1. */
 export function bulletCellStart(line: string): number {

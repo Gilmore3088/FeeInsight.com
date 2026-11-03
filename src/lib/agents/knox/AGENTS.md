@@ -2723,6 +2723,26 @@ holds. Darwin's verify refuses the same reads (`service_maintenance_heading`) an
 is live (`SERVICE_MAINTENANCE_TAKEDOWN_LIVE`, off). The shared check is unchanged. The stale-read floor stays at
 v97.
 
+v179 (tenth Knox re-read backlog dry run, Nov 3; 40 backlog texts at v178, 4 wrong and 8 doubtful of 124 changed
+rows, each against the bank's own line): (1) A row under a section heading that names an audience by age or stage
+of life ("Senior Perks (60 & Over)", "Youth Accounts", "Members 65+") takes the heading as its product
+(`audience-section.ts`, on the read and on a held $0), so `sameProduct` keeps the audience's price apart from the
+general one: Midwest Members' seniors' "Fax Service | FREE" no longer replaces live #162230's $1. An exemption note
+("(Youth Accounts exempt from fee)", "No fee for senior citizens (62+)") is no section. "60 & Over" shapes join
+`AUDIENCE_WORDS`. (2) "Overdrafttransfer" (no space) is the overdraft protection transfer, and a line that lists the
+channels a fee covers ("Includeschecks,ACH,ATM,debitwithdrawals(peritem)") never chooses the category of the row
+under it (`channelListHeading` in `readUnderHeading`): MassMutual's $3 is no ATM fee. (3) `rateBoundOf` v2 reads a
+bound joined to its figure by "or" ("Cash Advance Fee | 2% minimum or $2, maximum fee of $10"), so the $2 is the
+rate's minimum, never a flat fee, and the rate read carries it (`percent.ts`): Oklahoma Educators. Source check v31
+re-checks live fees by it. (4) A $0 is read only when its own line prints it ("$0", "None", "Free", "No charge",
+"no ... fee", a "Waived" cell) or the bare price cell right above it does on a stacked page, and never when it is
+offered against a price ("$0 or $4.95") (`zeroPrintedForRead`): North State Bank's waiver footnote gives no $0.
+Darwin's section misread re-check v3 reports live $0s by the same rule. (5) Doubtful reads: a marketing sentence about
+the account no longer ends the account lookback (LifeStore's $15 is Premier Checking's); a label with control
+characters names no account (Meridia); "This account contains a monthly service charge" is named "Monthly service
+charge" (Blackhawk). Harnesses rb to rb10 (v178 vs v179): live fees not reproduced 382 to 381 (rb10 45 to 44, #162230
+kept); no right read lost. The stale-read floor stays at v97.
+
 v178 (ninth Knox re-read backlog dry run, Nov 3; 40 backlog texts at v177, 2 wrong and 5 doubtful of 91 changed
 rows, each against the bank's own line): (1) A returned item's handling service is no NSF fee and is held
 unclassified (`returnedItemServiceName` in `rules.ts`: special handling, a re-clear, a reroute, or a service fee
@@ -3475,7 +3495,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v3 | `knox/paid-extract.ts` |
 | `KNOX_PAID_FIND_MISS_VERSION` | — | v1 | `knox/paid-find-misses.ts` |
 | `TWO_READ_AGREEMENT_STRATEGY` | `knox.two_read_agreement` | v2 | `knox/two-read-agreement.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v178 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v179 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v13 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v2 | `knox/takedown-lessons.ts` |

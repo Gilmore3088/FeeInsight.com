@@ -3,6 +3,7 @@ import { accountTableProduct } from "@/lib/custom-report/account-table";
 import { namesNoAccount, withoutNonAccountWords } from "@/lib/account-name-exclusions";
 import { accountKind, CHECKING_WORDS } from "@/lib/account-kind";
 import { withAncillaryProduct } from "./ancillary-product";
+import { audienceSectionHeading } from "./audience-section";
 
 /**
  * A checking account's lineup facts, read with its monthly maintenance fee: the product's
@@ -198,6 +199,9 @@ function distinctAccountName(value: string): string | null {
 }
 
 function distinctAccountNameOnly(value: string): string | null {
+  // v179 (backlog dry run 10, Meridia Community FCU text 4803, line 32): a line the PDF reader left control characters
+  // in ("Overdraft Transfer from Share\u0003", a fee row's broken label) is no account's title.
+  if (/[\u0000-\u0008\u000b-\u001f]/.test(value)) return null;
   // v141 nit: a footnote star after the name comes off ("50+ Checking*" -> "50+ Checking"); a mark (®) stays.
   const name = squash(value).replace(/[\s\-–:|,.*†‡]+$/, "").replace(HEADING_TAIL, "").replace(LEAD_IN, "");
   if (name.length < 4 || name.length > MAX_PRODUCT_NAME_CHARS || FEE_HEADING_END.test(name)) return null;
@@ -390,6 +394,9 @@ function inProductTabList(lines: readonly string[], index: number): boolean {
   return !lines.slice(Math.max(0, index - TAB_LIST_LINES), index).some((line) => line.toLowerCase() === own);
 }
 
+/** v179: a full sentence (eight words or more, ending in a period or "!"), not a title. */
+const PROSE_SENTENCE = /^(?=(?:\S+\s+){7,}\S)[^|]+[.!]$/;
+
 function accountBlock(text: string, excerpt: string, amount?: number | null): AccountBlock | null {
   const printed = text.split(/\n+/).map(squash).filter(Boolean);
   const at = feeLineIndex(printed, excerpt);
@@ -458,7 +465,10 @@ function accountBlock(text: string, excerpt: string, amount?: number | null): Ac
     const kind = line.replace(/[\s:]+$/, "");
     if (!accountStopped && accountHeading === null && !namesNoAccount(kind)) {
       if (ACCOUNT_KIND_HEADING.test(kind)) takeAccount(kind, index);
-      else if ((CHECKING_WORDS.test(kind) || PACKAGE_HEADING.test(kind)) && !ACCOUNT_TYPE_HEADING.test(line) && !distinctAccountName(line.replace(HEADING_TAIL, ""))) accountStopped = true;
+      // v179 (backlog dry run 10, LifeStore Bank text 13549, line 525): a marketing sentence about the account ("Get
+      // rewarded for a sound financial relationship with our Premier Checking account option.") is no heading and
+      // never ends the lookback; the account's own title above it ("Premier Checking") still owns the fee.
+      else if ((CHECKING_WORDS.test(kind) || PACKAGE_HEADING.test(kind)) && !ACCOUNT_TYPE_HEADING.test(line) && !distinctAccountName(line.replace(HEADING_TAIL, "")) && !PROSE_SENTENCE.test(kind)) accountStopped = true;
     }
     // v55: "Money Market" alone heads its own fee; another fee's heading ("Early (Share)
     // Savings Account Closing") means the lines above belong to other fees.
@@ -821,13 +831,19 @@ export function printedNearerThan(text: string, excerpt: string, nearer: string,
   return nearAt >= 0 && farAt >= 0 && farAt < nearAt;
 }
 
-export function withLineupFromText<T extends { canonicalHint: string; feeName: string; excerpt: string; amount?: number | null; lineup?: AccountLineup | null }>(
+export function withLineupFromText<T extends { canonicalHint: string; feeName: string; excerpt: string; amount?: number | null; lineup?: AccountLineup | null; audienceSection?: string }>(
   candidate: T,
   text: string,
   /** False keeps v55's own-name order; its context still respects a nearer printed account kind. */
   options: { accountProduct?: boolean; institutionName?: string | null } = {},
 ): T {
-  if (!ACCOUNT_PRODUCT_CATEGORIES.has(candidate.canonicalHint)) return withAncillaryProduct(candidate, text, options.institutionName);
+  if (!ACCOUNT_PRODUCT_CATEGORIES.has(candidate.canonicalHint)) {
+    // v179 (backlog dry run 10, Midwest Members FCU): a row of an audience's own section ("Senior Perks (60 &
+    // Over)" / "Fax Service | FREE") is that audience's price, never the general fee's (`audienceSectionHeading`).
+    const section = candidate.lineup?.productName ? null : audienceSectionHeading(text, candidate.excerpt);
+    if (section) return { ...candidate, audienceSection: section, lineup: { productName: section, minBalanceToAvoid: null, minOpeningDeposit: null, waiverText: null } };
+    return withAncillaryProduct(candidate, text, options.institutionName);
+  }
   const read = candidate.lineup ?? { productName: null, minBalanceToAvoid: null, minOpeningDeposit: null, waiverText: null };
   // A model-read waiver that is a rate tier carries the tier's balance with it; neither is the fee's.
   const current: AccountLineup =

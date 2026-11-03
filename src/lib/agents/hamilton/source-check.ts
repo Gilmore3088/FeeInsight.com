@@ -131,7 +131,11 @@ export const SOURCE_CHECK_REASON = "source_check_untraceable";
 // institution with the witness on; it only lets more fees trace, so it takes none down. A live $0 whose
 // sentence no longer passes the witness stops tracing and goes to the second look, which is the rule's
 // live re-check. Nov 1 dry run (read-only, current copies): 4 texts at 4 institutions read, each traced.
-export const SOURCE_CHECK_STRATEGY = { strategy: "hamilton.source_check", version: 30 } as const;
+// Version 31 (Knox v179, backlog dry run 10, Nov 3): `rateBoundOf` v2 also reads a bound joined to its figure by
+// "or" ("Cash Advance Fee | 2% minimum or $2, maximum fee of $10"), so such a flat fee is refused as `rate_bound`.
+// The bump re-checks every institution. Read-only dry run, Nov 3: 5 texts print the shape and no live flat fee is
+// priced at such a bound, on its stored line or on its text, so it takes none down.
+export const SOURCE_CHECK_STRATEGY = { strategy: "hamilton.source_check", version: 31 } as const;
 
 /**
  * An institution is checked again whenever a newer live fee appears, so a fee
