@@ -2,6 +2,7 @@ import { feeApplicability } from "@/lib/fee-audience";
 import {
   billPayByHeading,
   stopPaymentListRead,
+  stopPaymentVariantRead,
   boxSectionLateFeeRead,
   loanSectionFeeRead,
   iraSectionClosingRead,
@@ -35,7 +36,7 @@ import { BOX_CATEGORY } from "@/lib/custom-report/box-size-name";
 import { carryColumnHeadingCell, columnHeadingCell, extractTableCandidates, KNOX_TABLE_STRATEGY } from "@/lib/agents/knox/table-rows";
 import { accountRowRivalRead, extractAccountTableCandidates, KNOX_ACCOUNT_TABLE_STRATEGY } from "@/lib/agents/knox/account-table";
 import { accountTableCells } from "@/lib/custom-report/account-table";
-import { checkFeeAgainstSource, joinLabeledFeeCardText } from "@/lib/custom-report/source-check";
+import { checkFeeAgainstSource, joinLabeledFeeCardText, labeledFeeCardDescription } from "@/lib/custom-report/source-check";
 import { rateFeeFromHeld, type RateFeeCandidate } from "@/lib/agents/knox/percent";
 import { contextFees, NO_LONGER_CHARGED } from "@/lib/agents/knox/context-names";
 import { frequencyFromLine, settledFrequency } from "@/lib/fee-frequency";
@@ -916,7 +917,16 @@ import { onlineServiceMonthlyFee } from "@/lib/service-monthly-charge";
 // free row whose condition opens the next line ("when opting for E-Statements") beside a priced read of the same
 // fee is no $0 (`conditionalFreeRow`): The People's FCU. A free Zelle line files under bill_pay ("Bill Pay & Zelle")
 // by the top-50 fold, unchanged. The stale-read floor stays at v97.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 180 } as const;
+// v181 (twelfth re-read backlog dry run, Nov 3; 40 texts at v180, 2 wrong and 7 doubtful of 72 changed rows): (1) A
+// bulleted variant under a stop payment row that prints its own price, in the page's last column, is that stop
+// payment's price (`stopPaymentVariantRead`, `custom-report/stop-payment-variant.ts`): St. Louis Community FCU's
+// "• Corporate Check | $15.00" is no cashier's check. (2) A fee card whose own description says the returned item
+// is one the member deposited or cashed is the deposited item return (`depositedCardReturnRead`): ESL FCU. (3) OCR
+// noise on a dot leader is blanked before any reader runs (`withoutOcrLeaderNoise`): First Bank & Trust Co.'s
+// "Paid Item Charge c". (4) On a stem tie, the source check's line for a priced fee is the row whose label opens with the name (San
+// Francisco FCU). Synergy's "Same Party Check" stays nsf: its page never says the check is deposited. The stale-read
+// floor stays at v97.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 181 } as const;
 
 export interface SpecialistRun {
   strategy: string;
@@ -1188,6 +1198,27 @@ export function conditionalFreeRow(excerpt: string | null | undefined, text: str
   });
 }
 
+/**
+ * v181 (backlog dry run 12, ESL FCU text 20267): a returned item read from a labeled fee card ("Fee TypeReturned
+ * Item Fee" / "DescriptionFor each item you deposit or cash that is returned unpaid. ..." / "Fee$10.00") whose
+ * own description says the item is one the member deposited or cashed is the deposited item return, not the NSF
+ * fee on the member's own item (`labeledFeeCardDescription`). Only an NSF read, only when the description names
+ * the member's deposit or cashing and the return, never the member's own item paid or returned for insufficient
+ * funds in the member's account; filed only when that type accepts the name and price. Pure.
+ */
+const CARD_DEPOSITED_BY_MEMBER = /\b(?:you|members?)\s+(?:have\s+)?(?:deposit(?:ed)?|cash(?:ed)?)\b|\bdeposited\s+(?:or\s+cashed\s+)?(?:items?|checks?)\b|\b(?:items?|checks?)\s+(?:you\s+)?(?:deposit(?:ed)?|cash(?:ed)?)\b/i;
+const CARD_RETURNED = /\breturned\b|\bbounced?\b|\bunpaid\b/i;
+const CARD_OWN_ITEM = /\b(?:your|the)\s+(?:own\s+)?account\s+(?:does\s+not|doesn['’]t)\s+have\b|\bitems?\s+(?:you\s+)?(?:write|wrote|authori[sz]e)\b|\bwhen\s+you\s+(?:write|overdraw)\b/i;
+
+export function depositedCardReturnRead<T extends { canonicalHint: string; feeName: string; amount: number }>(read: T, text: string): T {
+  if (read.canonicalHint !== "nsf") return read;
+  const description = labeledFeeCardDescription(text, read.feeName);
+  if (!description || !CARD_DEPOSITED_BY_MEMBER.test(description) || !CARD_RETURNED.test(description) || CARD_OWN_ITEM.test(description)) return read;
+  return checkFeeCategory("deposited_item_return", read.feeName).ok && passesDarwinChecks("deposited_item_return", read.feeName, read.amount)
+    ? { ...read, canonicalHint: "deposited_item_return" }
+    : read;
+}
+
 interface FreeSpecialistOptions {
   institutionName?: string | null;
   /** v133 (#2040): defaults to the switch, on since v155. */ noChargeSentences?: boolean;
@@ -1208,6 +1239,29 @@ interface FreeSpecialistOptions {
  */
 const FRONT_MATTER_KEY = /^\s*(?:meta-[\w.:-]*|canonical)\s*:/i;
 const FRONT_MATTER_LINES = 200;
+/**
+ * v181 (backlog dry run 12, First Bank & Trust Co. text 12416): a scanned schedule's dot leaders can carry OCR
+ * noise, single letters and runs of a few repeated letters ("Paid Item Charge................c......... 30.00",
+ * "Sweep Transfer Fee. ....... iii iiieeeeeeaeeeeeaaeaeeaaaaaaa.. | FREE"), which the readers took into the fee's
+ * name ("Paid Item Charge c"). A run of such tokens that sits on a leader (dots or an ellipsis before it) and is
+ * followed by more leader, a cell break or the price is blanked; a run holding any real word ("see below") is
+ * kept. Lines keep their positions. Pure.
+ */
+const OCR_NOISE_RUN = /((?:\.{2,}|…)[.…\s]*)((?:[a-z]+[.…\s]+)*?[a-z]+)(?=[.…\s]*(?:\.{2,}|…|\||\$?\d|$))/g;
+/** Real words a leader can lead to that the noise test would otherwise take ("....... free"). */
+const LEADER_WORDS = /^(?:free|fee|fees|see|add|all|off|too|less|need|feed|seen|been|tee|ill)$/;
+function ocrNoiseToken(token: string): boolean {
+  if (token.length === 1) return true;
+  return token.length >= 3 && !LEADER_WORDS.test(token) && new Set(token).size <= 3 && /([a-z])\1/.test(token);
+}
+export function withoutOcrLeaderNoise(text: string): string {
+  if (!/(?:\.{2,}|…)[.…\s]*[a-z]/.test(text)) return text;
+  return text.split("\n").map((line) => line.replace(OCR_NOISE_RUN, (whole, leader: string, run: string) => {
+    const tokens = run.split(/[.…\s]+/).filter(Boolean);
+    return tokens.length > 0 && tokens.every(ocrNoiseToken) ? `${leader}${" ".repeat(run.length)}` : whole;
+  })).join("\n");
+}
+
 /** v177: a fee name read from a front-matter line ("meta-fb:pages: meta-generator: WordPress ...", "canonical: https://..."). */
 export function frontMatterName(name: string): boolean {
   return FRONT_MATTER_KEY.test(name);
@@ -1252,7 +1306,8 @@ export function tailTwinRead(prior: ExtractedFeeCandidate, later: ExtractedFeeCa
 }
 
 export function runFreeSpecialists(rawText: string, options: FreeSpecialistOptions = {}): FreeExtractionResult {
-  const storedText = withoutFrontMatterLines(rawText);
+  // v181: OCR noise on a dot leader is no part of any name (`withoutOcrLeaderNoise`).
+  const storedText = withoutOcrLeaderNoise(withoutFrontMatterLines(rawText));
   // #2070: a discontinued account's table is flagged before any specialist reads the text
   // (`flagDiscontinuedTables`); with the switch on its rows are left out, so none is read or held.
   const discontinued = flagDiscontinuedTables(storedText, options.withoutDiscontinuedTables ?? discontinuedTablesLive());
@@ -1403,7 +1458,7 @@ function readFreeText(sourceText: string, discontinuedRows: DiscontinuedTableFla
     // debit card's (`creditCardSectionRead`: "CREDIT CARD CHARGES" over "Card Replacement ...... Free", Greylock FCU).
     // v168: no specialist reads a box table's late-fee column as the box's rent (`boxLateColumnRead`:
     // "BOX SIZE | ANNUALLY | LATE FEE" over "3” x 10” x 24” | $35.00 | $6.00", Eglin FCU 5451).
-    const found = { ...run, candidates: withWireChannelReads(checkText, run.candidates.map((read) => { const next = billPayByHeading(read); return next && carryColumnHeadingCell(read, next); }).filter((read): read is ExtractedFeeCandidate => read != null).map((read) => stopPaymentListRead(bulletItemRead(payeeReturnedBillPayRead(iraSectionClosingRead(loanSectionFeeRead(boxSectionLateFeeRead(read, checkText), checkText), checkText), checkText)), checkText))
+    const found = { ...run, candidates: withWireChannelReads(checkText, run.candidates.map((read) => { const next = billPayByHeading(read); return next && carryColumnHeadingCell(read, next); }).filter((read): read is ExtractedFeeCandidate => read != null).map((read) => stopPaymentVariantRead(stopPaymentListRead(bulletItemRead(payeeReturnedBillPayRead(iraSectionClosingRead(loanSectionFeeRead(boxSectionLateFeeRead(read, checkText), checkText), checkText), checkText)), checkText), checkText))
       .filter((read) => !boxLateColumnRead(read, boxLatePrices) && !creditCardSectionRead(read, checkText, creditCardColumns))),
       held: run.held.filter((read) => !creditCardSectionRead(read, checkText, creditCardColumns)) };
     // v176 (backlog dry run 7): a statement fee its own name gives to a credit card is not the deposit
@@ -1700,6 +1755,9 @@ function readFreeText(sourceText: string, discontinuedRows: DiscontinuedTableFla
   // An NSF read at the return's own price, or the page's own deposited item return, keeps it NSF (the
   // seven-state key 5918: "Return Check Fee | $25.00" beside "Non-Sufficient Funds | $25.00").
   candidates.splice(0, candidates.length, ...withReturnBesideNsf(candidates, held));
+  // v181 (backlog dry run 12): a fee card whose own description says the returned item is one the member deposited
+  // or cashed files it as the deposited item return (`depositedCardReturnRead`: ESL FCU's "Returned Item Fee").
+  candidates.splice(0, candidates.length, ...candidates.map((read) => depositedCardReturnRead(read, sourceText)));
 
   // v150: a bare "Overdraft Protection" line is the paid-overdraft item fee when the schedule prints its
   // own overdraft transfer line and no other read is the overdraft fee (Alcose CU 51252, "Overdraft
