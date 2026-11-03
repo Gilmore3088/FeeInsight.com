@@ -1,3 +1,5 @@
+import { ocrComparable } from "@/lib/agents/knox/ocr-leader-noise";
+
 /**
  * Knox v179 (backlog dry run 10, Midwest Members FCU text 40777, lines 338-348): a section whose heading names an
  * audience by age or stage of life ("Senior Perks (60 & Over)", "Members 65+", "Youth") prices
@@ -49,7 +51,8 @@ const RUNS_ON = /\b(?:are|is|will|may|must|can|the|a|an|of|or|and|to)\s*$/i;
 const MAX_WALK = 25;
 const MAX_TITLE_WORDS = 8;
 
-const squash = (line: string) => line.replace(/\s+/g, " ").trim();
+/** Line and text compared with OCR leader noise blanked in both (`ocrComparable`, review of #2979). */
+const squash = (line: string) => ocrComparable(line);
 
 /** How many lines of `text` hold the row's own line `excerpt`: the heading is read only when exactly one does. */
 export function audienceRowLineCount(text: string, excerpt: string): number {

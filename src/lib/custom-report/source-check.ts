@@ -33,6 +33,7 @@ import { capFitsFee, countAgrees, countMatchesCap, DAILY_CAP_LINES_LIVE, refuses
 import { withCenteredHeadingCells } from "./centered-heading-cell";
 import { discontinuedRow } from "./discontinued-rows";
 import { networkColumnRow } from "./network-column-rows";
+import { stopPaymentVariantRow } from "./stop-payment-variant";
 import { rateBoundOf } from "@/lib/rate-bound";
 import { rewardCreditOf } from "@/lib/reward-credit";
 import { sourceLineTerms, type SourceLineTerms } from "./source-line-terms";
@@ -387,6 +388,32 @@ export function joinLabeledFeeCards(lines: string[]): string[] {
     }
   }
   return out;
+}
+
+/**
+ * v181 (Knox backlog dry run 12): the description lines of the labeled fee card named `name`, the lines
+ * between its name field and its price field ("DescriptionFor each item you deposit or cash that is
+ * returned unpaid. ..." under "Fee TypeReturned Item Fee", ESL FCU), or null when the text prints no such
+ * card or prints it more than once. Pure.
+ */
+export function labeledFeeCardDescription(text: string, name: string): string | null {
+  const lines = text.split(/\r?\n/);
+  const wanted = name.replace(/\s+/g, " ").trim().toLowerCase();
+  const found: string[] = [];
+  for (let i = 0; i < lines.length; i += 1) {
+    const own = lines[i].match(CARD_NAME)?.[1]?.replace(/\s+/g, " ").trim().toLowerCase();
+    if (own !== wanted) continue;
+    const body: string[] = [];
+    let filled = 0;
+    for (let j = i + 1; j < lines.length && filled < CARD_FIELD_LINES; j += 1) {
+      if (!lines[j].trim()) continue;
+      filled += 1;
+      if (CARD_NAME.test(lines[j]) || CARD_PRICE.test(lines[j])) break;
+      body.push(lines[j].trim());
+    }
+    found.push(body.join(" "));
+  }
+  return found.length === 1 ? found[0] : null;
 }
 
 /** `joinLabeledFeeCards` over a whole text; the text is returned as is when it has no cards. */
@@ -1814,6 +1841,14 @@ function checkFeeAgainstSourceText(
     const row = networkColumnRow(text, feeName, amount);
     if (row) return { ok: true, sourceLine: row };
   }
+  // v181 (Knox backlog dry run 12): a bulleted variant under a stop payment row that prints its own price, read
+  // under that row's label ("Stop Payment Fee – Check or ACH (per item): Corporate Check" $15, St. Louis Community
+  // FCU). Only the name the page's rows compose passes, only at the variant's own price, and only as a stop
+  // payment (`stopPaymentVariantRow`). Admit-only.
+  if (first && !first.ok && (canonicalFeeKey == null || canonicalFeeKey === "stop_payment")) {
+    const row = stopPaymentVariantRow(text, feeName, amount);
+    if (row) return { ok: true, sourceLine: row };
+  }
   return first ?? { ok: false, reason: "no_source_text" };
 }
 
@@ -1951,7 +1986,23 @@ function statedLineScore(row: string, amount: number, feeName: string, stems: Na
   const label = at ? row.slice(0, at.start) : row;
   const name = feeName.toLowerCase();
   const otherType = (label.match(OTHER_FEE_TYPE_WORDS) ?? []).some((word) => !name.includes(word.toLowerCase()));
-  return stemCount(label, stems) - (otherType ? 1000 : 0);
+  // v181 (Knox backlog dry run 12, San Francisco FCU text 33150): of lines whose labels carry as many of the
+  // name's word stems, the one whose label prints the name is the fee's own ("Maintenance Fee | $5.00/month"
+  // over "deposit and maintain at least a $5 (par value of a share)", where "maint" reads in "maintain"). A
+  // label that prints the whole name, word for word, counts most; one that opens with the name's first word (past a
+  // row number) counts less, so "Wire | Incoming Wire Fee • $10 per transfer" beats "Incoming Wire Return Fee • $10
+  // per request" for "Incoming Wire Fee" (review of #2979, text 3219). Two rows that score alike ("Monthly Service
+  // Charge 0.00 for 1st account" and "Monthly Service Fee $0.00") still keep the first, as before; only a row that
+  // prints less of the name (a sentence that mentions a stem) gives way. Not for a $0: which line a free price
+  // traces to decides Darwin's conditional $0 hold (#1593), which reads it as before.
+  const words = (value: string) => comparable(value).replace(/[^a-z0-9' ]/g, " ").replace(/\s+/g, " ").trim();
+  const nameWords = words(feeName);
+  const first = nameWords.split(" ")[0] ?? "";
+  // A footnote mark glued to a word ("Non-Truist Domestic ATM Fee6") is no part of it.
+  const labelWords = ` ${words(label).replace(/^\d{1,2} /, "").replace(/([a-z])\d{1,2}(?= |$)/g, "$1")} `;
+  const wholeName = amount > 0 && nameWords.length >= 3 && labelWords.includes(` ${nameWords} `);
+  const opensWithName = amount > 0 && first.length >= 3 && labelWords.startsWith(` ${first} `);
+  return stemCount(label, stems) - (otherType ? 1000 : 0) + (wholeName ? 0.5 : 0) + (opensWithName ? 0.25 : 0);
 }
 
 /**
