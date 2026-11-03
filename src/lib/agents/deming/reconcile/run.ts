@@ -57,11 +57,10 @@ async function withTimeout<T>(db: SqlTag, work: (scope: SqlTag) => Promise<T>): 
   return inSavepoint(db, async (scope) => {
     const [before] = await scope<Array<{ value: string }>>`SELECT current_setting('statement_timeout') AS value`;
     await scope.unsafe(`SET LOCAL statement_timeout = ${READ_TIMEOUT_MS}`);
-    try {
-      return await work(scope);
-    } finally {
-      await scope`SELECT set_config('statement_timeout', ${before?.value ?? "0"}, true)`;
-    }
+    // On failure the savepoint rolls back, which restores the setting and keeps the real error.
+    const result = await work(scope);
+    await scope`SELECT set_config('statement_timeout', ${before?.value ?? "0"}, true)`;
+    return result;
   });
 }
 
@@ -188,9 +187,13 @@ export async function runReconcileStep({ db = sql, runId, stepId, dryRun, batchI
       }
       reconciled.push(institutionId);
     } catch (error) {
-      if (error instanceof ShadowOutOfTime) { stoppedForTime = true; break; }
+      // A bank cut short is read again next step, unless it was this step's first bank: then it
+      // alone outlasts a step and would come first every time, so it is recorded as failed.
+      const firstOfStep = reconciled.length === 0 && failed.length === 0;
+      if (error instanceof ShadowOutOfTime && !firstOfStep) { stoppedForTime = true; break; }
       const message = error instanceof Error ? error.message.slice(0, 300) : String(error);
       failed.push({ institutionId, error: message });
+      if (error instanceof ShadowOutOfTime) stoppedForTime = true;
       // Recorded as done, so the batch moves on and ends; the grade counts it as failed, never as clean.
       if (!dryRun) {
         await inSavepoint(db, (scope) => scope`
@@ -199,6 +202,7 @@ export async function runReconcileStep({ db = sql, runId, stepId, dryRun, batchI
                   ${JSON.stringify({ batch: batchId, version: RECONCILE_VERSION, institutionId, error: message })}::jsonb)`)
           .catch((recordError: unknown) => console.error("Reconcile: failed bank could not be recorded", recordError));
       }
+      if (error instanceof ShadowOutOfTime) break;
     }
   }
   let grade: ReconcileGrade | null = null;
