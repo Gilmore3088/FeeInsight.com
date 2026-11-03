@@ -11,11 +11,14 @@
  * "Account withdrawalAccount withdrawal").
  *
  * The evidence is the PDF's own text matrix. Each item's direction is read from its matrix and
- * counted by characters; when most of a page's text runs in one non-upright quarter turn, every
- * item's position and matrix are turned back by that quarter, so the layout reader sees the lines
- * as a reader of the turned page does. A page whose text mostly runs left to right (every page
- * read so far, a sideways margin note included) is passed through untouched. Only exact quarter
- * turns count; slanted text has no vote.
+ * counted by characters; when a page is essentially single-direction and that direction is a
+ * non-upright quarter turn (every other direction together at most MAX_OTHER_DIRECTION_SHARE of
+ * its characters, and no upright item stating a price), every item's position and matrix are
+ * turned back by that quarter, so the layout reader sees the lines as a reader of the turned page
+ * does. Any other page (upright, a sideways margin note included, or mixed: an upright fee table
+ * beside sideways disclaimers, text running two opposite sideways ways) is passed through
+ * untouched, read exactly as before. Only exact quarter turns count; slanted text has no vote.
+ * Reading each direction group of a mixed page on its own would be the fuller fix; not built.
  *
  * Off by default (`PDF_TEXT_DIRECTION_LIVE`): a reader change alters the text of every such page
  * read after it. Turning it on bumps `PDF_READ_VERSION` (reader-versions.ts) from 1 to 2 in the
@@ -43,19 +46,34 @@ export function itemQuarterTurn(transform: number[] | undefined): QuarterTurn | 
 }
 
 /**
- * The quarter turn most of a page's text characters are drawn at. Upright unless one turned
- * direction holds more than half of the characters whose direction is known.
+ * A page is turned only when it is essentially one direction: every other direction together holds
+ * at most this share of the characters whose direction is known. A mixed page (an upright fee
+ * table beside sideways disclaimers, or text running two opposite sideways ways) is read as drawn.
+ */
+const MAX_OTHER_DIRECTION_SHARE = 0.05;
+/** A price on an upright item: a page with an upright priced cell is never turned. */
+const PRICE_TOKEN = /\$\s?\.?\d|\b\d[\d,]*(?:\.\d+)?\s?%/;
+
+/**
+ * The quarter turn a page's text is drawn at when it is essentially single-direction, else 0
+ * (upright, read as drawn). Refuse-only: a page turns only when one non-upright direction holds
+ * all but MAX_OTHER_DIRECTION_SHARE of its characters and no upright item states a price.
  */
 export function pageQuarterTurn(items: PdfTextItem[]): QuarterTurn {
   const characters = [0, 0, 0, 0];
+  let uprightPrice = false;
   for (const item of items) {
     if (typeof item.str !== "string") continue;
     const length = item.str.trim().length;
     const turn = itemQuarterTurn(item.transform);
     if (length > 0 && turn != null) characters[turn] += length;
+    if (turn === 0 && PRICE_TOKEN.test(item.str)) uprightPrice = true;
   }
   const total = characters.reduce((sum, count) => sum + count, 0);
-  for (const turn of [1, 2, 3] as const) if (characters[turn] * 2 > total) return turn;
+  if (total === 0 || uprightPrice) return 0;
+  for (const turn of [1, 2, 3] as const) {
+    if (total - characters[turn] <= total * MAX_OTHER_DIRECTION_SHARE) return turn;
+  }
   return 0;
 }
 
@@ -78,7 +96,7 @@ export function turnItemsUpright(items: PdfTextItem[], turn: QuarterTurn): PdfTe
 }
 
 export interface PageTextDirection {
-  /** The quarter turn most of the page's text is drawn at. */
+  /** The quarter turn the page is drawn at when essentially single-direction, else 0 (`pageQuarterTurn`). */
   turn: QuarterTurn;
   /** The items the layout reader reads: turned upright when `upright` is on, else as drawn. */
   items: PdfTextItem[];

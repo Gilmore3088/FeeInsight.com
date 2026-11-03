@@ -67,7 +67,7 @@ describe("text direction from the PDF's own text matrix", () => {
     expect(itemQuarterTurn([0, 0, 0, 0, 1, 2])).toBeNull();
   });
 
-  it("calls a page turned only when most of its characters are drawn at that turn", () => {
+  it("calls a page turned only when essentially all of its characters are drawn at that turn", () => {
     const page = uprightPage();
     expect(pageQuarterTurn(page)).toBe(0);
     expect(pageQuarterTurn(drawnAt(page, 1))).toBe(1);
@@ -75,6 +75,37 @@ describe("text direction from the PDF's own text matrix", () => {
     // A sideways note in the margin of an upright page is a minority: the page stays upright.
     const note = drawnAt([item("01003035-D3700-P-1-012426 (TISDM2 D37006)-e", 10, 300)], 1);
     expect(pageQuarterTurn([...page, ...note])).toBe(0);
+    // A short upright note on a sideways page (under 5% of its characters, no price) does not stop the turn.
+    expect(pageQuarterTurn([...drawnAt(page, 1), item("Rev. 01", 10, 20)])).toBe(1);
+    // An upright price anywhere on the page does.
+    expect(pageQuarterTurn([...drawnAt(page, 1), item("$5", 10, 20)])).toBe(0);
+  });
+});
+
+describe("mixed pages are read as drawn (review of #2975)", () => {
+  /** The reviewer's repro: a 4-row upright fee table beside six 100-character sideways disclaimer lines. */
+  function tableWithSidewaysDisclaimers(): PdfTextItem[] {
+    const rows: Array<[string, string]> = [
+      ["Stop Payment", "$32.00"], ["Overdraft Fee", "$35.00"], ["Wire Transfer (Outgoing)", "$20.00"], ["Returned Item", "$25.00"],
+    ];
+    const table = rows.flatMap(([label, amount], index) => [item(label, 40, 680 - index * 12), item(amount, 260, 680 - index * 12)]);
+    const disclaimer = "Fees are subject to change without notice. Please see your account agreement for the full terms here";
+    const notes = drawnAt(Array.from({ length: 6 }, (_, index) => item(disclaimer.slice(0, 100), 40, 500 - index * 10)), 1);
+    return [...table, ...notes];
+  }
+
+  it("leaves an upright fee table beside sideways disclaimers byte for byte as switched off", () => {
+    const page = tableWithSidewaysDisclaimers();
+    const off = layoutPageText(page, { textDirection: false });
+    expect(off).toContain("Stop Payment | $32.00");
+    expect(layoutPageText(page, { textDirection: true })).toBe(off);
+    expect(pageQuarterTurn(page)).toBe(0);
+  });
+
+  it("leaves a page split between two opposite sideways directions byte for byte as switched off", () => {
+    const page = [...drawnAt(uprightPage(), 1), ...drawnAt(uprightPage().map((entry) => ({ ...entry, str: entry.str.toUpperCase() })), 3)];
+    expect(pageQuarterTurn(page)).toBe(0);
+    expect(layoutPageText(page, { textDirection: true })).toBe(layoutPageText(page, { textDirection: false }));
   });
 });
 

@@ -16,7 +16,7 @@ export interface PdfTextExtraction {
    */
   tableColumns?: TableColumnsReceipt;
   /**
-   * Pages whose text is mostly drawn a quarter turn from upright (pdf-text-direction.ts), and
+   * Pages drawn essentially all a quarter turn from upright (pdf-text-direction.ts), and
    * whether they were read turned back (`PDF_TEXT_DIRECTION_LIVE`). Bound to the text read.
    */
   textDirection?: TextDirectionReceipt;

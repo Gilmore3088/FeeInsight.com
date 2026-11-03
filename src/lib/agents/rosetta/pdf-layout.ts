@@ -39,7 +39,7 @@
  * edge is its own line and never shares one with a table's cells.
  *
  * Sideways pages (`PDF_TEXT_DIRECTION_LIVE`, off; pdf-text-direction.ts): a page whose text is
- * mostly drawn a quarter turn from upright is read with its items turned back first, so its lines
+ * essentially all drawn a quarter turn from upright is read with its items turned back first, so its lines
  * are read along, not across. Upright pages are untouched either way.
  */
 
@@ -532,7 +532,7 @@ export interface PdfPageLayout {
    * which table it belongs to cannot be told from its position.
    */
   ambiguousLines: number;
-  /** The quarter turn most of the page's text is drawn at (0 upright), whether or not it was turned back. */
+  /** The quarter turn a single-direction page is drawn at (0 upright or mixed), whether or not it was turned back. */
   textTurn: QuarterTurn;
 }
 

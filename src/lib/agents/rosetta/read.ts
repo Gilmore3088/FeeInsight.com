@@ -244,7 +244,7 @@ export interface ReadResult {
   readerAgreement?: PdfReaderAgreement;
   /** Layout v6: pages read as side-by-side fee tables, and ambiguous crossing lines; recorded only. */
   tableColumns?: { pages: number[]; ambiguousLines: number };
-  /** Pages mostly drawn a quarter turn from upright, and whether they were read turned back; recorded only. */
+  /** Pages drawn essentially all a quarter turn from upright, and whether they were read turned back; recorded only. */
   textDirection?: { pages: number[]; turnedUpright: boolean };
   witnessRetention?: WitnessRetention;
   repairSettlement?: { accepted: boolean; reason: string; artifactId?: number; textHash?: string };

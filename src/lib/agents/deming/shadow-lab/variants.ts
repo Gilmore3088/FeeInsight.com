@@ -160,7 +160,7 @@ export const EXPERIMENTS: Readonly<Record<string, ExperimentConfig>> = {
   "pdf-text-direction": {
     id: "pdf-text-direction",
     description:
-      "Rosetta's PDF reader reads a page whose text is mostly drawn a quarter turn from upright (a landscape table stored turned) with its items turned back first (`PDF_TEXT_DIRECTION_LIVE` switched on). A reader switch: the frozen-text lab cannot move, and the source replay (`source-replay.test.ts`) re-reads the answer-key documents' bytes with it on.",
+      "Rosetta's PDF reader reads a page whose text is essentially all drawn a quarter turn from upright (a landscape table stored turned) with its items turned back first (`PDF_TEXT_DIRECTION_LIVE` switched on). A reader switch: the frozen-text lab cannot move, and the source replay (`source-replay.test.ts`) re-reads the answer-key documents' bytes with it on.",
     excerptAtPublish: false,
     switches: { pdfTextDirection: true },
   },

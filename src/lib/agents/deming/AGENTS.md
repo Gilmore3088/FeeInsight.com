@@ -582,7 +582,14 @@ DATABASE_URL=<prod URL> npm run audit:switch-dry-runs -- --json > switch-dry-run
      and the selected fees with no stored text or no service word, which are not judged; a fee the shared
      check traces to no line is counted unconfirmed and never taken down, and the rows past `--row-cap`
      (read a page at a time by fee id) are counted unjudged. A match main's `onlineServiceMonthlyFee` (#2963) also matches is covered by `NOT_ACCOUNT_FEE_LINE_TAKEDOWN_LIVE` and reported apart, not as this switch's takedown.
-  10. Live accuracy. Deming's fresh audit is re-run on today's seed (`fresh-audit.ts`). It leads
+  10. `PDF_TEXT_DIRECTION_LIVE` (#1092, Rosetta `read.pdf_layout`, `pdf-text-direction.ts`). Exposure
+     only, within the institution scope like sections 1-7 and 9: the current documents whose newest
+     text the PDF reader wrote (the flip's `PDF_READ_VERSION` bump re-reads each once) and their live
+     fees, and of those read since Nov 3 (`detail.pdf_read`), how many a read found a sideways page in
+     (`detail.pdf_text_direction`) and the live fees on them. The audit has no PDF bytes, so it never
+     diffs a text; the change is measured on the answer-key documents' bytes (shadow-lab experiment
+     `pdf-text-direction`).
+  11. Live accuracy. Deming's fresh audit is re-run on today's seed (`fresh-audit.ts`). It leads
      with the daily receipt's own figure (right / scorable), then the amount-and-category-only
      share (`traceLiveFee`, `checkFeeCategory`). This is a stored-copy measure, not a check
      against the bank's current schedule.

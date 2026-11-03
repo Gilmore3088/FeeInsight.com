@@ -91,9 +91,12 @@ Rosetta owns source text normalization.
   page stored as a portrait page turned a quarter draws its text at [0, s, -s, 0, x, y], so the
   layout reader, which groups by y and orders by x, read it across its lines; stacked words joined
   with no space ("AverageBalance") and Georgia United's re-read published none of its 36 key fees.
-  With the switch on, a page where more than half the characters run in one non-upright quarter
-  turn (read from each item's own text matrix; slanted text has no vote) has its items turned back
-  first; an upright page, sideways margin notes included, is untouched. Every PDF read records the
+  With the switch on, a page that is essentially one non-upright quarter turn (read from each
+  item's own text matrix; slanted text has no vote; every other direction at most 5% of its
+  characters, `MAX_OTHER_DIRECTION_SHARE`, and no upright item stating a price) has its items
+  turned back first. Any other page is read as before: upright pages, sideways margin notes
+  included, and mixed pages (an upright fee table beside sideways disclaimers, or two opposite
+  sideways directions; reading each direction group on its own is not built). Every PDF read records the
   sideways pages it found and whether it turned them (`detail.pdf_text_direction`). A PDF text an older layout read across its
   columns (`INTERLEAVED_PROSE_CELLS` prose cell breaks or more) is read once more. Word files (.docx) are unzipped and read the same way (`read.docx_text`,
   `docx.ts`): a paragraph per line, a tab as a cell break, a table row per line. A

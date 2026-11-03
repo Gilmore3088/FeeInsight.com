@@ -32,7 +32,10 @@ introduced it. Each version's `pdf-layout.ts`, from git history, was run on the 
 | v6 with `PDF_TEXT_DIRECTION_LIVE` on | 1 | 1 | equal | 0 |
 
 The frozen text is the drawing-order reading, word for word. The key's stored text was written
-before layout v1, or by a reader that kept drawing order.
+before layout v1, or by a reader that kept drawing order. With the switch on, the text passes the
+same-document test (the same tokens, numbers and dollar amounts), but it is not the frozen text:
+it is a layout reading, with " | " cell breaks, rows in table order and the margin form id in
+another place. That is why it scores differently from the frozen text below.
 
 **Joined-word metric.** A token of the re-read (the same-document test's `normalisedTokens`:
 lower-case letters, digits and decimals) that is not a token of the frozen text, but equals two
@@ -71,9 +74,15 @@ uses the same keys, frozen manifest and `currentVariant`:
 **Fix:** `src/lib/agents/rosetta/pdf-text-direction.ts`, behind `PDF_TEXT_DIRECTION_LIVE` (off).
 - **Evidence:** each item's own text matrix. An item counts as a quarter turn only when its
   off-axis part is at most 2% of its size; slanted text has no vote.
-- **When it acts:** a page is turned only when more than half of its characters run in one
-  non-upright quarter turn. Then every item's position and matrix are turned back by that quarter
-  before `layoutPageResult` groups lines.
+- **When it acts (refuse-only):** a page is turned only when it is essentially one non-upright
+  quarter turn: every other direction together holds at most 5% of its characters
+  (`MAX_OTHER_DIRECTION_SHARE`), and no upright item states a price. Then every item's position and
+  matrix are turned back by that quarter before `layoutPageResult` groups lines.
+- **Mixed pages are read as drawn** (review of #2975). An upright 4-row fee table beside six
+  sideways 100-character disclaimers was turned whole by a majority rule, which scrambled the
+  table ("Returned ItemWire Transfer (Outgoing)Overdraft FeeStop Payment"). A page split between
+  two opposite sideways directions had the same problem. Both now read byte for byte as with the
+  switch off. Reading each direction group on its own would be the fuller fix; it is not built.
 - **Upright pages:** returned untouched, the same array, so their text is byte for byte unchanged.
 - **No word list:** nothing splits words by dictionary.
 - **Record:** `extractPdfDocumentText` returns `textDirection` (sideways pages, whether they were
