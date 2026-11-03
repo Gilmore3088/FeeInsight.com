@@ -2723,23 +2723,28 @@ holds. Darwin's verify refuses the same reads (`service_maintenance_heading`) an
 is live (`SERVICE_MAINTENANCE_TAKEDOWN_LIVE`, off). The shared check is unchanged. The stale-read floor stays at
 v97.
 
-v184 (built on its branch as v182; Knox slice dry run and cross-category scan, Nov 3; the live slice's 671 changed rows at v180 held 10 wrong
-fees and 9 wrong names, and 5 live fees were re-read into a wrong category, each against the bank's own line): every
-read gets a last name review (`withReviewedNames`, `read-name-review.ts`) for words another part of the page lent it:
-a heading or another column glued in front ("LOAN FEES: 3x10 Box"; an audience, a delivery speed, an account or a clause of other words stays), a
-font glyph against the price ("NSF FEE: g"), a box size's footnote digit ("3x103"), advice as a name (renamed only
-by the title right above), a deposit to open or join in the read's own words ("Only a $25 membership deposit"), an
-all-capitals label whose price is the next cell's own label, a box's late charge (by Hamilton's fold), and paper
-statements offered in a check image's name. A plain returned item beside an NSF fee printed free, or beside a
-deposited item return at its own price, is the deposited item return (`withReturnBesideNsf`: Live Oak, TXN);
-Parthenon's, beside its own deposited return at another price, stays NSF. A wire service's monthly charge filed as a
-monthly fee is held (`wireServiceMonthlyName`: Ameris). Two label cells over two price cells pair by column
-(`parallelColumnRows`; a wrapped label leaves the row whole); the stacked price window takes its own column's label
-(Advia); a wire name never borrows a non-wire heading (Crow Wing); a heading's code ("(S40)") is no price digit (St.
-Cloud); an account name that files as a fee is no account (Austin); a wrapped leader's parenthesis balance is its own
-cell's (Velocity). The source check reads a footnoted box size as the size it marks. Darwin's section misread check
-v5 re-checks the hold, drop and re-file rules on live fees (switch off; Nov 3: 1 match, #133756). Slice dry run (205 texts): 10 wrong and 9 wrong-name rows to 0, publish rows 671 to 660, live fees lost 0, simulated v3 score unchanged (P 135/152, R 146/213). Harnesses rb to rb12 (v181 vs v184): live fees not reproduced 456 to 453 (4 reproduced again, #63177, itself a misread, no longer). The
-stale-read floor stays at v97.
+v184 (built on its branch as v182; Knox slice dry run and cross-category scan, Nov 3; the live slice's 671 changed
+rows at v180 held 10 wrong fees and 9 wrong names, and 5 live fees were re-read into a wrong category, each against
+the bank's own line): every read gets a last name review (`withReviewedNames`, `read-name-review.ts`) for words
+another part of the page lent it: a heading or another column glued in front ("LOAN FEES: 3x10 Box"; an audience, a
+delivery speed or a clause of other words stays, and so does a capitals prefix that ends in an account or card, "VISA
+CHECK CARD CHARGES", or a mixed-case account name that is no "Fees", "Charges" or "Services" heading), a font glyph
+against the price ("NSF FEE: g"), a box size's footnote digit ("3x103"), advice as a name (renamed only by the title
+right above), a price that the read's own words only ever call a deposit to open or join ("Only a $25 membership
+deposit"), an all-capitals label whose price is the next cell's own label, a box's late charge (by Hamilton's fold),
+and paper statements offered in a check image's name. A plain returned item beside an NSF fee printed free (a waiver
+is no free price), or beside a deposited item return at its own price, is the deposited item return
+(`withReturnBesideNsf`: Live Oak, TXN); Parthenon's, beside its own deposited return at another price, stays NSF. A
+wire service's monthly charge filed as a monthly fee is held (`wireServiceMonthlyName`: Ameris). Two label cells over
+two price cells pair by column (`parallelColumnRows`; a wrapped label leaves the row whole); the stacked price window
+takes its own column's label (Advia); a wire name never borrows a non-wire heading (Crow Wing); a heading's code
+("(S40)") is no price digit (St. Cloud); an account name that files as a fee is no account (Austin); a wrapped
+leader's parenthesis balance is its own cell's (Velocity). The source check reads a footnoted box size as the size it
+marks. Renamed twins merge only with the same product. Darwin's section misread check v5 re-checks the hold, drop and
+re-file rules on live fees (switch off; Nov 3, real read on prod: 1 match, #133756). Slice dry run (205 texts, against
+v183): 10 wrong and 9 wrong-name rows to 0, publish rows 672 to 661, live fees lost 0, simulated v3 score unchanged (P
+135/152, R 146/213). Harnesses rb to rb12 (v183 vs v184): live fees not reproduced 456 to 453 (4 reproduced again,
+#63177, itself a misread, no longer). The stale-read floor stays at v97.
 
 v183 (owner's audit Nov 3, #1110, #1092; First National Bank of Moose Lake, institution 3457, document 35684,
 artifact 33778): a fee priced in tiers is read as one fee per tier, each named with its own condition, and the tiers

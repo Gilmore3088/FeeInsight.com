@@ -76,16 +76,18 @@ Live fees the cross-category scan found:
 - *A footnote digit glued to a box size.* "3x103" is the 3x10 box with footnote 3. The source check matched sizes
   whole, so the corrected name would not trace.
 
-**Fix (Knox v184, `KNOX_RULES_STRATEGY` 184):**
+**Fix (Knox v184, `KNOX_RULES_STRATEGY` 184; built as v182, renumbered after main's v183 tiered-price fix, #2981):**
 
 - `knox/read-name-review.ts` (`withReviewedNames`, run after every specialist) gives each read a last look for
   words another part of the page lent it:
   - `glued_heading` drops a prefix when the label alone files under the read's category, the prefix does not, and
     the prefix is a section heading (capitals, or ending in "Fees", "Charges" or "Services") or another fee's name.
-    A prefix that names an audience or a delivery speed ("Non-Customer Services", "Expedited delivery") or an
-    account, product or card stays, capitals or not ("VISA CHECK CARD CHARGES: Non Sufficient Funds", rb10 text
-    40788, live #141969; review of 29ef3de53d2), and so does a clause of other words ("(Per month some exclusions apply)", "For Kasasa Cash, if
-    ...: (1) ...").
+    A prefix that names an audience or a delivery speed ("Non-Customer Services", "Expedited delivery") stays. A
+    prefix in capitals that ends in an account or card stays ("VISA CHECK CARD CHARGES: Non Sufficient Funds",
+    rb10 text 40788, live #141969; review of 29ef3de53d2); a card inside another row's label does not ("LOAN/LEASE/
+    CREDIT CARD PAYMENT BY ONLINE/MOBILE USING", text 27330). A prefix not in capitals that names an account stays
+    unless it ends in "Fees", "Charges" or "Services" ("IRA Share Savings Account Fees" is a heading, text 4803).
+    A clause of other words stays too ("(Per month some exclusions apply)", "For Kasasa Cash, if ...: (1) ...").
   - `glyph_before_price` drops a glyph printed against the price ("NSF FEE: g").
   - `box_size_footnote` removes a box size's footnote digit when the side it leaves is a box's (30 inches or
     less).
@@ -138,28 +140,38 @@ Live fees the cross-category scan found:
 
 **Live:**
 
-- Slice dry run, v184 on main 5f56bb55a05 against v181 (the same 205 texts, harness in `slice/dry`): publish rows
-  671 to 660.
+- Slice dry run, v184 against main's v183 (37f59620710; the same 205 texts, harness in `slice/dry`): publish rows
+  672 to 661. Main's only slice change from v181 is Moose Lake's $15 overdraft tier (#2981), on both sides.
   - Wrong fees 10 to 0 and wrong names 9 to 0. The 11 glyph names, the glued headings and the duplicate boxes are
-    fixed as well.
-  - Live fees lost or replaced: 0, as before. Live fees not reproduced: 70, as before.
-  - Simulated v3 score on the 8 answer-key banks: unchanged from v180, precision 135/152 and recall 146/213
+    fixed as well. The review fixes changed no slice row; one first try at nit 1 kept a card inside another row's
+    label ("LOAN/LEASE/CREDIT CARD PAYMENT BY ONLINE/MOBILE USING: SAFE DEPOSIT BOX DRILLING FEE", text 27330) and
+    was narrowed to a prefix in capitals that ends in an account or card.
+  - Live fees lost or replaced: 0, as on main. Live fees not reproduced: 70, as on main.
+  - Simulated v3 score on the 8 answer-key banks: unchanged from main, precision 135/152 and recall 146/213
     (before the slice: 123/137 and 133/213). None of the fixed rows is on an answer-key bank's scored document.
   - Doubtful: 34 monthly fees with no product (33 before; the Austin $10 lost its wrong product). A live $5.95 fee
     is re-confirmed without the wrong product "Share-to-Share Overdraft Transfer Fee" (text 27995).
-- Harnesses rb to rb12 (v181 against v184 on main 5f56bb55a05): live fees not reproduced 456 to 453.
-  - Reproduced again: #128047, #99611, #99612 and #41503.
+- Harnesses rb to rb12 (main's v183 against v184, both at 37f59620710's other code): live fees not reproduced 456
+  to 453 (main's v183 changed none of them from v181).
+  - Reproduced again: #128047, #99611, #99612 and #41503. #41503 is "Wire-Outgoing International" $40 under the
+    cell "IRA Share Savings Account Fees" (rb10 text 4803): a heading not in capitals that ends in "Fees" stays a
+    heading.
   - No longer reproduced: #63177 only. That is "Archived Statement Reproduction (see Record Research above): Wire
     Transfer" $9, filed document_reproduction; its own line is "Wire Transfer | $9.00 repair wire fee", so the live
     fee is the misread.
+  - #141969 "VISA CHECK CARD CHARGES: Non Sufficient Funds" $25 (rb10 text 40788) is reproduced, and so is its
+    "CHECKING CHARGES: Non Sufficient Funds" twin: a prefix in capitals that ends in a card or account is kept.
   - TXN #141626 is now read in its live category.
-  - Publish rows: 3 gone, each renamed (a heading off: "CONSUMER ACCOUNTS: Statement Printout", and "Account
-    Fees: A low balance service charge" twice, which also loses the false product "Account Fees: A"), and 6 new:
-    - the same 3 renames;
-    - "Share Savings Account Below Minimum Fee", which re-confirms its live fee with its product;
-    - two ACH origination prices paired by column (text 16162, "$3.00 | $30.00" under "ACH Transfer Origination -
-      setup / | Automatic Bank Credit"). Their names are cut where the label wraps ("... - per"), so they are
-      doubtful.
+  - Publish rows: 3 gone and 5 new.
+    - Gone: "Account Fees: A low balance service charge" twice ($1 and $7.50), renamed without the heading, which
+      also loses the false product "Account Fees: A"; and Beacon's "Fees: Replacement Card" $10 (text 28238), merged
+      into its twin "Replacement Card" $10.
+    - New: the same 2 renames; "Share Savings Account Below Minimum Fee", which re-confirms its live fee with its
+      product; and two ACH origination prices paired by column (text 16162, "$3.00 | $30.00" under "ACH Transfer
+      Origination - setup / | Automatic Bank Credit"). Their names are cut where the label wraps ("... - per"), so
+      they are doubtful.
+    - "CONSUMER ACCOUNTS: Statement Printout" (text 6346) keeps its prefix, as the review asked: a capitals prefix
+      that ends in ACCOUNTS.
 - The 5 cross-category live fees:
   - Knox now reads #128047, #141626, #99611 and #99612 in their live category. The Live Oak pair, lost at v181,
     are reproduced.
