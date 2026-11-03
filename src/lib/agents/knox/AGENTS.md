@@ -2729,14 +2729,17 @@ of life ("Senior Perks (60 & Over)", "Youth Accounts", "Members 65+") takes the 
 (`audience-section.ts`, on the read and on a held $0), so `sameProduct` keeps the audience's price apart from the
 general one: Midwest Members' seniors' "Fax Service | FREE" no longer replaces live #162230's $1. An exemption note
 ("(Youth Accounts exempt from fee)", "No fee for senior citizens (62+)") is no section. "60 & Over" shapes join
-`AUDIENCE_WORDS`. (2) "Overdrafttransfer" (no space) is the overdraft protection transfer, and a line that lists the
+`AUDIENCE_WORDS`. An age needs age words and two digits ("Over 10,000", "Over 12 Months", "55 Year Old" are no age),
+a title naming an account, a loan, a branch, an ATM, months or rolls is no section, and "Student"/"Kids" titles are
+left out (review of #2977). Darwin's section misread re-check v3 reports live untagged rows under such a heading. (2) "Overdrafttransfer" (no space) is the overdraft protection transfer, and a line that lists the
 channels a fee covers ("Includeschecks,ACH,ATM,debitwithdrawals(peritem)") never chooses the category of the row
 under it (`channelListHeading` in `readUnderHeading`): MassMutual's $3 is no ATM fee. (3) `rateBoundOf` v2 reads a
 bound joined to its figure by "or" ("Cash Advance Fee | 2% minimum or $2, maximum fee of $10"), so the $2 is the
 rate's minimum, never a flat fee, and the rate read carries it (`percent.ts`): Oklahoma Educators. Source check v31
 re-checks live fees by it. (4) A $0 is read only when its own line prints it ("$0", "None", "Free", "No charge",
-"no ... fee", a "Waived" cell) or the bare price cell right above it does on a stacked page, and never when it is
-offered against a price ("$0 or $4.95") (`zeroPrintedForRead`): North State Bank's waiver footnote gives no $0.
+"no ... fee", a "Waived" cell, an unconditional "Waived Annual IRA Fee") or a price-only cell right above it does on
+a stacked page, and never when it is offered against a price ("$0 or $4.95") or waived on a condition
+(`zeroPrintedForRead`): North State Bank's waiver footnote gives no $0.
 Darwin's section misread re-check v3 reports live $0s by the same rule. (5) Doubtful reads: a marketing sentence about
 the account no longer ends the account lookback (LifeStore's $15 is Premier Checking's); a label with control
 characters names no account (Meridia); "This account contains a monthly service charge" is named "Monthly service

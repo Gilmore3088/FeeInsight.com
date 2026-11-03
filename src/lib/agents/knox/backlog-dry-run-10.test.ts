@@ -93,6 +93,17 @@ describe("Knox v179: an audience's own section", () => {
     }
   });
 
+  it("never takes a quantity, an account or a branch count for an audience section (review of #2977)", () => {
+    for (const heading of ["Wire Transfers Over 10,000", "Certificates Over 12 Months", "Coin Counting Over 50 Rolls", "Student Loans Available", "Visit one of over 30 branches", "Access to over 30,000 ATMs", "Kids Club", "Student Checking", "55 Year Old"]) {
+      expect(audienceSectionHeading([heading, "Stop Payment | $30"].join("\n"), "Stop Payment | $30")).toBeNull();
+    }
+    // A footnote that runs on is no heading.
+    expect(audienceSectionHeading(["* Customers 22 years old or younger are", "3x5 = $12.00"].join("\n"), "3x5 = $12.00")).toBeNull();
+    for (const heading of ["Members 65+", "Youth (Ages 13 and under)", "Customers 18 years and under", "Over age 62"]) {
+      expect(audienceSectionHeading([heading, "Stop Payment | $30"].join("\n"), "Stop Payment | $30")).toBe(heading);
+    }
+  });
+
   it("reads '60 & Over' as an audience", () => {
     expect(AUDIENCE_WORDS.test("Senior Perks (60 & Over)")).toBe(true);
     expect(AUDIENCE_WORDS.test("Members 65 and older")).toBe(true);
@@ -130,6 +141,14 @@ describe("Knox v179: a $0 needs its line to print it", () => {
     expect(zeroPrintedOnLine("Check Cashing Fee - Members | Waived")).toBe(true);
     expect(zeroPrintedOnLine("Fax Service | FREE")).toBe(true);
     expect(zeroPrintedOnLine("Enjoy all these benefits without any monthly service fees.")).toBe(true);
+    // An unconditional waiver prints the free price; one on a condition does not (review of #2977).
+    expect(zeroPrintedOnLine("Waived Non-QCBT ATM Transactions")).toBe(true);
+    expect(zeroPrintedOnLine("Waived Annual IRA Fee")).toBe(true);
+    expect(zeroPrintedOnLine("ATM fees waived")).toBe(true);
+    expect(zeroPrintedOnLine("Monthly service charge waived with direct deposit")).toBe(false);
+    expect(zeroPrintedOnLine("Waived when you keep $500 in the account")).toBe(false);
+    // Only a price cell above counts, never another perk's label.
+    expect(zeroPrintedForRead("Statement copies by mail on request", "Rewards\nFree eStatements\nStatement copies by mail on request")).toBe(false);
     const stacked = "Overdraft Protection transfers or advances\n\n$0\n\nper transfer/advance from your eligible linked savings account or credit card or line of credit";
     expect(zeroPrintedForRead("per transfer/advance from your eligible linked savings account or credit card or line of credit", stacked)).toBe(true);
   });

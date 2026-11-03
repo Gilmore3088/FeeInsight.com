@@ -41,32 +41,49 @@ live fee would have been lost (#162230). rb9's two wrong reads stayed fixed.
   notes ("(Youth Accounts exempt from fee)", "No fee for senior citizens (62+)"), the first plain title is the
   section's heading; when it names an audience by age or stage of life it becomes the read's product
   (`withLineupFromText`, `candidateWriteFacts`) and a held $0's (`insertHeldCandidate`). `AUDIENCE_WORDS` reads "60
-  & Over" shapes.
+  & Over" shapes. Review of #2977: an age is a two-digit figure with age words ("60 & Over", "65+", "18 years and
+  under", "Over age 62"), never a quantity ("Wire Transfers Over 10,000", "Certificates Over 12 Months", "Coin
+  Counting Over 50 Rolls", "Access to over 30,000 ATMs", "Visit one of over 30 branches") or an account's name
+  ("55 Year Old"); a title naming an account, a loan, a branch, an ATM, months or rolls is no section; "Student" and
+  "Kids" are left out ("Student Checking", "Kids Club" title accounts over general rows); and a footnote or a line
+  that runs on ("* Customers 22 years old or younger are") is no heading.
 - rules.ts: od_protection_transfer accepts the run-together "overdrafttransfer"; `channelListHeading` stops `readUnderHeading` from
   taking a channel list as the heading.
 - rate-bound.ts `rateBoundOf` v2: a bound joined to its figure by "or" ("2% minimum or $2"); percent.ts reads the
   minimum and the maximum ("maximum fee of $10", "never exceed $10.00") for the rate read. Both Oklahoma lines are
   held as the 2% rate; no flat $2.
 - rules.ts `zeroPrintedOnLine` / `zeroPrintedForRead`, applied in specialists.ts to reads and held rows: a $0 needs
-  its line, or the bare price cell right above it on a stacked page, to print a free price, and never one offered
-  against a price ("$0 or $4.95").
+  its line, or a price-only cell right above it on a stacked page ("$0", "Free", "None", "N/C", "No charge",
+  "Waived"; never another perk's label such as "Free eStatements"), to print a free price, and never one offered
+  against a price ("$0 or $4.95"). Review of #2977: an unconditional waiver prints the free price ("Waived Annual
+  IRA Fee", "Waived Non-QCBT ATM Transactions", "ATM fees waived"); a waiver on a condition ("... waived when
+  minimum account balance requirement is met", "waived with direct deposit") does not. A no-charge NSF sentence the
+  NSF reader already judged keeps its $0.
 - lineup.ts: a marketing sentence (eight words or more, ending in a period) no longer ends the account lookback; a
   label with control characters is no account title. layout.ts: "This account contains a ..." opening is dropped.
 - Darwin's section misread re-check v3 (`darwin/section-misread-check.ts`, switch `SECTION_MISREAD_TAKEDOWN_LIVE`
-  off) adds `zero_not_printed`, judged on the stored line and the text Knox read by `zeroPrintedForRead`.
+  off) adds `zero_not_printed`, judged on the stored line and the text Knox read by `zeroPrintedForRead`, and
+  (review of #2977) `audience_section_untagged`: a live fee with no product under an audience section heading
+  (`audienceSectionHeading` on the text Knox read) whose name the bank prices otherwise with no product.
 - Source check v31 (`hamilton/source-check.ts`) re-checks every institution with `rateBoundOf` v2.
 
 **Live fees (read-only, Nov 3, prod `rmhwbbjjctzfaqjyhomu`, SELECT only):**
 
-- Live $0s with a stored line: 3,381. On the stored line, 4 print no free price: 36427 and 36428 (stacked pages,
-  a bare "$0" cell right above the unit line: kept), 142558 ("without any monthly service fees": prints it), and
-  141225 ("Monthly Maintenance Fee: $0 or $4.95"). So the Darwin re-check reports 1 more live fee (141225), 16 in
-  all, switch off. A first version that judged only the stored line would have taken down 36427 and 36428; reading
-  the bare cell above fixed that.
+- Live $0s with a stored line: 3,381, every one judged (the 35 cut lines are not). Three stored lines print no free
+  price: 36427 and 36428 (stacked pages, a bare "$0" cell right above the unit line: kept) and 141225 ("Monthly
+  Maintenance Fee: $0 or $4.95": matched). 134219 ("Waived Annual IRA Fee") and 140028 ("Waived Non-QCBT ATM
+  Transactions", under "Visa® Debit Card") print an unconditional waiver and are kept. So `zero_not_printed`
+  matches 1 live fee (141225). Before the review of #2977 it matched 2: 140028 was flagged, and 134219 survived only
+  because the "Free ..." perk label above it counted as a price cell.
+- Untagged audience rows: 1,858 live fees have no product while their bank prices the same name otherwise with no
+  product, on 777 texts that could name an audience. Judged by `audienceSectionHeading` on the 2,500 characters
+  above each stored line (lines the stored excerpt does not appear in as one line cannot match), 3 sit under an
+  audience heading: Midwest Members FCU's 137448 "Copy of a Check", 137449 "Copy of a Statement" and 137483 "Fax
+  Service", all $0 under "Senior Perks (60 & Over)". `audience_section_untagged` matches those 3.
+- So the Darwin re-check reports 19 live fees (v2's 15, 1 `zero_not_printed`, 3 `audience_section_untagged`),
+  switch off.
 - Rate bound joined by "or": 5 texts print the shape; no live flat fee is priced at such a bound, on its stored line
   or on its text. Source check v31 takes down 0.
-- Audience sections: no live fee is taken down; the read only gains a product. Midwest's live seniors' $0s (137448,
-  137449, 137483) were published without the audience before this fix and stay as they are.
 - The overdraft transfer, channel list, lineup and name fixes take down no live fee: Knox never retires a verified row.
 
 **Re-run after the fix (the dry-run harness, `currentVariant` on the same stored texts, v178 vs v179):**
@@ -91,8 +108,8 @@ live fee would have been lost (#162230). rb9's two wrong reads stayed fixed.
 - Run-together names ("Overdrafttransfer(from shareaccount)") are left as printed: splitting glued words needs a
   dictionary and would re-key existing names. MassMutual's other 18 fees are unchanged.
 - Oklahoma's 2% cash advance rate is held untraced rather than published as a rate.
-- Midwest's live seniors' $0s with no product (137448, 137449, 137483) read like general prices; the re-read now
-  publishes them under "Senior Perks (60 & Over)" beside them.
+- Midwest's live seniors' $0s with no product (137448, 137449, 137483) read like general prices until the Darwin
+  re-check's switch is on; the re-read publishes them under "Senior Perks (60 & Over)" beside them.
 
 **Guard:** `src/lib/agents/knox/backlog-dry-run-10.test.ts`, `src/lib/agents/darwin/section-misread-check.test.ts`.
 **Agent lesson:** knox/backlog-dry-run-10-2026-11-03-the-line-must-say-it
