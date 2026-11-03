@@ -49,6 +49,8 @@ vi.mock("@/lib/agents/deming/live-source-schedule",()=>({scheduleLiveSourceAudit
 vi.mock("@/lib/agents/growth/withdraw", () => ({ scheduleStaleOutreachWithdrawal: state.schedule }));
 // The answer-key re-key scheduler reads public answer-key tables this fixture does not build; it queues nothing here.
 vi.mock("@/lib/agents/deming/answer-key-rekey-schedule", () => ({ scheduleAnswerKeyRekeyRun: async () => ({ scheduled: false, runId: null, reason: "fixture" }) }));
+// The reconciliation scheduler (deming/reconcile) queues its own run while its batch has banks; it queues nothing here.
+vi.mock("@/lib/agents/deming/reconcile/schedule", () => ({ scheduleReconcileRun: async () => ({ scheduled: false, runId: null, reason: "fixture" }) }));
 
 async function effect(key: string, result: Record<string, unknown> = {}) { state.effects.push(key); return result; }
 vi.mock("@/lib/agents/atlas/answer-key-relabels", () => ({ runAnswerKeyRelabels: () => effect("relabel"),

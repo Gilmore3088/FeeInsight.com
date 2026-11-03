@@ -489,6 +489,14 @@ async function executeAgenticStep(
     return { status: "completed", summary: rekeySummaryLine(result), detail: { ...result } };
   }
 
+  // The full-pipeline reconciliation (James, 2026-11-03): a shadow run of today's pipeline on each
+  // bank's current documents, diffed fee by fee with what is live and graded; run events only.
+  if (step.stepKey === "deming-reconcile") {
+    const { runReconcileStep, reconcileDetail } = await import("@/lib/agents/deming/reconcile/run");
+    const result = await runReconcileStep({ db: tx, runId: run.id, stepId: step.id, dryRun: run.runKind === "dry_run" });
+    return { status: "completed", summary: result.summary, detail: reconcileDetail(result) };
+  }
+
   // The one-off Darwin release-review sample (James, 2026-11-01): reviews the held fees the release
   // step marked "review" that were never reviewed, with acts off: verdicts only, nothing released.
   if (step.stepKey === "darwin-release-review-sample") {
@@ -4595,6 +4603,8 @@ const STEP_EXPECTED_MS: Record<string, number> = {
   "hamilton-paid-gate-replay": 290_000,
   // Two banks at once, each two reads at once of up to 16,000 output tokens (deming/answer-key-rekey.ts).
   "deming-answer-key-rekey": 260_000,
+  // Up to 12 banks, starting none after 150 s (deming/reconcile/run.ts).
+  "deming-reconcile": 200_000,
   // Five release-review calls of 25 fees, one after another, then their settlement.
   "darwin-release-review-sample": 200_000,
   // The hourly nationwide lane sync (state-lane-scheduler runNationwideLaneSync), run from its own
