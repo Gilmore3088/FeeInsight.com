@@ -2934,7 +2934,7 @@ export function workedExampleAmountAt(textBefore: string, segment: string, amoun
  * words name nothing usable: the line then takes no name of its own, and an unclassified one that says "fee" or
  * "charge" is held for review under the line's words, as before, never sent on.
  */
-const PRICE_FIRST_NAME_END = /[,.;:]|\s[-–—]\s|\b(?:if|when|unless|waived|waive|avoid(?:ed)?|with|without|otherwise|or|but|per|for\s+each|each|for\s+(?:balances?|accounts?)\s+(?:below|under|less))\b/i;
+const PRICE_FIRST_NAME_END = /[,.;:]|\s[-–—]\s|\b(?:if|when|whenever|unless|until|after|once|while|waived|waive|avoid(?:ed)?|with|without|otherwise|or|but|per|for\s+each|each|for\s+(?:balances?|accounts?)\s+(?:below|under|less))\b/i;
 /** A unit right after the price ("$4.00 per month service charge") is the price's, not a boundary of the name. */
 const PRICE_FIRST_UNIT = /^\s*(?:\/\s*mo(?:nth)?\b|(?:per|a|each|every)\s+(?:month|mo\.?|statement(?:\s+cycle)?|cycle|quarter|year)\b|per(?=\s+monthly\b))\.?/i;
 
@@ -2956,20 +2956,52 @@ export function priceFirstClauseName(segment: string, amounts: readonly AmountMa
 }
 
 /**
- * v176: true when naming a price-first line by its whole text (`nameFrom`) would delete a later figure that
- * is a condition (a balance, a threshold) and keep the words around it ("waived with minimum balance of or
- * ..."). A later figure that is another fee's price ("$30.00 - NSF Fee, $30.00 Overdraft Fee") or one a
- * threshold bracket keeps ("(per item; maximum $125 per day)") leaves the whole-line name as it was.
+ * v176 (review of PR #2969): a later price that opens a bracket on a price-first line, read by the words in
+ * that bracket. "note" when they price the same fee for an age, membership or other eligibility ("($6 if age
+ * 55+)", "($8 for members 62 and older)") or name nothing; a fee of their own (a fee word and a category:
+ * "($2 paper statement fee if no e-statements)", "($30.00 overdraft fee)", "($50.00 drilling fee)") or another
+ * category ("($35 for international wires)") is read under the bracket's own words; a tier of the earlier fee
+ * ("($35 after the 3rd item)", "each additional") keeps the earlier fee's words without the open bracket.
  */
+const BRACKET_ELIGIBILITY_NOTE = /\b(?:age[sd]?|years?|yrs?|older|younger|seniors?|members?|military|students?|youth|minors?|juniors?|employees?|veterans?)\b|\d+\s*\+|[<>]\s*\d+|\b(?:over|under)\s+\d+/i;
+const BRACKET_TIER = /^\s*(?:after|beyond|over|above|for\s+each\s+additional|each\s+additional|per\s+additional|thereafter|starting|beginning)\b/i;
+
+export function bracketedLaterRead(segment: string, amount: AmountMatch, earlierWords: string, earlierHint: string): "note" | { name: string; hint: string } {
+  const close = segment.indexOf(")", amount.end);
+  const inner = segment.slice(amount.end, close < 0 ? segment.length : close).replace(PRICE_FIRST_UNIT, " ");
+  if (BRACKET_ELIGIBILITY_NOTE.test(inner)) return "note";
+  const end = inner.search(PRICE_FIRST_NAME_END);
+  const own = normalizeSegment((end >= 0 ? inner.slice(0, end) : inner).replace(/^\s*for\s+/i, " ")).replace(/^[\s\-–—:]+|[\s\-–—:]+$/g, "");
+  const ownHint = usableName(own) && !BARE_FEE_NAME.test(own) ? classifyFeeText(own) : null;
+  if (ownHint && (ownHint !== earlierHint || /\b(?:fee|charge)s?\b/i.test(own))) {
+    return { name: `${own.charAt(0).toUpperCase()}${own.slice(1)}`, hint: ownHint };
+  }
+  if (BRACKET_TIER.test(inner)) {
+    const cut = earlierWords.search(PRICE_FIRST_NAME_END);
+    const name = (cut >= 0 ? earlierWords.slice(0, cut) : earlierWords).replace(/[\s(]+$/, "").trim();
+    if (usableName(name)) return { name: `${name.charAt(0).toUpperCase()}${name.slice(1)}`, hint: earlierHint };
+  }
+  return "note";
+}
+
 /**
  * v176: a bare fee word ("Fee", "Charges", "Service charge") names no fee of its own (`GENERIC_FEE_NAME`,
  * families.ts). A price-first line `priceFirstClauseName` would name that way keeps its v175 name.
  */
 const BARE_FEE_NAME = /^(?:service\s+)?(?:charges?|fees?)$/i;
 
+/**
+ * v176: true when naming a price-first line by its whole text (`nameFrom`) would delete a later figure that
+ * is a condition (a balance, a threshold) and keep the words around it ("waived with minimum balance of or
+ * ..."). A later figure that is another fee's price ("$30.00 - NSF Fee, $30.00 Overdraft Fee") or one a
+ * threshold bracket keeps ("(per item; maximum $125 per day)") leaves the whole-line name as it was. Review of
+ * PR #2969: so does one that opens a bracket the whole-line name would leave empty ("$5 monthly fee ($2 paper
+ * statement fee ...)" is not "monthly fee ( paper statement fee ...)").
+ */
 function wholeLineNameDropsCondition(segment: string, amounts: readonly AmountMatch[]): boolean {
   const whole = nameFrom(segment);
-  return amounts.slice(1).some((amount) => isConditionAmount(segment, amount) && !whole.includes(segment.slice(amount.start, amount.end).trim()));
+  return amounts.slice(1).some((amount) => !whole.includes(segment.slice(amount.start, amount.end).trim()) &&
+    (isConditionAmount(segment, amount) || /\(\s*$/.test(segment.slice(0, amount.start))));
 }
 
 function readPlainSegment(segment: string): ExtractionRulesResult {
@@ -3427,17 +3459,22 @@ function readPlainSegment(segment: string): ExtractionRulesResult {
     const titledLater = index > 0 && chunkRead ? titledPriceRead(ownWords(ownStart, amount), segment.slice(amount.end), amount.value, chunkRead) : null;
     const chunkHint = titledLater?.hint ?? chunkRead;
     if (index > 0 && (!chunk || !usableName(chunk) || !chunkHint)) return;
-    // v176: on a line that opens with its price, a later price that opens a bracket right after the earlier
-    // fee's words ("$8 monthly service charge ($6 if age 55+)") is a note on that fee, not a fee of its own.
-    if (index > 0 && priceFirst && /\(\s*$/.test(segment.slice(ownStart, amount.start))) return;
+    // v176 (review of PR #2969): on a line that opens with its price, a later price that opens a bracket right
+    // after the earlier fee's words is read by its own words in the bracket (`bracketedLaterRead`): an age or
+    // member price ("$8 monthly service charge ($6 if age 55+)") or words that name nothing are a note; a fee of
+    // its own ("($2 paper statement fee if no e-statements)", "($50.00 drilling fee)") is read under its own name;
+    // a tier of the same fee ("($35 after the 3rd item)") keeps the earlier fee's name without the bracket.
+    const bracketed = index > 0 && priceFirst && /\(\s*$/.test(segment.slice(ownStart, amount.start))
+      ? bracketedLaterRead(segment, amount, chunk as string, chunkHint as string) : null;
+    if (bracketed === "note") return;
     // v22: "... you will be assessed a fee of $25.00 on the 7th day. This fee is in addition to
     // any Overdraft Fees assessed. | $25.00": the row's price cell repeats the price in its own cell.
     const priceCellAt = segment.lastIndexOf(CELL_SEPARATOR);
     // #1196: not when the earlier price ends on its own unit ("$25.00/hr Wire message | $25.00").
     if (index > 0 && !unitAfterPrevious && cells && amount.value === feeAmounts[index - 1].value && amount.start > priceCellAt &&
       PRICE_ONLY_CELL.test(cells.at(-1) ?? "") && segment.lastIndexOf(CELL_SEPARATOR, priceCellAt - 1) < feeAmounts[index - 1].start) return;
-    const candidateName = index === 0 ? feeName : titledLater?.name ?? (chunk as string);
-    const canonicalHint = index === 0 ? hint : (chunkHint as string);
+    const candidateName = index === 0 ? feeName : bracketed ? bracketed.name : titledLater?.name ?? (chunk as string);
+    const canonicalHint = index === 0 ? hint : bracketed ? bracketed.hint : (chunkHint as string);
     if (!usableName(candidateName) || amount.value <= 0 || amount.value > MAX_REASONABLE_FEE_AMOUNT) return;
     if (segment.slice(amount.end, amount.end + 3).includes("%")) return;
     result.candidates.push({
@@ -4026,7 +4063,7 @@ export function extractCandidatesFromText(input: string): ExtractionRulesResult 
       if (result.candidates.length >= MAX_FEES_PER_DOCUMENT) continue;
       if (seen.has(key)) {
         // v176: a read v176 renamed (`wholeLineName`) never merges with another line's read of the same name and
-        // price: the renamed one keeps its v175 name, as v175 kept both rows.
+        // price: the renamed one keeps its v175 name, so the rename itself never merges two lines' rows.
         const renamedAt = result.candidates.findIndex((earlier) => earlier.wholeLineName && earlier.excerpt !== candidate.excerpt &&
           `fee:${earlier.canonicalHint}:${earlier.feeName.toLowerCase()}:${earlier.amount}` === key);
         const restore = (read: ExtractedFeeCandidate) => `fee:${read.canonicalHint}:${read.wholeLineName!.toLowerCase()}:${read.amount}`;

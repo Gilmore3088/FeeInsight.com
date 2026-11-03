@@ -50,7 +50,8 @@ duplicate, plus GTE FCU's future-dated schedule (its own finding,
   Paper Statement3" does not move to paper_statement, the paper_statement rule skips a copy of a statement
   and document_reproduction accepts "copy of a paper/mailed/printed statement".
 - lineup.ts `distinctAccountName`: a qualifier after a dash that names no account, audience, fee or rate is
-  dropped and the name before it is tried.
+  dropped and the name before it is tried. Review of PR #2969: an age qualifier ("Under 18", "Over 55", "62+",
+  "Seniors") stays in the name, so "Premier Savings - Under 18" and "Premier Savings - Over 55" are two products.
 - Review of PR #2967, folded in: `ITEM_INSUFFICIENT_PAID` reads an insufficient item the bank pays, naming
   no return ("Insufficient Check Paid", "Item Insufficient - Paid", "Insufficient Debit Paid"), as overdraft,
   ahead of the NSF rule; "Insufficient Funds Check Paid" and "Insufficient Items Paid" stay overdraft.

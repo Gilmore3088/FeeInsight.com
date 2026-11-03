@@ -173,6 +173,11 @@ function numberedLine(value: string): NumberedLine | null {
  * Accounts" above it, which also heads two $10 money market accounts.
  */
 const DASH_QUALIFIER = /^(.+?)\s+[-–]\s+([^-–]+)$/;
+/**
+ * Review of PR #2969: an age or eligibility qualifier ("Premier Savings - Under 18", "- Over 55", "- 62+",
+ * "- Seniors", "- Youth") names a product of its own, so two accounts that differ only by it stay apart.
+ */
+const AGE_QUALIFIER = /\b(?:under|over|ages?|aged)\s+\d+|\b\d+\s*(?:\+|and\s+(?:over|older|up|under|younger))|\b(?:seniors?|youth|minors?|juniors?|kids?|teens?|students?)\b/i;
 const QUALIFIER_NAMES_OTHER = /\b(?:checking|savings|money market|share|club|account|certificates?|cds?|iras?|personal|consumer|business|commercial|student|youth|senior|teen|kids?|fees?|charges?|balance|minimum|maintenance|service|monthly|rates?|apy|dividends?|interest)\b/i;
 
 /** A name that says which account: an account word plus a word of its own, 2 to 6 words. */
@@ -180,7 +185,14 @@ function distinctAccountName(value: string): string | null {
   const whole = distinctAccountNameOnly(value);
   if (whole) return whole;
   const dashed = squash(value).replace(/[\s\-–:|,.*†‡]+$/, "").match(DASH_QUALIFIER);
-  return dashed && !QUALIFIER_NAMES_OTHER.test(dashed[2]) ? distinctAccountNameOnly(dashed[1]) : null;
+  if (!dashed) return null;
+  // Review of PR #2969: an age qualifier stays in the name ("Premier Savings - Under 18"), so two accounts
+  // that differ only by it are two products.
+  if (AGE_QUALIFIER.test(dashed[2]) && dashed[2].trim().split(/\s+/).length <= 4) {
+    const account = distinctAccountNameOnly(dashed[1]);
+    return account ? `${account} - ${dashed[2].trim()}` : null;
+  }
+  return !QUALIFIER_NAMES_OTHER.test(dashed[2]) ? distinctAccountNameOnly(dashed[1]) : null;
 }
 
 function distinctAccountNameOnly(value: string): string | null {

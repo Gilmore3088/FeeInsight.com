@@ -41,8 +41,16 @@ Worth/City of Fort Worth Retirement direct deposit totaling $500 or more". The a
   cut, which also renamed those, failed the v148 dash-list fixtures and was narrowed. The one fixture name that
   changes is "$10.00 - Monthly Service Fee (waived with $500 balance)": "Monthly Service Fee", not "Monthly
   Service Fee (waived with balance)".
-- On a price-first line, a later price that opens a bracket right after the earlier fee's words is a note on
-  that fee and is not read.
+- On a price-first line, a later price that opens a bracket right after the earlier fee's words is read by the
+  words in that bracket (`bracketedLaterRead`; review of PR #2969, whose reviewer found the first cut dropped
+  every such price): an age, member or other eligibility price ("($6 if age 55+)", "($8 for members 62 and
+  older)") or words that name nothing are a note on the fee and are not read; a fee of its own ("$5 monthly fee
+  ($2 paper statement fee if no e-statements)", "$30.00 NSF fee ($30.00 overdraft fee)", "($50.00 drilling
+  fee)") or another category ("($35 for international wires)") is read under the bracket's own words, never as
+  "NSF fee ("; a tier of the same fee ("($35 after the 3rd item)") keeps the earlier fee's name. The first
+  read's name drops the emptied bracket too ("Monthly fee", not "monthly fee ( paper statement fee ...)").
+- Review of PR #2969: the name cut also ends at "after", "until", "once", "while" and "whenever" ("$30 -
+  Dormant Account Fee after 12 months, waived ..." is "Dormant Account Fee").
 - Re-read: a current copy with a live Knox fee whose stored line opens with its price and prints a second
   figure, last read below v176, is read again once (`KNOX_PRICE_FIRST_NAME_READ_BELOW_VERSION`,
   `knox/extract.ts`). Like every re-read class it waits for the re-read floor (a text read at v167 or later in

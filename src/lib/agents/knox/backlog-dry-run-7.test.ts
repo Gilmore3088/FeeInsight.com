@@ -224,3 +224,29 @@ describe("a price-first line with a second figure is named by its own words afte
     expect(note.test('Knox deterministic extraction. excerpt="$5.00 Monthly fee for paper statements"')).toBe(false);
   });
 });
+
+describe("review of PR #2969", () => {
+  it("reads a bracketed later price that names a fee of its own, and keeps age or member prices as notes", () => {
+    expect(reads("$5 monthly fee ($2 paper statement fee if no e-statements)")).toEqual([["Monthly fee", 5, "monthly_maintenance"], ["Paper statement fee", 2, "paper_statement"]]);
+    expect(reads("$25.00 safe deposit box late fee ($50.00 drilling fee)").map((read) => [read[0], read[1]])).toEqual([["Safe deposit box late fee", 25], ["Drilling fee", 50]]);
+    expect(reads("$15 outgoing wire fee ($35 for international wires)").map((read) => read[1])).toEqual([15, 35]);
+    expect(reads("$15 outgoing wire fee ($35 for international wires)")[1][2]).not.toBe(reads("$15 outgoing wire fee ($35 for international wires)")[0][2]);
+    expect(reads("$25 overdraft fee per item ($35 after the 3rd item)")).toEqual([["Overdraft fee", 25, "overdraft"], ["Overdraft fee", 35, "overdraft"]]);
+    // No "NSF fee (" read: the bracket's own fee is named by its own words.
+    expect(reads("$30.00 NSF fee ($30.00 overdraft fee)")).toEqual([["NSF fee", 30, "nsf"], ["Overdraft fee", 30, "overdraft"]]);
+    expect(reads("$10 monthly service charge ($8 for members 62 and older)")).toEqual([["Monthly service charge", 10, "monthly_maintenance"]]);
+  });
+
+  it("ends a price-first name at \"after\", \"until\" and like condition words", () => {
+    expect(reads("$30 - Dormant Account Fee after 12 months, waived if balance over $500")).toEqual([["Dormant Account Fee", 30, "dormant_account"]]);
+    expect(priceFirstClauseName("$10 inactivity fee until the balance reaches $100", amountsIn("$10 inactivity fee until the balance reaches $100"))).toBe("Inactivity fee");
+  });
+
+  it("keeps an age qualifier after a dash in the account's name", () => {
+    const text = (account: string) => `Savings Accounts\n${account}\nMinimum balance of $100 required to avoid a monthly service charge of $3.00.`;
+    const under = accountHeadingAbove(text("Premier Savings - Under 18"), "Minimum balance of $100 required to avoid a monthly service charge of $3.00.");
+    const over = accountHeadingAbove(text("Premier Savings - Over 55"), "Minimum balance of $100 required to avoid a monthly service charge of $3.00.");
+    expect(under).toBe("Premier Savings - Under 18");
+    expect(over).toBe("Premier Savings - Over 55");
+  });
+});

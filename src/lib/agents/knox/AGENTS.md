@@ -2736,7 +2736,8 @@ number glued to its last word (`classifyNearest`): GTE FCU's "Overdraft Transfer
 transfer, like the table reader's read, so one read is kept; "Copy of Paper Statement" is document reproduction.
 (4) A dash qualifier that names no account, audience, fee or rate is a note on the account name (lineup.ts
 `distinctAccountName`): Bay State Savings Bank's $7 money market charge is "Revolution Money Market", not the
-section heading "Money Market Accounts". (5) Review of PR #2967: an item named insufficient that the bank pays,
+section heading "Money Market Accounts"; an age qualifier stays in the name ("Premier Savings - Under 18" and
+"- Over 55" are two products, review of PR #2969). (5) Review of PR #2967: an item named insufficient that the bank pays,
 naming no return ("Insufficient Check Paid", "Item Insufficient - Paid", "Insufficient Debit Paid"), reads
 overdraft (`ITEM_INSUFFICIENT_PAID`). Left: San Antonio Citizens' and Gulf Winds' business-section rows with
 unknown audience (a section heading's audience is the audience lessons' work, behind
@@ -2751,7 +2752,11 @@ balance of or ... totalin"): a monthly fee by `maintenanceFromProse` ("Monthly f
 open bracket dropped); a line that names nothing that way is held for review as before. A bare fee word ("Fee",
 "Service charge", `BARE_FEE_NAME`) never renames a read, and a renamed read whose name and price would equal
 another line's read on the text keeps its v175 name (`wholeLineName`), so two accounts' rows never merge. A later price opening a
-bracket after the first fee's words ("$8 monthly service charge ($6 if age 55+)") is a note, not a fee. Live
+bracket after the first fee's words is read by the bracket's own words (`bracketedLaterRead`, review of PR #2969):
+an age or member price ("$8 monthly service charge ($6 if age 55+)") or words naming nothing are a note; a fee of
+its own ("($2 paper statement fee if no e-statements)", "($30.00 overdraft fee)", "($50.00 drilling fee)") is read
+under its own name; a tier ("($35 after the 3rd item)") keeps the first fee's name. The name cut also ends at
+"after", "until", "once" and "while". Live
 (SELECT, Nov 3): of 534 live Knox fees read from such lines, a re-read renames 251 (166 institutions; 230
 monthly maintenance), none to a bare fee word, and loses none; the pages are read again once (`KNOX_PRICE_FIRST_NAME_READ_BELOW_VERSION`
 v176, 293 current-copy texts, waiting for the re-read floor like every class, which is not raised). The guard is
