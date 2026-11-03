@@ -36,6 +36,9 @@ type SqlTag = typeof sql;
  *   amount once (a $0 line may print no figure, "| None"). A line a schedule prints once per account
  *   ("Monthly Maintenance Service Charge | $10" under two accounts, Cambridge Savings doc 42199) is a
  *   real per-product price and stays two rows;
+ * - the page does not name both products for the line (on it or on headings above it) unless one
+ *   name is a part of the other: "Checking and Savings Accounts: Paper statement fee $2.00" prices
+ *   two products (`namesBothProducts`);
  * - their frequencies do not differ.
  *
  * Which product wins (`productSplitWinner`): a read from an older copy than the live fee never wins.
@@ -81,10 +84,16 @@ export function linePrintCount(text: string, excerpt: string): number {
 
 const ANY_PRICE = /\$\s*\d|(?<![\d.,$])\d[\d,]*\.\d{2}(?!\d)/;
 
-/** Pure: the line prints the amount once, or is a $0 line that prints no figure at all ("| None"). */
+const ZERO_WORD = /\b(?:free|none|n\/?c|no\s+charge|waived|no\s+fee)\b/gi;
+
+/**
+ * Pure: the line prints the amount once, or is a $0 line that prints no figure and at most one
+ * zero word ("| None"). "| Monthly Fee | Free | Free |" prints one price per account column: two
+ * products, two rows.
+ */
 export function pricedOnce(line: string, amount: number | string | null): boolean {
   if (pricePrints(line, amount) === 1) return true;
-  return Number(amount) === 0 && !ANY_PRICE.test(line);
+  return Number(amount) === 0 && !ANY_PRICE.test(line) && (line.match(ZERO_WORD) ?? []).length <= 1;
 }
 
 const PRODUCT_FILLER = new Set(["account", "accounts", "the", "and", "of", "for"]);
@@ -103,6 +112,8 @@ export function productPrintedOnLine(product: string | null | undefined, line: s
 
 /** Non-blank text lines above a fee's line searched for its account heading. */
 export const PRODUCT_HEADING_WINDOW = 12;
+/** Words that make a short line a fee row's label rather than an account heading. */
+const FEE_LABEL_WORDS = new Set(["fee", "fees", "charge", "charges", "charged"]);
 /** Words a heading may carry beyond the product's own ("Truth-In-Savings Disclosure" style labels). */
 const HEADING_EXTRA_WORDS = 4;
 
@@ -113,6 +124,9 @@ const HEADING_EXTRA_WORDS = 4;
 export function headingNamesProduct(product: string | null | undefined, line: string): boolean {
   if (/[$|]/.test(line) || ANY_PRICE.test(line)) return false;
   const words = productWords(product);
+  // "Account Reconciliation Fee" is a fee row's label, not the heading of an account, even when Knox
+  // took it as the product. "Fee Free Checking" and "No Fee Savings" are account names.
+  if (lineFold(line).replace(/\b(?:no|free)\s+(?:fees?|charges?)\b|\b(?:fees?|charges?)\s+free\b/g, " ").split(" ").some((word) => FEE_LABEL_WORDS.has(word))) return false;
   const lineWords = lineFold(line).split(" ").filter(Boolean);
   return words.length > 0 && lineWords.length <= words.length + HEADING_EXTRA_WORDS && productPrintedOnLine(product, line);
 }
@@ -165,6 +179,33 @@ export function samePageCopy(a: ProductSplitSide, b: ProductSplitSide): boolean 
   return one != null && one === feePageKey(b.document_url ?? b.source_url) && (a.document_stream ?? "") === (b.document_stream ?? "");
 }
 
+function wordsWithin(inner: string[], outer: string[]): boolean {
+  return inner.length > 0 && inner.every((word) => outer.includes(word));
+}
+
+/**
+ * Pure: the page names both products for this line, on the line itself or on the one heading the
+ * line sits under, and neither name is a part of the other. "Checking and Savings Accounts: Paper
+ * statement fee $2.00", or a line under "Basic Checking & Student Checking", prices both products:
+ * two rows. "Fresh Start Checking" and "Checking" are one name, the shorter a part of the longer:
+ * still one line read twice. Two separate headings above the line (an earlier account's section,
+ * then the line's own) are not both the line's: the nearer one heads it.
+ */
+export function namesBothProducts(one: string | null | undefined, two: string | null | undefined, text: string | null, excerpt: string): boolean {
+  const [a, b] = [productWords(one), productWords(two)];
+  if (a.length === 0 || b.length === 0 || wordsWithin(a, b) || wordsWithin(b, a)) return false;
+  const both = (line: string) => productPrintedOnLine(one, line) && productPrintedOnLine(two, line);
+  if (both(excerpt)) return true;
+  if (!text) return false;
+  const lines = text.split(/\r?\n/).filter((each) => each.trim() !== "");
+  const at = lines.findIndex((each) => lineFold(each) === lineFold(excerpt));
+  if (at < 0) return false;
+  for (let index = at - 1; index >= Math.max(0, at - PRODUCT_HEADING_WINDOW); index -= 1) {
+    if (headingNamesProduct(one, lines[index]) || headingNamesProduct(two, lines[index])) return both(lines[index]);
+  }
+  return false;
+}
+
 /**
  * Pure: `read` and `live` are one printed line read under two products (the module note's rule).
  * `currentText` is the stored text of the newer of the two documents; `amount` the shared amount.
@@ -176,6 +217,7 @@ export function readsOneLineTwoProducts(read: ProductSplitSide, live: ProductSpl
   if (!line || line !== lineFold(live.excerpt)) return false;
   if (!currentText || linePrintCount(currentText, read.excerpt ?? "") !== 1) return false;
   if (!pricedOnce(read.excerpt ?? "", amount)) return false;
+  if (namesBothProducts(read.product_name, live.product_name, currentText, read.excerpt ?? "")) return false;
   const [one, two] = [frequencyClass(read.frequency), frequencyClass(live.frequency)];
   return one == null || two == null || one === two;
 }

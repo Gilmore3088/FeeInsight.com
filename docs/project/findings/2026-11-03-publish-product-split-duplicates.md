@@ -36,16 +36,24 @@ page-copy collapses, the same-line read (#1876) and Darwin's stale-copy twin che
   ("Accounts…..$1.00" is "Accounts $1.00"). That line must print exactly once in the newer document's
   stored text and print the amount once (a $0 line may print no figure, "| None"), and the frequencies
   must not differ. A line printed once per account (Cambridge's $10) is a real per-product price and
-  stays two rows.
+  stays two rows. So does a $0 table row that prints one zero word per account column ("| Monthly Fee |
+  Free | Free |"), and a line that names both products, on the line or on the one heading it sits under
+  ("Checking and Savings Accounts: Paper statement fee $2.00", or a line under "Basic Checking &
+  Student Checking"), unless one name is part of the other ("Fresh Start Checking" and "Checking" are
+  one name). These two guards came from the independent review; neither matches a live pair today.
 - Whose product stays: a read from an older copy than the live fee never wins. Otherwise the product
   named on the line, or on the nearest heading above it, wins. A heading here is a short line with no
-  price or table cell, within 12 non-blank lines of the fee. A product named nowhere above the line counts
+  price, table cell or fee word ("Account Reconciliation Fee" is a fee row's label, not an account),
+  within 12 non-blank lines of the fee. A product named nowhere above the line counts
   as none (Cvph's "Demand Deposit Account"). On a tie the newer read wins. "The newer read wins" on its
   own was wrong on 2 of 5 sampled live pairs: re-reads that had lost "Bank of Commerce Super NOW Account"
   and "Infinity Checking", the headings right above their lines.
 - Publish: when the row would be new, `selectProductSplitTwin` reads the live rows of other products.
   If the row's product wins, the row supersedes the live row. A same-amount supersede now records no
-  price change in `fee_change_records`. If the live row's product wins, the row is refused ("Same printed
+  price change in `fee_change_records`; that line in `supersedePriorFee` is not behind the switch, so it
+  also applies to the existing supersede path. On main a same-amount supersede wrote an "increase" row
+  with equal amounts; on prod 0 of 157 `fee_change_records` rows and 0 of 61 "superseded by #N" pairs
+  have equal amounts, so it has never fired. If the live row's product wins, the row is refused ("Same printed
   line as live fee #N under another product"). Counted each step as `product_split_check`.
 - Darwin: `darwin/product-split-check.ts` reads the pairs already live, on one document or on an older
   copy and its current copy (`superseded_by_id`), with the same rule. The loser comes down on its second
@@ -60,7 +68,7 @@ and MutualOne #73214 each pair with their re-read, and in all five the re-read's
 re-read supersedes the live row and one row stays. Cambridge #104221 is left as it is (line printed
 twice). Its wrong product is Knox's heading choice, which is still open.
 
-**Dry-run count (prod, read-only, Nov 3):** 119 live pairs share a folded line, institution, category,
+**Dry-run count (prod, read-only, Nov 3):** 119 live pairs were read; they share a folded line, institution, category,
 variant and amount under different products (103 on an older copy and its current copy, 16 on one
 document). Of these, 71 meet the rule. 38 sit on two copies whose page keys differ, 7 have a line that
 the current text does not print exactly once, and 3 do not print the price exactly once. With losers
@@ -71,7 +79,13 @@ in SQL with the same heading rules, then fed to `findProductSplits`. Of 14 pairs
 the stored text, all 14 were one printed line live twice. The kept product was right in 11. In one, "no
 product" was kept over "Value Checking", but the line sits under "Classic Checking", so neither was
 right. Two were unclear: "Checking" kept over none for a general "Below Minimum Balance fee", and none
-kept over "First Class Checking", whose heading is not near the line.
+kept over "First Class Checking", whose heading is not near the line. The independent reviewer checked
+10 more pairs at other institutions: all 10 were one line live twice, and the kept product was right in
+9. The wrong one keeps Knox's product "Account Reconciliation Fee" (a fee label nine lines up) over none
+for "Below Minimum Balance Fee | $10": the fee label is no longer a heading, but with neither product
+headed the newer read wins the tie. The takedown is still right; the kept row's product label is
+Knox's error. With the review's guards the count is unchanged: 65 fees at 49 institutions, the same ids
+and the same kept fees.
 
 **Not changed:** Knox's product choice itself, including Cambridge's heading pick. The 38 pairs whose
 copies moved to another address are left alone.

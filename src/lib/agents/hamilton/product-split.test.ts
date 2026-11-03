@@ -4,6 +4,7 @@ import {
   headingNamesProduct,
   lineFold,
   linePrintCount,
+  namesBothProducts,
   pricedOnce,
   productDistance,
   productSplitWinner,
@@ -101,5 +102,40 @@ describe("one printed line under two products", () => {
     const row = { feeRawId: 1, institutionId: 1, canonicalFeeKey: "monthly_maintenance", variantType: null, amount: 0, productName: null,
       frequency: null, sourceDocumentId: 1, documentUrl: URL, sourceUrl: URL, documentStream: null, documentCrawledAt: null };
     expect(await selectProductSplitTwin(db, row)).toEqual({ state: "unavailable", check: "product_split" });
+  });
+
+  it("review of #2964: a $0 table row printing one zero word per account column is two products' prices", () => {
+    expect(pricedOnce("| Monthly Service Charge | None | None |", 0)).toBe(false);
+    expect(pricedOnce("| Monthly Fee | Free | Free |", 0)).toBe(false);
+    expect(pricedOnce("Monthly Fee | No Charge | N/C", 0)).toBe(false);
+    expect(pricedOnce("| Monthly Fee | Free |", 0)).toBe(true);
+    const line = "| Monthly Fee | Free | Free |";
+    const text = ["Basic Checking | Student Checking", line].join("\n");
+    expect(readsOneLineTwoProducts(read("Basic Checking", line), live(null, line), text, 0)).toBe(false);
+  });
+
+  it("review of #2964: one line naming two products, on the line or in a heading above it, stays two rows", () => {
+    const shared = "Checking and Savings Accounts: Paper statement fee $2.00";
+    const both = ["Statements", shared].join("\n");
+    expect(namesBothProducts("Checking", "Savings", both, shared)).toBe(true);
+    expect(readsOneLineTwoProducts(read("Checking", shared), live("Savings", shared), both, 2)).toBe(false);
+    const under = "Paper statement fee | $2.00";
+    const headed = ["Basic Checking & Student Checking", "", under].join("\n");
+    expect(readsOneLineTwoProducts(read("Basic Checking", under), live("Student Checking", under), headed, 2)).toBe(false);
+  });
+
+  it("review of #2964: a product name that is part of the other's is still one line read twice (live pair 113)", () => {
+    const line = "Monthly Service Charge | $5.00";
+    const text = ["Fresh Start Checking", "", line].join("\n");
+    expect(namesBothProducts("Fresh Start Checking", "Checking", text, line)).toBe(false);
+    expect(readsOneLineTwoProducts(read("Fresh Start Checking", line), live("Checking", line), text, 5)).toBe(true);
+    expect(productSplitWinner(read("Fresh Start Checking", line), live("Checking", line), text)).toBe("read");
+  });
+
+  it("review of #2964: a short fee label is not an account heading", () => {
+    expect(headingNamesProduct("Account Reconciliation", "Account Reconciliation Fee")).toBe(false);
+    expect(headingNamesProduct("Account Reconciliation Fee", "Account Reconciliation Fee")).toBe(false);
+    expect(headingNamesProduct("Fee Free Checking", "Fee Free Checking")).toBe(true);
+    expect(headingNamesProduct("No Fee Savings", "No Fee Savings")).toBe(true);
   });
 });
