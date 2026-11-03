@@ -1614,6 +1614,24 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   flag), never behind a fee the same pass takes down. `PRODUCT_SPLIT_MERGE_LIVE` is off: the step only
   reports (`product_split_check`). Dry run 2026-11-03 (prod, read-only): 119 pairs, 65 live fees at 49
   institutions would come down.
+- One printed line live under two categories (`reread-category-move-check.ts`, v1, Nov 3). Hamilton
+  superseded a live fee only inside its category, so a re-read that files a line under a corrected
+  category went live beside the old fee. Each step reads the pairs of live dollar fees of one
+  institution, amount and product under different categories, the later read's raw row written after
+  the earlier's, whose stored lines fold to the same words or one inside the other
+  (`REREAD_CATEGORY_MOVE_ROWS_SQL`), and judges each with Hamilton's rule
+  (`rereadsLineInAnotherCategory` in `hamilton/reread-category-move.ts`) against the later read's
+  document's current text. The earlier read comes down on its second look (check
+  `darwin.reread_category_move`) as `same_line_duplicate: live fee #<later>` (batch
+  `darwin-reread-category-move-<run>`, verified row rejected with the `same_line_duplicate` flag), never
+  behind a fee the same pass takes down. An overdraft/NSF move is never made (#1513), and neither is a move
+  on a line that prices an item of each category ("Money order/Cashier check fee | $8.00",
+  `lineNamesBothCategories`). `REREAD_CATEGORY_MOVE_LIVE` (Hamilton's) is off: the step only reports
+  (`reread_category_move_check`). Dry run 2026-11-03 (prod, read-only, SQL-narrowed then judged by
+  `findRereadCategoryMoves`): 395 candidate pairs, 101 live fees at 96 institutions would come down, 77 at 73 after the two-item-line
+  and overdraft/NSF fixes of the #2980 review; at
+  least 10 of them look like the later read is the wrong one, so the switch waits on a sampled verdict
+  (finding 2026-11-03-reread-cross-category-duplicates).
 - Schedule editions (`edition-effective-check.ts`, #1915). Avidia's schedule "Effective December 1,
   2026" went live beside its March 2024 one, so the page showed next year's $35 overdraft. Each
   step reads the edition each document's heading states (`editionStarts` in
@@ -3029,6 +3047,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `SAME_LINE_REPLACEMENT_CHECK_VERSION` | `darwin.same_line_replacement` | v1 | `darwin/same-line-replacement-check.ts` |
 | `SAME_LINE_READ_CHECK_VERSION` | `darwin.same_line_read` | v1 | `darwin/same-line-read-check.ts` |
 | `PRODUCT_SPLIT_CHECK_VERSION` | `darwin.product_split` | v1 | `darwin/product-split-check.ts` |
+| `REREAD_CATEGORY_MOVE_CHECK_VERSION` | `darwin.reread_category_move` | v1 | `darwin/reread-category-move-check.ts` |
 | `CANADIAN_DOCUMENT_CHECK_VERSION` | `darwin.canadian_document` | v1 | `darwin/canadian-document-check.ts` |
 | `OLD_LABELLED_DOCUMENT_CHECK_VERSION` | `darwin.old_labelled_document` | v1 | `darwin/old-labelled-document-check.ts` |
 | `LATE_CHARGE_BOUND_CHECK_VERSION` | `darwin.late_charge_bound` | v1 | `darwin/late-charge-bound-check.ts` |
