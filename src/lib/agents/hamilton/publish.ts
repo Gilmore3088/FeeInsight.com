@@ -82,6 +82,7 @@ import {
   selectProductSplitTwin,
   type ProductSplitMatch,
 } from "@/lib/agents/hamilton/product-split";
+import { REREAD_CATEGORY_MOVE_LIVE, selectRereadCategoryMove } from "@/lib/agents/hamilton/reread-category-move";
 import { vocabularyOnlyName } from "@/lib/agents/knox/held-vocabulary-read";
 import {
   PublicationEvidenceUnavailable,
@@ -226,6 +227,8 @@ export interface HamiltonPublishResult {
   sameLineReadOf?: number | null;
   /** The live fee of this row's printed line under another product, and whose product wins (product-split.ts). */
   productSplitOf?: { feePublishedId: number; winner: "read" | "live" } | null;
+  /** The live fee whose printed line this row re-reads under another category (reread-category-move.ts). */
+  rereadCategoryMoveOf?: number | null;
 }
 
 export interface RunHamiltonPublishOptions {
@@ -249,6 +252,8 @@ export interface RunHamiltonPublishOptions {
   refuseSameLineReadsLive?: boolean;
   /** Merge a re-read of a live fee's line under another product (product-split.ts); defaults to `PRODUCT_SPLIT_MERGE_LIVE`. */
   productSplitLive?: boolean;
+  /** Supersede a live fee whose line this row re-reads under another category (reread-category-move.ts); defaults to `REREAD_CATEGORY_MOVE_LIVE`. */
+  rereadCategoryMoveLive?: boolean;
   /**
    * Epoch ms after which the row loop stops (after `PUBLISH_MIN_ROWS_PER_STEP` rows), so the step
    * ends inside the tick (2026-10-17 finding).
@@ -275,6 +280,15 @@ export interface PublishProductSplitCheck {
   /** The live row's product wins: the row is refused. */
   liveWins: number;
   samples: Array<{ fee_verified_id: number; fee_published_id: number | null; live_fee_published_id: number; winner: "read" | "live"; fee_name: string; amount: number | null }>;
+}
+
+export interface PublishRereadCategoryMoveCheck {
+  /** True when the step supersedes the live fee with the re-read. */
+  live: boolean;
+  matched: number;
+  /** Live fees superseded this step (0 while off, or in a dry run). */
+  superseded: number;
+  samples: Array<{ fee_verified_id: number; fee_published_id: number | null; live_fee_published_id: number; canonical_fee_key: string; fee_name: string; amount: number | null }>;
 }
 
 export interface HeldThinInstitution {
@@ -323,6 +337,8 @@ export interface RunHamiltonPublishResult {
   sameLineReadCheck: PublishPageCopyCheck;
   /** Rows that re-read a live fee's line under another product (product-split.ts): superseded or refused when live. */
   productSplitCheck: PublishProductSplitCheck;
+  /** Rows that re-read a live fee's line under another category (reread-category-move.ts): supersede it when live. */
+  rereadCategoryMoveCheck: PublishRereadCategoryMoveCheck;
   evidenceCheck?: PublishEvidenceCheck;
   /** Where each fee this step published is printed in our stored copy of the bank's fee schedule (publish-location.ts); null when none published. */
   locationCheck?: PublishLocationCheck | null;
@@ -2476,6 +2492,7 @@ export async function runHamiltonPublish(
   const refusePageCopiesLive = options.refusePageCopiesLive ?? PUBLISH_REFUSE_PAGE_COPIES_LIVE;
   const refuseSameLineReadsLive = options.refuseSameLineReadsLive ?? PUBLISH_REFUSE_SAME_LINE_READS_LIVE;
   const productSplitLive = options.productSplitLive ?? PRODUCT_SPLIT_MERGE_LIVE;
+  const rereadCategoryMoveLive = options.rereadCategoryMoveLive ?? REREAD_CATEGORY_MOVE_LIVE;
   const learning = !dryRun && (await learningSchemaReady(db));
   const batchId = `agentic-run-${options.runId}`;
   const selected = await selectVerifiedFees(
@@ -2666,6 +2683,22 @@ export async function runHamiltonPublish(
       if (productSplitLive && productSplit?.winner === "read") decision = { kind: "supersede", prior: productSplit.prior };
     }
     const productSplitRefused = productSplitLive && productSplit?.winner === "live";
+    // A re-read of a live fee's printed line under a corrected category (reread-category-move.ts): the
+    // row would otherwise go live beside the wrong-category copy of its own line. Only a later read of
+    // the line than the live fee's qualifies; on, the re-read supersedes the live fee.
+    let rereadCategoryMoveOf: PriorPublishedFeeRow | null = null;
+    if (!skipReason && priorReadsAvailable && !productSplit && (decision?.kind === "new" || decision?.kind === "additional_line") &&
+        row.fee_raw_id != null && row.source_document_id != null && !isPercentFee(row) && normalizedAmount(row.amount) != null) {
+      const read = await selectRereadCategoryMove(db, {
+        feeRawId: Number(row.fee_raw_id), institutionId: Number(row.institution_id), canonicalFeeKey: row.canonical_fee_key,
+        amount: normalizedAmount(row.amount)!, feeName: row.fee_name, productName: row.product_name ?? null, frequency: row.frequency,
+        sourceDocumentId: Number(row.source_document_id), documentUrl: row.document_url, sourceUrl: row.source_url,
+        documentStream: row.document_stream, documentCrawledAt: row.document_crawled_at,
+      }, namesShareReading);
+      if (read.state === "available") rereadCategoryMoveOf = read.value;
+      else unavailable(read.check, rereadCategoryMoveLive);
+      if (rereadCategoryMoveLive && rereadCategoryMoveOf) decision = { kind: "supersede", prior: rereadCategoryMoveOf };
+    }
     const priorPublishedFee = decision?.kind === "supersede" ? decision.prior : null;
     let exactDuplicate: ExactDuplicateDecision = { kind: "none" };
     const line = collapseLineOf(row);
@@ -2901,6 +2934,7 @@ export async function runHamiltonPublish(
     if (pageCopyOf != null) result.pageCopyOf = pageCopyOf;
     if (sameLineReadOf != null) result.sameLineReadOf = sameLineReadOf;
     if (productSplit) result.productSplitOf = { feePublishedId: Number(productSplit.prior.fee_published_id), winner: productSplit.winner };
+    if (rereadCategoryMoveOf) result.rereadCategoryMoveOf = Number(rereadCategoryMoveOf.fee_published_id);
     if (result.status === "published") {
       stepCopies.set(lineKey, [
         ...(stepCopies.get(lineKey) ?? []),
@@ -2946,6 +2980,7 @@ export async function runHamiltonPublish(
           ...(result.pageCopyOf != null ? { page_copy_of: result.pageCopyOf } : {}),
           ...(result.sameLineReadOf != null ? { same_line_read_of: result.sameLineReadOf } : {}),
           ...(result.productSplitOf ? { product_split_of: result.productSplitOf } : {}),
+          ...(result.rereadCategoryMoveOf != null ? { reread_category_move_of: result.rereadCategoryMoveOf } : {}),
         },
       });
     }
@@ -3050,6 +3085,20 @@ export async function runHamiltonPublish(
       amount: result.amount,
     })),
   };
+  const rereadCategoryMoveHits = results.filter((result) => result.rereadCategoryMoveOf != null);
+  const rereadCategoryMoveCheck: PublishRereadCategoryMoveCheck = {
+    live: rereadCategoryMoveLive,
+    matched: rereadCategoryMoveHits.length,
+    superseded: rereadCategoryMoveHits.filter((result) => result.supersededFeePublishedId === result.rereadCategoryMoveOf && !dryRun).length,
+    samples: rereadCategoryMoveHits.slice(0, 10).map((result) => ({
+      fee_verified_id: result.feeVerifiedId,
+      fee_published_id: result.feePublishedId,
+      live_fee_published_id: result.rereadCategoryMoveOf!,
+      canonical_fee_key: result.canonicalFeeKey,
+      fee_name: result.feeName,
+      amount: result.amount,
+    })),
+  };
   const unavailableByCheck: PublishEvidenceCheck["unavailableByCheck"] = {};
   for (const result of results) {
     for (const check of result.unavailableEvidence ?? []) {
@@ -3106,6 +3155,7 @@ export async function runHamiltonPublish(
     pageCopyCheck,
     sameLineReadCheck,
     productSplitCheck,
+    rereadCategoryMoveCheck,
     evidenceCheck,
     locationCheck,
     timeBox: { stopped: rowsLeft > 0, rowsLeft, topUpSkipped },
