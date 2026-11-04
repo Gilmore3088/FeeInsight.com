@@ -22,8 +22,12 @@ dependency):
   writes that page from the tags: one TR per line, cells joined by " | ", P, LI and Hn elements as
   lines of their own. Any other page keeps main's `read.pdf_layout` text. The result runs through
   the source-bytes replay with `currentVariant`, against the same keys.
-- **Files:** the census script, its output (`tag-census.jsonl`) and the replay probe are committed
-  under `findings/data/2026-11-03-pdf-structure-tags/`, as `.txt` files so they do not run in CI.
+- **Files:** all under `findings/data/2026-11-03-pdf-structure-tags/`. The census script
+  (`tag-census.mjs.txt`) and the replay probe (`zz-tag-probe.test.ts.txt`) are stored as `.txt` so
+  they do not run in CI. Their outputs are `tag-census.jsonl` and `replay-report.txt`; each number
+  below comes from one of them.
+- **Census fields:** the "Priced items in TD/TH" column is `pricedInTableCell` (priced items under
+  a TD or TH). `pricedInCell` also counts LI and LBody, which is why state:8240 shows 14 there.
 
 **Census: 11 of 19 PDFs are tagged, but only 3 have tags that cover their priced text.**
 
@@ -64,14 +68,15 @@ dependency):
   cells right ("Inactivity fees for checking (Monthly fee for accounts …) | $5.00"), but none of
   its 3 misses is a wrapped cell.
 
-**Replay prototype (source-bytes replay, `PDF_TEXT_DIRECTION_LIVE` off):**
+**Replay prototype** (source-bytes replay, `PDF_TEXT_DIRECTION_LIVE` off; from `replay-report.txt`):
 
 | Measure | Main's reading | Tag reading where tags cover the page |
 |---|---|---|
 | Recall: answer-key fees published | 922 / 1,216 | 921 / 1,216 |
 | Keys gained / lost | | 2 / 3 |
 | Published outside the key | 28 | 28 |
-| Today's misses on the 3 covered documents | 25 (10193: 7, 3515: 3, 7450: 15) | 26 |
+| Re-read misses, all documents | 294 | 295 |
+| Today's misses on the 3 covered documents | 25 (10193: 7, 3515: 3, 7450: 15) | 26 (10193: 7, 3515: 3, 7450: 16) |
 
 - Gained: state:3515 account_research $50 and state:7450 wire_intl_incoming $10.
 - Lost:

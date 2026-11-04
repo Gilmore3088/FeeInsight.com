@@ -106,6 +106,11 @@ describe("tag probe", () => {
       const d = replayDelta(a, b);
       report.push(`${mode} recall off ${a.total.reread.found}/${a.total.reread.expected} on ${b.total.reread.found}/${b.total.reread.expected}; outside ${a.total.reread.unexpected} -> ${b.total.reread.unexpected}`);
       report.push(`${mode} DELTA ${JSON.stringify(d)}`);
+      report.push(`${mode} reread misses off ${a.rereadMissed.length} on ${b.rereadMissed.length}`);
+      for (const key of ["missed_fees:state:10193", "missed_fees:state:3515", "missed_fees:state:7450"]) {
+        const count = (s: typeof a) => s.rereadMissed.filter((m) => m.startsWith(`${key} `)).length;
+        report.push(`${mode} misses ${key} off ${count(a)} on ${count(b)}`);
+      }
     }
     writeFileSync(join(OUT, "report.txt"), report.join("\n"));
     expect(true).toBe(true);

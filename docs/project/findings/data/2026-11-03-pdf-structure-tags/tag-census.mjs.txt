@@ -1,5 +1,6 @@
 // Read-only census (findings/2026-11-03-pdf-structure-tags.md). Run:
 // node tag-census.mjs <path to unpdf/dist/index.mjs> <source-bytes fixture dir> [extra.pdf ...]
+// pricedInCell counts priced items under TD, TH, LI or LBody; pricedInTableCell under TD or TH only.
 // Read-only probe: is each PDF tagged, which structure roles it uses, do TD/TH/LI map to text via MCIDs.
 import { readFileSync, readdirSync } from "node:fs";
 import { gunzipSync } from "node:zlib";
@@ -27,6 +28,7 @@ async function probe(name, bytes) {
   let pagesWithTree = 0;
   let pricedItems = 0;
   let pricedInCell = 0;
+  let pricedInTableCell = 0;
   let pricedInAnyTag = 0;
   let mcidRefs = 0;
   let mcidResolved = 0;
@@ -48,6 +50,7 @@ async function probe(name, bytes) {
       }
     }
     const cellIds = new Set();
+    const tableCellIds = new Set();
     const tagIds = new Set();
     if (tree && tree.children?.length) {
       pagesWithTree += 1;
@@ -58,6 +61,7 @@ async function probe(name, bytes) {
           if (idText.has(node.id)) mcidResolved += 1;
           tagIds.add(node.id);
           if (parents.some((r) => r === "TD" || r === "TH" || r === "LI" || r === "LBody")) cellIds.add(node.id);
+          if (parents.some((r) => r === "TD" || r === "TH")) tableCellIds.add(node.id);
         }
       });
     }
@@ -70,13 +74,14 @@ async function probe(name, bytes) {
         pricedItems += 1;
         const ids = stack2.filter(Boolean);
         if (ids.some((id) => cellIds.has(id))) pricedInCell += 1;
+        if (ids.some((id) => tableCellIds.has(id))) pricedInTableCell += 1;
         if (ids.some((id) => tagIds.has(id))) pricedInAnyTag += 1;
       }
     }
   }
   const roleList = [...roles.entries()].sort((a, b) => b[1] - a[1]).map(([r, n]) => `${r}:${n}`).join(" ");
   process.stdout.write(`${JSON.stringify({ name, pages: pdf.numPages, marked: markInfo?.Marked ?? null, pagesWithTree,
-    mcidRefs, mcidResolved, pricedItems, pricedInCell, pricedInAnyTag, roles: roleList })}\n`);
+    mcidRefs, mcidResolved, pricedItems, pricedInCell, pricedInTableCell, pricedInAnyTag, roles: roleList })}\n`);
 }
 
 const files = readdirSync(fixtureDir).filter((f) => f.endsWith(".pdf.gz")).sort();
