@@ -1,0 +1,89 @@
+// Read-only census (findings/2026-11-03-pdf-structure-tags.md). Run:
+// node tag-census.mjs <path to unpdf/dist/index.mjs> <source-bytes fixture dir> [extra.pdf ...]
+// pricedInCell counts priced items under TD, TH, LI or LBody; pricedInTableCell under TD or TH only.
+// Read-only probe: is each PDF tagged, which structure roles it uses, do TD/TH/LI map to text via MCIDs.
+import { readFileSync, readdirSync } from "node:fs";
+import { gunzipSync } from "node:zlib";
+import { join, basename } from "node:path";
+
+const unpdfPath = process.argv[2];
+const fixtureDir = process.argv[3];
+const extra = process.argv.slice(4);
+const { getDocumentProxy } = await import(unpdfPath);
+
+function walk(node, visit, parentRoles = []) {
+  if (!node) return;
+  visit(node, parentRoles);
+  if (Array.isArray(node.children)) {
+    for (const child of node.children) walk(child, visit, node.role ? [...parentRoles, node.role] : parentRoles);
+  }
+}
+
+const PRICE = /\$\s?\d|\d+\.\d{2}\b/;
+
+async function probe(name, bytes) {
+  const pdf = await getDocumentProxy(new Uint8Array(bytes));
+  const markInfo = await pdf.getMarkInfo().catch(() => null);
+  const roles = new Map();
+  let pagesWithTree = 0;
+  let pricedItems = 0;
+  let pricedInCell = 0;
+  let pricedInTableCell = 0;
+  let pricedInAnyTag = 0;
+  let mcidRefs = 0;
+  let mcidResolved = 0;
+  for (let p = 1; p <= pdf.numPages; p += 1) {
+    const page = await pdf.getPage(p);
+    const tree = await page.getStructTree().catch(() => null);
+    const content = await page.getTextContent({ includeMarkedContent: true });
+    // map marked-content id -> text
+    const idText = new Map();
+    const stack = [];
+    for (const item of content.items) {
+      if (item.type === "beginMarkedContentProps" || item.type === "beginMarkedContent") {
+        stack.push(item.id ?? null);
+      } else if (item.type === "endMarkedContent") {
+        stack.pop();
+      } else if (typeof item.str === "string") {
+        const id = [...stack].reverse().find((v) => v);
+        if (id) idText.set(id, (idText.get(id) ?? "") + item.str);
+      }
+    }
+    const cellIds = new Set();
+    const tableCellIds = new Set();
+    const tagIds = new Set();
+    if (tree && tree.children?.length) {
+      pagesWithTree += 1;
+      walk(tree, (node, parents) => {
+        if (node.role) roles.set(node.role, (roles.get(node.role) ?? 0) + 1);
+        if (node.type === "content") {
+          mcidRefs += 1;
+          if (idText.has(node.id)) mcidResolved += 1;
+          tagIds.add(node.id);
+          if (parents.some((r) => r === "TD" || r === "TH" || r === "LI" || r === "LBody")) cellIds.add(node.id);
+          if (parents.some((r) => r === "TD" || r === "TH")) tableCellIds.add(node.id);
+        }
+      });
+    }
+    // priced items
+    const stack2 = [];
+    for (const item of content.items) {
+      if (item.type === "beginMarkedContentProps" || item.type === "beginMarkedContent") stack2.push(item.id ?? null);
+      else if (item.type === "endMarkedContent") stack2.pop();
+      else if (typeof item.str === "string" && PRICE.test(item.str)) {
+        pricedItems += 1;
+        const ids = stack2.filter(Boolean);
+        if (ids.some((id) => cellIds.has(id))) pricedInCell += 1;
+        if (ids.some((id) => tableCellIds.has(id))) pricedInTableCell += 1;
+        if (ids.some((id) => tagIds.has(id))) pricedInAnyTag += 1;
+      }
+    }
+  }
+  const roleList = [...roles.entries()].sort((a, b) => b[1] - a[1]).map(([r, n]) => `${r}:${n}`).join(" ");
+  process.stdout.write(`${JSON.stringify({ name, pages: pdf.numPages, marked: markInfo?.Marked ?? null, pagesWithTree,
+    mcidRefs, mcidResolved, pricedItems, pricedInCell, pricedInTableCell, pricedInAnyTag, roles: roleList })}\n`);
+}
+
+const files = readdirSync(fixtureDir).filter((f) => f.endsWith(".pdf.gz")).sort();
+for (const f of files) await probe(basename(f, ".pdf.gz"), gunzipSync(readFileSync(join(fixtureDir, f))));
+for (const f of extra) await probe(basename(f, ".pdf"), readFileSync(f));

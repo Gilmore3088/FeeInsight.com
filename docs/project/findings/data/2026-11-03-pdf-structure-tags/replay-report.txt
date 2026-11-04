@@ -1,0 +1,24 @@
+tables missed_fees:state:3981: tag pages 0/2 no priced text; priced outside cell 54/54
+tables missed_fees:state:6730: tag pages 0/1 untagged
+tables missed_fees:state:7450: tag pages 1/1 covered
+tables missed_fees:state:8036: tag pages 0/1 untagged
+tables missed_fees:state:6820: tag pages 0/1 priced outside cell 40/40
+tables missed_fees:state:8085: tag pages 0/1 priced outside cell 72/72
+tables missed_fees:state:10193: tag pages 3/4 no priced text; covered; covered; covered
+tables missed_fees:state:1338: tag pages 0/2 untagged; untagged
+tables missed_fees:state:3148: tag pages 0/1 priced outside cell 52/52
+tables missed_fees:state:11362: tag pages 0/1 untagged
+tables missed_fees:state:3515: tag pages 2/2 covered; covered
+tables missed_fees:state:4677: tag pages 0/2 untagged; untagged
+tables missed_fees:state:8741: tag pages 0/1 untagged
+tables missed_fees:state:7114: tag pages 0/1 priced outside cell 42/42
+tables missed_fees:state:8240: tag pages 0/4 priced outside cell 10/22; priced outside cell 50/50; priced outside cell 13/13; priced outside cell 12/12
+tables missed_fees:texas:2429: tag pages 0/20 untagged; untagged; untagged; untagged; untagged; untagged; untagged; untagged; untagged; untagged; untagged; untagged; untagged; untagged; untagged; untagged; untagged; untagged; untagged; untagged
+tables missed_fees:texas:2451: tag pages 0/14 no priced text; no priced text; no priced text; priced outside cell 2/2; no priced text; priced outside cell 1/1; priced outside cell 1/1; priced outside cell 1/1; priced outside cell 12/12; priced outside cell 17/17; priced outside cell 13/13; priced outside cell 2/2; priced outside cell 11/11; priced outside cell 103/103
+tables missed_fees:texas:841: tag pages 0/12 no priced text; no priced text; no priced text; no priced text; priced outside cell 1/1; no priced text; no priced text; priced outside cell 4/4; priced outside cell 3/3; priced outside cell 7/7; priced outside cell 33/33; priced outside cell 49/49
+tables recall off 922/1216 on 921/1216; outside 28 -> 28
+tables DELTA {"gained":["missed_fees:state:3515 account_research:5000","missed_fees:state:7450 wire_intl_incoming:1000"],"lost":["missed_fees:state:3515 paper_statement:500","missed_fees:state:7450 card_replacement:500","missed_fees:state:7450 cashiers_check:500"],"unexpectedAdded":[],"unexpectedRemoved":[]}
+tables reread misses off 294 on 295
+tables misses missed_fees:state:10193 off 7 on 7
+tables misses missed_fees:state:3515 off 3 on 3
+tables misses missed_fees:state:7450 off 15 on 16
