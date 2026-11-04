@@ -200,7 +200,7 @@ export const HOOVIE_SOURCES_00: HoovieSourceContract[] = [
   },
   {
     // magellan/registry/hmda-relink.ts (#2232): applies institution_lei_links (GLEIF-registered FDIC cert / NCUA
-    // charter LEIs) to the HMDA lenders already stored; no download. Fill-only, off until HMDA_RELINK_LIVE.
+    // charter LEIs) to the HMDA lenders already stored; no download. Fill-only; HMDA_RELINK_LIVE on since 2026-11-04.
     source: "hmda-relink",
     loader: "hmda",
     publisher: "GLEIF LEI links applied to CFPB / FFIEC HMDA lenders already held",
