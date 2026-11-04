@@ -6,7 +6,7 @@ vi.mock("@/lib/data-store/connection", () => ({ sql: vi.fn(), withTransaction: v
 import { chargeCause, decide, diffBank } from "./diff";
 import { readShadow, reconcileBank, type LiveInput } from "./bank";
 import { gradeReconciliation, scoreKeys } from "./grade";
-import { nextBanks } from "./run";
+import { bankOutOfTime, nextBanks } from "./run";
 import type { Evidence, SideFee } from "./types";
 
 const fee = (over: Partial<SideFee>): SideFee => ({
@@ -142,5 +142,11 @@ describe("scoreKeys and nextBanks", () => {
   });
   it("takes the batch's next banks in order", () => {
     expect(nextBanks([1, 2, 3, 4], new Set([2]), 2)).toEqual([1, 3]);
+  });
+  it("gives the step's first bank until 55 s and later banks until 25 s", () => {
+    expect(bankOutOfTime(30_000, true)).toBe(false);
+    expect(bankOutOfTime(56_000, true)).toBe(true);
+    expect(bankOutOfTime(30_000, false)).toBe(true);
+    expect(bankOutOfTime(20_000, false)).toBe(false);
   });
 });

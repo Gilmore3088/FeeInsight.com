@@ -4603,9 +4603,9 @@ const STEP_EXPECTED_MS: Record<string, number> = {
   "hamilton-paid-gate-replay": 290_000,
   // Two banks at once, each two reads at once of up to 16,000 output tokens (deming/answer-key-rekey.ts).
   "deming-answer-key-rekey": 260_000,
-  // Up to 12 banks, starting no bank or document after 25 s (deming/reconcile/run.ts). At 200 s it
-  // deferred on its first tick (57 s left, run 19437, Nov 3) behind lanes; at 90 s it fits a tick's tail,
-  // leaving 65 s for the reads (20 s caps each), the last document and the grade.
+  // Up to 12 banks, starting no bank after 25 s and no document of the first bank after 55 s
+  // (deming/reconcile/run.ts). At 200 s it deferred on its first tick (57 s left, run 19437, Nov 3)
+  // behind lanes; at 90 s it fits a tick's tail, with room for the event and the grade.
   "deming-reconcile": 90_000,
   // Five release-review calls of 25 fees, one after another, then their settlement.
   "darwin-release-review-sample": 200_000,
