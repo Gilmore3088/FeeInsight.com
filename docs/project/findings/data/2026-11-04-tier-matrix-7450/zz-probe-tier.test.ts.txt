@@ -1,0 +1,30 @@
+import { writeFileSync } from "node:fs";
+import { it } from "vitest";
+import { runFreeSpecialists } from "./specialists";
+import { withTierColumnRows } from "./tier-columns";
+
+const HEAD = ["Fee Schedule, Effective: 1/1/2020", "PLATINUM GOLD SILVER+ SILVER COLLEGE", "GENERAL FEES"];
+const ROWS = [
+  "Activity Print Out (per page) FREE FREE FREE FREE FREE",
+  "Courtesy Pay $20 $30 $30 $30 $30",
+  "Incoming Wire Tranfer - International $10 $10 $10 $10 $10",
+  "Monthly Account Maintenance FREE FREE FREE $1 FREE",
+  "Stop Payment FREE $25 $25 $25 $25",
+  "Wire Transfer - Domestic $30 $30 $30 $30 $30",
+];
+
+it("probe", () => {
+  const out: string[] = [];
+  const text = [...HEAD, ...ROWS].join("\n");
+  out.push(withTierColumnRows(text));
+  const r = runFreeSpecialists(text, {});
+  for (const c of r.candidates) out.push(`CAND ${c.canonicalHint} ${c.amount} | ${c.feeName} | ${c.excerpt}`);
+  for (const h of r.held) out.push(`HELD ${h.shape} ${h.canonicalHint} ${h.amount} | ${h.feeName} | ${h.excerpt}`);
+  for (const line of ["Incoming Wire Tranfer - International $10 $10 $10 $10 $10", "Incoming Wire Transfer - International $10 $10 $10 $10 $10", "Incoming Wire Transfer - International $10", "International Incoming Wire $10 $10", "Incoming Wire Tranfer - International | $10", "Incoming Wire Transfer - International | $10", "Monthly Account Maintenance | $1", "Courtesy Pay | $30"]) {
+    const s = runFreeSpecialists(line, {});
+    for (const c of s.candidates) out.push(`SOLO CAND ${c.canonicalHint} ${c.amount} | ${c.feeName}`);
+    for (const h of s.held) out.push(`SOLO HELD ${h.shape} ${h.canonicalHint} ${h.amount} | ${h.feeName}`);
+    if (!s.candidates.length && !s.held.length) out.push(`SOLO NONE ${line}`);
+  }
+  writeFileSync(process.env.PROBE_OUT ?? "/dev/null", out.join("\n"));
+});
