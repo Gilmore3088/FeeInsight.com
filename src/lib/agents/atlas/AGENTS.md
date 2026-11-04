@@ -359,8 +359,9 @@ fails a PR that changes one of these constants without updating its line here (#
 ## Bounded storage compaction
 
 The existing `atlas-storage-retention` step also records `storage_compaction` from Hoovie's
-`storage-compaction.ts`; daily bounded conversion is enabled after production canary 14469
-passed exact reconstructed-data equality on October 27. It uses savepoint rollback,
+`storage-compaction.ts`. Daily bounded conversion ran from October 27 (canary 14469 passed exact
+reconstructed-data equality) and is off since November 4: it updated rows in place, which frees
+no disk, and the narrow table rebuilds in the storage design replace it. It uses savepoint rollback,
 5,000-row batches and explicit cursor receipts, never a side script. Archive removal remains
 off pending the dated twelve-quarter rollout and restore/consumer acceptance in
 `docs/plans/database-growth-controls-2026-10-25.md`. No new scheduler or provider work is added.

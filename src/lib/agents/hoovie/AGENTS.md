@@ -276,7 +276,8 @@ The migration changes no existing observations. See the dated rollout for accept
 James approved the staged rollout on October 26. An admin Atlas workflow with source
 `atlas.storage-rollout.2026-10-26` can request one `compact`, `export`, `rehearse` or `prune` action through the
 existing storage step. Each compaction remains bounded to 5,000 rows per table; exports are
-restricted to the four reviewed source/periods. Daily compaction is on; daily export/pruning remain off.
+restricted to the four reviewed source/periods. Daily compaction is off since Nov 4, 2026 (in-place updates free no disk; the narrow
+rebuilds replace it); daily export/pruning remain off.
 The permanent receipt page advances one server-selected stage and period at a time, reusing terminal
 idempotency keys and requiring the successful production canary. Pruning requires a successful
 rehearsal receipt for that exact file checksum, the approved row counts and twelve newer quarters.

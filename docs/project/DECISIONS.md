@@ -3,6 +3,24 @@
 Newest first. Each entry: date, what was decided, who, why, and what it means for the work.
 Seeded 2026-10-05 from the project's working memory; earlier decisions were not recorded here.
 
+## 2026-11-04
+
+**Shrink the big public-data tables in place, not by moving served data to R2.** James, 2026-11-04
+02:25 UTC, on the decision card in project thread "Design database storage plan properly": "Go, all
+four in order", approving the design at https://claude.ai/artifact/KcJWBJzFspHJ57iqvPzPSp.
+
+What it means for the work:
+- HMDA, then institution financial records, then area statistics, then call-report items are each
+  rebuilt narrow under the same table name (a view over the new table): every figure a page, Hamilton
+  or the API reads stays in Postgres; labels and download links are stored once; raw download copies,
+  and HMDA rows for lenders not matched to an institution, go to R2 as gzip JSON lines with SHA-256 and
+  row count in `public_data_cold_files`.
+- One table per PR. A swap runs only after an exact per-period match (row count and MD5 of every
+  reader-visible column) between the old table and the new view, the legacy table is kept 7 days, then
+  dropped. His yes covers those migrations; any failed check stops that table.
+- Hoovie's in-place storage compaction is off; the area statistics loader writes only changed rows.
+- Fees are never trimmed. The pipeline attempt log is not part of this; its live retention stays.
+
 ## 2026-11-03
 
 **Re-run the pipeline from fee one and reconcile every fee, instead of fixing a few fees a day.** James,

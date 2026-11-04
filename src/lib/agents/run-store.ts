@@ -1,4 +1,4 @@
-import { runStorageCompaction } from "@/lib/agents/hoovie/storage-compaction";
+import { runStorageCompaction, STORAGE_COMPACTION_LIVE } from "@/lib/agents/hoovie/storage-compaction";
 import { STORAGE_ROLLOUT_SOURCE, storageRolloutAction, storageRolloutTarget } from "@/lib/agents/hoovie/storage-rollout";
 import { verifyNextArchivedCallRead } from "@/lib/agents/hoovie/storage-read-acceptance";
 import { sql, withTransaction } from "@/lib/data-store/connection";
@@ -3541,7 +3541,8 @@ async function executeAgenticStep(
           rehearseLive: rolloutAction === "rehearse", approvedExportsOnly: true, requireRehearsal: true, requireConsumerAcceptance: true, target: rolloutTarget } : {}),
       });
       const compaction = await runStorageCompaction(tx, { dryRun: run.runKind === "dry_run",
-        ...(rolloutAction ? { live: rolloutAction === "compact" } : {}),
+        // The admin "compact" canary also obeys the switch: compaction is off until a rebuild replaces it.
+        ...(rolloutAction ? { live: rolloutAction === "compact" && STORAGE_COMPACTION_LIVE } : {}),
       });
       const readAcceptance=rolloutAction==="verify"?await verifyNextArchivedCallRead(tx, rolloutTarget):null;
       const prePruneAcceptance=rolloutAction==="rehearse"&&!cold.error?await verifyNextArchivedCallRead(tx,rolloutTarget,true):null;

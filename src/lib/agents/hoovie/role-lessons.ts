@@ -6,6 +6,16 @@ import type { AgentLesson } from "@/lib/agents/learning/lesson-types";
  */
 export const HOOVIE_LESSONS: AgentLesson[] = [
   {
+    id: "area-upsert-only-when-changed",
+    agent: "hoovie",
+    stage: "registry store",
+    lesson: "A loader that refetches on a schedule rewrites a stored row only when one of its stored values changed (ON CONFLICT DO UPDATE ... WHERE ROW(old) IS DISTINCT FROM ROW(new)) and counts only new or changed rows as written. In Postgres an UPDATE writes a new copy of the whole row, so rewriting identical values, or slimming rows by UPDATE, grows the table and returns no disk.",
+    why: "upsertAreaStats, the one writer every area loader calls, had no change guard: 573,910 rewrites of identical rows by Nov 3, 2026 made area_statistics grow 83.5 MB in a week with no new periods, on a database at 16.1 GB of an 18 GB disk. The FDIC and NCUA financial loaders already had the guard.",
+    evidence: { issues: [], prs: [1849], files: ["src/lib/agents/magellan/registry/economy.ts", "docs/project/findings/2026-11-04-area-loader-rewrites-unchanged-rows.md"] },
+    appliesTo: "all",
+    since: "2026-11-04",
+  },
+  {
     id: "issue-2232-relink-when-identity-improves",
     agent: "hoovie",
     stage: "registry identity",
