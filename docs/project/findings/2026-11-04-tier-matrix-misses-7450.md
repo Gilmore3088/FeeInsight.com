@@ -18,10 +18,22 @@ keying decision James has not made. No production code changed.
   not run in CI.
 - The key is the hand-keyed row set in `knox/__fixtures__/state-answer-keys.json.gz` (tid 7450),
   as the golden set (`deming/__fixtures__/golden-set.json`, `shadow:missed_fees:state:7450`) carries
-  it. Its 41st row, eStatements $0, is left out of recall on both sides as
-  `retired_category_no_home` (Darwin refuses it as `retired_category`), so 40 count.
+  it. The counts, each recountable from the committed JSON's `answerKey.fees`:
+  - 54 hand-keyed rows, 46 distinct by key and amount.
+  - The lab's answer-key gate (`gateKeyFor`, `knox/answer-key-gate.ts`) drops the 5 `unmapped`
+    rows (Empty Envelope $0, Closure Fee $7, New Membership Fee $5, Service Center Transactions $0
+    and $1). Their lines fold to no category. It also drops the 1 row with no amount (Check Order
+    "Varies"). That leaves 48 rows.
+  - The gate keys a fee once per category and amount, so the 48 rows give 41 keys. Six rows key
+    monthly_maintenance $0, two other_lending_fee $25 and two card_replacement $0, and each of those
+    counts once. The gate's category step files the key's "Returned Mail" account_research $0 and $5
+    as returned_mail. These 41 are the golden set's `expected.publish` list for
+    `shadow:missed_fees:state:7450`.
+  - One of the 41, eStatements $0, is left out of recall on both sides as `retired_category_no_home`
+    (Darwin refuses it as `retired_category`). That leaves the 40 the replay counts
+    (`replayDocument.reread.expected`), with 25 found (`replayDocument.reread.found`).
 - The replay's totals, its state:7450 entry (40 expected, 25 found, misses by stage and reason) and
-  the 41 keyed rows are committed as `data/2026-11-04-tier-matrix-7450/replay-and-key-7450.json`.
+  all 54 hand-keyed rows for tid 7450 are committed as `data/2026-11-04-tier-matrix-7450/replay-and-key-7450.json`.
 - Every "Knox reads", "main publishes" and "named" below is the lab's `currentVariant` run over the
   stored text (the probe's output), not a read of the live database. Whether Schools FCU's live fees
   carry the same reads was not checked.
@@ -87,8 +99,10 @@ session coordinator relayed them; recorded in `DECISIONS.md` under 2026-11-04):
    $25 $25 $25 $25" (keyed $0 and $25; Knox reads $25 only) and "Courtesy Pay $20 $30 $30 $30 $30"
    (keyed $20 and $30; Knox publishes $20 unscoped). If yes, how is each tier named? If no, which
    cell is the bank's price, and should the key drop the others?
-   **Answer: one fee per tier.** Each column is its own fee, named with its tier ("Courtesy Pay
-   (Platinum)" $20, "Courtesy Pay (Basic)" $30), $0 tiers included. So the A rows' $0 keys stand.
+   **Answer: one fee per tier.** Each column is its own fee, named with its tier, $0 tiers
+   included. On this page the tiers are the column headers PLATINUM GOLD SILVER+ SILVER COLLEGE, so
+   the fees are named like "Courtesy Pay (Platinum)" $20 and "Courtesy Pay (Gold)" $30. So the A rows'
+   $0 keys stand.
 2. Is a free allowance a $0 fee? Examples: "Debit/Credit Card Replacement* 1 Free → $5" and
    "Cashier Checks 3 Free " $5", keyed $0 and $5. The same question is the lab's R5 group ("first N
    free" keyed as $0).
