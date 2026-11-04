@@ -16,6 +16,16 @@ export const HOOVIE_LESSONS: AgentLesson[] = [
     since: "2026-11-02",
   },
   {
+    id: "issue-2232-turning-on-makes-the-work-due",
+    agent: "hoovie",
+    stage: "registry schedule",
+    lesson: "A switch that changes what a scheduled partition writes is turned on in the same PR that makes its partitions due: bump the source's parser version (or otherwise mark the stored runs stale), and confirm after the deploy that a run with the switch on was recorded. Flipping the constant alone leaves every partition waiting out the retry its off-mode run set.",
+    why: "HMDA_RELINK_LIVE went on in #2987 on 2026-11-04, but the off-mode runs of 2026-11-02 had recorded every relink partition as succeeded with a weekly retry, so two hours after the deploy no lender had been linked and none would be until Nov 9.",
+    evidence: { issues: [2232], prs: [2987], files: ["src/lib/agents/magellan/registry/hmda-relink.ts", "src/lib/agents/registry-scheduler.ts"] },
+    appliesTo: "all",
+    since: "2026-11-04",
+  },
+  {
     id: "issue-2613-keep-the-as-filed-value",
     agent: "hoovie",
     stage: "registry store",
