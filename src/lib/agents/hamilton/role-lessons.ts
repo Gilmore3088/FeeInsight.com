@@ -1136,4 +1136,14 @@ export const HAMILTON_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-11-03",
   },
+  {
+    id: "publish-reread-category-is-not-line-identity",
+    agent: "hamilton",
+    stage: "publish",
+    lesson: "A category is the extraction's reading of a line, not part of the line's identity. When a later read of a page files a line under a corrected category, the new row and the live fee are one printed line read twice (same institution, dollar amount and product, the same page or a newer copy of it, the same stored line once punctuation, leaders and whole-dollar cents are folded away or one line inside the other with only priceless words around it, printed once in the newer copy's text, its price printed once unless both names match, one name's words all in the other's, frequencies not differing): replace the live fee with the later read, never publish it beside it. Only a later read than the live fee's qualifies; a first read, or one pass reading a line twice, never replaces anything. Never move a line between overdraft and NSF when the line names both (an overdraft word with NSF, insufficient funds or a returned item): that convention is the owner's to settle. Never pair two lines because they share a price: check copies and statement copies, domestic and foreign incoming wires, a box key and a night-deposit key are different fees. A later read is not proof the new category is right: measure how often it is wrong before the replacement acts.",
+    why: "Re-read backlog scan (482 texts, Nov 3, findings/2026-11-03-reread-cross-category-duplicates.md): 37 live fees would have stood beside a re-read of their own line under another category, because publish superseded only within one category; only 2 were covered by any live re-check. 21 more same-price pairs were different fees. The rule supersedes 15 of the 21 right moves and none of the 21 different-fee pairs or the 8 overdraft/NSF combined lines, but it would also replace 4 of the 5 right live fees whose re-read was wrong (\"Returned Item Fee\" re-read as NSF, \"Box Late Fee\" as a loan late fee), so it stays behind REREAD_CATEGORY_MOVE_LIVE (off) until those reads are fixed. One printed line can also price two fees (\"Money order/Cashier check fee | $8.00\"), so a line naming an item of each category is never a move. On prod, 77 live fees at 73 institutions stand beside a later read of their line under another category.",
+    evidence: { issues: [1026, 1513], prs: [], files: ["src/lib/agents/hamilton/reread-category-move.ts", "src/lib/agents/hamilton/publish.ts", "src/lib/agents/darwin/reread-category-move-check.ts", "docs/project/findings/2026-11-03-reread-cross-category-duplicates.md"] },
+    appliesTo: "all",
+    since: "2026-11-03",
+  },
 ];

@@ -248,7 +248,13 @@ export function priceWindows(text: string): PriceWindow[] {
       // on First Visa Debit Card.", `freeWordOnItem`): Citizens Bank of Ada's perk "Monthly Statements
       // with Check Images" took the debit card's "No Charge" as a $0 check image fee (doc 41229).
       const stacked = !priceFirst && opensLine && pending != null && !(value.zero && freeWordOnItem(line.slice(value.start)));
-      const rawName = priceFirst ?? (stacked ? `${pending} ${own}` : own);
+      // v184 (Knox slice dry run, Advia FCU text 30743): labels in columns over prices in the same columns ("Account
+      // History Print | Loan Skip Pay" over "$1/page | $35 where regionally offered"): the first price is the first
+      // column's, never the label nearest it.
+      const pendingCells = stacked && pending != null ? pending.split(CELL_SEPARATOR).map((cell) => cell.trim()).filter(Boolean) : [];
+      const lineCells = line.split(CELL_SEPARATOR).map((cell) => cell.trim()).filter(Boolean);
+      const columnLabel = pendingCells.length >= 2 && lineCells.length === pendingCells.length && lineCells.every((cell) => /^\W*\$\s?\d/.test(cell)) ? pendingCells[0] : null;
+      const rawName = priceFirst ?? (stacked ? (columnLabel ? `${columnLabel} ${own}` : `${pending} ${own}`) : own);
       if (priceFirst) priceFirstLine = true;
       windows.push({
         rawName,
@@ -263,7 +269,7 @@ export function priceWindows(text: string): PriceWindow[] {
         ...(priceFirst ? { priceFirst: true } : {}),
         excerpt: priceFirst
           ? line.slice(0, 280)
-          : `${stacked ? `${pending} / ` : ""}${line.slice(value.start - own.length, value.end + qualifier.length)}`.trim().slice(-280),
+          : `${stacked ? `${columnLabel ?? pending} / ` : ""}${line.slice(value.start - own.length, value.end + qualifier.length)}`.trim().slice(-280),
       });
       if (condition) {
         afterCondition = value.end + qualifier.length;
@@ -281,6 +287,8 @@ export function priceWindows(text: string): PriceWindow[] {
 }
 
 const TIER_UNIT = "(?:items?|withdrawals?|presentments?|occurrences?|overdrafts?|nsfs?|times?|transactions?)";
+/** Words right after a price that charge it per paper statement. */
+const PER_PAPER_STATEMENT_AFTER = /^\s*(?:per|each|\/|a)\s+(?:paper|printed|mailed)\s+statements?\b/i;
 const TIER_LABEL = new RegExp(
   `^(?:(?:\\d+(?:st|nd|rd|th)|first|second|third|fourth|fifth|each additional|additional|subsequent)\\b.{0,20}\\b${TIER_UNIT}\\b|` +
     `(?:\\d+\\s*(?:-|–|to)\\s*\\d+|\\d+\\+|over \\d+|after \\d+)\\s+${TIER_UNIT}\\b).{0,30}$`,
@@ -358,6 +366,8 @@ function matchFor(expert: FamilyExpert, name: string, heading: string | null, pe
   if (hint) return { hint, feeName: name };
   // A name the rules already file elsewhere never borrows this family's heading.
   if (!heading || !composableTail(name) || classifyPatternKey(name)) return null;
+  // v184: a wire's own row never borrows another fee's heading (Crow Wing Power CU's "WIRE TRANSFER – $20").
+  if (/\bwires?\b/i.test(name) && !/\bwires?\b/i.test(heading)) return null;
   const headed = classifyFor(expert, `${heading} ${name}`);
   return headed ? { hint: headed, feeName: `${heading}: ${name}` } : null;
 }
@@ -466,6 +476,10 @@ export function runFamilyExpert(expert: FamilyExpert, windows: PriceWindow[]): E
     // v177 (backlog dry run 8, Honor FCU): a name that is only a waiver column's advice ("Use Online BillPay,
     // HonorPay or Account-To-Account Transfers | $50.00 per month") names no fee (`waiverAdviceName`).
     if (waiverAdviceName(match.feeName)) return;
+    // v180 (backlog dry run 11): a monthly fee priced "per paper statement" ("To avoid a Monthly Service Fee of
+    // $5 per paper statement, you must enroll for eStatements", Community First National Bank) is the paper
+    // statement charge, which the rules pass reads by those words; it is no monthly maintenance fee.
+    if (match.hint === "monthly_maintenance" && PER_PAPER_STATEMENT_AFTER.test(window.after)) return;
     // v143: a row whose own words name the transfer ("Overdraft Transfer from Rediline Overdraft Loan
     // $5/advance") is the transfer, though the tail that names it ("Rediline Overdraft Loan") says loan.
     if (match.hint === "overdraft" && cleaned && cleaned !== match.feeName && classifyFor(expert, cleaned) === "od_protection_transfer") {

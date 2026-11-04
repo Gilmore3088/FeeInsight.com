@@ -1339,6 +1339,25 @@ live row wins the row is skipped (`Same printed line as live fee #<id> under ano
 in `product_split_check`; acts only while `PRODUCT_SPLIT_MERGE_LIVE` is on. Darwin's
 `product-split-check.ts` re-checks the pairs already live with the same rule.
 
+**One printed line under two categories, at publish (Nov 3, off).** Publish superseded a live fee only
+inside its own category, so a re-read that files a line under a corrected category went live beside the
+old, wrong-category fee (re-read backlog scan of 482 texts: 37 such pairs, Intercredit Bank #64789
+among them; 21 more same-price pairs were different fees). A dollar row that would be new, and is no
+product split, is read against the live dollar rows of its institution and amount in other categories
+whose raw rows were written before its own (`selectRereadCategoryMove`, `reread-category-move.ts`).
+They are one line read twice (`rereadsLineInAnotherCategory`) when they share the product, come from one
+page (one document, or a copy of the same page; never an older copy's read over a newer copy's fee), the
+row is the later read, their stored lines fold to the same words and figures (whole-dollar cents
+dropped) or one is the other with only priceless words around it, each printed once in the row's copy,
+the price printed once unless both names match, one name's words are all in the other's, and the
+frequencies do not differ. A move between overdraft and NSF (#1513) is never made, and neither is a move on a line that
+prices an item of each category ("Official Checks and Money Orders | $2.00": both fees stay live).
+The re-read supersedes the live fee (no price change recorded). Only a later read qualifies, so a first
+read never replaces anything. Counted in `reread_category_move_check`; acts only while
+`REREAD_CATEGORY_MOVE_LIVE` is on, which waits on Knox's fix for its wrong re-reads (4 of the scan's 5
+would replace a right fee). Darwin's `reread-category-move-check.ts` re-checks the pairs already live
+with the same rule (finding 2026-11-03-reread-cross-category-duplicates).
+
 ## Rules Re-check
 
 In state-lane (or single-institution) publish steps, `rules-recheck.ts` re-runs Knox's
@@ -1632,7 +1651,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `CURRENT_COPY_REPOINT_STRATEGY` | `hamilton.current_copy_repoint` | v2 | `hamilton/current-copy-repoint.ts` |
 | `RULES_RECHECK_STRATEGY` | `hamilton.rules_recheck` | v4 | `hamilton/rules-recheck.ts` |
 | `SAME_LINE_DUPLICATE_RESTORE_VERSION` | `hamilton.same_line_duplicate` | v2 | `hamilton/same-line-duplicates.ts` |
-| `SOURCE_CHECK_STRATEGY` | `hamilton.source_check` | v30 | `hamilton/source-check.ts` |
+| `SOURCE_CHECK_STRATEGY` | `hamilton.source_check` | v31 | `hamilton/source-check.ts` |
 | `SOURCE_LINK_VERSION` | `hamilton.source_link` | v2 | `hamilton/source-link.ts` |
 | `SOURCE_LINK_DRIFT_VERSION` | `hamilton.source_link_drift` | v1 | `hamilton/source-link.ts` |
 | `FEE_DEPENDENCE_VERSION` | — | v1 | `hamilton/studies/fee-dependence.ts` |

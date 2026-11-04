@@ -26,6 +26,8 @@ import { withAccountName } from "@/lib/fee-account-heading";
 const SEPARATOR = " | ";
 /** How far above the fee row its header row may sit. */
 const HEADER_REACH = 15;
+/** A short caption row inside a table: up to five words, no figure, no sentence end. */
+const TABLE_CAPTION = /^(?!.*[$\d.:;!?]\s*$)(?!.*\$)(?:[^\s|]+\s+){0,4}[^\s|]+$/;
 
 /** The fee row's own label: the account's monthly fee and nothing else. */
 export const ACCOUNT_FEE_ROW_LABEL =
@@ -33,7 +35,10 @@ export const ACCOUNT_FEE_ROW_LABEL =
 
 const MONEY = /\$\s?\d/;
 const NOT_A_PRODUCT = /^(?:yes|no|n\/?a|none|free|varies|included|unlimited|[-–—]+|\d.*)\s*\d?$/i;
-const PRODUCT_NOISE = /\s*\(?\s*(?:apply now|open now|learn more|open an account|view more|view details|see details|most popular)\s*\)?\s*:?\s*/gi;
+// v180 review (#2978): "Open Account" and "Request Appointment" are buttons too ("Interest Checking Open Account",
+// "Guardian Checking Request Appointment"), and "Student Version Available6" is a note with its footnote glued on
+// ("Cashback Checking Student Version Available6"): none is part of the account's name.
+const PRODUCT_NOISE = /\s*\(?\s*(?:apply now|open now|learn more|open an account|open account|(?:request|schedule|make|book) (?:an )?appointment|view more|view details|see details|most popular|(?:[a-z]+\s+)?versions?\s+available\d{0,2})\s*\)?\s*:?\s*/gi;
 /** A product code in parentheses ("Rewards Checking (CK06)"). */
 const PRODUCT_CODE = /\(\s*[A-Z]{1,4}-?\d{1,4}\s*\)/g;
 /** Footnote marks: daggers, superscript digits, and a digit glued to a word's last letter ("Checking1"). */
@@ -46,7 +51,7 @@ const AUDIENCE_WORDS = /\b(?:business|commercial|ag|agri\w*|farm\w*|ranch\w*|non
 /** A business column, which the guard's exclusions leave out (#1100): business, commercial, ag, nonprofit. */
 const BUSINESS_PRODUCT = /\b(?:business|small\s*biz|biz|commercial|ag|agri\w*|farm\w*|ranch\w*|non-?profit|npo|sole\s+prop\w*|corporate|organizations?|church\w*|ministr\w*|trust|public\s+funds?|municipal\w*|government\w*|escrow|iolta)\b/i;
 /** A tagline or button the bank prints after the product's name, by its exact words. */
-const TAGLINE_TAIL = /^(?:most popular|view more|view details|see details|learn more|details?|open in minutes|open now|apply now|open an account|best for\b.*)$/i;
+const TAGLINE_TAIL = /^(?:most popular|view more|view details|see details|learn more|details?|open in minutes|open now|apply now|open an account|open account|request (?:an )?appointment|best for\b.*)$/i;
 /** Prose after the name: a sentence mark, or three or more words with a lowercase connective. */
 const PROSE_WORD = /^(?:that|this|you|your|our|to|with|and|of|the|an?|pays?|helps?|gives?|includes?|offers?|earn|get|enjoy|find|celebrate|designed|built|ready)$/i;
 function isProseTail(tail: string): boolean {
@@ -256,6 +261,11 @@ function headerFor(lines: string[], index: number, width: number): Array<string 
       run.push(above);
       continue;
     }
+    // v180 (Knox backlog dry run 11): a one-cell caption printed between a table's rows ("Visa® Debit
+    // Cards", "Free E-Statements" in Community First National Bank's checking comparison) is a
+    // section label inside the table, not its top: the run goes on above it. A caption that states a
+    // price, or reads as a sentence, still ends the run.
+    if (length === 1 && TABLE_CAPTION.test(cells[0])) continue;
     if (length === width - 1) run.push(above);
     break;
   }
@@ -318,4 +328,18 @@ export function accountTableProduct(text: string, excerpt: string, amount: numbe
       .map((cell) => cell.product),
   );
   return products.size === 1 ? [...products][0] : null;
+}
+
+/**
+ * v180 (Knox backlog dry run 11): the cells of an account table's monthly fee row that print this
+ * price, each with the fee the cell itself states (`accountCellPrice`; null when it states another
+ * fee or no single figure). Pure. Community First National Bank's "Monthly Service Fees | None | $5
+ * per paper statement if not enrolled ... | $6 if $300 minimum balance ... is not maintained | $10
+ * ..." prints $5 only in a paper statement cell (no monthly fee) and $6 as the third column's fee.
+ */
+export function accountRowCellsPricing(row: string, amount: number): Array<number | null> {
+  const cents = Math.round(amount * 100);
+  return cellsOf(squash(row)).slice(1)
+    .filter((cell) => [...cell.matchAll(CELL_PRICE)].some((match) => Math.round(Number(`${match[1].replace(/,/g, "")}${match[2] ?? ""}`) * 100) === cents))
+    .map((cell) => accountCellPrice(cell));
 }

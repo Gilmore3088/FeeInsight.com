@@ -12,7 +12,8 @@ export type PublicationEvidenceCheck =
   | "page_copy_document"
   | "page_copy_text"
   | "same_line_read"
-  | "product_split";
+  | "product_split"
+  | "reread_category_move";
 
 export type PublicationEvidence<T> =
   | { state: "available"; value: T }

@@ -8,6 +8,18 @@ import {
   sectionMisreadDetail,
   WAIVER_ADVICE_NAME_SQL,
   WIRE_SUBSCRIPTION_NAME_SQL,
+  RETURNED_ITEM_SERVICE_NAME_SQL,
+  ACCOUNTLESS_MONTHLY_LINE_SQL,
+  storedLineMisreadKind,
+  STORED_LINE_SQL,
+  AUDIENCE_TEXT_SQL,
+  STOP_PAYMENT_VARIANT_NAME_SQL,
+  STOP_PAYMENT_TEXT_SQL,
+  FEE_CARD_TEXT_SQL,
+  WIRE_MONTHLY_NAME_SQL,
+  PLAIN_RETURN_NAME_SQL,
+  OPENING_DEPOSIT_LINE_SQL,
+  CAPS_CELL_LINE_SQL,
   type SectionMisreadRow,
 } from "@/lib/agents/darwin/section-misread-check";
 
@@ -65,18 +77,196 @@ describe("Darwin's section misread re-check (Knox v177)", () => {
     ]);
     expect(found.checked).toBe(10);
     expect(found.noText).toBe(1);
-    expect(found.byKind).toEqual({ waiver_column_name: 2, front_matter_name: 1, wire_subscription: 1, ira_section_closing: 1 });
+    expect(found.byKind).toEqual({ waiver_column_name: 2, front_matter_name: 1, wire_subscription: 1, ira_section_closing: 1, returned_item_service: 0, accountless_monthly_sentence: 0, zero_not_printed: 0, audience_section_untagged: 0, stop_payment_variant: 0, deposited_card_return: 0, wire_service_monthly_fee: 0, read_name_review: 0, return_beside_nsf: 0 });
     expect(found.matches[1].reason).toBe('waiver_column_name: "Verification of Deposits is account_verification, not bill_pay"');
   });
 
   it("keeps a wire's price that names its sender's package or module, and a single service's advice (review of #2973)", () => {
     const kept = [
+      row(5, 1, "atm_non_network", "Use Non-Network ATM or Foreign ATM", 2.5),
       row(1, 1, "wire_domestic_outgoing", "Outgoing domestic wire, Business Package", 20),
       row(2, 1, "wire_intl_outgoing", "Outgoing international wire – Treasury Module", 45),
       row(3, 1, "atm_non_network", "Use Non-Network ATM", 2.5),
       row(4, 1, "paper_statement", "Switch to paper statements", 5),
     ];
     expect(findSectionMisreads(kept, TEXTS).matches).toEqual([]);
+  });
+
+  it("version 2 (Knox v178): matches a returned item's handling service filed NSF and a reward bullet's monthly fee", () => {
+    const rows: SectionMisreadRow[] = [
+      row(21594, 1, "nsf", "Returned Item Special Handling Item", 10),
+      // Says NSF in so many words: the NSF fee (108799).
+      row(108799, 1, "nsf", "Non-Sufficient Funds (NSF)/Special Handling", 25),
+      { ...row(117986, 1, "monthly_maintenance", "Monthly maintenance fee", 10), source_line: 'rules read; artifact #1; excerpt="Waived $10 monthly maintenance fee"' },
+      { ...row(5, 1, "monthly_maintenance", "Monthly maintenance fee", 10), source_line: 'excerpt="Monthly maintenance fee | $10.00"' },
+      // The same bullet on a page that prints the fee as a row at that price, or under an account heading: kept.
+      { ...row(6, 2, "monthly_maintenance", "Monthly maintenance fee", 10), source_line: 'excerpt="Waived $10 monthly maintenance fee"' },
+      { ...row(7, 3, "monthly_maintenance", "Monthly service charge", 10), source_line: 'excerpt="Your $10 monthly service charge can be avoided with direct deposit."' },
+      // Its text is gone: not judged.
+      { ...row(8, 4, "monthly_maintenance", "Monthly maintenance fee", 10), source_line: 'excerpt="Waived $10 monthly maintenance fee"' },
+    ];
+    const texts = new Map([
+      [1, "Earn these rewards each month:\nWaived $10 monthly maintenance fee\nRefunded ATM fees"],
+      [2, "Rewards\nWaived $10 monthly maintenance fee\nPremier Checking\nMonthly maintenance fee | $10.00"],
+      [3, "Premier Checking\nYour $10 monthly service charge can be avoided with direct deposit."],
+    ]);
+    const found = findSectionMisreads(rows, texts);
+    expect(found.matches.map((fee) => [fee.feePublishedId, fee.kind])).toEqual([[21594, "returned_item_service"], [117986, "accountless_monthly_sentence"]]);
+    expect(found.noText).toBe(1);
+    expect(new RegExp(RETURNED_ITEM_SERVICE_NAME_SQL, "i").test("Returned Item Special Handling Item")).toBe(true);
+    expect(new RegExp(ACCOUNTLESS_MONTHLY_LINE_SQL, "i").test('excerpt="Waived $10 monthly maintenance fee"')).toBe(true);
+  });
+
+  it("version 3 (Knox v179): matches a live $0 whose line prints no free price, judged on its text", () => {
+    const rows: SectionMisreadRow[] = [
+      // North State Bank's waiver footnote, read as a free monthly fee.
+      { ...row(1, 11, "monthly_maintenance", "Monthly maintenance fee", 0), source_line: 'excerpt="4 Monthly maintenance fee waived when minimum account balance requirement is met."' },
+      // Live 141225: a $0 offered against a price.
+      { ...row(141225, 12, "monthly_maintenance", "Monthly Maintenance Fee", 0), source_line: 'excerpt="Monthly Maintenance Fee: $0 or $4.95"' },
+      // Live 36427: the unit line under a bare "$0" cell on a stacked page: kept.
+      { ...row(36427, 13, "od_protection_transfer", "Overdraft Protection transfers or advances", 0), source_line: 'excerpt="per transfer/advance from your eligible linked savings account or credit card or line of credit"' },
+      // Prints its free price: kept.
+      { ...row(4, 11, "document_reproduction", "Fax Service", 0), source_line: 'excerpt="Fax Service | FREE"' },
+      { ...row(142558, 11, "monthly_maintenance", "Monthly service fee", 0), source_line: 'excerpt="Enjoy all these benefits without any monthly service fees."' },
+      // A cut line (its dot leader, the price past the cut) and a missing line: not judged.
+      { ...row(6, 11, "notary_fee", "Notary Fee", 0), source_line: 'excerpt="Notary Fee............................"' },
+      { ...row(7, 11, "notary_fee", "Notary Fee", 0), source_line: null },
+      // Its text is gone: not judged.
+      { ...row(8, 404, "monthly_maintenance", "Monthly maintenance fee", 0), source_line: 'excerpt="Monthly maintenance fee waived with direct deposit."' },
+      // Live 140028 and 134219: an unconditional waiver on a card's perk list prints the free price: kept.
+      { ...row(140028, 14, "atm_non_network", "Waived Non-QCBT ATM Transactions", 0), source_line: 'excerpt="Waived Non-QCBT ATM Transactions"' },
+      { ...row(134219, 15, "ira_annual", "Waived Annual IRA Fee", 0), source_line: 'excerpt="Waived Annual IRA Fee"' },
+      // A perk's label above is no price cell: matched.
+      { ...row(9, 16, "statement_copy", "Statement copies", 0), source_line: 'excerpt="Statement copies by mail on request"' },
+    ];
+    const texts = new Map([
+      [11, "Footnotes\n4 Monthly maintenance fee waived when minimum account balance requirement is met."],
+      [12, "Freedom\nMonthly Maintenance Fee: $0 or $4.95\nMinimum Daily Balance (To Avoid Monthly Maintenance Fee): $500"],
+      [13, "Overdraft Protection transfers or advances\n\n$0\n\nper transfer/advance from your eligible linked savings account or credit card or line of credit"],
+      [14, "Visa® Debit Card\nWaived Non-QCBT ATM Transactions"],
+      [15, "IRA Benefits\nFree eStatements\nWaived Annual IRA Fee"],
+      [16, "Rewards\nFree eStatements\nStatement copies by mail on request"],
+    ]);
+    const found = findSectionMisreads(rows, texts);
+    expect(found.matches.map((fee) => [fee.feePublishedId, fee.kind])).toEqual([[1, "zero_not_printed"], [9, "zero_not_printed"], [141225, "zero_not_printed"]]);
+    expect(found.cut).toBe(2);
+    expect(found.noText).toBe(1);
+    expect(storedLineMisreadKind('excerpt="Fax Service | $1 per page"', 1)).toBeNull();
+    expect(new RegExp(STORED_LINE_SQL).test('artifact #1; excerpt="x"')).toBe(true);
+  });
+
+  it("version 3 (Knox v179): matches an audience section's untagged row whose name the bank prices otherwise", () => {
+    const midwest = "Replacement of Lost Key - Safe Box Key Fee | $20\n\nSenior Perks (60 & Over)\n\nCopy of a Check | FREE\n\nFax Service | FREE\n\nFees effective as of 10/01/2025.";
+    const rows: SectionMisreadRow[] = [
+      { ...row(137483, 27658, "document_reproduction", "Fax Service", 0), source_line: 'excerpt="Fax Service | FREE"', audience_candidate: true },
+      // The general row itself: no section over it, kept.
+      { ...row(162230, 27658, "document_reproduction", "Replacement of Lost Key - Safe Box Key Fee", 20), source_line: 'excerpt="Replacement of Lost Key - Safe Box Key Fee | $20"', audience_candidate: true },
+      // Under the heading, but the bank prices its name only once (no candidate): kept.
+      { ...row(137448, 27658, "check_image", "Copy of a Check", 1), source_line: 'excerpt="Copy of a Check | FREE"', audience_candidate: false },
+    ];
+    // An account category (Knox reads no audience product there) and a stored line the text never prints: not judged.
+    rows.push({ ...row(5, 27658, "monthly_maintenance", "Monthly fee", 0), source_line: 'excerpt="Fax Service | FREE"', audience_candidate: true });
+    rows.push({ ...row(6, 27658, "document_reproduction", "Notary", 0), source_line: 'excerpt="Notary | FREE"', audience_candidate: true });
+    const found = findSectionMisreads(rows, new Map([[27658, midwest]]));
+    expect(found.matches.map((fee) => [fee.feePublishedId, fee.kind])).toEqual([[137483, "audience_section_untagged"]]);
+    expect(found.audienceUnplaced).toBe(1);
+    expect(found.matches[0].reason).toContain("Senior Perks (60 & Over)");
+    expect(new RegExp(AUDIENCE_TEXT_SQL, "i").test("Senior Perks (60 & Over)")).toBe(true);
+    expect(new RegExp(AUDIENCE_TEXT_SQL, "i").test("Members 18 years and under")).toBe(true);
+  });
+
+  it("version 4 (Knox v181): matches a stop payment variant filed as another fee and a deposited item's card filed NSF", () => {
+    // St. Louis Community FCU, text 372 (the text Knox read for live 40324), lines as printed.
+    const stLouis = [
+      "Statement Copy Fee | $5.00",
+      "• Early Withdrawal (per withdrawal) | $25.00",
+      "Save to Prosper4 | Stop Payment Fee – Check or ACH (per item): | $20.00",
+      "• Save to Prosper Withdrawal Fee | $25.00 | Check series | $25.00",
+      "Savings accounts | • Corporate Check | $15.00",
+      "• More than 6 teller-assisted withdrawals per quarter | Telephone Transfer Fee | $2.00",
+    ].join("\n");
+    // A bullet list of different fees (#75973): no parent introduces it, kept.
+    const list = "• Check Stop Payment Fee Per Item | $30.00\n• Certified Checks | $10.00";
+    // ESL FCU, text 11542 (live 68629): the returned item card says the member deposited or cashed it.
+    const esl = "Fee TypeReturned Item Fee\n\nDescriptionFor each item you deposit or cash that is returned unpaid. This usually occurs because the person who wrote you the check doesn’t have enough funds in their account to cover the amount.\n\nFee$10.00\n\nFee TypeCourtesy Pay Overdraft Fee\n\nDescriptionCoverage of insufficient or uncollectable funds (from your checks) are paid by ESL.\n\nFee$5.00";
+    // A card for the member's own item: kept.
+    const own = "Fee TypeNSF Fee\n\nDescriptionCharged when an item you write is returned because your account does not have enough funds.\n\nFee$30.00";
+    const rows: SectionMisreadRow[] = [
+      { ...row(40324, 372, "cashiers_check", "Corporate Check", 15), source_line: 'excerpt="• Corporate Check $15.00"' },
+      // Already a stop payment: kept.
+      { ...row(40325, 372, "stop_payment", "Check series", 25), source_line: 'excerpt="Check series | $25.00"' },
+      // At another price than the variant's: kept.
+      { ...row(40326, 372, "cashiers_check", "Corporate Check", 10), source_line: 'excerpt="• Corporate Check $10.00"' },
+      { ...row(75973, 9, "certified_check", "Certified Checks", 10), source_line: 'excerpt="• Certified Checks | $10.00"' },
+      { ...row(68629, 11542, "nsf", "Returned Item Fee", 10), source_line: 'excerpt="Returned Item Fee | $10.00"' },
+      { ...row(68630, 12, "nsf", "NSF Fee", 30), source_line: 'excerpt="NSF Fee | $30.00"' },
+    ];
+    const found = findSectionMisreads(rows, new Map([[372, stLouis], [9, list], [11542, esl], [12, own]]));
+    expect(found.matches.map((fee) => [fee.feePublishedId, fee.kind])).toEqual([[40324, "stop_payment_variant"], [68629, "deposited_card_return"]]);
+    expect(found.matches[0].reason).toContain("Stop Payment Fee – Check or ACH (per item): Corporate Check");
+    expect(found.byKind).toMatchObject({ stop_payment_variant: 1, deposited_card_return: 1 });
+    expect(new RegExp(STOP_PAYMENT_VARIANT_NAME_SQL, "i").test("Corporate Check")).toBe(true);
+    expect(new RegExp(STOP_PAYMENT_TEXT_SQL, "i").test(stLouis)).toBe(true);
+    expect(new RegExp(FEE_CARD_TEXT_SQL, "i").test(`Fees\n${esl}`)).toBe(true);
+  });
+
+  it("version 5 (Knox v184): matches a wire service's monthly charge, a read the name review drops or re-files, and a plain return beside a free NSF fee", () => {
+    // Ameris Bank text 1338, Cornerstone Community FCU (live 128047's line), America's FCU text 29839, First State Bank
+    // and Trust text 22671, and the page live 133756 was read from (lines as printed).
+    const sibling = (key: string, name: string, amount: number) => ({ fee_name: name, amount, canonical_fee_key: key });
+    const rows: SectionMisreadRow[] = [
+      { ...row(1, 1338, "monthly_maintenance", "Online Wire Monthly Maintenance Fee", 25), source_line: 'excerpt="Online Wire Monthly Maintenance Fee | $25.00"' },
+      { ...row(2, 24203, "late_payment", "Box Late Fee", 20), source_line: 'excerpt="Box Late Fee | $20.00"' },
+      { ...row(3, 29839, "monthly_maintenance", "No monthly maintenance fees: Only", 25), source_line: 'excerpt="Only a $25 membership deposit to get started"' },
+      { ...row(4, 22671, "counter_check", "COUNTER CHECKS", 32), source_line: 'excerpt="COUNTER CHECKS | PER DEBIT ITEM • $32 | DEPOSIT"' },
+      { ...row(133756, 8514, "nsf", "Returned Check", 20), source_line: 'excerpt="Returned Check | $20"', siblings: [sibling("nsf", "Insufficient Funds (NSF)", 0)] },
+      // TXN Bank text 10944: beside its own NSF fee and a deposited item return at its own price.
+      { ...row(141626, 10944, "nsf", "Return Items", 10), source_line: 'excerpt="Return Items | $10.00"', siblings: [sibling("nsf", "NSF", 30), sibling("deposited_item_return", "Charge Backs", 10)] },
+      // Parthenon FCU text 5186: the page prints its own deposited item return at another price: the member's item, kept.
+      { ...row(5, 5186, "nsf", "Returned Item Fee", 30), source_line: 'excerpt="Returned Item Fee- | $30.00/item"', siblings: [sibling("nsf", "NSF Fee", 33), sibling("deposited_item_return", "Deposited Item Return Fee", 25)] },
+      // NSF at the return's own price: one fee under two names, kept.
+      { ...row(6, 7, "nsf", "Returned Item", 30), source_line: 'excerpt="Returned Item | $30"', siblings: [sibling("nsf", "NSF", 30), sibling("deposited_item_return", "Deposited Item Return", 30)] },
+      // A renamed read is no match ("NSF FEE: g" loses its glyph), and an advice name keeps its fee.
+      { ...row(7, 27330, "nsf", "NON-SUFFICIENT FUNDS FEE (NSF): g", 35), source_line: 'excerpt="NON-SUFFICIENT FUNDS FEE (NSF) | g$35.00"' },
+      { ...row(135372, 35000, "paper_statement", "To avoid a monthly paper statement fee", 3), source_line: 'excerpt="To avoid a monthly paper statement fee of $3.00, the account must be enrolled in electronic statements"' },
+    ];
+    const texts = new Map<number, string>([
+      [1338, "Account Activity/Statement Print Out | $5.00 | Online Wire Monthly Maintenance Fee | $25.00"],
+      [24203, "Safe Deposit Boxes\nBox Late Fee | $20.00"],
+      [29839, "No monthly maintenance fees\nOnly a $25 membership deposit to get started"],
+      [22671, "COUNTER CHECKS | PER DEBIT ITEM • $32 | DEPOSIT"],
+      [8514, "Returned Check | $20\nOverdraft Transfer | $2.50\nInsufficient Funds (NSF) | $0"],
+      [10944, "NSF | $30.00\nReturn Items | $10.00\nCharge Backs | $10/Item"],
+      [5186, "NSF Fee- | $33.00/item\nReturned Item Fee- | $30.00/item\nDeposited Item Return Fee- | $25.00/item"],
+      [7, "NSF | $30\nReturned Item | $30\nDeposited Item Return | $30"],
+      [27330, "NON-SUFFICIENT FUNDS FEE (NSF) | g$35.00"],
+      [35000, "To avoid a monthly paper statement fee of $3.00, the account must be enrolled in electronic statements"],
+    ]);
+    const found = findSectionMisreads(rows, texts);
+    expect(found.matches.map((fee) => [fee.feePublishedId, fee.kind])).toEqual([
+      [1, "wire_service_monthly_fee"],
+      [2, "read_name_review"],
+      [3, "read_name_review"],
+      [4, "read_name_review"],
+      [133756, "return_beside_nsf"],
+      [141626, "return_beside_nsf"],
+    ]);
+    expect(found.matches[1].reason).toContain("safe_deposit_box");
+    expect(found.byKind).toMatchObject({ wire_service_monthly_fee: 1, read_name_review: 3, return_beside_nsf: 2 });
+    expect(new RegExp(WIRE_MONTHLY_NAME_SQL.replace(/\\[mM]/g, "\\b"), "i").test("Online Wire Monthly Maintenance Fee")).toBe(true);
+    expect(new RegExp(PLAIN_RETURN_NAME_SQL, "i").test("Return Items")).toBe(true);
+    expect(new RegExp(OPENING_DEPOSIT_LINE_SQL, "i").test("Only a $25 membership deposit to get started")).toBe(true);
+    expect(new RegExp(CAPS_CELL_LINE_SQL).test("COUNTER CHECKS | PER DEBIT ITEM • $32 | DEPOSIT")).toBe(true);
+  });
+
+  it("version 4: finds a stored line with or without OCR leader noise in either text (review of #2979)", () => {
+    const noisy = "Overdraft Transfer\n$0\nTransfer Fee. ....... iii eeeeeeaaeeeeaaaaaaaa.. per transfer";
+    const rows: SectionMisreadRow[] = [
+      // Stored before v181, with its noise; and since, without it. Both find the bare $0 cell above.
+      { ...row(1, 1, "overdraft_transfer", "Transfer Fee", 0), source_line: 'excerpt="Transfer Fee. ....... iii eeeeeeaaeeeeaaaaaaaa.. per transfer"' },
+      { ...row(2, 1, "overdraft_transfer", "Transfer Fee", 0), source_line: 'excerpt="Transfer Fee. .......                         .. per transfer"' },
+    ];
+    expect(findSectionMisreads(rows, new Map([[1, noisy]])).matches).toEqual([]);
   });
 
   it("selects the rows by Postgres pre-filters wide enough for each rule", () => {

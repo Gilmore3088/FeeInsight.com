@@ -216,7 +216,7 @@ export const PRIORITY_INSTITUTION_REQUESTS: readonly PriorityInstitutionRequest[
   { institutionId: 8414, institutionName: "Peak Federal Credit Union", reason: "Knox v63 reads this credit union's current page; its last read was v33" },
   ...([
     [51, "First National Bank of Pennsylvania"],
-    [156, "Amarillo National Bank"],
+    // Amarillo National Bank (156) moved to the dated 2026-11-03 slice request below.
     [243, "Five Star Bank"],
     [278, "Alerus Financial, National Association"],
     [337, "Spencer Savings Bank, SLA"],
@@ -297,6 +297,85 @@ export const PRIORITY_INSTITUTION_REQUESTS: readonly PriorityInstitutionRequest[
     reason: "Today's merged fee fixes reach this bank's live fees",
     requestedAt: "2026-10-25T16:30:00Z",
     minExtractVersion: 113,
+  })),
+  // The bounded live slice (2026-11-03, #1026): James's 8 scored banks first, then the 4 he audited
+  // (Moose Lake's tiered overdraft among them), then the rest of the 62 answer-key banks. Knox v184's
+  // dry run over these 205 texts gave 0 wrong fees, 0 wrong names and 0 live fees lost
+  // (docs/project/findings/2026-11-03-knox-cross-category-rereads.md); a request ends only on a read
+  // under v184 or later.
+  ...([
+    [395, "Austin Bank, Texas National Association"],
+    [2267, "Rabun County Bank"],
+    [4888, "Tandem Federal Credit Union"],
+    [5410, "Metro North Federal Credit Union"],
+    [6109, "Geovista Federal Credit Union"],
+    [7229, "Utility District Federal Credit Union"],
+    [7723, "Northern Communities Federal Credit Union"],
+    [7815, "Springfield City Employees Federal Credit Union"],
+    [3457, "The First National Bank of Moose Lake"],
+    [3981, "Bank of Gueydan"],
+    [4384, "Pittsburgh Firefighters' Federal Credit Union"],
+    [4681, "Saint Nicholas Federal Credit Union"],
+    [61, "Prosperity Bank"],
+    [69, "Texas Capital Bank"],
+    [80, "Ameris Bank"],
+    [115, "Seacoast National Bank"],
+    [156, "Amarillo National Bank"],
+    [160, "International Bank of Commerce"],
+    [268, "River City Bank"],
+    [302, "Texas Exchange Bank"],
+    [316, "Texas Bank and Trust Company"],
+    [321, "VeraBank, National Association"],
+    [359, "Wells Fargo Bank South Central, National Association"],
+    [408, "WestStar Bank"],
+    [458, "U. S. Century Bank"],
+    [734, "Dieterich Bank"],
+    [1175, "Liberty Bank for Savings"],
+    [1390, "First State Bank of Livingston"],
+    [1552, "Southeastern Bank"],
+    [1741, "Sterling Federal Bank, F.S.B."],
+    [1987, "First State Bank and Trust"],
+    [2694, "DLP Bank"],
+    [4248, "Brazos National Bank"],
+    [4600, "Texas Community Federal Credit Union"],
+    [4638, "Buffalo Metropolitan Federal Credit Union"],
+    [4770, "Schools Federal Credit Union"],
+    [4875, "The Summit Federal Credit Union"],
+    [4937, "Sun Pacific Federal Credit Union"],
+    [5107, "Traverse Catholic Federal Credit Union"],
+    [5226, "Marquette Community Federal Credit Union"],
+    [5594, "Security Service Federal Credit Union"],
+    [5643, "Texhillco School Employees Federal Credit Union"],
+    [5824, "First Watch Federal Credit Union"],
+    [5975, "Peach State Federal Credit Union"],
+    [6808, "Government Employees Federal Credit Union"],
+    [6834, "San Francisco Federal Credit Union"],
+    [7088, "Harbor Pointe Federal Credit Union"],
+    [7114, "Central State Federal Credit Union"],
+    [7170, "Texas Dow Employees Federal Credit Union"],
+    [7217, "Lenco Federal Credit Union"],
+    [7273, "4Front Federal Credit Union"],
+    [7288, "Advia Federal Credit Union"],
+    [7346, "Family First Federal Credit Union"],
+    [7526, "Expedition Federal Credit Union"],
+    [7902, "Credit Union of Texas"],
+    [8162, "America'S Federal Credit Union"],
+    [8197, "Dallas U.P. Employees Federal Credit Union"],
+    [8299, "Capitol Federal Credit Union"],
+    [8448, "Velocity Federal Credit Union"],
+    [8459, "Crow Wing Power Federal Credit Union"],
+    [8466, "Pacific Service Federal Credit Union"],
+    [8556, "Empeople Federal Credit Union"],
+    [8565, "Georgia United Federal Credit Union"],
+    [8569, "Rally Federal Credit Union"],
+    [8594, "Ithink Financial Federal Credit Union"],
+    [8625, "St. Cloud Financial Federal Credit Union"],
+  ] as const).map(([institutionId, institutionName]) => ({
+    institutionId,
+    institutionName,
+    reason: "Bounded live slice: today's Knox v184 fixes reach this bank's live fees",
+    requestedAt: "2026-11-03T20:00:00Z",
+    minExtractVersion: 184,
   })),
 ];
 
@@ -577,7 +656,14 @@ export async function selectPriorityInstitutions(
      -- A request whose current page this Knox version has not read goes before paid-fetched
      -- pages, which otherwise kept the two direct-run places full all morning (9 Oct).
      -- A Pro account's own institution comes right after a hand-found schedule (#1078).
-     ORDER BY CASE WHEN c.tier = 1 THEN 1 WHEN c.tier = 5 THEN 2 WHEN c.tier = 2 AND c.rules_unread THEN 3 WHEN c.tier = 4 THEN 4 WHEN c.tier = 2 THEN 5 ELSE 6 END ASC,
+     -- A request asking for a read under this Knox version (its minExtractVersion, from the list
+     -- or a Deming fix request) ranks with the rules re-reads, whatever the bank's size: the
+     -- 2026-11-03 slice's eight scored banks sat behind market leaders and paid-fetched pages while
+     -- the requests list put them first. It does not take the re-read cap or retry bypass, which
+     -- stay with rules_unread.
+     ORDER BY CASE WHEN c.tier = 1 THEN 1 WHEN c.tier = 5 THEN 2
+                   WHEN c.tier = 2 AND (c.rules_unread OR COALESCE((${requestedVersion}::int[])[array_position(${requested}::bigint[], c.id::bigint)], 0) >= ${KNOX_RULES_STRATEGY.version}::int) THEN 3
+                   WHEN c.tier = 4 THEN 4 WHEN c.tier = 2 THEN 5 ELSE 6 END ASC,
               CASE WHEN c.tier = 2 THEN array_position(${requested}::bigint[], c.id::bigint) END ASC NULLS LAST,
               COALESCE(c.asset_size, 0) DESC, c.id ASC
      LIMIT ${limit}::int

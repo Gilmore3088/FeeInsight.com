@@ -2723,6 +2723,141 @@ holds. Darwin's verify refuses the same reads (`service_maintenance_heading`) an
 is live (`SERVICE_MAINTENANCE_TAKEDOWN_LIVE`, off). The shared check is unchanged. The stale-read floor stays at
 v97.
 
+v184 (built on its branch as v182; Knox slice dry run and cross-category scan, Nov 3; the live slice's 671 changed
+rows at v180 held 10 wrong fees and 9 wrong names, and 5 live fees were re-read into a wrong category, each against
+the bank's own line): every read gets a last name review (`withReviewedNames`, `read-name-review.ts`) for words
+another part of the page lent it: a heading or another column glued in front ("LOAN FEES: 3x10 Box"; an audience, a
+delivery speed or a clause of other words stays, and so does a capitals prefix that ends in an account or card, "VISA
+CHECK CARD CHARGES", or a mixed-case account name that is no "Fees", "Charges" or "Services" heading), a font glyph
+against the price ("NSF FEE: g"), a box size's footnote digit ("3x103"), advice as a name (renamed only by the title
+right above), a price that the read's own words only ever call a deposit to open or join ("Only a $25 membership
+deposit"), an all-capitals label whose price is the next cell's own label, a box's late charge (by Hamilton's fold),
+and paper statements offered in a check image's name. A plain returned item beside an NSF fee printed free (a waiver
+is no free price), or beside a deposited item return at its own price, is the deposited item return
+(`withReturnBesideNsf`: Live Oak, TXN); Parthenon's, beside its own deposited return at another price, stays NSF. A
+wire service's monthly charge filed as a monthly fee is held (`wireServiceMonthlyName`: Ameris). Two label cells over
+two price cells pair by column (`parallelColumnRows`; a wrapped label leaves the row whole); the stacked price window
+takes its own column's label (Advia); a wire name never borrows a non-wire heading (Crow Wing); a heading's code
+("(S40)") is no price digit (St. Cloud); an account name that files as a fee is no account (Austin); a wrapped
+leader's parenthesis balance is its own cell's (Velocity). The source check reads a footnoted box size as the size it
+marks. Renamed twins merge only with the same product. Darwin's section misread check v5 re-checks the hold, drop and
+re-file rules on live fees (switch off; Nov 3, real read on prod: 1 match, #133756). Slice dry run (205 texts, against
+v183): 10 wrong and 9 wrong-name rows to 0, publish rows 672 to 661, live fees lost 0, simulated v3 score unchanged (P
+135/152, R 146/213). Harnesses rb to rb12 (v183 vs v184): live fees not reproduced 456 to 453 (4 reproduced again,
+#63177, itself a misread, no longer). The stale-read floor stays at v97.
+
+v183 (owner's audit Nov 3, #1110, #1092; First National Bank of Moose Lake, institution 3457, document 35684,
+artifact 33778): a fee priced in tiers is read as one fee per tier, each named with its own condition, and the tiers
+stay distinct fees under one category (`tier-names.ts`, `@/lib/tiered-price`). Knox's name builders dropped every
+figure as a price, so "$30.00 or less – Overdraft fee per item per presentment. | $15.00 per item" was named "or
+less – Overdraft fee per item per presentment" (raw 760358, refused by the category guard as a waiver threshold) and
+the $30 tier "More than $30.00" lost its condition (raw 760359), which went live as the bank's only overdraft price
+(live 116685). Now: "Overdraft fee per item per presentment (overdraft balance $30.00 or less)" $15 and "... (overdraft
+balance more than $30.00)" $30. A tier group is two or more lines (or clauses of one line) of one fee, each with one
+balance, amount or count condition and its own price above $0. A name that already states its tier keeps it ("Cashier’s
+checks over $1,000.00 per item"); otherwise the figure goes back in its own slot or the condition in brackets. A tier
+printed on the same line that no reader read gets its own read (confidence at most 0.85). A group whose tiers Knox
+cannot all read under Darwin's checks, or whose reads sit in two categories, is held whole as `tier_incomplete`
+(no automatic release). A cap ("maximum $150 per day"), a waiver threshold ("waived with $500 balance"), a rate's
+minimum (a line that prints a percentage or "min"/"minimum": "over $1,000 0.25% with a $50.00 minimum" makes no $50
+fee), a $0 band, one price under every condition, clauses of one line that each name their own fee ("Cashier's check
+over $1,000 $10.00; Money order up to $1,000 $5.00" stays two fees), and monthly maintenance and minimum balance
+reads are left alone (review of #2981). The category guard v110 reads a name without its own trailing tier bracket
+for its exclusions only when the bracket holds nothing but the threshold's noun and its condition. Darwin holds a
+tier read whose name does not state its tier (`tier_unscoped`) and re-checks live fees
+(`TIER_COMPLETENESS_TAKEDOWN_LIVE`, off; Nov 3: 48 of 2,982 candidates at 33 institutions, of which only the 31
+unscoped would come down). The stale-read floor stays at v97.
+
+v181 (twelfth Knox re-read backlog dry run, Nov 3; 40 backlog texts at v180, 2 wrong and 7 doubtful of 72 changed
+rows, each against the bank's own line): (1) A bulleted variant under a stop payment row that prints its own price,
+in the page's last column, is that stop payment's price for the variant (`stopPaymentVariantRead`,
+`custom-report/stop-payment-variant.ts`): walking up past other variants ("Check series") must reach the stop payment
+label, and a label naming any other fee ends the walk, so a list of different fees is untouched. St. Louis Community
+FCU's "• Corporate Check | $15.00" is "Stop Payment Fee – Check or ACH (per item): Corporate Check", and the source
+check admits that composed name at that row only. (2) A returned item read from a labeled fee card whose own
+description says the member deposited or cashed the item is the deposited item return (`depositedCardReturnRead`,
+`labeledFeeCardDescription`): ESL FCU's "Returned Item Fee" $10; its overdraft, certified check and stop payment
+cards are unchanged. (3) OCR noise on a dot leader (single letters, runs of a few repeated letters) is blanked before
+any reader runs (`withoutOcrLeaderNoise`): First Bank & Trust Co.'s "Paid Item Charge c" is "Paid Item Charge", the
+same fee as live #107178. (4) When two lines carry as many of a name's stems, the source check's line for a priced fee is
+the one whose label prints the whole name, then one that opens with its first word (San Francisco FCU's
+"Maintenance Fee | $5.00/month", not its par value sentence; "Wire | Incoming Wire Fee", not "Incoming Wire Return
+Fee"). The checks that find a stored line in a text blank OCR leader noise in both (`ocrComparable`). Darwin's section
+misread check v4 re-checks rules (1) and (2) on live fees (switch off; Nov 3: #40324 and #68629 match). Synergy's "Returned Check Fee - Same Party Check" stays nsf: the page never says the check was deposited,
+and banks use "same party" and "two-party" both ways. Harnesses rb to rb12 (v180 vs v181): live fees not reproduced
+456 to 456; no right read lost; 74 source lines change, 0 verdicts. The stale-read floor stays at v97.
+
+v180 (eleventh Knox re-read backlog dry run, Nov 3; 40 backlog texts at v179, 4 wrong and 9 doubtful of 67 changed
+rows, each against the bank's own line): (1) "Additional withdrawals (per withdrawal over 3 per month)" is the excess
+withdrawal charge (the rules' excess withdrawal pattern; not when the line names an ATM, a network or foreign use),
+so Advancial FCU's money market column's $10 is read by its own cell, never as the ATM column's "In-person" fee. (2)
+Each priced cell of an account table's monthly fee row is its own column's value under the row's label: the header
+walk (`custom-report/account-table.ts`) goes on above a one-cell caption printed inside the table ("Visa® Debit
+Cards", "Free E-Statements"); no other specialist files a price the account-table specialist reads from a column
+under another fee, or puts the row's label on a cell that states another fee (`accountRowRivalRead`); and a monthly
+fee priced "per paper statement" is the paper statement charge (`families.ts`). Community First National Bank's
+"Monthly Service Fees | None | $5 per paper statement ... | $6 if $300 minimum ... | $10 ..." is $6 and $10 monthly
+fees for their columns and one $5 paper statement. (3) A free row whose condition opens the next line ("Bill Payer
+..... Free" over "when opting for E-Statements") beside a priced read of the same fee is no $0
+(`conditionalFreeRow`): The People's FCU. A free Zelle line files under bill_pay ("Bill Pay & Zelle"), as the top-50
+fold has filed zelle_fee since Oct 8; unchanged. Harnesses rb to rb11 (v179 vs v180): live fees not reproduced 408
+to 408; no right read lost. The stale-read floor stays at v97.
+
+v179 (tenth Knox re-read backlog dry run, Nov 3; 40 backlog texts at v178, 4 wrong and 8 doubtful of 124 changed
+rows, each against the bank's own line): (1) A row under a section heading that names an audience by age or stage
+of life ("Senior Perks (60 & Over)", "Youth Accounts", "Members 65+") takes the heading as its product
+(`audience-section.ts`, on the read and on a held $0), so `sameProduct` keeps the audience's price apart from the
+general one: Midwest Members' seniors' "Fax Service | FREE" no longer replaces live #162230's $1. An exemption note
+("(Youth Accounts exempt from fee)", "No fee for senior citizens (62+)") is no section. "60 & Over" shapes join
+`AUDIENCE_WORDS`. An age needs age words and two digits ("Over 10,000", "Over 12 Months", "55 Year Old" are no age),
+a title naming an account, a loan, a branch, an ATM, months or rolls is no section, and "Student"/"Kids" titles are
+left out (review of #2977). Darwin's section misread re-check v3 reports live untagged rows under such a heading. (2) "Overdrafttransfer" (no space) is the overdraft protection transfer, and a line that lists the
+channels a fee covers ("Includeschecks,ACH,ATM,debitwithdrawals(peritem)") never chooses the category of the row
+under it (`channelListHeading` in `readUnderHeading`): MassMutual's $3 is no ATM fee. (3) `rateBoundOf` v2 reads a
+bound joined to its figure by "or" ("Cash Advance Fee | 2% minimum or $2, maximum fee of $10"), so the $2 is the
+rate's minimum, never a flat fee, and the rate read carries it (`percent.ts`): Oklahoma Educators. Source check v31
+re-checks live fees by it. (4) A $0 is read only when its own line prints it ("$0", "None", "Free", "No charge",
+"no ... fee", a "Waived" cell, an unconditional "Waived Annual IRA Fee") or a price-only cell right above it does on
+a stacked page, and never when it is offered against a price ("$0 or $4.95") or waived on a condition
+(`zeroPrintedForRead`): North State Bank's waiver footnote gives no $0.
+Darwin's section misread re-check v3 reports live $0s by the same rule. (5) Doubtful reads: a marketing sentence about
+the account no longer ends the account lookback (LifeStore's $15 is Premier Checking's); a label with control
+characters names no account (Meridia); "This account contains a monthly service charge" is named "Monthly service
+charge" (Blackhawk). Harnesses rb to rb10 (v178 vs v179): live fees not reproduced 382 to 381 (rb10 45 to 44, #162230
+kept); no right read lost. The stale-read floor stays at v97.
+
+v178 (ninth Knox re-read backlog dry run, Nov 3; 40 backlog texts at v177, 2 wrong and 5 doubtful of 91 changed
+rows, each against the bank's own line): (1) A returned item's handling service is no NSF fee and is held
+unclassified (`returnedItemServiceName` in `rules.ts`: special handling, a re-clear, a reroute, or a service fee
+priced per month; a name that says NSF stays NSF): First Bank 4694's "Returned Items Special Handling Service Fee1
+(Business) | $30.00 | Per Month". (2) An automatic transfer from savings or shares named alone is the overdraft
+protection transfer (`AUTOMATIC_TRANSFER_FROM_SAVINGS` in `fee-fold.ts`, guard v109), so the name classifies on
+its own and never takes its "ATM / VISA DEBIT CARD" heading: Library of Congress FCU 13456's "Automatic transfers
+from shares | $2.00". (3) A two-column line's first cell, printed right above a fee in the first column, can head
+the account (`twoColumnAccountCell`, lineup.ts): Clinton Savings Bank 7843's "Basic Checking Account | ATM/Debit Card
+Replacement | $ 10.00" over its $5 monthly charge. (4) A bracket the name opens with an article and never closes is dropped (`tidyFeeName`): Flora Bank &
+Trust 28783's "(A service charge". (5) A monthly maintenance read from a reward bullet ("Waived $5.00 monthly
+maintenance fee") or a "Your $12 monthly maintenance fee ..." sentence names no account and is held for review
+(`accountlessMonthlyReason`, `accountless-monthly.ts`): ECA FCU 26750 and U.S. Bank 39773; a FAQ's second
+sentence about one free service is the same $0 and is dropped (`tailTwinRead`): Clearview FCU 22205. (6) Review
+of #2973: the IRA's own distribution, transfer-out and IRA-named rows no longer end its section; waiver choices
+that each file under the whole name's type are that fee ("Use Non-Network ATM or Foreign ATM | $2.50" is
+atm_non_network again), while Honor's choice of ways stays held. Not fixed: holding a monthly maintenance read on a
+product page that names more than one account was tried and dropped, because on the harness it held 8 reads that
+reproduce live fees (Byline, Elkhorn, First Interstate) as well as Millersburg's "$4 Monthly Service Charge"; ECA's
+"If all account requirements are not met ..." $5 still publishes with no product; Flora's $7.50 is held untraced;
+Clinton's $3 and $15 now publish under their products while the live rows carry none. Live (SELECT, Nov 3):
+Darwin's section misread re-check v2 (switch off) reports 15 live fees, the 12 of v177 plus 3 returned item
+services; guard v109 is accept-only (18 live names, all already od_protection_transfer and accepted). Review of
+#2976: the reward bullet and "Your $X" hold judges the page, not the sentence: a row printing that monthly fee at
+that price ("Monthly maintenance fee | $10.00", or "$10 or $0 | Monthly Fee | $0") is the fee's line and keeps it
+(Knox reads it from that row), and an account heading right above the sentence ("Premier Checking" / "Your $10
+monthly service charge can be avoided ...") reads it under that account (`accountlessMonthlyOnPage`); "(Special
+Handling)" in a bracket after a returned item charge is a note and the charge reads; a savings club's automatic
+transfer is not the overdraft transfer; and a two-column first cell heads the fee only when the fee's own line
+prints the other column too, so a nearer plain heading keeps a one-column fee. Harnesses rb to rb9 (v177 vs v178): live fees not reproduced 313 (rb to rb8) and 24 (rb9)
+unchanged, no right read lost. The stale-read floor stays at v97.
+
 v177 (eighth Knox re-read backlog dry run, Nov 3; 40 backlog texts at v176, 5 wrong and 12 doubtful rows of 112
 changed, each against the bank's own line, each named or filed by words outside the fee's own row): (1) A later
 price on a line that runs on into a waiver column and the other column's bullet item takes its words from the last
@@ -3443,7 +3578,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v3 | `knox/paid-extract.ts` |
 | `KNOX_PAID_FIND_MISS_VERSION` | — | v1 | `knox/paid-find-misses.ts` |
 | `TWO_READ_AGREEMENT_STRATEGY` | `knox.two_read_agreement` | v2 | `knox/two-read-agreement.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v177 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v184 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v13 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v2 | `knox/takedown-lessons.ts` |

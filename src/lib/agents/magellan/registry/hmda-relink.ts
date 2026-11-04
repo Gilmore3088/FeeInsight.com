@@ -26,14 +26,24 @@ import { recordRegistryPartition, type RegistryDb } from "./partitions";
  * link in the partition detail, so the count is visible before anyone turns it on.
  */
 
-/** Off until James says yes: a live run writes institution_id on existing HMDA rows (production data). */
-export const HMDA_RELINK_LIVE = false;
+/**
+ * On since 2026-11-04 (James's yes on the decision card, #2232): a live run writes institution_id on
+ * existing HMDA rows. Off-mode prod counts on 2026-11-02: 3,406 lenders in 2025 and 3,433 in 2024
+ * would link, 0 ambiguous. Set false to stop; filled links stay.
+ */
+export const HMDA_RELINK_LIVE = true;
 /**
  * Its own registry source, not a partition of "hmda": a relink success must never stand in for an
  * HMDA download in feed freshness, source health or the registry counts.
  */
 export const HMDA_RELINK_SOURCE = "hmda-relink";
-export const HMDA_RELINK_PARSER_VERSION = 1;
+/**
+ * v2 (2026-11-04): the first live run. The off-mode runs on 2026-11-02 recorded every partition as
+ * succeeded with a weekly retry, so turning HMDA_RELINK_LIVE on made none of them due until Nov 9; a
+ * version above the stored one makes the scheduler run them now. Bump it again whenever the switch
+ * is turned back on after being off.
+ */
+export const HMDA_RELINK_PARSER_VERSION = 2;
 export const HMDA_RELINK_PREFIX = "relink-";
 export const RELINK_BATCH = 300;
 const CELL_CHUNK = 50;

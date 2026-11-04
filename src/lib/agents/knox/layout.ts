@@ -217,6 +217,7 @@ const DETAILS_CELL = /^(?:(?:fees?|charges?)\s+(?:applies|apply|is|are|will|may)
 const MAX_DETAILS_FREE_WORDS = 10;
 /** v57: a word that joins a sentence to the one before it ("Otherwise, a monthly service fee of $6.95"). */
 // v60: "In addition to the Card Replacement Fee" is not a joined sentence ("To the Card Replacement Fee").
+const ACCOUNT_CARRIES = /^(?:this|the|your|each)\s+(?:[a-z]+\s+){0,2}account\s+(?:contains|has|carries|includes|is\s+subject\s+to)\s+(?=(?:a|an)\s+[a-z][^|]*\b(?:fee|charge)s?\b)/i;
 const LEADING_DISCOURSE = /^(?:otherwise|additionally|also|however|in addition(?!\s+to\b)|furthermore|further)\s*,?\s+/i;
 /** v60: a section heading that is no fee's name ("SERVICE FEES"), so a details cell is not dropped down to it. */
 export const SECTION_HEADING = /^(?:[\w&'’-]+\s+){0,2}(?:fees|charges|services)$/i;
@@ -299,7 +300,16 @@ export function tidyFeeName(raw: string, options: { nameBoxSize?: boolean } = {}
     for (let pass = 0; pass < 2; pass += 1) name = trimEnd(name.replace(DANGLING_END, ""));
   }
   name = name.replace(NAME_LABEL, "");
-  const joined = LEADING_DISCOURSE.test(name);
+  // v178 (backlog dry run 9, Flora Bank & Trust text 28783): a bracket the name never closes opened the clause
+  // the price sits in ("Minimum Opening Balance2: $50.00 (A service charge of $7.50 will be charged ..." named
+  // "(A service charge"); the bracket is no part of the name. Only a bracket that opens on an article and a fee's
+  // words: "$6.50 (If you are enrolled in ...)" keeps its name as before.
+  if (/^\(\s*(?:A|An|The)\s+[a-z]/.test(name) && !name.includes(")")) name = name.slice(1).trim();
+  // v179 (backlog dry run 10, Blackhawk Bank & Trust text 30592): "This account contains a monthly service charge
+  // of $5 if ..." names the monthly service charge, not the account's sentence (`ACCOUNT_CARRIES`).
+  const carried = ACCOUNT_CARRIES.test(name);
+  name = name.replace(ACCOUNT_CARRIES, "");
+  const joined = carried || LEADING_DISCOURSE.test(name);
   name = name.replace(LEADING_DISCOURSE, "");
   name = name.replace(joined ? /^(?:A|An|The)\s+(?=[a-z])([a-z])/i : /^(?:A|An|The)\s+(?=[a-z])([a-z])/, (_, first: string) => first.toUpperCase());
   if (joined) name = name.replace(/^[a-z]/, (first) => first.toUpperCase());

@@ -38,8 +38,10 @@ export type RateHoldReason =
 const RATE = /(?<![\d.]|\d\s?[-–]\s?)(\d{1,3}(?:\.\d{1,4})?)\s*(?:%|percent\b)/gi;
 const INTEREST = /\b(apy|apr|annual percentage|interest|dividend|rate earned|yield|variable)\b/i;
 const UP_TO_BEFORE = /\b(?:up to|maximum of|max(?:imum)?\.?|not to exceed|as much as|no more than)\s*$/i;
-const MIN_AMOUNT = /\$\s?(\d{1,4}(?:\.\d{2})?)\.?\s*(?:min(?:imum)?\b|minimum)|\bmin(?:imum)?\.?\s*(?:of\s*|fee\s*(?:of\s*)?)?\$\s?(\d{1,4}(?:\.\d{2})?)/i;
-const MAX_AMOUNT = /\$\s?(\d{1,4}(?:\.\d{2})?)\.?\s*(?:max(?:imum)?\b)|\b(?:max(?:imum)?\.?|not to exceed|cap(?:ped)? at)\s*(?:of\s*)?\$\s?(\d{1,4}(?:\.\d{2})?)/i;
+// v179 (backlog dry run 10, Oklahoma Educators FCU text 34246): "2% minimum or $2" states the minimum after "or", and
+// "maximum fee of $10" / "the fee will never exceed $10.00" the maximum.
+const MIN_AMOUNT = /\$\s?(\d{1,4}(?:\.\d{2})?)\.?\s*(?:min(?:imum)?\b|minimum)|\bmin(?:imum)?\.?\s*(?:of\s*|fee\s*(?:of\s*)?|or\s+)?\$\s?(\d{1,4}(?:\.\d{2})?)/i;
+const MAX_AMOUNT = /\$\s?(\d{1,4}(?:\.\d{2})?)\.?\s*(?:max(?:imum)?\b)|\b(?:max(?:imum)?\.?(?:\s+fee)?|(?:not|never)\s+(?:to\s+)?exceed|cap(?:ped)? at)\s*(?:of\s*)?\$\s?(\d{1,4}(?:\.\d{2})?)/i;
 /** A dollar figure "or" the rate right after it: "$5.00 or 3%", "Greater of / $25.00 or 1%". */
 const OR_BEFORE_RATE = /\$\s?(\d{1,4}(?:\.\d{2})?)\s*,?\s*or\s+(?:the\s+)?$/i;
 /** A safe deposit box's late charge is a percent of its rent, not a late payment fee. */

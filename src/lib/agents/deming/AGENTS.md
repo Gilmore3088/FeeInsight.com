@@ -461,6 +461,34 @@ first stage that got it wrong.
 - The `missed_fees` cases read holdout answer keys. Use them to see which stage loses fees. Write
   and test a rule against tuning keys or new fixtures, never against holdout text.
 
+## Full-pipeline reconciliation (James, 2026-11-03)
+
+`deming/reconcile/` re-runs today's pipeline over a batch of banks and compares it, fee by fee, with
+what is live, so whole pipeline steps get fixed instead of single fees.
+
+- **Shadow run.** Each bank's current documents (the newest stored text of every page no newer copy
+  supersedes) go through the shadow lab's `currentVariant` in memory: Knox's free read, Darwin's
+  verify checks, Hamilton's publish gate, then Darwin's prospective audience (`darwinAudience`).
+  Knox's learned lessons, Darwin's peer check and Rosetta's conversion are not replayed: the stored
+  text is read as it is. Nothing is written to a fee tier.
+- **Diff.** Live (`published_fee_catalog`, dollar fees) against shadow: `same`, `amount_changed`,
+  `category_changed`, `audience_changed`, `new_in_shadow`, `missing_in_shadow` (`diff.ts diffBank`).
+- **Reconciliation rule** (`decide`), checked against the bank's own document: the answer key where
+  the bank has one; then the shared check (`checkFeeAgainstSource`) on a current document; then the
+  publish category guard; otherwise a tie sent to review. Never "the newer read wins".
+- **Root cause** (`chargeCause`): each difference is charged to the step whose output is wrong on
+  the losing side (stale copy: Magellan; no text: Rosetta; old or today's misread: Knox; refused at
+  verify or audience: Darwin; gated at publish: Hamilton).
+- **Grade** (`grade.ts`): live and shadow on the same banks with the daily review's measures:
+  precision and recall against confirmed answer keys (also on the banks eligible today), unknown
+  audience share, the share that loses its reconciliation (wrong after publish) and the share the
+  shared check finds on a current document.
+- **Runs.** `scheduleReconcileRun` (tick) queues one `deming-reconcile` run at a time while
+  `RECONCILE_BATCH_ID` has banks left; each step takes up to 12 banks and records one
+  `deming.reconcile_bank` event per bank and one `deming.reconcile_grade` event. The first batch is
+  the 62 frozen answer-key banks. A full batch over every bank with live fees, and applying any
+  reconciled winner to live fees, wait for James's yes (or the sampled-clean rule).
+
 ## Switch dry runs (#1092)
 
 One read-only command prints every production count an off-by-default switch waits on, so James
@@ -663,6 +691,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | Constant | Strategy | Version | File |
 |---|---|---|---|
 | `ACCURACY_REPORTING_VERSION` | — | v1 | `deming/accuracy-measure.ts` |
+| `RECONCILE_VERSION` | — | v1 | `deming/reconcile/run.ts` |
 | `FRESH_AUDIT_VERSION` | — | v10 | `deming/fresh-audit.ts` |
 | `DEMING_REGRESSION_VERSION` | — | v2 | `deming/regression.ts` |
 | `BENCHMARK_HEALTH_VERSION` | — | v1 | `deming/benchmark-health.ts` |

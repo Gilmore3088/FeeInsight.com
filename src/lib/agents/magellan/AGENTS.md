@@ -929,7 +929,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `BANK_ZELLE_MATCHER_VERSION` | — | v1 (offers Zelle from each institution's own stored documents, #1875) | `magellan/registry/bank-zelle-match.ts` |
 | `HMDA_PARSER_VERSION` | — | v3 (prepared exact identity matching and complete annual writer lock; scheduled version stays2 while ordinary identity writes are held, #2265) | `magellan/registry/hmda.ts` |
 | `HMDA_APOR_PARSER_VERSION` | — | v2 | `magellan/registry/hmda.ts` |
-| `HMDA_RELINK_PARSER_VERSION` | — | v1 | `magellan/registry/hmda-relink.ts` |
+| `HMDA_RELINK_PARSER_VERSION` | — | v2 (first live run once `HMDA_RELINK_LIVE` is on; v1 runs were off-mode counts, #2232) | `magellan/registry/hmda-relink.ts` |
 | `DESIGNATION_LISTS_PARSER_VERSION` | — | v2 (Bank On list removed) | `magellan/registry/designation-lists.ts` |
 | `CRA_PARSER_VERSION` | — | v3 (ratings from FDIC CRAPES by public year and the Federal Reserve CRAPubWeb list; the FFIEC ratings file is not scheduled, #1805; v2: FFIEC ratings and flat-file URLs; headerless ratings file, ID by regulator; revised 2022-23 files) | `magellan/registry/cra.ts` |
 | `FR_Y9C_PARSER_VERSION` | — | v1 | `magellan/registry/fr-y9c.ts` |

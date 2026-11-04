@@ -960,4 +960,14 @@ export const DARWIN_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-11-03",
   },
+  {
+    id: "tiered-price-2026-11-03-judge-the-whole-row",
+    agent: "darwin",
+    stage: "verify",
+    lesson: "Judge a fee on its whole source row, not its name alone. When the row is one tier of a fee priced by a condition, the read's name must state that tier's condition; a name that does not would publish one tier as the bank's only price, so hold it. A tier's own bracket in the name (\"(overdraft balance $30.00 or less)\") is its scope, not a waiver threshold, but only when nothing but the threshold's noun precedes the condition: \"(international over $1,000)\" still says international. A tiered_fee answer from the shared check is not proof the condition was read. Re-check live tiers for a hidden condition behind an off switch, with a dry-run count, before any takedown; take down only a tier whose name hides its condition, and count a right tier whose sibling is missing without archiving it, because the missing sibling is Knox's to read.",
+    why: "First National Bank of Moose Lake (doc 35684): verify refused the $15 tier (raw 760358) because the guard read \"or less\" as a waiver threshold, and passed the $30 tier (raw 760359) on a tiered_fee answer that verify counts as stated, so the $30 tier went live alone (116685). Prod dry run Nov 3 (read-only, re-run after the independent review of #2981): 48 of 2,982 live conditioned fees at 33 institutions match, 31 unscoped (the switch's) and 17 incomplete (report only); the takedown waits behind TIER_COMPLETENESS_TAKEDOWN_LIVE (off). The review found the first cut would have archived right fees such as 18812 and let a tier bracket hide category words from the guard.",
+    evidence: { issues: [1110, 1026], prs: [], files: ["src/lib/agents/darwin/tier-scope.ts", "src/lib/agents/darwin/verify.ts", "src/lib/fee-category-guard.ts", "src/lib/agents/darwin/tier-completeness-check.ts", "src/lib/agents/darwin/tier-completeness-check.test.ts", "docs/project/findings/2026-11-03-tiered-price-conditions.md"] },
+    appliesTo: "all",
+    since: "2026-11-03",
+  },
 ];

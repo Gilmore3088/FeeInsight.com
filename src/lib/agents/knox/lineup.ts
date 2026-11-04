@@ -1,8 +1,9 @@
-import { AMOUNT_PATTERN, amountsIn, BALANCE_BELOW_CLAUSE } from "@/lib/agents/knox/rules";
+import { AMOUNT_PATTERN, amountsIn, BALANCE_BELOW_CLAUSE, classifyFeeText } from "@/lib/agents/knox/rules";
 import { accountTableProduct } from "@/lib/custom-report/account-table";
 import { namesNoAccount, withoutNonAccountWords } from "@/lib/account-name-exclusions";
 import { accountKind, CHECKING_WORDS } from "@/lib/account-kind";
 import { withAncillaryProduct } from "./ancillary-product";
+import { audienceSectionHeading } from "./audience-section";
 
 /**
  * A checking account's lineup facts, read with its monthly maintenance fee: the product's
@@ -198,9 +199,16 @@ function distinctAccountName(value: string): string | null {
 }
 
 function distinctAccountNameOnly(value: string): string | null {
+  // v179 (backlog dry run 10, Meridia Community FCU text 4803, line 32): a line the PDF reader left control characters
+  // in ("Overdraft Transfer from Share\u0003", a fee row's broken label) is no account's title.
+  if (/[\u0000-\u0008\u000b-\u001f]/.test(value)) return null;
   // v141 nit: a footnote star after the name comes off ("50+ Checking*" -> "50+ Checking"); a mark (®) stays.
   const name = squash(value).replace(/[\s\-–:|,.*†‡]+$/, "").replace(HEADING_TAIL, "").replace(LEAD_IN, "");
   if (name.length < 4 || name.length > MAX_PRODUCT_NAME_CHARS || FEE_HEADING_END.test(name)) return null;
+  // v184 (Knox slice dry run, Austin Bank text 25416): a feature an account lists that is itself a fee's service
+  // ("Automatic Transfer from Savings", an overdraft transfer) names no account.
+  const asFee = classifyFeeText(name);
+  if (asFee && !ACCOUNT_PRODUCT_CATEGORIES.has(asFee)) return null;
   const numbered = numberedLine(value);
   if (numbered === "feature" || numbered === "other") return null;
   // "For all customers with savings needs…" is a tagline under the account (RNB 2558, 9 Oct).
@@ -364,6 +372,17 @@ function accountTitleLine(line: string | undefined): boolean {
   return ACCOUNT_KIND_HEADING.test(kind) || ACCOUNT_TYPE_HEADING.test(kind) || distinctAccountName(kind) != null;
 }
 /**
+ * v178: a two-column line's first cell that heads an account: a title ending on an account word ("Basic Checking
+ * Account", "Truist One® Savings") with no fee word in it ("Dormant Account", "Account Close Fee", "Classic
+ * Checking Paper Statement Fee" are rows).
+ */
+const ACCOUNT_CELL_END = /\b(?:checking|savings|money market|share draft|share|account)s?\s*$/i;
+const ACCOUNT_CELL_NOT = /\b(?:fees?|charges?|service|for|of|type|par|value|printed|dormant|inactive|inactivity|close|closed|closing|closure|printout|statement|activity|overdraft|minimum|balance|research|transfer|all)\b/i;
+function twoColumnAccountCell(cell: string): boolean {
+  const title = cell.replace(/[®™℠¹²³*]+/g, "").replace(/[\s:]+$/, "").trim();
+  return title.split(/\s+/).length <= 5 && /^[A-Z0-9]/.test(title) && ACCOUNT_CELL_END.test(title) && !ACCOUNT_CELL_NOT.test(title) && accountTitleLine(title);
+}
+/**
  * v177: the line at `index` is one entry of a product tab list: it and the three lines above it are short title
  * lines, and three of the four head an account ("LITTLE EAGLES SAVINGS" / "CERTIFICATE OF DEPOSIT" / "HSA" /
  * "IRA"). A section title over one product ("Personal Accounts" / "Basic Checking") is no list, and a title that
@@ -379,7 +398,10 @@ function inProductTabList(lines: readonly string[], index: number): boolean {
   return !lines.slice(Math.max(0, index - TAB_LIST_LINES), index).some((line) => line.toLowerCase() === own);
 }
 
-function accountBlock(text: string, excerpt: string): AccountBlock | null {
+/** v179: a full sentence (eight words or more, ending in a period or "!"), not a title. */
+const PROSE_SENTENCE = /^(?=(?:\S+\s+){7,}\S)[^|]+[.!]$/;
+
+function accountBlock(text: string, excerpt: string, amount?: number | null): AccountBlock | null {
   const printed = text.split(/\n+/).map(squash).filter(Boolean);
   const at = feeLineIndex(printed, excerpt);
   if (at < 0) return null;
@@ -398,9 +420,29 @@ function accountBlock(text: string, excerpt: string): AccountBlock | null {
       accountHeadingAt = index;
     }
   };
+  // v178: the fee is its line's first column's when its price is the line's first price ("– Monthly Maintenance
+  // Service Charge | $ 15.00 | – Monthly Maintenance Service Charge* | $ 4.95": the $4.95 is the next column's).
+  // Review of #2976: and only when the fee's own line prints the other column too (a second price after the fee's):
+  // under "Premier Checking", "Money Market Savings | Money Orders | $5.00" over a one-column "Monthly maintenance
+  // fee | $5.00" is no two-column layout, so the nearer plain heading keeps the fee.
+  const feePrices = amount != null && lines[at].includes("|") ? amountsIn(lines[at]) : [];
+  const feeInFirstColumn = feePrices.length >= 2 && feePrices[0].value === amount;
   for (let index = at - 1; index >= Math.max(0, at - HEADING_LOOKBACK_LINES); index -= 1) {
-    const line = lines[index];
-    if (line.includes("$") || line.includes("|")) continue;
+    let line = lines[index];
+    // v178 (backlog dry run 9, Clinton Savings Bank text 7843, line 17): a two-column line's first cell can be
+    // the account's heading ("Basic Checking Account | ATM/Debit Card Replacement | $ 10.00" over "– Monthly
+    // Maintenance Service Charge | $ 5.00"); the other column's row beside it is not the account's. Only a first
+    // cell right above the fee's own line that heads an account by itself is read (`twoColumnAccountCell`); any
+    // other cell row is skipped as before.
+    if (line.includes("|")) {
+      const cell = line.split("|")[0].trim();
+      const beside = line.split("|")[1]?.trim() ?? "";
+      // A table row's label ("Interest-bearing account | No | No | Yes") is no heading: the cell beside a heading is
+      // the other column's title or row, never a value.
+      if (index !== at - 1 || !feeInFirstColumn || !cell || cell.includes("$") || !twoColumnAccountCell(cell) ||
+        /^(?:yes|no|none|n\/a|free|included|-|–)?$/i.test(beside)) continue;
+      line = cell;
+    } else if (line.includes("$")) continue;
     // v177 (backlog dry run 8, Primis Bank text 30162): a product card's marketing label ("BEST FOR People
     // who ... want their checking balance to earn interest.", "STANDOUT BENEFIT ...") describes the account
     // named above it; it neither names an account nor ends the lookback.
@@ -427,7 +469,10 @@ function accountBlock(text: string, excerpt: string): AccountBlock | null {
     const kind = line.replace(/[\s:]+$/, "");
     if (!accountStopped && accountHeading === null && !namesNoAccount(kind)) {
       if (ACCOUNT_KIND_HEADING.test(kind)) takeAccount(kind, index);
-      else if ((CHECKING_WORDS.test(kind) || PACKAGE_HEADING.test(kind)) && !ACCOUNT_TYPE_HEADING.test(line) && !distinctAccountName(line.replace(HEADING_TAIL, ""))) accountStopped = true;
+      // v179 (backlog dry run 10, LifeStore Bank text 13549, line 525): a marketing sentence about the account ("Get
+      // rewarded for a sound financial relationship with our Premier Checking account option.") is no heading and
+      // never ends the lookback; the account's own title above it ("Premier Checking") still owns the fee.
+      else if ((CHECKING_WORDS.test(kind) || PACKAGE_HEADING.test(kind)) && !ACCOUNT_TYPE_HEADING.test(line) && !distinctAccountName(line.replace(HEADING_TAIL, "")) && !PROSE_SENTENCE.test(kind)) accountStopped = true;
     }
     // v55: "Money Market" alone heads its own fee; another fee's heading ("Early (Share)
     // Savings Account Closing") means the lines above belong to other fees.
@@ -621,8 +666,8 @@ function openingDepositIn(line: string): number | null {
 }
 
 /** The lines a fee's lineup is read from: its own clause, and its account's lines that talk about the fee. */
-function lineupSources(excerpt: string, text: string) {
-  const block = accountBlock(text, excerpt);
+function lineupSources(excerpt: string, text: string, amount?: number | null) {
+  const block = accountBlock(text, excerpt, amount);
   const own = [accountClause(excerpt, excerpt), ...(block ? [accountClause(block.feeLine, excerpt)] : [])];
   // A nearby line that states its own monthly fee ("$10.00 monthly maintenance fee (Maintain a
   // daily balance of $500...)") is another account's row, so its balance and waiver are not ours.
@@ -790,18 +835,24 @@ export function printedNearerThan(text: string, excerpt: string, nearer: string,
   return nearAt >= 0 && farAt >= 0 && farAt < nearAt;
 }
 
-export function withLineupFromText<T extends { canonicalHint: string; feeName: string; excerpt: string; amount?: number | null; lineup?: AccountLineup | null }>(
+export function withLineupFromText<T extends { canonicalHint: string; feeName: string; excerpt: string; amount?: number | null; lineup?: AccountLineup | null; audienceSection?: string }>(
   candidate: T,
   text: string,
   /** False keeps v55's own-name order; its context still respects a nearer printed account kind. */
   options: { accountProduct?: boolean; institutionName?: string | null } = {},
 ): T {
-  if (!ACCOUNT_PRODUCT_CATEGORIES.has(candidate.canonicalHint)) return withAncillaryProduct(candidate, text, options.institutionName);
+  if (!ACCOUNT_PRODUCT_CATEGORIES.has(candidate.canonicalHint)) {
+    // v179 (backlog dry run 10, Midwest Members FCU): a row of an audience's own section ("Senior Perks (60 &
+    // Over)" / "Fax Service | FREE") is that audience's price, never the general fee's (`audienceSectionHeading`).
+    const section = candidate.lineup?.productName ? null : audienceSectionHeading(text, candidate.excerpt);
+    if (section) return { ...candidate, audienceSection: section, lineup: { productName: section, minBalanceToAvoid: null, minOpeningDeposit: null, waiverText: null } };
+    return withAncillaryProduct(candidate, text, options.institutionName);
+  }
   const read = candidate.lineup ?? { productName: null, minBalanceToAvoid: null, minOpeningDeposit: null, waiverText: null };
   // A model-read waiver that is a rate tier carries the tier's balance with it; neither is the fee's.
   const current: AccountLineup =
     read.waiverText && INTEREST_TIER.test(read.waiverText) ? { ...read, minBalanceToAvoid: null, waiverText: null } : read;
-  const { block, own, aboutTheFee } = lineupSources(candidate.excerpt, text);
+  const { block, own, aboutTheFee } = lineupSources(candidate.excerpt, text, candidate.amount);
   const first = <V>(lines: string[], read: (line: string) => V | null): V | null => {
     for (const line of lines) {
       const value = read(line);

@@ -3,6 +3,26 @@
 Newest first. Each entry: date, what was decided, who, why, and what it means for the work.
 Seeded 2026-10-05 from the project's working memory; earlier decisions were not recorded here.
 
+## 2026-11-03
+
+**Re-run the pipeline from fee one and reconcile every fee, instead of fixing a few fees a day.** James,
+2026-11-03 18:28 UTC: "go back through our pipeline from fee number one and run the pipeline and grade
+it based on what we currently have and then we need to note what's different and then ... a conflict
+resolution or reconciliation between the two ... we can't keep fixing 13 fees a day and our data
+pipeline isn't getting better."
+
+What it means for the work:
+- A shadow run of today's pipeline (`deming/reconcile/`) re-reads each bank's current documents and is
+  diffed fee by fee with what is live: same, amount changed, category changed, audience changed, new,
+  missing. It writes run events only.
+- Each difference is decided by one rule checked against the bank's own document (answer key, then
+  the shared source check on a current document, then the category guard, else review), never by
+  which read is newer, and charged to the pipeline step whose output lost.
+- Live and shadow get one grade each with the daily review's measures. The fix list is the
+  differences grouped by step and cause, so whole steps are fixed.
+- The pilot is the 62 frozen answer-key banks. The full run over every bank with live fees, and
+  applying reconciled winners to live fees, need James's yes (or the sampled-clean rule).
+
 ## 2026-11-02
 
 **Turn on all five Darwin live re-checks that merged off.** James, 2026-11-02 05:02 UTC, "Turn on all

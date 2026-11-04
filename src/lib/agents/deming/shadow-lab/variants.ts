@@ -21,6 +21,7 @@ import { freeListItemRead } from "@/lib/free-list-item";
 import { dividendThresholdSentence } from "@/lib/dividend-threshold";
 import { onlineServiceMonthlyFee } from "@/lib/service-monthly-charge";
 import { serviceMaintenanceOf, serviceMaintenanceRead } from "@/lib/service-maintenance-heading";
+import { unscopedTierRead } from "@/lib/agents/darwin/tier-scope";
 import { foldContext } from "@/lib/fee-fold";
 import { withFootnotedAtmHeading } from "@/lib/fee-fold-atm-heading";
 import { isProductPage } from "@/lib/agents/hamilton/product-page";
@@ -299,6 +300,7 @@ function verifyFee(fee: StageFee, text: string, dailyCapLines = false, switches:
   if (switches.serviceMaintenanceHold !== false && serviceMaintenanceRead({ excerpt: fee.excerpt, tracedLine: traced, canonicalFeeKey: key, documentText: text })) {
     return { ok: false, reason: "service_maintenance_heading" };
   }
+  if (unscopedTierRead({ feeName: name, canonicalFeeKey: key, amount, excerpt: fee.excerpt, tracedLine: traced, documentText: text })) return { ok: false, reason: "tier_unscoped" };
   // Darwin settles the frequency it verifies from Knox's own excerpt (insertCurrentVerifiedFee).
   return { ok: true, fee: { ...fee, frequency: verifiedFrequency(fee.excerpt, amount, fee.frequency ?? null, key) } };
 }

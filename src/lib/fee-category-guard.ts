@@ -29,7 +29,8 @@ import { paperStatementPriceOnLine } from "@/lib/paper-statement-price";
 import { BILL_PAYER_NAME, MOBILE_CHECK_DEPOSIT_NAME, SERVICE_MONTHLY_CHARGE_NAME } from "@/lib/service-monthly-charge";
 import { WIRE_NOTIFICATION_NAME } from "@/lib/wire-notification";
 import { ACCOUNT_REACTIVATION_NAME } from "@/lib/account-reactivation";
-import { abbreviatesInternationalWire, namesWireOutsideUs, wireOutsideUsWords, ATM_ABROAD, AUTOMATIC_TRANSFER_TO_CHECKING_ANYWHERE, COLLECTION_ITEM, DRAFT_PROTECTION_FEE, foldRetiredCategory, FOREIGN_DEPOSIT_RETURN, FOREIGN_ITEM_RETURN, INCOMING_WIRE, INTERNATIONAL_ATM, IRA_CLOSING, ITEM_COPY, NIGHT_DEPOSIT_WORDS, RESEARCH_SPLIT_LIVE, SKIP_A_PAY, SUSTAINED_OVERDRAFT } from "@/lib/fee-fold";
+import { withoutTierScope } from "@/lib/tiered-price";
+import { abbreviatesInternationalWire, namesWireOutsideUs, wireOutsideUsWords, ATM_ABROAD, AUTOMATIC_TRANSFER_FROM_SAVINGS_ANYWHERE, AUTOMATIC_TRANSFER_TO_CHECKING_ANYWHERE, COLLECTION_ITEM, DRAFT_PROTECTION_FEE, foldRetiredCategory, FOREIGN_DEPOSIT_RETURN, FOREIGN_ITEM_RETURN, INCOMING_WIRE, INTERNATIONAL_ATM, IRA_CLOSING, ITEM_COPY, NIGHT_DEPOSIT_WORDS, RESEARCH_SPLIT_LIVE, SKIP_A_PAY, SUSTAINED_OVERDRAFT } from "@/lib/fee-fold";
 
 export type CategoryGuardCode = "name_contradicts" | "name_unsupported" | "rate_as_amount" | "schedule_contradicts" | "amount_implausible";
 
@@ -834,7 +835,9 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
     // no overdraft; a two-way service is not. Matched anywhere (`AUTOMATIC_TRANSFER_TO_CHECKING_ANYWHERE`),
     // since the source check tests this against the fee's line after the rows above it; Knox's anchored
     // rule decides which names are filed here.
-    include: new RegExp(`(overdraft|\\bod\\b|\\bodp\\b|o\\/d|sweep|protection|sobregir)|${AUTOMATIC_TRANSFER_TO_CHECKING_ANYWHERE.source}`, "i"),
+    // v109 (with Knox v178): an automatic transfer from savings or shares named alone ("Automatic transfers from
+    // shares | $2.00", Library of Congress FCU) too (`AUTOMATIC_TRANSFER_FROM_SAVINGS_ANYWHERE`).
+    include: new RegExp(`(overdraft|\\bod\\b|\\bodp\\b|o\\/d|sweep|protection|sobregir)|${AUTOMATIC_TRANSFER_TO_CHECKING_ANYWHERE.source}|${AUTOMATIC_TRANSFER_FROM_SAVINGS_ANYWHERE.source}`, "i"),
     // v39: "Returned or Paid Checks (OD Privilege Fee/Insufficient Funds/...includes Electronic Funds
     // Transfer Debits)" $30, "Check-Overdraft/NSF/Return Fees" $30 and "Overdraft Fee-Exceeded
     // Reg D Transfers" $20 are the overdraft, NSF and excess withdrawal fees, not a transfer's fee.
@@ -1456,7 +1459,23 @@ export const GUARDED_CATEGORIES: readonly string[] = [...new Set([...Object.keys
 // price (97753 "COINSTAR® Coin Counting Service: 10” x 10” x 24”" $105 beside 46887 "10” x 10” x 24”"
 // $105; 64741 "Coin Counting NC: 5”x 10”x 24”" $40, where coin counting is NC, beside 158517 and 158514
 // "Safe Deposit Box 5”x 10”x 24”" $40). Each was read on its stored source line.
-export const CATEGORY_GUARD_VERSION = 108;
+// v109 (Nov 3, with Knox v178; Knox re-read backlog dry run 9, Library of Congress FCU text 13456):
+// od_protection_transfer also accepts an automatic transfer from savings or shares named alone
+// (`AUTOMATIC_TRANSFER_FROM_SAVINGS_ANYWHERE`: "Automatic transfers from shares | $2.00", which Knox filed
+// atm_non_network through the "ATM /VISA DEBIT CARD" heading above it). A transfer to another account than
+// checking, or one naming a second destination, is not accepted. Accept-only: no rule refuses more.
+// Read-only dry run (Nov 3): 18 live fees' names say an automatic transfer from savings or shares, all already
+// filed od_protection_transfer, so 0 come down and 0 re-file.
+// v110 (Nov 3, with Knox v183 tier names; #1092, #1110, #1026): a priced fee whose name ends in its own tier
+// scope, a bracket that is one balance or count condition after nothing but the threshold's own noun ("(overdraft
+// balance $30.00 or less)", "(4+ items)"), is judged without that bracket by the exclusions (`withoutTierScope` in `@/lib/tiered-price`), so
+// First National Bank of Moose Lake's $15 overdraft tier is no longer refused as a waiver threshold ("or less").
+// A $0, a name with waiver, cap, minimum, limit or rate words, a bracket with any other word ("(international over
+// $1,000)" keeps "international" for the exclusions; review of #2981), and a cut name with no figure ("or less –
+// Overdraft fee ...", raw 760358) are judged as before. Accept-only: no rule refuses more. Read-only dry run (Nov 3):
+// of 1,038 live priced names ending in a bracket with a condition, 137 lose it and 0 change verdict; see the finding
+// `docs/project/findings/2026-11-03-tiered-price-conditions.md`.
+export const CATEGORY_GUARD_VERSION = 110;
 
 /** v87 (#1916): where a late charge printed in a safe deposit box section is filed. */
 export const BOX_LATE_TARGET = "safe_deposit_box";
@@ -1884,13 +1903,17 @@ export function checkFeeCategory(
     return { ok: false, code: byName ? "name_contradicts" : "schedule_contradicts", reason: commercialLockboxReason(name, !byName) };
   }
   const soft = rule.excludeUnless;
+  // v110 (#1092, #1110): a priced fee's own tier scope ("Overdraft fee per item per presentment
+  // (overdraft balance $30.00 or less)" $15, Moose Lake) is the row's threshold, never a waiver or another
+  // fee, so the exclusions read the name without it (`withoutTierScope`). Includes still read the whole name.
+  const excludeName = withoutTierScope(name, context?.amount);
   // A note runs to its closing parenthesis, or to the end of a name cut mid-note.
-  const softName = soft?.outsideNotes ? name.replace(/\([^()]*(?:\)|$)/g, " ") : name;
+  const softName = soft?.outsideNotes ? excludeName.replace(/\([^()]*(?:\)|$)/g, " ") : excludeName;
   const capOnly = capOnlyInNotes(rule, name, context);
   // v35: a daily-cap note may name the other fee it shares the cap with: "Overdraft Fee - each
   // debit or check presentment paid (Consumer Accts: 5 max total OD or Returned Item fees daily)".
-  const softExcluded = soft && !soft.unless.test(softName) ? (capOnly ? softName : name).match(soft.pattern) : null;
-  const matched = (capOnly ? null : name.match(rule.exclude)) ?? softExcluded ?? (rule.excludeExact && /[a-z]/.test(name) ? name.match(rule.excludeExact) : null);
+  const softExcluded = soft && !soft.unless.test(softName) ? (capOnly ? softName : excludeName).match(soft.pattern) : null;
+  const matched = (capOnly ? null : excludeName.match(rule.exclude)) ?? softExcluded ?? (rule.excludeExact && /[a-z]/.test(excludeName) ? excludeName.match(rule.excludeExact) : null);
   const excluded = matched && rule.onlyIfRefiles && !refileTargetAccepts(canonicalFeeKey, name) ? null : matched;
   if (excluded) {
     return {

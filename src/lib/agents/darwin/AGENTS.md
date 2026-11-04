@@ -488,6 +488,7 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
 | `outside_envelope` | a positive amount inside its category's range: hand-set (`envelopes.ts`), else learned (`learned-envelopes.ts`), else $0.01-$2,500 | needs_review |
 | `not_in_source` | the fee is stated in the stored text of the document Knox read it from (`checkFeeAgainstSource`, the shared accuracy check; a tiered price counts) | rejected |
 | `peer_outlier` | pass 2: not far outside the state's peer range (below); a district or national comparison never holds | needs_review |
+| `tier_unscoped` | a read that is one tier of a fee priced by a balance, amount or count condition (Knox's own line or the traced line is a tier of a group, `unscopedTierRead` in `tier-scope.ts`, `@/lib/tiered-price`) states that tier's condition in its name. The shared check answers `tiered_fee` for such a row and counts it as stated, so without this the name alone was judged: First National Bank of Moose Lake's $30 tier (raw 760359) went live as the bank's only overdraft price (#1110). Knox v183 names new tier reads by their condition | needs_review |
 | `duplicate_in_batch` | the same fee line (institution, category, amount, frequency, stored document) already verified in this batch | duplicate |
 | `duplicate_verified` | the insert did not conflict with an existing verified row | duplicate |
 | `category_lesson_pending` | the fee name does not match a category lesson the shared guard has not learned yet (`DARWIN_CATEGORY_HOLDS` in `verify.ts`); Darwin never re-files a row itself, so the row waits for the guard | needs_review |
@@ -1614,6 +1615,24 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   flag), never behind a fee the same pass takes down. `PRODUCT_SPLIT_MERGE_LIVE` is off: the step only
   reports (`product_split_check`). Dry run 2026-11-03 (prod, read-only): 119 pairs, 65 live fees at 49
   institutions would come down.
+- One printed line live under two categories (`reread-category-move-check.ts`, v1, Nov 3). Hamilton
+  superseded a live fee only inside its category, so a re-read that files a line under a corrected
+  category went live beside the old fee. Each step reads the pairs of live dollar fees of one
+  institution, amount and product under different categories, the later read's raw row written after
+  the earlier's, whose stored lines fold to the same words or one inside the other
+  (`REREAD_CATEGORY_MOVE_ROWS_SQL`), and judges each with Hamilton's rule
+  (`rereadsLineInAnotherCategory` in `hamilton/reread-category-move.ts`) against the later read's
+  document's current text. The earlier read comes down on its second look (check
+  `darwin.reread_category_move`) as `same_line_duplicate: live fee #<later>` (batch
+  `darwin-reread-category-move-<run>`, verified row rejected with the `same_line_duplicate` flag), never
+  behind a fee the same pass takes down. An overdraft/NSF move is never made (#1513), and neither is a move
+  on a line that prices an item of each category ("Money order/Cashier check fee | $8.00",
+  `lineNamesBothCategories`). `REREAD_CATEGORY_MOVE_LIVE` (Hamilton's) is off: the step only reports
+  (`reread_category_move_check`). Dry run 2026-11-03 (prod, read-only, SQL-narrowed then judged by
+  `findRereadCategoryMoves`): 395 candidate pairs, 101 live fees at 96 institutions would come down, 77 at 73 after the two-item-line
+  and overdraft/NSF fixes of the #2980 review; at
+  least 10 of them look like the later read is the wrong one, so the switch waits on a sampled verdict
+  (finding 2026-11-03-reread-cross-category-duplicates).
 - Schedule editions (`edition-effective-check.ts`, #1915). Avidia's schedule "Effective December 1,
   2026" went live beside its March 2024 one, so the page showed next year's $35 overdraft. Each
   step reads the edition each document's heading states (`editionStarts` in
@@ -1758,6 +1777,23 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   25: 53 of 58 live fees at 48 institutions, 2 beside the live rate fee (13406, 68415). Missed: 80150,
   a floor ("C a sh Adva nce. ......$5.00 or 2% whichever is great er", text 242), for a misaligned
   excerpt and spaced OCR text.
+- A live tier of a fee priced by a condition whose name hides its tier, or whose sibling tiers are not
+  all live (`tier-completeness-check.ts`, #1110). First National Bank of Moose Lake's "Overdraft fee per
+  item per presentment" $30 (116685) is the "More than $30.00" tier beside a $15 tier for $30.00 or less,
+  live as the bank's only overdraft price. Each verify step reads every live fee above $0 whose Knox
+  excerpt states a balance, amount or count condition, with a 900-character window of the text Knox read
+  around its line and the live fees of the same document and category; `findTierGaps` decides with the
+  shared reader (`@/lib/tiered-price`): `unscoped` (the name does not state the tier) or `incomplete` (a
+  scoped tier whose other tiers are not all live under scoped names). The switch
+  (`TIER_COMPLETENESS_TAKEDOWN_LIVE`) is off; on, a match goes through the second look
+  (`darwin.tier_completeness`) and is archived with `tier_incomplete: <kind>, k of N tiers live`. A
+  takedown is not replaced until Knox re-reads the text, so pair it with re-read requests. Step detail
+  `tier_completeness_check`. Only the `unscoped` kind is taken down (`TIER_COMPLETENESS_TAKEDOWN_KINDS`);
+  an `incomplete` fee's own name and price are right, so it is counted, report only (review of #2981). The
+  window is whole lines within 900 characters of each side of the fee's line. Dry run Nov 3 (re-run after
+  the review): 48 of 2,982 candidates at 33 institutions (86 in a tier group): 31 unscoped at 26
+  institutions, the switch's, and 17 incomplete, report only; 102393 is doubtful
+  (`docs/project/findings/2026-11-03-tiered-price-conditions.md`).
 - A $0 overdraft, NSF or continuous overdraft fee that is not the fee's price (`banded-zero-check.ts`,
   #1882). "Safety Net Overdraft | $0 if the negative balance is $5 or less. $10 if ... $35 per item**"
   went live as a credit union's only overdraft price, $0: the conditional-$0 test reads a price cell of
@@ -1917,6 +1953,64 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   look (`darwin.section_misread`) and is archived with its reason (verified row rejected with the reason's flag);
   the bank's next read files the row by Knox v177. Step detail `section_misread_check`. Golden-set replay: the
   `darwin.section_misread` sweep.
+  Version 2 (Knox v178, backlog dry run 9) adds two rules: an NSF name that prices a returned item's handling
+  service (special handling, a re-clear, a reroute, or a service fee priced per month; a name that says NSF stays,
+  as 108799 "Non-Sufficient Funds (NSF)/Special Handling" does), reason `returned_item_service`, and a monthly
+  maintenance fee read from a reward bullet ("Waived $10 monthly maintenance fee") or a "Your $12 monthly
+  maintenance fee ..." sentence, on the line Knox stored and judged on the text Knox read as Knox judges it
+  (`accountlessMonthlyOnPage`: a row of the page printing that fee at that price, or an account heading right
+  above the sentence, keeps the fee; review of #2976), reason `accountless_monthly_sentence`. Dry run Nov 3
+  (prod, read-only): 3 returned item services (21594, 102861, 105649, none admin-corrected; "Returned Item Charge
+  (Special Handling)", a bracketed note, is no longer one) and 0 accountless monthly sentences: the one stored
+  bullet, 117986 ("Waived $10 monthly maintenance fee", Trumark FCU), sits on a page whose product table prints
+  "$10 or $0 | Monthly Fee | $0", so it stays. The review of #2973's IRA follow-up (the IRA's own distribution, transfer-out and
+  IRA-named rows no longer end its section) adds no IRA match: 2 more candidates (158072, 165843), neither
+  matching. So the check reports 15 live fees, switch still off.
+  Version 3 (Knox v179, backlog dry run 10) adds two rules. `zero_not_printed`: a live $0 whose stored line prints
+  no free price, or offers one against a price ("Monthly Maintenance Fee: $0 or $4.95"), judged on the text Knox
+  read as Knox judges it (`zeroPrintedForRead`: a price-only cell right above the line on a stacked page, "$0",
+  "Free", "None", "N/C", "No charge" or "Waived", keeps it; another perk's label such as "Free eStatements" does not).
+  An unconditional waiver prints the free price ("Waived Annual IRA Fee", "Waived Non-QCBT ATM Transactions", "ATM
+  fees waived"); one on a condition ("... waived when minimum account balance requirement is met") does not. A cut
+  or missing stored line, or a gone text, is not judged. `audience_section_untagged`: a live fee with no product
+  whose stored line sits under an audience section heading (`audienceSectionHeading`, Knox's own function, on the
+  text Knox read), while the bank has a live fee of the same name with no product at another price, only in a
+  category that takes no account as its product (as Knox); a stored line no single line of the text holds is
+  counted as unjudged (`audience_unplaced`). Dry run Nov 3
+  (prod, read-only, review of #2977): of 3,381 live $0s with a stored line, 3 stored lines print no free price
+  (36427 and 36428 sit under a bare "$0" cell and stay; 141225 matches), and 134219 and 140028 print an
+  unconditional waiver and stay, so `zero_not_printed` matches 1 (a waiver scoped by for, on, in, first, only or
+  except stays conditional). Of 1,171 untagged non-account fees whose bank prices their name otherwise, on 481 texts
+  that could name an audience, 3 sit under an audience heading: Midwest Members FCU's 137448, 137449 and 137483
+  under "Senior Perks (60 & Over)"; about 217 stored lines are not printed once in their text (by a literal SQL
+  match: 132 absent, 85 repeated) and go unjudged. The check reports 19 live fees, switch off.
+  Version 4 (Knox v181, backlog dry run 12, review of #2979) adds the live re-check of Knox v181's two re-filing
+  rules, on the text Knox read with the same shared functions. `stop_payment_variant`: a live fee not filed as
+  stop_payment that is a bulleted variant under a stop payment row printing its own price, at the variant's price,
+  its stored line on that row (`stopPaymentVariantFor`; St. Louis Community FCU's "• Corporate Check | $15.00" live as
+  a cashier's check, 40324). `deposited_card_return`: a live NSF fee whose labeled fee card says the member deposited
+  or cashed the returned item (`depositedCardReturnRead`, `labeledFeeCardDescription`; ESL FCU's "Returned Item
+  Fee" $10, 68629). The re-read category check does not cover them (no Knox re-read request), so without this a
+  re-read would publish the right fee beside the wrong one. Stored lines and texts are compared with OCR leader
+  noise blanked in both (`ocrComparable`). Dry run Nov 3 (prod, read-only, the 1,800 texts Knox read): of 7,279
+  candidates, 1,685 selected by the new pre-filters, the new rules match exactly 40324 and 68629; the check reports
+  23 live fees at 20 institutions (the v3 rules' 21 on today's rows, the same with v3's code), switch off.
+  Version 5 (Knox v184, live slice dry run and cross-category scan, Nov 3) adds the live re-check of Knox v184's
+  hold, drop and re-file rules, with the same shared functions. `wire_service_monthly_fee`: a monthly fee whose name is a
+  wire service's own charge (`wireServiceMonthlyName`; Ameris's "Online Wire Monthly Maintenance Fee"). `read_name_review`:
+  a live fee Knox's last name review (`reviewReadName`, on the stored line and the text Knox read) drops (a deposit to
+  open or join, a capitals label whose price is the next cell's) or files elsewhere (a box's late charge, paper
+  statements offered in a check image's name); a rename alone is no match. `return_beside_nsf`: a plain returned item
+  filed NSF that `withReturnBesideNsf` files as the deposited item return, read with the other live NSF and
+  deposited item return fees from the same text and that text (an NSF fee printed free, or a deposited return at
+  its own price). The plain returns' siblings are gathered once per text (a grouped join on `live`), not by a
+  per-row scan of it. Review of 29ef3de53d2: the first v5 read was invalid SQL (a missing comma) that the step's
+  catch hid, so its first dry-run counts did not come from this function; `section-misread-check.db.test.ts` now
+  runs the real read and step on the production schema. Real read, Nov 3 (prod, SELECT only, `EXPLAIN ANALYZE`):
+  7,786 rows (v4 7,279), 18.9 s then 11.8 s warm (main's v4: 30.7 s then 13.6 s). Its rows and texts, judged by
+  `findSectionMisreads`: 0 live monthly fees named for a wire; 0 of the 89 review candidates (a deposit or capitals-cell
+  line, a box late fee, a paper-statement image name); 1 of 471 live plain returns filed NSF (354 with a sibling or
+  a free-NSF-like line to judge), 133756 "Returned Check" $20 beside "Insufficient Funds (NSF) | $0". Switch off.
 - A monthly maintenance fee whose row sits under a service's heading (`service-maintenance-check.ts`,
   #1092, state key 5608): River City Bank's "Consumer Online Banking Services and Mobile Banking Fees" over
   "Monthly Maintenance Fee | No charge" is the online banking service's fee; published as the account's
@@ -2546,7 +2640,20 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
 - Guard v35 (2026-10-08) accepts a per-item overdraft or NSF fee whose note states the daily cap: a dollar cap above the row's own price ("NSF Returned Item(s) Charge (NSF charge maximum of $100 per day)" $25, First State Bank of Rosemount), and a cap note that names the returned items sharing it ("Overdraft Fee ... (Consumer Accts: 5 max total OD or Returned Item fees daily)", BankIowa).
 - Guard v36 (2026-10-08) changes no rule: PRs 665 and 668 both shipped v35, so rows rejected between their deploys are re-checked under both.
 - Guard v42 (2026-10-08; v40 and v41 are Accuracy's, PR 682) files an NSF item marked paid after a dash or in brackets ("NSF Fee Charge - Paid (per item)", "Nonsufficient Funds Fee-Paid", "Insufficient Funds Charge (Check Paid, Per Item)") as the overdraft fee and re-files it there from NSF; "per non-paid item", "Paid from other ... account" and "We will not assess ..." stay out. "Overdraft Privilege Standard or Extended Coverage" names the program, not an extended overdraft fee.
-- The guard is at v108 (`CATEGORY_GUARD_VERSION` in `src/lib/fee-category-guard.ts`). v108 (Nov 2, with
+- The guard is at v110 (`CATEGORY_GUARD_VERSION` in `src/lib/fee-category-guard.ts`). v110 (Nov 3, with
+  Knox v183, #1110): a priced fee whose name ends in its own tier bracket, one balance, amount or count
+  condition after nothing but the threshold's own noun ("(overdraft balance $30.00 or less)", "(4+ items)"),
+  is judged without that bracket
+  by the exclusions (`withoutTierScope` in `@/lib/tiered-price`); includes still read the whole name, and a
+  $0, a name with waiver, cap, minimum, limit or rate words, a bracket with any other word ("(international
+  over $1,000)", "(continuous over $5)", review of #2981), and a cut name with no figure are judged as before.
+  Accept-only: on the read-only dry run, of 1,038 live priced names ending in a bracket with a condition
+  the bracket is read off 137 and the verdict changes on 0. v109 (Nov 3, with
+  Knox v178): `od_protection_transfer` also accepts an automatic transfer from savings or shares named alone
+  ("Automatic transfers from shares", `AUTOMATIC_TRANSFER_FROM_SAVINGS_ANYWHERE`). Accept-only: on the read-only
+  dry run 18 live names say an automatic transfer from savings or shares (6 match the new include; none is a
+  savings club's transfer, which is left out), all already od_protection_transfer and all accepted, so 0 come
+  down and 0 re-file. v108 (Nov 2, with
   Knox v168): a wire's confirmation is its notice (`WIRE_NOTIFICATION_NAME`) and fails every wire type with
   no re-file (1 live fee comes down, 131028); a coin counting name carrying a three-dimension box size
   (`BOX_SIZE_3D_NAME`) fails and re-files to safe_deposit_box (97753 and 64741 move onto their live box
@@ -2982,6 +3089,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `SAME_LINE_REPLACEMENT_CHECK_VERSION` | `darwin.same_line_replacement` | v1 | `darwin/same-line-replacement-check.ts` |
 | `SAME_LINE_READ_CHECK_VERSION` | `darwin.same_line_read` | v1 | `darwin/same-line-read-check.ts` |
 | `PRODUCT_SPLIT_CHECK_VERSION` | `darwin.product_split` | v1 | `darwin/product-split-check.ts` |
+| `REREAD_CATEGORY_MOVE_CHECK_VERSION` | `darwin.reread_category_move` | v1 | `darwin/reread-category-move-check.ts` |
 | `CANADIAN_DOCUMENT_CHECK_VERSION` | `darwin.canadian_document` | v1 | `darwin/canadian-document-check.ts` |
 | `OLD_LABELLED_DOCUMENT_CHECK_VERSION` | `darwin.old_labelled_document` | v1 | `darwin/old-labelled-document-check.ts` |
 | `LATE_CHARGE_BOUND_CHECK_VERSION` | `darwin.late_charge_bound` | v1 | `darwin/late-charge-bound-check.ts` |
@@ -2992,12 +3100,13 @@ fails a PR that changes one of these constants without updating its line here (#
 | `LOAN_PAYMENT_NSF_REFILE_CHECK_VERSION` | `darwin.loan_payment_nsf_refile` | v1 | `darwin/loan-payment-nsf-refile-check.ts` |
 | `INTERNATIONAL_DIRECTION_CHECK_VERSION` | `darwin.international_direction` | v4 | `darwin/international-direction-check.ts` |
 | `BANDED_ZERO_CHECK_VERSION` | `darwin.banded_zero` | v1 | `darwin/banded-zero-check.ts` |
+| `TIER_COMPLETENESS_CHECK_VERSION` | `darwin.tier_completeness` | v1 | `darwin/tier-completeness-check.ts` |
 | `ACCOUNT_BENEFIT_ZERO_CHECK_VERSION` | `darwin.account_benefit_zero` | v2 | `darwin/account-benefit-zero-check.ts` |
 | `ZERO_WAIVER_ROW_CHECK_VERSION` | `darwin.zero_waiver_row` | v2 | `darwin/zero-waiver-row-check.ts` |
 | `FREE_LIST_ITEM_CHECK_VERSION` | `darwin.free_list_item` | v1 | `darwin/free-list-item-check.ts` |
 | `NOT_ACCOUNT_FEE_LINE_CHECK_VERSION` | `darwin.not_account_fee_line` | v1 | `darwin/not-account-fee-line-check.ts` |
 | `CREDIT_CARD_SECTION_CHECK_VERSION` | `darwin.credit_card_section` | v2 | `darwin/credit-card-section-check.ts` |
-| `SECTION_MISREAD_CHECK_VERSION` | `darwin.section_misread` | v1 | `darwin/section-misread-check.ts` |
+| `SECTION_MISREAD_CHECK_VERSION` | `darwin.section_misread` | v5 | `darwin/section-misread-check.ts` |
 | `SERVICE_MAINTENANCE_CHECK_VERSION` | `darwin.service_maintenance_heading` | v1 | `darwin/service-maintenance-check.ts` |
 | `CARD_PROGRAM_SECTION_CHECK_VERSION` | `darwin.card_program_section` | v1 | `darwin/card-program-section-check.ts` |
 | `LOAN_SECTION_CHECK_VERSION` | `darwin.loan_section` | v1 | `darwin/loan-section-check.ts` |
