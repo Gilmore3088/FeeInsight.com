@@ -305,10 +305,17 @@ export async function upsertAreaStats(db: RegistryDb, source: string, rows: Area
         source_url = EXCLUDED.source_url,
         agent_run_id = EXCLUDED.agent_run_id,
         fetched_at = NOW()
+      -- Only a changed row is rewritten. Without this, every refresh rewrote every row it read
+      -- (574,000 rewrites by Nov 3, about 84 MB a week of dead rows) for identical values.
+      WHERE ROW(area_statistics.geo_name, area_statistics.state_code, area_statistics.value, area_statistics.unit,
+                area_statistics.note, area_statistics.raw_json, area_statistics.source_url)
+        IS DISTINCT FROM ROW(EXCLUDED.geo_name, EXCLUDED.state_code, EXCLUDED.value, EXCLUDED.unit,
+                EXCLUDED.note, EXCLUDED.raw_json, EXCLUDED.source_url)
       RETURNING 1
     `;
     written += [...(out as unknown as unknown[])].length;
   }
+  // New or changed rows only: an unchanged refresh writes 0, as the FDIC and NCUA loaders count.
   return written;
 }
 

@@ -5,8 +5,13 @@ import { inSavepoint } from "@/lib/agents/savepoint";
 import { HMDA_REPAIR_MANIFEST } from "./hmda-repair-manifest";
 
 type Db = typeof sql;
-/** Approved staged rollout: run 14469 passed exact equality on October 27; keep every daily batch bounded. */
-export const STORAGE_COMPACTION_LIVE = true;
+/**
+ * Off since Nov 4, 2026 (James's yes to the storage design, https://claude.ai/artifact/KcJWBJzFspHJ57iqvPzPSp).
+ * Each batch UPDATEs rows in place, so it writes a new copy of every row it slims and frees no disk;
+ * the narrow rebuild of each table replaces it, and a running compaction would move the rows that
+ * rebuild's exact equality check compares. Run 14469 passed exact equality on October 27.
+ */
+export const STORAGE_COMPACTION_LIVE = false;
 const BATCH = 5000;
 
 export interface CompactionReceipt {
