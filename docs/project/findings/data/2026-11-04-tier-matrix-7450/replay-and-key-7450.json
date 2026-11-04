@@ -1,0 +1,488 @@
+{
+ "source": "npm run test:shadow-lab on main 9c54e198c (2026-11-03); source-replay.json document entry for state:7450, and the tid 7450 answer-key rows from src/lib/agents/knox/__fixtures__/state-answer-keys.json.gz",
+ "replayTotal": {
+  "frozen": {
+   "expected": 1216,
+   "found": 923,
+   "falsePublished": 0,
+   "forbidden": 0,
+   "unexpected": 28,
+   "misses": [
+    {
+     "stage": "extract",
+     "reason": "read_other_amount",
+     "count": 82
+    },
+    {
+     "stage": "extract",
+     "reason": "other_line_same_price",
+     "count": 72
+    },
+    {
+     "stage": "extract",
+     "reason": "not_read",
+     "count": 35
+    },
+    {
+     "stage": "extract",
+     "reason": "held_unclassified",
+     "count": 32
+    },
+    {
+     "stage": "extract",
+     "reason": "read_other_category",
+     "count": 27
+    },
+    {
+     "stage": "extract",
+     "reason": "held:untraced",
+     "count": 17
+    },
+    {
+     "stage": "verify",
+     "reason": "category_mismatch",
+     "count": 11
+    },
+    {
+     "stage": "publish_gate",
+     "reason": "name_hold:cutoff_name",
+     "count": 10
+    },
+    {
+     "stage": "extract",
+     "reason": "held:eligibility",
+     "count": 4
+    },
+    {
+     "stage": "verify",
+     "reason": "outside_envelope",
+     "count": 2
+    },
+    {
+     "stage": "publish_gate",
+     "reason": "category_guard:name_unsupported",
+     "count": 1
+    }
+   ]
+  },
+  "reread": {
+   "expected": 1216,
+   "found": 922,
+   "falsePublished": 0,
+   "forbidden": 0,
+   "unexpected": 28,
+   "misses": [
+    {
+     "stage": "extract",
+     "reason": "read_other_amount",
+     "count": 81
+    },
+    {
+     "stage": "extract",
+     "reason": "other_line_same_price",
+     "count": 74
+    },
+    {
+     "stage": "extract",
+     "reason": "not_read",
+     "count": 35
+    },
+    {
+     "stage": "extract",
+     "reason": "held_unclassified",
+     "count": 31
+    },
+    {
+     "stage": "extract",
+     "reason": "read_other_category",
+     "count": 27
+    },
+    {
+     "stage": "extract",
+     "reason": "held:untraced",
+     "count": 14
+    },
+    {
+     "stage": "publish_gate",
+     "reason": "name_hold:cutoff_name",
+     "count": 12
+    },
+    {
+     "stage": "verify",
+     "reason": "category_mismatch",
+     "count": 12
+    },
+    {
+     "stage": "extract",
+     "reason": "held:eligibility",
+     "count": 4
+    },
+    {
+     "stage": "verify",
+     "reason": "outside_envelope",
+     "count": 3
+    },
+    {
+     "stage": "publish_gate",
+     "reason": "category_guard:name_unsupported",
+     "count": 1
+    }
+   ]
+  }
+ },
+ "replayDocument": {
+  "caseKey": "missed_fees:state:7450",
+  "institution": "Schools Federal Credit Union",
+  "reader": "read.pdf_layout",
+  "similarity": {
+   "tokens": 1,
+   "numbers": 1,
+   "dollarsEqual": true
+  },
+  "textChanged": false,
+  "frozen": {
+   "expected": 40,
+   "found": 25,
+   "falsePublished": 0,
+   "forbidden": 0,
+   "unexpected": 0,
+   "misses": [
+    {
+     "stage": "extract",
+     "reason": "held_unclassified",
+     "count": 6
+    },
+    {
+     "stage": "extract",
+     "reason": "read_other_amount",
+     "count": 6
+    },
+    {
+     "stage": "extract",
+     "reason": "held:untraced",
+     "count": 1
+    },
+    {
+     "stage": "extract",
+     "reason": "other_line_same_price",
+     "count": 1
+    },
+    {
+     "stage": "verify",
+     "reason": "category_mismatch",
+     "count": 1
+    }
+   ]
+  },
+  "reread": {
+   "expected": 40,
+   "found": 25,
+   "falsePublished": 0,
+   "forbidden": 0,
+   "unexpected": 0,
+   "misses": [
+    {
+     "stage": "extract",
+     "reason": "held_unclassified",
+     "count": 6
+    },
+    {
+     "stage": "extract",
+     "reason": "read_other_amount",
+     "count": 6
+    },
+    {
+     "stage": "extract",
+     "reason": "held:untraced",
+     "count": 1
+    },
+    {
+     "stage": "extract",
+     "reason": "other_line_same_price",
+     "count": 1
+    },
+    {
+     "stage": "verify",
+     "reason": "category_mismatch",
+     "count": 1
+    }
+   ]
+  }
+ },
+ "answerKey": {
+  "tid": 7450,
+  "institution": "Schools Federal Credit Union",
+  "fees": [
+   {
+    "key": "document_reproduction",
+    "amount": 0,
+    "source_line": "Activity Print Out (per page) FREE FREE FREE FREE FREE"
+   },
+   {
+    "key": "atm_non_network",
+    "amount": 0,
+    "source_line": "ATM Transaction (Non Co-Op) FREE $1 $1 $1 $1"
+   },
+   {
+    "key": "atm_non_network",
+    "amount": 1.0,
+    "source_line": "ATM Transaction (Non Co-Op) FREE $1 $1 $1 $1"
+   },
+   {
+    "key": "bill_pay",
+    "amount": 0,
+    "source_line": "Bill Payer FREE FREE FREE FREE FREE"
+   },
+   {
+    "key": "cashiers_check",
+    "amount": 0,
+    "source_line": "Cashier Checks 3 Free \" $5 3 Free \" $5 3 Free \" $5 3 Free \" $5 3 Free \" $5"
+   },
+   {
+    "key": "cashiers_check",
+    "amount": 5.0,
+    "source_line": "Cashier Checks 3 Free \" $5 3 Free \" $5 3 Free \" $5 3 Free \" $5 3 Free \" $5"
+   },
+   {
+    "key": "check_image",
+    "amount": 2.0,
+    "source_line": "Copy of Paid Check $2 $2 $2 $2 $2"
+   },
+   {
+    "key": "document_reproduction",
+    "amount": 2.0,
+    "source_line": "Statement Copy or Document (per page) $2 $2 $2 $2 $2"
+   },
+   {
+    "key": "overdraft",
+    "amount": 20.0,
+    "source_line": "Courtesy Pay $20 $30 $30 $30 $30"
+   },
+   {
+    "key": "overdraft",
+    "amount": 30.0,
+    "source_line": "Courtesy Pay $20 $30 $30 $30 $30"
+   },
+   {
+    "key": "dormant_account",
+    "amount": 10.0,
+    "source_line": "Dormant Account (Annual) $10 $10 $10 $10 $10"
+   },
+   {
+    "key": "unmapped",
+    "amount": 0,
+    "source_line": "Empty Envelope / Non Negotiable FREE FREE FREE FREE FREE"
+   },
+   {
+    "key": "dormant_account",
+    "amount": 2.0,
+    "source_line": "Escheat Fee $2 $2 $2 $2 $2"
+   },
+   {
+    "key": "unmapped",
+    "amount": 7.0,
+    "source_line": "Closure Fee $7 $7 $7 $7 $7"
+   },
+   {
+    "key": "wire_intl_incoming",
+    "amount": 10.0,
+    "source_line": "Incoming Wire Tranfer - International $10 $10 $10 $10 $10"
+   },
+   {
+    "key": "nsf",
+    "amount": 30.0,
+    "source_line": "Insufficient Funds $30 $30 $30 $30 $30"
+   },
+   {
+    "key": "ira_termination",
+    "amount": 0,
+    "source_line": "IRA Closure/Transfer FREE FREE FREE FREE FREE"
+   },
+   {
+    "key": "garnishment_levy",
+    "amount": 50.0,
+    "source_line": "Levy/Garnishment $50 $50 $50 $50 $50"
+   },
+   {
+    "key": "od_protection_transfer",
+    "amount": 0,
+    "source_line": "Loan Overdraft Transfer Fee FREE FREE FREE FREE FREE"
+   },
+   {
+    "key": "money_order",
+    "amount": 1.0,
+    "source_line": "Money Orders $1 $1 $1 $1 $1"
+   },
+   {
+    "key": "monthly_maintenance",
+    "amount": 0,
+    "source_line": "Monthly Account Maintenance FREE FREE FREE $1 FREE"
+   },
+   {
+    "key": "monthly_maintenance",
+    "amount": 1.0,
+    "source_line": "Monthly Account Maintenance FREE FREE FREE $1 FREE"
+   },
+   {
+    "key": "unmapped",
+    "amount": 5.0,
+    "source_line": "New Membership Fee $5 $5 $5 $5 $5"
+   },
+   {
+    "key": "notary_fee",
+    "amount": 0,
+    "source_line": "Notary Service (excluding CU business) FREE $10 $10 $10 FREE"
+   },
+   {
+    "key": "notary_fee",
+    "amount": 10.0,
+    "source_line": "Notary Service (excluding CU business) FREE $10 $10 $10 FREE"
+   },
+   {
+    "key": "paper_statement",
+    "amount": 2.0,
+    "source_line": "Printed Statement Fee $2 $2 $2 $2 $2"
+   },
+   {
+    "key": "estatement_fee",
+    "amount": 0,
+    "source_line": "eStatements FREE FREE FREE FREE FREE"
+   },
+   {
+    "key": "deposited_item_return",
+    "amount": 30.0,
+    "source_line": "Returned Deposit Item $30 $30 $30 $30 $30"
+   },
+   {
+    "key": "account_research",
+    "amount": 0,
+    "source_line": "Returned Mail (Bad Address) FREE FREE FREE $5 FREE"
+   },
+   {
+    "key": "account_research",
+    "amount": 5.0,
+    "source_line": "Returned Mail (Bad Address) FREE FREE FREE $5 FREE"
+   },
+   {
+    "key": "unmapped",
+    "amount": 0,
+    "source_line": "Service Center Transactions FREE FREE FREE 2 Free → $1 FREE"
+   },
+   {
+    "key": "unmapped",
+    "amount": 1.0,
+    "source_line": "Service Center Transactions FREE FREE FREE 2 Free → $1 FREE"
+   },
+   {
+    "key": "stop_payment",
+    "amount": 0,
+    "source_line": "Stop Payment FREE $25 $25 $25 $25"
+   },
+   {
+    "key": "stop_payment",
+    "amount": 25.0,
+    "source_line": "Stop Payment FREE $25 $25 $25 $25"
+   },
+   {
+    "key": "account_verification",
+    "amount": 10.0,
+    "source_line": "Verification of Account $10 $10 $10 $10 $10"
+   },
+   {
+    "key": "wire_domestic_outgoing",
+    "amount": 30.0,
+    "source_line": "Wire Transfer - Domestic $30 $30 $30 $30 $30"
+   },
+   {
+    "key": "card_replacement",
+    "amount": 0,
+    "source_line": "Debit/Credit Card Replacement* 1 Free → $5 1 Free → $5 1 Free → $5 1 Free → $5 1 Free → $5"
+   },
+   {
+    "key": "card_replacement",
+    "amount": 5.0,
+    "source_line": "Debit/Credit Card Replacement* 1 Free → $5 1 Free → $5 1 Free → $5 1 Free → $5 1 Free → $5"
+   },
+   {
+    "key": "check_printing",
+    "amount": null,
+    "source_line": "Check Order Varies Varies Varies Varies Varies"
+   },
+   {
+    "key": "counter_check",
+    "amount": 0,
+    "source_line": "Temporary Checks (Annual) FREE FREE FREE FREE FREE"
+   },
+   {
+    "key": "monthly_maintenance",
+    "amount": 0,
+    "source_line": "Advantage Checking FREE $4.95 $4.95 $4.95 $4.95"
+   },
+   {
+    "key": "monthly_maintenance",
+    "amount": 4.95,
+    "source_line": "Advantage Checking FREE $4.95 $4.95 $4.95 $4.95"
+   },
+   {
+    "key": "monthly_maintenance",
+    "amount": 0,
+    "source_line": "Interest Checking FREE FREE FREE FREE FREE"
+   },
+   {
+    "key": "monthly_maintenance",
+    "amount": 0,
+    "source_line": "Teen Checking FREE FREE FREE FREE FREE"
+   },
+   {
+    "key": "monthly_maintenance",
+    "amount": 0,
+    "source_line": "College CheckinG FREE FREE FREE FREE FREE"
+   },
+   {
+    "key": "monthly_maintenance",
+    "amount": 0,
+    "source_line": "Direct Checking FREE FREE FREE $10 FREE"
+   },
+   {
+    "key": "monthly_maintenance",
+    "amount": 10.0,
+    "source_line": "Direct Checking FREE FREE FREE $10 FREE"
+   },
+   {
+    "key": "document_reproduction",
+    "amount": 25.0,
+    "source_line": "Copy of SFCU Loan Documents $25 $25 $25 $25 $25"
+   },
+   {
+    "key": "card_replacement",
+    "amount": 0,
+    "source_line": "Credit Card Replacement FREE FREE FREE FREE FREE"
+   },
+   {
+    "key": "other_lending_fee",
+    "amount": 25.0,
+    "source_line": "Due Date Change $25 $25 $25 $25 $25"
+   },
+   {
+    "key": "loan_origination",
+    "amount": 35.0,
+    "source_line": "Loan Extention Fee (per month) $35 $35 $35 $35 $35"
+   },
+   {
+    "key": "other_lending_fee",
+    "amount": 25.0,
+    "source_line": "Re-Application Fee (Denied within the past 3 months) $25 $25 $25 $25 $25"
+   },
+   {
+    "key": "other_lending_fee",
+    "amount": 20.0,
+    "source_line": "Visa Over Limit Fee $20 $20 $20 $20 $20"
+   },
+   {
+    "key": "check_cashing",
+    "amount": 5.0,
+    "source_line": "Check Cashing (Non Member) $5 $5 $5 $5 $5"
+   }
+  ]
+ }
+}

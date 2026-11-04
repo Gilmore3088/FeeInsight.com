@@ -3,6 +3,34 @@
 Newest first. Each entry: date, what was decided, who, why, and what it means for the work.
 Seeded 2026-10-05 from the project's working memory; earlier decisions were not recorded here.
 
+## 2026-11-04
+
+**A relationship-tier table is one fee per tier.** James, 2026-11-04, answering question 1 of
+`findings/2026-11-04-tier-matrix-misses-7450.md` through the session's question tool, as the session
+coordinator relayed it: he chose "one fee per tier": each column is its own fee, named with its tier
+("Courtesy Pay (Platinum)" $20, "Courtesy Pay (Basic)" $30), and $0 tiers are included.
+
+What it means for the work:
+- Knox v100's tier columns (`knox/tier-columns.ts`) stop leaving out a free tier cell beside priced
+  ones. Each tier's cell, $0 included, becomes its own fee, named with its column header.
+- A tier fee is traced to its own cell, so the shared source check (`checkFeeAgainstSource`) is
+  extended, not forked, to read a tier row's other cells.
+- A live tier price published as the only price with no tier in its name (Schools FCU's "Courtesy
+  Pay" $20 in the lab's `currentVariant` run) is the #2981 error class. A re-name or re-file of live
+  fees goes behind an off switch with Darwin's live re-check and a dry-run count.
+
+**A free allowance is a condition on the priced fee, not a $0 fee.** James, 2026-11-04, answering
+question 2 of the same finding, as relayed: he chose "only the $5": for "1 Free → $5" or "first 3
+free, then $5", the allowance is a condition on the $5 fee and goes in its name or notes, not a
+separate $0 fee. Answer-key rows that key $0 for an allowance are re-keyed.
+
+What it means for the work:
+- Knox publishes only the priced fee of an allowance row. The allowance moves out of the fee name
+  into its condition, so no "1 Free →" glyph is left in a name.
+- The answer-key rows that key $0 for an allowance (state:7450 card_replacement and cashiers_check,
+  and the lab's R5 group) are re-keyed in the fixture. A re-key that needs a migration stops for
+  James.
+
 ## 2026-11-03
 
 **Re-run the pipeline from fee one and reconcile every fee, instead of fixing a few fees a day.** James,

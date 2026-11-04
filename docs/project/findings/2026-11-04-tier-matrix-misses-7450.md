@@ -20,6 +20,11 @@ keying decision James has not made. No production code changed.
   as the golden set (`deming/__fixtures__/golden-set.json`, `shadow:missed_fees:state:7450`) carries
   it. Its 41st row, eStatements $0, is left out of recall on both sides as
   `retired_category_no_home` (Darwin refuses it as `retired_category`), so 40 count.
+- The replay's totals, its state:7450 entry (40 expected, 25 found, misses by stage and reason) and
+  the 41 keyed rows are committed as `data/2026-11-04-tier-matrix-7450/replay-and-key-7450.json`.
+- Every "Knox reads", "main publishes" and "named" below is the lab's `currentVariant` run over the
+  stored text (the probe's output), not a read of the live database. Whether Schools FCU's live fees
+  carry the same reads was not checked.
 
 **The page:** one table under the header "PLATINUM GOLD SILVER+ SILVER COLLEGE", five
 relationship tiers, each row printing one cell per tier. Knox v100 (`knox/tier-columns.ts`) splits a
@@ -69,26 +74,35 @@ outcome from `probe-7450.txt`):
 tier group there needs a balance, amount or count condition on each line, and a relationship-tier
 column is none of those. The probe shows no `tier_incomplete` hold and no `tier_unscoped` refusal on
 this page. It does conflict with fixing C: #2981 says each tier keeps its condition in its name and a
-fee is never published with fewer tiers than the page prints. Main publishes "Courtesy Pay" $20,
-which is the PLATINUM column's price alone, as the overdraft fee with no condition. Reading the $30
-the same way would publish two unscoped tiers. Naming them by column ("Courtesy Pay (PLATINUM)")
-is a naming rule nobody has decided. It also depends on question 1: if a free tier cell is a perk and
-not the bank's price, a discounted tier may be one too.
+fee is never published with fewer tiers than the page prints. In the lab's `currentVariant` run,
+main publishes "Courtesy Pay" $20, which is the PLATINUM column's price alone, as the overdraft fee
+with no condition. Reading the $30 the same way would publish two unscoped tiers. When this finding
+was written, no rule said how to name tiers by column ("Courtesy Pay (PLATINUM)"). Question 1 asked
+for one. It also raised a further point: if a free tier cell is a perk and not the bank's price, a
+discounted tier may be one too.
 
-**Questions for James** (nothing is built until they are answered):
+**Questions for James, and his answers** (2026-11-04, through the session's question tool, as the
+session coordinator relayed them; recorded in `DECISIONS.md` under 2026-11-04):
 1. In a relationship-tier table, is each tier's cell a fee of its own? Examples: "Stop Payment FREE
    $25 $25 $25 $25" (keyed $0 and $25; Knox reads $25 only) and "Courtesy Pay $20 $30 $30 $30 $30"
    (keyed $20 and $30; Knox publishes $20 unscoped). If yes, how is each tier named? If no, which
    cell is the bank's price, and should the key drop the others?
+   **Answer: one fee per tier.** Each column is its own fee, named with its tier ("Courtesy Pay
+   (Platinum)" $20, "Courtesy Pay (Basic)" $30), $0 tiers included. So the A rows' $0 keys stand.
 2. Is a free allowance a $0 fee? Examples: "Debit/Credit Card Replacement* 1 Free → $5" and
    "Cashier Checks 3 Free " $5", keyed $0 and $5. The same question is the lab's R5 group ("first N
    free" keyed as $0).
+   **Answer: only the $5.** The allowance is a condition on the $5 fee, in its name or notes, and
+   not a $0 fee of its own. The answer-key rows that key $0 for an allowance get re-keyed, so B's two
+   $0 keys go.
 
-**Fix:** none. Per the stop rule (a fix that needs a keying decision stops), no Knox, source-check
-or wire-scope change was made, so no switch exists either. Once the questions are answered, C and D are
-the build: D is one key, C one key plus the naming of the live $20.
+**Fix:** none in this PR. When it was written, the stop rule applied (a fix that needs a keying
+decision stops), so no Knox, source-check or wire-scope change was made and no switch exists. With
+the answers in, the build is a separate PR: A's $0 tier fees named by tier, C traced to its own
+cell, D as one price, B's allowance moved into the $5 fee's condition and the key re-keyed, plus the
+re-naming of the live unscoped tier price behind Darwin's live re-check.
 
-**Also seen:** the $5 reads of B are published named "Debit/Credit Card Replacement 1 Free →" and
+**Also seen:** in the lab's `currentVariant` run, the $5 reads of B are published named "Debit/Credit Card Replacement 1 Free →" and
 "Cashier Checks 3 Free "", with the allowance's count and glyph left in the name.
 
 **Lesson:** before calling a group of misses one reader's problem, trace each miss to the stored
