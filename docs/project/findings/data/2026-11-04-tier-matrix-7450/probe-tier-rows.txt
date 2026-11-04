@@ -1,0 +1,24 @@
+Fee Schedule, Effective: 1/1/2020
+PLATINUM GOLD SILVER+ SILVER COLLEGE
+GENERAL FEES
+Activity Print Out (per page) | Free
+Courtesy Pay | $20
+Courtesy Pay | $30
+Incoming Wire Tranfer - International $10 $10 $10 $10 $10
+Monthly Account Maintenance | $1
+Stop Payment | $25
+Wire Transfer - Domestic $30 $30 $30 $30 $30
+CAND overdraft 20 | Courtesy Pay | Courtesy Pay | $20
+CAND stop_payment 25 | Stop Payment | Stop Payment | $25
+CAND wire_domestic_outgoing 30 | Wire Transfer - Domestic | Wire Transfer - Domestic $30 $30 $30 $30 $30
+HELD unclassified null 0 | Activity Print Out (per page) | Activity Print Out (per page) | Free
+HELD unclassified null 1 | Monthly Account Maintenance | Monthly Account Maintenance | $1
+HELD untraced overdraft 30 | Courtesy Pay | Courtesy Pay | $30
+SOLO NONE Incoming Wire Tranfer - International $10 $10 $10 $10 $10
+SOLO NONE Incoming Wire Transfer - International $10 $10 $10 $10 $10
+SOLO CAND wire_intl_incoming 10 | Incoming Wire Transfer - International
+SOLO NONE International Incoming Wire $10 $10
+SOLO CAND wire_intl_incoming 10 | Incoming Wire Tranfer - International
+SOLO CAND wire_intl_incoming 10 | Incoming Wire Transfer - International
+SOLO NONE Monthly Account Maintenance | $1
+SOLO CAND overdraft 30 | Courtesy Pay

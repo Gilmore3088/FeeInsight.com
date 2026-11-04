@@ -1,0 +1,142 @@
+== frozen
+EXTRACT atm_non_network 100 | ATM Transaction (Non Co-Op)
+EXTRACT check_image 200 | Copy of Paid Check
+EXTRACT document_reproduction 200 | Statement Copy or Document (per page)
+EXTRACT overdraft 2000 | Courtesy Pay
+EXTRACT dormant_account 1000 | Dormant Account (Annual)
+EXTRACT dormant_account 200 | Escheat Fee
+EXTRACT nsf 3000 | Insufficient Funds
+EXTRACT garnishment_levy 5000 | Levy/Garnishment
+EXTRACT money_order 100 | Money Orders
+EXTRACT notary_fee 1000 | Notary Service (excluding CU business)
+EXTRACT paper_statement 200 | Printed Statement Fee
+EXTRACT deposited_item_return 3000 | Returned Deposit Item
+EXTRACT returned_mail 500 | Returned Mail (Bad Address)
+EXTRACT stop_payment 2500 | Stop Payment
+EXTRACT account_verification 1000 | Verification of Account
+EXTRACT wire_domestic_outgoing 3000 | Wire Transfer - Domestic
+EXTRACT document_reproduction 2500 | Copy of SFCU Loan Documents
+EXTRACT other_lending_fee 2500 | Due Date Change
+EXTRACT check_cashing 500 | Check Cashing (Non Member)
+EXTRACT card_replacement 500 | Debit/Credit Card Replacement 1 Free →
+EXTRACT cashiers_check 500 | Cashier Checks 3 Free "
+EXTRACT bill_pay 0 | Bill Payer
+EXTRACT ira_termination 0 | IRA Closure/Transfer
+EXTRACT od_protection_transfer 0 | Loan Overdraft Transfer Fee
+EXTRACT estatement_fee 0 | eStatements
+EXTRACT counter_check 0 | Temporary Checks (Annual)
+EXTRACT monthly_maintenance 0 | Interest Checking
+EXTRACT monthly_maintenance 0 | Teen Checking
+EXTRACT monthly_maintenance 0 | College CheckinG
+EXTRACT_DROP null 700 | Closure Fee | held:unclassified
+EXTRACT_DROP null 500 | New Membership Fee | held:unclassified
+EXTRACT_DROP check_printing null | Check Order | held:varies
+EXTRACT_DROP null 3500 | Loan Extention Fee (per month) | held:unclassified
+EXTRACT_DROP null 2500 | Re-Application Fee (Denied within the past 3 months) | held:unclassified
+EXTRACT_DROP null 2000 | Visa Over Limit Fee | held:unclassified
+EXTRACT_DROP null 0 | Activity Print Out (per page) | held:unclassified
+EXTRACT_DROP null 0 | Empty Envelope / Non Negotiable | held:unclassified
+EXTRACT_DROP null 100 | Monthly Account Maintenance | held:unclassified
+EXTRACT_DROP null 495 | Advantage Checking | held:unclassified
+EXTRACT_DROP null 1000 | Direct Checking | held:unclassified
+EXTRACT_DROP overdraft 3000 | Courtesy Pay | held:untraced
+VERIFY_DROP estatement_fee 0 | eStatements | retired_category
+VERIFY_DROP monthly_maintenance 0 | Interest Checking | category_mismatch
+VERIFY_DROP monthly_maintenance 0 | Teen Checking | category_mismatch
+VERIFY_DROP monthly_maintenance 0 | College CheckinG | category_mismatch
+PUBLISHED atm_non_network 100 | ATM Transaction (Non Co-Op)
+PUBLISHED check_image 200 | Copy of Paid Check
+PUBLISHED document_reproduction 200 | Statement Copy or Document (per page)
+PUBLISHED overdraft 2000 | Courtesy Pay
+PUBLISHED dormant_account 1000 | Dormant Account (Annual)
+PUBLISHED dormant_account 200 | Escheat Fee
+PUBLISHED nsf 3000 | Insufficient Funds
+PUBLISHED garnishment_levy 5000 | Levy/Garnishment
+PUBLISHED money_order 100 | Money Orders
+PUBLISHED notary_fee 1000 | Notary Service (excluding CU business)
+PUBLISHED paper_statement 200 | Printed Statement Fee
+PUBLISHED deposited_item_return 3000 | Returned Deposit Item
+PUBLISHED returned_mail 500 | Returned Mail (Bad Address)
+PUBLISHED stop_payment 2500 | Stop Payment
+PUBLISHED account_verification 1000 | Verification of Account
+PUBLISHED wire_domestic_outgoing 3000 | Wire Transfer - Domestic
+PUBLISHED document_reproduction 2500 | Copy of SFCU Loan Documents
+PUBLISHED other_lending_fee 2500 | Due Date Change
+PUBLISHED check_cashing 500 | Check Cashing (Non Member)
+PUBLISHED card_replacement 500 | Debit/Credit Card Replacement 1 Free →
+PUBLISHED cashiers_check 500 | Cashier Checks 3 Free "
+PUBLISHED bill_pay 0 | Bill Payer
+PUBLISHED ira_termination 0 | IRA Closure/Transfer
+PUBLISHED od_protection_transfer 0 | Loan Overdraft Transfer Fee
+PUBLISHED counter_check 0 | Temporary Checks (Annual)
+== reread
+EXTRACT atm_non_network 100 | ATM Transaction (Non Co-Op)
+EXTRACT check_image 200 | Copy of Paid Check
+EXTRACT document_reproduction 200 | Statement Copy or Document (per page)
+EXTRACT overdraft 2000 | Courtesy Pay
+EXTRACT dormant_account 1000 | Dormant Account (Annual)
+EXTRACT dormant_account 200 | Escheat Fee
+EXTRACT nsf 3000 | Insufficient Funds
+EXTRACT garnishment_levy 5000 | Levy/Garnishment
+EXTRACT money_order 100 | Money Orders
+EXTRACT notary_fee 1000 | Notary Service (excluding CU business)
+EXTRACT paper_statement 200 | Printed Statement Fee
+EXTRACT deposited_item_return 3000 | Returned Deposit Item
+EXTRACT returned_mail 500 | Returned Mail (Bad Address)
+EXTRACT stop_payment 2500 | Stop Payment
+EXTRACT account_verification 1000 | Verification of Account
+EXTRACT wire_domestic_outgoing 3000 | Wire Transfer - Domestic
+EXTRACT document_reproduction 2500 | Copy of SFCU Loan Documents
+EXTRACT other_lending_fee 2500 | Due Date Change
+EXTRACT check_cashing 500 | Check Cashing (Non Member)
+EXTRACT card_replacement 500 | Debit/Credit Card Replacement 1 Free →
+EXTRACT cashiers_check 500 | Cashier Checks 3 Free "
+EXTRACT bill_pay 0 | Bill Payer
+EXTRACT ira_termination 0 | IRA Closure/Transfer
+EXTRACT od_protection_transfer 0 | Loan Overdraft Transfer Fee
+EXTRACT estatement_fee 0 | eStatements
+EXTRACT counter_check 0 | Temporary Checks (Annual)
+EXTRACT monthly_maintenance 0 | Interest Checking
+EXTRACT monthly_maintenance 0 | Teen Checking
+EXTRACT monthly_maintenance 0 | College CheckinG
+EXTRACT_DROP null 700 | Closure Fee | held:unclassified
+EXTRACT_DROP null 500 | New Membership Fee | held:unclassified
+EXTRACT_DROP check_printing null | Check Order | held:varies
+EXTRACT_DROP null 3500 | Loan Extention Fee (per month) | held:unclassified
+EXTRACT_DROP null 2500 | Re-Application Fee (Denied within the past 3 months) | held:unclassified
+EXTRACT_DROP null 2000 | Visa Over Limit Fee | held:unclassified
+EXTRACT_DROP null 0 | Activity Print Out (per page) | held:unclassified
+EXTRACT_DROP null 0 | Empty Envelope / Non Negotiable | held:unclassified
+EXTRACT_DROP null 100 | Monthly Account Maintenance | held:unclassified
+EXTRACT_DROP null 495 | Advantage Checking | held:unclassified
+EXTRACT_DROP null 1000 | Direct Checking | held:unclassified
+EXTRACT_DROP overdraft 3000 | Courtesy Pay | held:untraced
+VERIFY_DROP estatement_fee 0 | eStatements | retired_category
+VERIFY_DROP monthly_maintenance 0 | Interest Checking | category_mismatch
+VERIFY_DROP monthly_maintenance 0 | Teen Checking | category_mismatch
+VERIFY_DROP monthly_maintenance 0 | College CheckinG | category_mismatch
+PUBLISHED atm_non_network 100 | ATM Transaction (Non Co-Op)
+PUBLISHED check_image 200 | Copy of Paid Check
+PUBLISHED document_reproduction 200 | Statement Copy or Document (per page)
+PUBLISHED overdraft 2000 | Courtesy Pay
+PUBLISHED dormant_account 1000 | Dormant Account (Annual)
+PUBLISHED dormant_account 200 | Escheat Fee
+PUBLISHED nsf 3000 | Insufficient Funds
+PUBLISHED garnishment_levy 5000 | Levy/Garnishment
+PUBLISHED money_order 100 | Money Orders
+PUBLISHED notary_fee 1000 | Notary Service (excluding CU business)
+PUBLISHED paper_statement 200 | Printed Statement Fee
+PUBLISHED deposited_item_return 3000 | Returned Deposit Item
+PUBLISHED returned_mail 500 | Returned Mail (Bad Address)
+PUBLISHED stop_payment 2500 | Stop Payment
+PUBLISHED account_verification 1000 | Verification of Account
+PUBLISHED wire_domestic_outgoing 3000 | Wire Transfer - Domestic
+PUBLISHED document_reproduction 2500 | Copy of SFCU Loan Documents
+PUBLISHED other_lending_fee 2500 | Due Date Change
+PUBLISHED check_cashing 500 | Check Cashing (Non Member)
+PUBLISHED card_replacement 500 | Debit/Credit Card Replacement 1 Free →
+PUBLISHED cashiers_check 500 | Cashier Checks 3 Free "
+PUBLISHED bill_pay 0 | Bill Payer
+PUBLISHED ira_termination 0 | IRA Closure/Transfer
+PUBLISHED od_protection_transfer 0 | Loan Overdraft Transfer Fee
+PUBLISHED counter_check 0 | Temporary Checks (Annual)

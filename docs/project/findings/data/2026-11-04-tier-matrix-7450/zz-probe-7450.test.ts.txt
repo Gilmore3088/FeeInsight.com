@@ -1,0 +1,31 @@
+// @vitest-environment node
+import { readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { it } from "vitest";
+
+it("probe 7450", async () => {
+  const { applyManifest, loadScenarios } = await import("./scenarios");
+  const { currentVariant } = await import("./variants");
+  const { runCase } = await import("./run-case");
+  const { readSourceManifest, rereadAcceptedSources } = await import("./source-bytes");
+  const { rereadCase } = await import("./source-replay");
+  const frozen = JSON.parse(readFileSync(join(__dirname, "frozen-inputs.json"), "utf8")) as Record<string, string>;
+  const cases = applyManifest(loadScenarios(), frozen).filter((c) => c.caseKey === "missed_fees:state:7450");
+  const out: string[] = [];
+  const dump = (label: string, c: (typeof cases)[number]) => {
+    const t = runCase(currentVariant, c);
+    out.push(`== ${label}`);
+    out.push(`TEXT:\n${c.document.text}`);
+    for (const f of t.stages.extract.passed) out.push(`EXTRACT ${f.canonicalFeeKey} ${f.amountCents} | ${f.feeName}`);
+    for (const f of t.stages.extract.dropped) out.push(`EXTRACT_DROP ${f.canonicalFeeKey} ${f.amountCents} | ${f.feeName} | ${f.reason}`);
+    for (const f of t.stages.verify.dropped) out.push(`VERIFY_DROP ${f.canonicalFeeKey} ${f.amountCents} | ${f.feeName} | ${f.reason}`);
+    for (const f of t.stages.publish_gate.dropped) out.push(`PUB_DROP ${f.canonicalFeeKey} ${f.amountCents} | ${f.feeName} | ${f.reason}`);
+    for (const f of t.published) out.push(`PUBLISHED ${f.canonicalFeeKey} ${f.amountCents} | ${f.feeName}`);
+  };
+  dump("frozen", cases[0]);
+  readSourceManifest();
+  const rereads = await rereadAcceptedSources();
+  const text = rereads.get("missed_fees:state:7450");
+  if (text?.ok) dump("reread", rereadCase(cases[0], text.text));
+  writeFileSync(process.env.PROBE_OUT ?? "/dev/null", out.join("\n"));
+}, 600_000);

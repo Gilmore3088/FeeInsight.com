@@ -3,6 +3,37 @@
 Newest first. Each entry: date, what was decided, who, why, and what it means for the work.
 Seeded 2026-10-05 from the project's working memory; earlier decisions were not recorded here.
 
+## 2026-11-04
+
+**A relationship-tier table is one fee per tier.** James, 2026-11-04, answering question 1 of
+`findings/2026-11-04-tier-matrix-misses-7450.md` through the session's question tool, as the session
+coordinator relayed it. He chose "one fee per tier": each column is its own fee, named with its
+tier, and $0 tiers are included. On Schools FCU's page the tiers are the column headers PLATINUM GOLD
+SILVER+ SILVER COLLEGE, so the fees are named like "Courtesy Pay (Platinum)" $20 and "Courtesy Pay
+(Gold)" $30. (The relayed question's example said "(Basic)"; the coordinator corrected it, since no
+such column exists.)
+
+Intended consequences (not part of the decision):
+- Knox v100's tier columns (`knox/tier-columns.ts`) stop leaving out a free tier cell beside priced
+  ones, and name each tier fee with its column header.
+- The shared source check (`checkFeeAgainstSource`) is extended, not forked, so a tier fee traces
+  to its own cell.
+- A live tier price published as the only price with no tier in its name (Schools FCU's "Courtesy
+  Pay" $20 in the lab's `currentVariant` run) is the #2981 error class. A re-name or re-file of live
+  fees goes behind an off switch with Darwin's live re-check and a dry-run count.
+
+**A free allowance is a condition on the priced fee, not a $0 fee.** James, 2026-11-04, answering
+question 2 of the same finding, as relayed. He chose "only the $5": for "1 Free → $5" or "first 3
+free, then $5", the allowance is a condition on the $5 fee and goes in its name or notes. It is not a
+separate $0 fee. Answer-key rows that key $0 for an allowance get re-keyed.
+
+Intended consequences (not part of the decision):
+- Knox publishes only the priced fee of an allowance row, with the allowance moved out of the fee
+  name into its condition, so no "1 Free →" glyph is left in a name.
+- The answer-key rows that key $0 for an allowance (state:7450 card_replacement and cashiers_check,
+  and the lab's R5 group) are re-keyed in the fixture. A re-key that needs a migration stops for
+  James.
+
 ## 2026-11-03
 
 **Re-run the pipeline from fee one and reconcile every fee, instead of fixing a few fees a day.** James,
