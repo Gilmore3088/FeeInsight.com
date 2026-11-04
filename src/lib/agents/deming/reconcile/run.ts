@@ -37,7 +37,7 @@ export const RECONCILE_BATCH_INSTITUTIONS: readonly number[] = FIXED_ANSWER_KEY_
 /** Banks a step reconciles at most, and the time after which it starts no new bank. */
 export const RECONCILE_BANKS_PER_STEP = 12;
 /** No bank starts, and no document of a bank is read, after this long; a bank cut short is read again next step. */
-export const RECONCILE_STOP_AFTER_MS = 60_000;
+export const RECONCILE_STOP_AFTER_MS = 25_000;
 /** One stored text is read at most this long (characters): a few schedules run to 300k. */
 const MAX_TEXT_CHARS = 400_000;
 const READ_TIMEOUT_MS = 20_000;
