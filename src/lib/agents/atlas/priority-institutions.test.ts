@@ -110,6 +110,29 @@ describe("priority institutions", () => {
     expect(PRIORITY_RULES_REREADS_PER_HOUR).toBe(6);
   });
 
+  it("ranks a request asking for a read under this Knox version with the rules re-reads, ahead of paid-fetched pages", async () => {
+    const { db, calls } = createDb((text) => {
+      if (text.includes("COUNT(*)::int AS active")) return [{ active: 0 }];
+      return [];
+    });
+
+    await schedulePriorityInstitutionRuns({ db, now: new Date("2026-11-04T01:30:00Z") });
+
+    const call = calls.find((entry) => entry.text.includes("WITH candidates"))!;
+    // The rank reads the request's own minExtractVersion, by the bank's place in the requests list,
+    // against the Knox version that is live: a small bank asked for at v184 no longer waits behind
+    // paid-fetched pages and market leaders (the 2026-11-03 slice's eight scored banks).
+    expect(call.text).toMatch(/WHEN c\.tier = 2 AND \(c\.rules_unread OR COALESCE\(\(\?::int\[\]\)\[array_position\(\?::bigint\[\], c\.id::bigint\)\], 0\) >= \?::int\) THEN 3/);
+    const rankAt = call.text.indexOf("c.rules_unread OR COALESCE");
+    const valueIndex = call.text.slice(0, rankAt).split("?").length - 1;
+    const versions = call.values[valueIndex] as number[];
+    const ids = call.values[valueIndex + 1] as number[];
+    expect(call.values[valueIndex + 2]).toBe(KNOX_RULES_STRATEGY.version);
+    expect(versions).toHaveLength(ids.length);
+    // Austin Bank (395), the first of James's scored banks, is asked for at v184.
+    expect(versions[ids.indexOf(395)]).toBeGreaterThanOrEqual(184);
+  });
+
   it("ranks an unread document from the paid fetch right after hand-found schedules, keyed by the document", async () => {
     const { db, calls } = createDb((text) => {
       if (text.includes("COUNT(*)::int AS active")) return [{ active: 0 }];
@@ -127,7 +150,7 @@ describe("priority institutions", () => {
     const select = calls.find((call) => call.text.includes("WITH candidates"))!.text;
     expect(select).toContain("paid.strategy LIKE 'fetch.paid_web_fetch%'");
     expect(select).toContain("NOT EXISTS (SELECT 1 FROM agent_source_texts text WHERE text.source_document_id = doc.id)");
-    expect(select).toContain("CASE WHEN c.tier = 1 THEN 1 WHEN c.tier = 5 THEN 2 WHEN c.tier = 2 AND c.rules_unread THEN 3 WHEN c.tier = 4 THEN 4 WHEN c.tier = 2 THEN 5 ELSE 6 END");
+    expect(select).toMatch(/CASE WHEN c\.tier = 1 THEN 1 WHEN c\.tier = 5 THEN 2\s+WHEN c\.tier = 2 AND \(c\.rules_unread OR [^\n]+\) THEN 3\s+WHEN c\.tier = 4 THEN 4 WHEN c\.tier = 2 THEN 5 ELSE 6 END/);
     expect(select).toContain("c.tier <> 4 OR c.paid_at IS NULL OR r.started_at >= c.paid_at");
     // A hand-found schedule fetched in another state's lane is unread work too (First United, 8 Oct).
     expect(select).toContain("JOIN source_documents hand_doc ON hand_doc.companion_source_id = hand.id");

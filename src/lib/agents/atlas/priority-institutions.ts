@@ -656,7 +656,12 @@ export async function selectPriorityInstitutions(
      -- A request whose current page this Knox version has not read goes before paid-fetched
      -- pages, which otherwise kept the two direct-run places full all morning (9 Oct).
      -- A Pro account's own institution comes right after a hand-found schedule (#1078).
-     ORDER BY CASE WHEN c.tier = 1 THEN 1 WHEN c.tier = 5 THEN 2 WHEN c.tier = 2 AND c.rules_unread THEN 3 WHEN c.tier = 4 THEN 4 WHEN c.tier = 2 THEN 5 ELSE 6 END ASC,
+     -- A request asking for a read under this Knox version (its minExtractVersion) is a rules
+     -- re-read too, whatever the bank's size: the 2026-11-03 slice's eight scored banks sat behind
+     -- market leaders and paid-fetched pages while the requests list put them first.
+     ORDER BY CASE WHEN c.tier = 1 THEN 1 WHEN c.tier = 5 THEN 2
+                   WHEN c.tier = 2 AND (c.rules_unread OR COALESCE((${requestedVersion}::int[])[array_position(${requested}::bigint[], c.id::bigint)], 0) >= ${KNOX_RULES_STRATEGY.version}::int) THEN 3
+                   WHEN c.tier = 4 THEN 4 WHEN c.tier = 2 THEN 5 ELSE 6 END ASC,
               CASE WHEN c.tier = 2 THEN array_position(${requested}::bigint[], c.id::bigint) END ASC NULLS LAST,
               COALESCE(c.asset_size, 0) DESC, c.id ASC
      LIMIT ${limit}::int
