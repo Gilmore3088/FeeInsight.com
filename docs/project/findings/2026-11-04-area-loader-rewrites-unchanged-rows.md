@@ -19,4 +19,6 @@ does. The in-place compaction is off; the narrow table rebuilds in the storage d
 (https://claude.ai/artifact/KcJWBJzFspHJ57iqvPzPSp) replace it. A row's `fetched_at` now records
 when its values last changed, matching the financial loaders.
 
-**What stops a repeat:** Agent lesson `hoovie/area-upsert-only-when-changed`.
+**Agent lesson:** hoovie/area-upsert-only-when-changed
+
+**Guard:** `src/lib/agents/magellan/registry/area-upsert.db.test.ts` fails if an identical refresh rewrites a row.
