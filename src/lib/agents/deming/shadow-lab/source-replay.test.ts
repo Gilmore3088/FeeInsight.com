@@ -184,6 +184,8 @@ describe("shadow lab source-bytes replay", () => {
         expect(JSON.stringify(switchedRun(side.on))).toBe(JSON.stringify(switched));
         // Frozen text is the reader's output, so the reader switch cannot move the frozen side.
         expect(switched.total.frozen).toEqual(base.total.frozen);
+        // No replayed document has the switch's shape, so the re-read side moves by nothing either (#2990 review).
+        expect(switched.total).toEqual(base.total);
         if (OUT) {
           const delta = replayDelta(base, switched);
           mkdirSync(OUT, { recursive: true });
