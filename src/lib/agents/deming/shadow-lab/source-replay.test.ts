@@ -32,6 +32,9 @@ vi.mock("@/lib/ai-provider", async (importOriginal) => {
 const OUT = process.env.SHADOW_LAB_OUT;
 const MANIFEST_PATH = join(__dirname, "frozen-inputs.json");
 const REPLAY_TIMEOUT_MS = 240_000;
+// The cell-list test re-reads every fixture six times (today, off, rows only, rows before, and both
+// switched sides), twice the others, and timed out at 240 s on a loaded CI shard (#2990).
+const CELL_LIST_REPLAY_TIMEOUT_MS = 2 * REPLAY_TIMEOUT_MS;
 
 describe("shadow lab source-bytes replay", () => {
   it(
@@ -195,6 +198,6 @@ describe("shadow lab source-bytes replay", () => {
       }
       expect(provider.calls).toBe(0);
     },
-    REPLAY_TIMEOUT_MS,
+    CELL_LIST_REPLAY_TIMEOUT_MS,
   );
 });
