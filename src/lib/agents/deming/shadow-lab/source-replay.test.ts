@@ -32,6 +32,9 @@ vi.mock("@/lib/ai-provider", async (importOriginal) => {
 const OUT = process.env.SHADOW_LAB_OUT;
 const MANIFEST_PATH = join(__dirname, "frozen-inputs.json");
 const REPLAY_TIMEOUT_MS = 240_000;
+// The cell-list test re-reads every fixture six times (today, off, rows only, rows before, and both
+// switched sides), twice the others, and timed out at 240 s on a loaded CI shard (#2990).
+const CELL_LIST_REPLAY_TIMEOUT_MS = 2 * REPLAY_TIMEOUT_MS;
 
 describe("shadow lab source-bytes replay", () => {
   it(
@@ -145,5 +148,56 @@ describe("shadow lab source-bytes replay", () => {
       }
     },
     REPLAY_TIMEOUT_MS,
+  );
+
+  it(
+    "should_replay_the_html_cell_list_pairing_experiment_with_row_pairing_off_and_on_with_no_provider_calls",
+    async () => {
+      assertOfflineEnv();
+      const { applyManifest, loadScenarios } = await import("./scenarios");
+      const { currentVariant, EXPERIMENTS, experimentalVariant } = await import("./variants");
+      const { readSourceManifest, rereadAcceptedSources } = await import("./source-bytes");
+      const { replayDelta, replaySources } = await import("./source-replay");
+      const { renderReplayDelta } = await import("./source-replay-report");
+
+      const config = EXPERIMENTS["html-cell-list-pairing"];
+      const frozenManifest = JSON.parse(readFileSync(MANIFEST_PATH, "utf8")) as Record<string, string>;
+      const cases = applyManifest(loadScenarios(), frozenManifest);
+      const manifest = readSourceManifest();
+      const today = await rereadAcceptedSources();
+      const read = (htmlRowPairing: boolean, htmlCellListPairing: boolean) =>
+        rereadAcceptedSources(process.cwd(), { htmlRowPairing, htmlCellListPairing });
+      const off = await read(false, false);
+      const rowsOnly = await read(true, false);
+      // The switch ships off: today's read is the switch-off read for every fixture, HTML and PDF alike.
+      for (const [key, text] of today) expect(off.get(key), key).toEqual(text);
+      expect(off.size).toBe(manifest.accepted.length);
+      // Off also leaves row pairing's own read byte for byte as it was.
+      const rowsBefore = await rereadAcceptedSources(process.cwd(), { htmlRowPairing: true });
+      for (const [key, text] of rowsBefore) expect(rowsOnly.get(key), key).toEqual(text);
+
+      const switchedRun = (rereads: typeof today) => replaySources({ manifest, cases, rereads, variant: experimentalVariant(config) });
+      const sides = [
+        { id: config.id, base: off, on: await read(false, true) },
+        { id: `${config.id}-with-row-pairing`, base: rowsOnly, on: await read(true, true) },
+      ];
+      for (const side of sides) {
+        const base = replaySources({ manifest, cases, rereads: side.base, variant: currentVariant });
+        const switched = switchedRun(side.on);
+        expect(JSON.stringify(switchedRun(side.on))).toBe(JSON.stringify(switched));
+        // Frozen text is the reader's output, so the reader switch cannot move the frozen side.
+        expect(switched.total.frozen).toEqual(base.total.frozen);
+        // No replayed document has the switch's shape, so the re-read side moves by nothing either (#2990 review).
+        expect(switched.total).toEqual(base.total);
+        if (OUT) {
+          const delta = replayDelta(base, switched);
+          mkdirSync(OUT, { recursive: true });
+          writeFileSync(join(OUT, `source-replay-${side.id}.json`), `${JSON.stringify({ total: switched.total, delta }, null, 1)}\n`);
+          writeFileSync(join(OUT, `source-replay-${side.id}.md`), renderReplayDelta(side.id, base, switched, delta));
+        }
+      }
+      expect(provider.calls).toBe(0);
+    },
+    CELL_LIST_REPLAY_TIMEOUT_MS,
   );
 });

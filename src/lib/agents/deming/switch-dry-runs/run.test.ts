@@ -105,6 +105,9 @@ function reader(): SwitchAuditReader & { calls: Record<string, unknown[]> } {
       { fee_published_id: 9, fee_verified_id: 3, institution_id: 22, fee_name: "Stop Payments", canonical_fee_key: "stop_payment",
         source_line: 'excerpt="No Fee for Stop Payments"', artifact_id: null },
     ]),
+    htmlCellListExposure: vi.fn(async () => [
+      { documents: "3", institutions: 2, rows: "14", documents_with_live_fees: 2, live_fees: "30" },
+    ]),
     pdfReaderExposure: vi.fn(async () => [
       { documents: "40", institutions: 31, documents_with_live_fees: 25, live_fees: "410", direction_known: 6, sideways: 1, sideways_live_fees: 12 },
     ]),
@@ -201,6 +204,12 @@ describe("switch dry runs: one pass over every pending count", () => {
       sideways: { documents: 1, liveFees: 12 },
       textDiffed: false,
     });
+    // HTML cell lists: section 8's HTML exposure, and the stored rows in the switch's shape; never a text diff.
+    expect(report.htmlCellListPairing.summary).toEqual({
+      html: { documents: 7, documentsWithLiveFees: 5, liveFees: 61 },
+      shaped: { documents: 3, institutions: 2, rows: 14, documentsWithLiveFees: 2, liveFees: 30 },
+      textDiffed: false,
+    });
   });
 
   it("should_print_every_section_with_its_totals", async () => {
@@ -245,7 +254,11 @@ describe("switch dry runs: one pass over every pending count", () => {
     expect(text).toContain("## 10. PDF_TEXT_DIRECTION_LIVE (#1092, Rosetta read.pdf_layout)");
     expect(text).toContain("EXPOSED: 40 current PDF documents at 31 institutions (25 with live fees) carry 410 live fees");
     expect(text).toContain("SIDEWAYS: 1 of the 6 documents read since the direction was recorded have a sideways page, carrying 12 live fees; 34 have no such read");
-    expect(text).toContain("## 11. Live accuracy");
+    expect(text).toContain("## 11. HTML_CELL_LIST_PAIRING_LIVE (#1092, Rosetta read.html_dom)");
+    expect(text).toContain("EXPOSED: 7 current HTML documents (5 with live fees) carry 61 live fees; the flip re-reads each once.");
+    expect(text).toContain("SHAPED: 14 stored rows on 3 of those documents at 2 institutions have the one-line shape; 2 of the documents carry 30 live fees.");
+    expect(text.indexOf("## 11. HTML_CELL_LIST_PAIRING_LIVE")).toBeLessThan(text.indexOf("## 12. Live accuracy"));
+    expect(text).toContain("## 12. Live accuracy");
     // The daily receipt's own figure leads; the derived share follows, labelled.
     const receipt = text.indexOf("Daily receipt's figure (right on amount, category, source, fee line and name): 5 / 8 = 62.50%");
     const derived = text.indexOf("Amount and category only (not the receipt's figure): 6 / 8 = 75.00%");

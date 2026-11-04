@@ -94,6 +94,11 @@ describe.skipIf(!connection)("switch dry runs in isolated PostgreSQL", () => {
     await raw.end({ timeout: 5 });
   });
 
+  it("should_count_no_cell_list_rows_on_texts_no_html_reader_wrote", () => {
+    // The fixture's texts record no reader, so no HTML-read row is in the switch's shape.
+    expect(report.htmlCellListPairing.summary.shaped).toEqual({ documents: 0, institutions: 0, rows: 0, documentsWithLiveFees: 0, liveFees: 0 });
+  });
+
   it("should_read_dash_documents_by_institution_including_ones_with_no_live_fee", () => {
     const { summary } = report.dashListRows;
     // B (X, nothing live on it) and C (Y, no live fee at all) are read; A prints no dash run.

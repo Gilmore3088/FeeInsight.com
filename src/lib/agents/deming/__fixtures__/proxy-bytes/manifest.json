@@ -1,0 +1,23 @@
+{
+  "about": "Test-only proxy bytes (#1092). Each file is a public archive copy of an answer-key page that FAILS the source-bytes same-document test, so it is not in the source-bytes replay, its manifest or its denominator. A proxy test reads one to check a reader change against the page's own markup; it never scores recall against the answer key's amounts as if the page were the keyed document.",
+  "proxies": [
+    {
+      "caseKey": "missed_fees:state:9308",
+      "institution": "St. Cloud Financial Federal Credit Union",
+      "file": "state-9308-20250209.html.gz",
+      "sourceUrl": "https://scfcu.org/rates-fees",
+      "captureUrl": "https://web.archive.org/web/20250209151414id_/https://scfcu.org/rates-fees",
+      "timestamp": "20250209151414",
+      "cdxDigest": "LM5LOQGLVNWH5OWBJX4ENOGT5INQ6NN7",
+      "sha256": "350c3ad587019b3ef97984a610453ea2c011c5362a150568bf69d309204e5522",
+      "bytes": 198645,
+      "contentType": "text/html",
+      "fetchedAt": "2026-11-03",
+      "fetchedWith": "curl -s -L (plain HTTP, the archive's raw id_ form; no Wayback toolbar)",
+      "sameDocument": false,
+      "similarity": { "tokens": 0.901, "numbers": 0.7724, "dollarsEqual": false },
+      "rejectedIn": "src/lib/agents/deming/__fixtures__/source-bytes/manifest.json (rejected, archiveTried)",
+      "use": "src/lib/agents/deming/shadow-lab/cell-list-proxy.test.ts (HTML_CELL_LIST_PAIRING_LIVE)"
+    }
+  ]
+}

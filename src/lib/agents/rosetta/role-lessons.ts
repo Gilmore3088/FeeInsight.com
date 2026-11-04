@@ -187,6 +187,16 @@ export const ROSETTA_LESSONS: AgentLesson[] = [
     since: "2026-11-02",
   },
   {
+    id: "issue-1092-pair-cell-lists-item-for-item",
+    agent: "rosetta",
+    stage: "read",
+    lesson: "A table cell can hold its own rows. When a row's label cell lists items (one <li> each, or one <br> line each) and its price cell lists the same number of prices in the same markup, write one line per item, the label cell's heading and the item beside its own price. Pair only on that markup: one list in each cell, the same count, one price or free word per price item, no nested list, no hidden item, no span. Any other shape (a count mismatch, a nested list, an item with two prices) is written exactly as before, never paired by guessing.",
+    why: "St. Cloud FCU (answer key state:9308) prints ten fee rows as a bold heading and a <ul> of items beside a <br/> and a <ul> of prices; read.html_dom joined each row into one line (\"Safe Deposit Boxes 3 x 5 3 x 10 ... | $18.00 a year $30.00 a year ...\"), so 22 of the lab's 44 R3 misses were on that page. On its 2025-02-09 archived copy the item-for-item rule writes 25 pairs, each with the price the markup gives, and publishes 14 of the 22 keys; check cashing (a nested list), the international ATM fee (3 items over 2 prices) and notary (two prices in one item) are refused, as the closed heading-category attempt (#2972) showed inferred structure must be (#1092).",
+    evidence: { issues: [1092], prs: [2972, 2974], files: ["docs/project/findings/2026-11-03-html-cell-list-pairing.md", "src/lib/agents/rosetta/html-cell-list-pairing.ts", "src/lib/agents/rosetta/html-cell-list-pairing.test.ts"] },
+    appliesTo: ["read"],
+    since: "2026-11-03",
+  },
+  {
     id: "issue-1092-read-sideways-pages-along-their-lines",
     agent: "rosetta",
     stage: "read",

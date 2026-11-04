@@ -7,6 +7,7 @@ import { addHeldVocabularyDocument, emptyHeldVocabularySummary, replayHeldVocabu
 import { addSectionPathDocument, emptySectionPathSummary, replaySectionPathDocument, type SectionPathSummary } from "./section-path";
 import { summarizeHtmlExposure, type HtmlRowPairingSummary } from "./html-row-pairing";
 import { summarizePdfExposure, type PdfTextDirectionSummary } from "./pdf-text-direction";
+import { summarizeHtmlCellListExposure, type HtmlCellListPairingSummary } from "./html-cell-list-pairing";
 import { addZeroWaiverRows, emptyZeroWaiverRowSummary, type ZeroWaiverRowSummary } from "./zero-waiver-row";
 import { ZERO_WAIVER_ROW_MAX_ROWS, type ZeroWaiverRowLiveRow } from "@/lib/agents/darwin/zero-waiver-row-check";
 import { serviceMaintenanceSection, type ServiceMaintenanceSection } from "./service-maintenance";
@@ -62,6 +63,7 @@ export interface SwitchDryRunReport {
   zeroWaiverRow: { switch: "ZERO_WAIVER_ROW_TAKEDOWN_LIVE"; issue: number; rowsRead: Bounded; summary: ZeroWaiverRowSummary };
   htmlRowPairing: { switch: "HTML_ROW_PAIRING_LIVE"; issue: number; summary: HtmlRowPairingSummary };
   pdfTextDirection: { switch: "PDF_TEXT_DIRECTION_LIVE"; issue: number; summary: PdfTextDirectionSummary };
+  htmlCellListPairing: { switch: "HTML_CELL_LIST_PAIRING_LIVE"; issue: number; summary: HtmlCellListPairingSummary };
   serviceMaintenance: ServiceMaintenanceSection;
   liveAccuracy: LiveAccuracy;
 }
@@ -234,18 +236,31 @@ async function excerptAtPublish(reader: SwitchAuditReader, options: SwitchAuditO
 }
 
 export async function runSwitchDryRuns(reader: SwitchAuditReader, options: SwitchAuditOptions, now: Date = new Date()): Promise<SwitchDryRunReport> {
+  const dailyCap = await dailyCapLines(reader, options);
+  const dashList = await dashListRows(reader, options);
+  const excerpt = await excerptAtPublish(reader, options);
+  const section = await sectionPath(reader, options);
+  const atmHeading = await footnotedAtmHeading(reader, options);
+  const vocabulary = await heldVocabulary(reader, options);
+  const zeroWaiver = await zeroWaiverRow(reader, options);
+  const htmlExposure = summarizeHtmlExposure(await reader.htmlReaderExposure());
   return {
     generatedAt: now.toISOString(),
     options,
-    dailyCapLines: await dailyCapLines(reader, options),
-    dashListRows: await dashListRows(reader, options),
-    excerptAtPublish: await excerptAtPublish(reader, options),
-    sectionPath: await sectionPath(reader, options),
-    footnotedAtmHeading: await footnotedAtmHeading(reader, options),
-    heldVocabulary: await heldVocabulary(reader, options),
-    zeroWaiverRow: await zeroWaiverRow(reader, options),
-    htmlRowPairing: { switch: "HTML_ROW_PAIRING_LIVE", issue: 1092, summary: summarizeHtmlExposure(await reader.htmlReaderExposure()) },
+    dailyCapLines: dailyCap,
+    dashListRows: dashList,
+    excerptAtPublish: excerpt,
+    sectionPath: section,
+    footnotedAtmHeading: atmHeading,
+    heldVocabulary: vocabulary,
+    zeroWaiverRow: zeroWaiver,
+    htmlRowPairing: { switch: "HTML_ROW_PAIRING_LIVE", issue: 1092, summary: htmlExposure },
     pdfTextDirection: { switch: "PDF_TEXT_DIRECTION_LIVE", issue: 1092, summary: summarizePdfExposure(await reader.pdfReaderExposure()) },
+    htmlCellListPairing: {
+      switch: "HTML_CELL_LIST_PAIRING_LIVE",
+      issue: 1092,
+      summary: summarizeHtmlCellListExposure(htmlExposure.html, await reader.htmlCellListExposure()),
+    },
     serviceMaintenance: await serviceMaintenanceSection(reader, options),
     liveAccuracy: liveAccuracyFrom(await reader.freshAudit(options.accuracySample)),
   };

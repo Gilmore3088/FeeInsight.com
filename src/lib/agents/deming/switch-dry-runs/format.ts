@@ -277,11 +277,27 @@ function pdfTextDirection(report: SwitchDryRunReport): string[] {
   ];
 }
 
+function htmlCellListPairing(report: SwitchDryRunReport): string[] {
+  const { html, shaped } = report.htmlCellListPairing.summary;
+  return [
+    "## 11. HTML_CELL_LIST_PAIRING_LIVE (#1092, Rosetta read.html_dom)",
+    "Method: exposure only. The audit reads the database, and the HTML bytes are in the document vault, so it cannot re-read a page " +
+      "or say how many stored texts would change. The flip's HTML_READ_VERSION bump re-reads every current HTML-read text once (section 8's count); " +
+      "only a table row whose label cell and price cell list the same number of items can change. Stored table rows keep cell text, not list markup, " +
+      "so the audit counts the rows in that row's one-line shape (two cells, no dollar amount in the first, two or more in the second) as the reach; " +
+      "a row of free words only is not counted, and most counted rows will not split. The change itself is measured on the answer-key documents' bytes " +
+      "(shadow-lab experiment html-cell-list-pairing) and on St. Cloud's archived page (cell-list-proxy.test.ts).",
+    `EXPOSED: ${html.documents} current HTML documents (${html.documentsWithLiveFees} with live fees) carry ${html.liveFees} live fees; the flip re-reads each once.`,
+    `SHAPED: ${shaped.rows} stored rows on ${shaped.documents} of those documents at ${shaped.institutions} institutions have the one-line shape; ` +
+      `${shaped.documentsWithLiveFees} of the documents carry ${shaped.liveFees} live fees.`,
+  ];
+}
+
 function accuracy(report: SwitchDryRunReport): string[] {
   const a = report.liveAccuracy;
-  if (!a.readable) return ["## 11. Live accuracy", "The fresh audit could not read the live fees: accuracy is unknown."];
+  if (!a.readable) return ["## 12. Live accuracy", "The fresh audit could not read the live fees: accuracy is unknown."];
   return [
-    "## 11. Live accuracy (stored source, not the bank's current schedule)",
+    "## 12. Live accuracy (stored source, not the bank's current schedule)",
     `Method: ${a.method}`,
     `Seed ${a.seed}; source check v${a.sourceCheckVersion}; category guard v${a.categoryGuardVersion}.`,
     `Sampled ${a.sampled}; scorable ${a.scorable}; no stored text ${a.noText}.`,
@@ -296,7 +312,7 @@ export function formatSwitchDryRuns(report: SwitchDryRunReport): string {
     `# Switch dry runs (read-only), ${report.generatedAt}`,
     "One read-only snapshot for the whole run: it holds back vacuum while it runs, so run it off-peak (or on a replica).",
     `Samples capped at ${report.options.sampleCap} per list; totals count every row read.` +
-      (report.options.institutionIds ? ` Sections 1-7, 9 and 10 limited to institutions ${report.options.institutionIds.join(", ")}.` : ""),
+      (report.options.institutionIds ? ` Sections 1-7, 9, 10 and 11 limited to institutions ${report.options.institutionIds.join(", ")}.` : ""),
     "",
     ...dailyCap(report),
     "",
@@ -317,6 +333,8 @@ export function formatSwitchDryRuns(report: SwitchDryRunReport): string {
     ...serviceMaintenance(report),
     "",
     ...pdfTextDirection(report),
+    "",
+    ...htmlCellListPairing(report),
     "",
     ...accuracy(report),
     "",
