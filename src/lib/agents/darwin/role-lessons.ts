@@ -970,4 +970,14 @@ export const DARWIN_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-11-03",
   },
+  {
+    id: "issue-1092-2026-11-04-tier-cell-is-the-tiers-fee",
+    agent: "darwin",
+    stage: "verify",
+    lesson: "A fee named for one tier of a relationship-tier table (\"Courtesy Pay (Gold)\") is judged on that tier's own cell of its row, not on the row's first price: the cell's amount traces, any other amount is not the fee even when another tier charges it, and a free cell is the tier's $0, not a conditional $0 (the row's other cells are the other tiers' prices, like a comparison table's columns). A live fee named with the row's name alone at one tier's price is unscoped: it shows one tier as the bank's only price, so it is re-checked and comes down only once Knox writes the scoped tier fees that replace it.",
+    why: "Schools FCU (State key 7450): \"Courtesy Pay $20 $30 $30 $30 $30\" under \"PLATINUM GOLD SILVER+ SILVER COLLEGE\". The shared source check supported only the row's first price, so the $30 tiers were held untraced and the PLATINUM $20 went out alone as \"Courtesy Pay\"; the conditional-$0 check refused every free tier. James decided one fee per tier (DECISIONS 2026-11-04). Behind TIER_COLUMN_FEES_LIVE (off) the check traces each tier to its cell; darwin.tier_column re-checks live unscoped tier fees behind TIER_COLUMN_TAKEDOWN_LIVE (off, count pending).",
+    evidence: { issues: [1092], prs: [], files: ["src/lib/agents/darwin/tier-column-check.ts", "src/lib/agents/darwin/tier-column-check.test.ts", "src/lib/agents/darwin/verify.ts", "src/lib/custom-report/source-check.ts", "src/lib/tier-column-table.ts", "docs/project/findings/2026-11-04-tier-column-fees.md"] },
+    appliesTo: "all",
+    since: "2026-11-04",
+  },
 ];

@@ -37,6 +37,7 @@ import { stopPaymentVariantRow } from "./stop-payment-variant";
 import { rateBoundOf } from "@/lib/rate-bound";
 import { rewardCreditOf } from "@/lib/reward-credit";
 import { sourceLineTerms, type SourceLineTerms } from "./source-line-terms";
+import { tierCellAmount, tierColumnFeesLive, tierFeeCell, tierTableRows } from "@/lib/tier-column-table";
 const NSF_POLICY_CATEGORIES = new Set(["nsf", "overdraft"]);
 
 export type SourceCheckFailure =
@@ -109,6 +110,12 @@ export type SourceCheckOptions = {
    * the line the check already found and never changes whether the fee traces.
    */
   terms?: boolean;
+  /**
+   * #1092 (DECISIONS 2026-11-04): trace a tier fee ("Courtesy Pay (Gold)") to its own cell of a
+   * relationship-tier table row (`tierColumnFeeCheck`). Defaults to `tierColumnFeesLive()`, off with
+   * `TIER_COLUMN_FEES_LIVE`; the lab's `tier-column-fees` experiment holds it on.
+   */
+  tierColumnFees?: boolean;
 };
 
 /**
@@ -1583,6 +1590,8 @@ export function checkFeeAgainstSource(
   canonicalFeeKey?: string | null,
   options: SourceCheckOptions = {},
 ): SourceCheckResult {
+  const tier = (options.tierColumnFees ?? tierColumnFeesLive()) ? tierColumnFeeCheck(sourceText, feeName, amount, categoryPattern) : null;
+  if (tier) return options.terms && tier.ok ? { ...tier, terms: sourceLineTerms(tier.sourceLine, amount) } : tier;
   const own = (text: string | null | undefined) => checkFeeAgainstOwnSource(text, feeName, amount, categoryPattern, canonicalFeeKey, options);
   const bounded = (text: string | null | undefined) => {
     const result = own(text);
@@ -1596,6 +1605,24 @@ export function checkFeeAgainstSource(
   };
   const result = checked();
   return options.terms && result.ok ? { ...result, terms: sourceLineTerms(result.sourceLine, amount) } : result;
+}
+
+/**
+ * #1092 (DECISIONS 2026-11-04, `TIER_COLUMN_FEES_LIVE`): a fee named for one tier of a relationship-tier
+ * table ("Courtesy Pay (Gold)", Knox v185) is traced to that tier's own cell of its row ("Courtesy Pay
+ * $20 $30 $30 $30 $30" under "PLATINUM GOLD SILVER+ SILVER COLLEGE"), not to the row's first price.
+ * The cell decides alone: the right amount traces ("FREE" is $0, "1 Free → $5" is $5), any other
+ * amount is `amount_not_the_fee`, even one another tier charges. Null when the name names no tier
+ * row of the text, so every other fee is checked as before. Pure.
+ */
+function tierColumnFeeCheck(sourceText: string | null | undefined, feeName: string, amount: number, categoryPattern: string): SourceCheckResult | null {
+  if (!sourceText || !/\)\s*$/.test(feeName)) return null;
+  const found = tierFeeCell(tierTableRows(sourceText), feeName);
+  if (!found) return null;
+  const charged = tierCellAmount(found.cell);
+  if (charged == null || Math.abs(charged - amount) > 0.005) return { ok: false, reason: "amount_not_the_fee" };
+  if (!new RegExp(categoryPattern.replace(/\\m|\\M/g, "\\b"), "i").test(found.row.line)) return { ok: false, reason: "category_not_in_text" };
+  return { ok: true, sourceLine: found.row.line.slice(0, 240) };
 }
 
 /**

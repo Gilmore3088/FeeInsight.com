@@ -73,6 +73,8 @@ const PROBES: Record<string, (v: PipelineVariant) => unknown> = {
   // Texas key 2416's "Non-TBT or Non-Allpoint ATM1:" section: its balance inquiry re-files to the non-network ATM fee.
   FOOTNOTED_ATM_HEADING_LIVE: (v) => v.extract(ATM_HEADING_CASES[0].text).passed,
   KNOX_DISCONTINUED_TABLES_LIVE: (v) => v.extract(DISCONTINUED),
+  // State key 7450 (Schools FCU): one fee per tier, "Courtesy Pay (Platinum)" $20 beside "(Gold)" $30.
+  TIER_COLUMN_FEES_LIVE: goldenCase("shadow:missed_fees:state:7450"),
   DAILY_CAP_LINES_LIVE: goldenCase("shadow:missed_fees:state:8741"),
   NO_CHARGE_SENTENCE_READ_LIVE: (v) => v.extract(WELLS_FARGO),
   DARWIN_CONDITIONAL_ZERO_LAYOUT_LIVE: (v) => v.verify(fee("foreign_transaction", "Foreign Transaction Fees", 0, TERRA), sideBySide(TERRA)),

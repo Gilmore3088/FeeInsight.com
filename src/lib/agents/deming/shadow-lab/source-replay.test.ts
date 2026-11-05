@@ -200,4 +200,39 @@ describe("shadow lab source-bytes replay", () => {
     },
     CELL_LIST_REPLAY_TIMEOUT_MS,
   );
+
+  it(
+    "should_replay_the_tier_column_fees_experiment_on_both_sides_with_no_provider_calls",
+    async () => {
+      assertOfflineEnv();
+      const { applyManifest, loadScenarios } = await import("./scenarios");
+      const { currentVariant, EXPERIMENTS, experimentalVariant } = await import("./variants");
+      const { readSourceManifest, rereadAcceptedSources } = await import("./source-bytes");
+      const { replayDelta, replaySources } = await import("./source-replay");
+      const { renderReplayDelta } = await import("./source-replay-report");
+
+      const config = EXPERIMENTS["tier-column-fees"];
+      const frozenManifest = JSON.parse(readFileSync(MANIFEST_PATH, "utf8")) as Record<string, string>;
+      const cases = applyManifest(loadScenarios(), frozenManifest);
+      const manifest = readSourceManifest();
+      const rereads = await rereadAcceptedSources();
+      // A Knox, source-check and publish switch, not a reader switch: both sides read the same texts.
+      const base = replaySources({ manifest, cases, rereads, variant: currentVariant });
+      const run = () => replaySources({ manifest, cases, rereads, variant: experimentalVariant(config) });
+      const switched = run();
+      expect(JSON.stringify(run())).toBe(JSON.stringify(switched));
+      expect(provider.calls).toBe(0);
+      const delta = replayDelta(base, switched);
+      // The switch adds tier fees: it loses no key and publishes nothing new outside the key.
+      expect(delta.lost).toEqual([]);
+      expect(delta.unexpectedAdded).toEqual([]);
+
+      if (OUT) {
+        mkdirSync(OUT, { recursive: true });
+        writeFileSync(join(OUT, `source-replay-${config.id}.json`), `${JSON.stringify({ total: switched.total, delta }, null, 1)}\n`);
+        writeFileSync(join(OUT, `source-replay-${config.id}.md`), renderReplayDelta(config.id, base, switched, delta));
+      }
+    },
+    REPLAY_TIMEOUT_MS,
+  );
 });

@@ -22,6 +22,7 @@ import { HTML_READER_EXPOSURE_SQL, HTML_READERS } from "./switch-dry-runs-html";
 import { PDF_READER_EXPOSURE_SQL, PDF_READERS } from "./switch-dry-runs-pdf";
 import { HTML_CELL_LIST_EXPOSURE_SQL } from "./switch-dry-runs-html-cell-lists";
 import { serviceMaintenanceRemaining, serviceMaintenanceRowsSql, serviceMaintenanceTexts } from "@/lib/agents/darwin/service-maintenance-check";
+import { tierColumnRowsSql } from "@/lib/agents/darwin/tier-column-check";
 
 type SqlTag = typeof sql;
 
@@ -350,6 +351,8 @@ export function createSwitchAuditReader(db: SqlTag, options: { now?: Date; insti
     serviceMaintenanceRows: async (limit, afterId) => [...await serviceMaintenanceRowsSql(db, { limit, afterId, institutionIds: scope })],
     serviceMaintenanceRemaining: (afterId) => serviceMaintenanceRemaining(db, { afterId, institutionIds: scope }),
     serviceMaintenanceTexts: (artifactIds) => serviceMaintenanceTexts(db, artifactIds),
+    // Darwin's own read for its tier column re-check, so the count is the re-check's selection (tagged SELECTs).
+    tierColumnRows: async (limit) => [...await tierColumnRowsSql(db, { limit, institutionIds: scope })],
     freshAudit: (sampleSize) => runFreshAudit({ db, now: options.now, sampleSize }),
   };
 }

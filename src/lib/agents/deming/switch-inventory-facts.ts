@@ -155,6 +155,8 @@ export const SWITCH_FACTS: Readonly<Record<string, SwitchFacts>> = {
   SUPERSEDED_RECHECK_LIVE: { firstSeen: "2026-10-09 7d759dafe" },
   SUPERSEDED_REFILE_LIVE: { firstSeen: "2026-10-14 8a5ba63d6" },
   TEXAS_CAPITAL_TAKEDOWN_LIVE: { firstSeen: "2026-10-18 4b0472777" },
+  TIER_COLUMN_FEES_LIVE: { note: "flip with TIER_COLUMN_TAKEDOWN_LIVE, after James runs the switch dry-run audit's section 12 (count pending); Knox's stale-read floor stays, so re-read requests for the documents it counts bring the tier fees in" },
+  TIER_COLUMN_TAKEDOWN_LIVE: { note: "flip with TIER_COLUMN_FEES_LIVE: a takedown adds no fee, the tier fees come from Knox's re-read under the read switch; dry-run count pending (audit section 12)" },
   TRANSLATED_COPY_RESTORE_LIVE: { firstSeen: "2026-10-26 887ec16fd" },
   TRANSLATED_COPY_TAKEDOWN_LIVE: { firstSeen: "2026-10-18 a8227ac41" },
   VAULT_RETENTION_LIVE: { firstSeen: "2026-10-20 ea2d65079" },

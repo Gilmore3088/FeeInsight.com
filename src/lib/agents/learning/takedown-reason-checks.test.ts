@@ -7,6 +7,7 @@ import { MISFILED_TAKEDOWN_CHECKS } from "./feedback-sync";
 
 import { BANDED_ZERO_CHECK, BANDED_ZERO_REASON } from "@/lib/agents/darwin/banded-zero-check";
 import { TIER_COMPLETENESS_CHECK, TIER_COMPLETENESS_REASON } from "@/lib/agents/darwin/tier-completeness-check";
+import { TIER_COLUMN_CHECK, TIER_COLUMN_REASON } from "@/lib/agents/darwin/tier-column-check";
 import { ACCOUNT_BENEFIT_ZERO_CHECK, ACCOUNT_BENEFIT_ZERO_REASON } from "@/lib/agents/darwin/account-benefit-zero-check";
 import { CANADIAN_DOCUMENT_CHECK, CANADIAN_DOCUMENT_REASON } from "@/lib/agents/darwin/canadian-document-check";
 import { OLD_LABELLED_DOCUMENT_CHECK, OLD_LABELLED_DOCUMENT_REASON } from "@/lib/agents/darwin/old-labelled-document-check";
@@ -90,6 +91,7 @@ const DUPLICATE = "hamilton.duplicate_collapse";
 const PRODUCERS: Record<string, Producer[]> = {
   "agents/darwin/banded-zero-check.ts": [{ check: BANDED_ZERO_CHECK, reasons: [BANDED_ZERO_REASON] }],
   "agents/darwin/tier-completeness-check.ts": [{ check: TIER_COMPLETENESS_CHECK, reasons: [TIER_COMPLETENESS_REASON] }],
+  "agents/darwin/tier-column-check.ts": [{ check: TIER_COLUMN_CHECK, reasons: [TIER_COLUMN_REASON] }],
   "agents/darwin/account-benefit-zero-check.ts": [{ check: ACCOUNT_BENEFIT_ZERO_CHECK, reasons: [ACCOUNT_BENEFIT_ZERO_REASON] }],
   "agents/darwin/canadian-document-check.ts": [{ check: CANADIAN_DOCUMENT_CHECK, reasons: [CANADIAN_DOCUMENT_REASON] }],
   "agents/darwin/old-labelled-document-check.ts": [{ check: OLD_LABELLED_DOCUMENT_CHECK, reasons: [`${OLD_LABELLED_DOCUMENT_REASON}: #2229 (current link #16917)`] }],

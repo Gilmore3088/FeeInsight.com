@@ -86,6 +86,7 @@ import {
   type HistoryVerdict,
   type PriorCandidateRow,
 } from "./history-check";
+import { freeTierCell, tierColumnFeesLive } from "@/lib/tier-column-table";
 import {
   DARWIN_PEER_GRADED_VERSIONS,
   DARWIN_PEER_STRATEGY,
@@ -818,6 +819,9 @@ export function conditionalZero(
   context: { documentText?: string | null; canonicalFeeKey?: string | null; layout?: boolean } = {},
 ): boolean {
   if (amount !== 0) return false;
+  // #1092 (`TIER_COLUMN_FEES_LIVE`, DECISIONS 2026-11-04): a tier's own free cell is that tier's fee;
+  // the row's other cells are the other tiers' prices, as a comparison table's other columns are.
+  if (tierColumnFeesLive() && feeName && freeTierCell(context.documentText ?? line ?? "", feeName)) return false;
   // In a completed audience-specific elimination, the other audience's old/new
   // prices are not conditions on this consumer's $0. Exact source pairing only.
   if (scopedFeeStatements(line ?? "").some((fee) =>

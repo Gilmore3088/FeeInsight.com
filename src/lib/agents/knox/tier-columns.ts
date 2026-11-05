@@ -17,6 +17,15 @@
  * Only rows whose trailing cells number exactly the header's tiers split, and only when the table
  * holds at least three of them. Pure.
  */
+import {
+  allowanceCondition,
+  tierColumnFeesLive,
+  tierFeeName,
+  tierTableRows,
+  uniformTierCells,
+  type TierCell,
+} from "@/lib/tier-column-table";
+
 const TIER_LABEL = /^[A-Z][A-Z0-9'’&-]*\+?$/;
 const TIER_WORDS = new Set([
   "PLATINUM", "GOLD", "SILVER", "BRONZE", "COPPER", "TITANIUM", "DIAMOND", "SAPPHIRE", "EMERALD",
@@ -111,4 +120,42 @@ function isUniformTierRow(line: string, tiers: number): boolean {
   const cells = tokens.slice(-tiers);
   return tokens.length > tiers && cells.every((cell) => PRICED_CELL.test(cell) && TIER_CELL.test(cell)) &&
     new Set(cells.map(cents)).size === 1 && !TIER_CELL.test(tokens[tokens.length - tiers - 1]);
+}
+
+/** A tier cell as the per-tier line prints it, or null for a tier that does not offer the fee. */
+function cellText(cell: TierCell): string | null {
+  if (cell.kind === "price") return cell.text;
+  if (cell.kind === "free") return "Free";
+  if (cell.kind === "allowance") return `${cell.text} (${allowanceCondition(cell.free)})`;
+  return null;
+}
+
+/**
+ * Knox v185 (#1092; DECISIONS 2026-11-04), behind `TIER_COLUMN_FEES_LIVE` (off): a tier table is one
+ * fee per tier. A row whose cells differ becomes one "Name (Tier) | price" line per tier, in the
+ * header's order, the tier in title case ("Courtesy Pay (Platinum) | $20", "Stop Payment (Platinum) |
+ * Free"); a tier not offered ("N/A") gives no line. A row with the same cell in every tier is one fee:
+ * a price is left as printed, free in every tier is "Name | Free". A free allowance ("1 Free → $5") is
+ * the priced fee's condition, never a $0 fee: its line is "Name | $5 (first 1 free)", so the name loses
+ * the allowance and the excerpt keeps it.
+ */
+function perTierLines(text: string): string {
+  const rows = new Map(tierTableRows(text).map((row) => [row.lineIndex, row]));
+  return text.split("\n").flatMap((line, index) => {
+    const row = rows.get(index);
+    if (!row) return [line];
+    if (uniformTierCells(row.cells)) {
+      const cell = row.cells[0];
+      return cell.kind === "price" || cell.kind === "na" ? [line] : [`${row.name} | ${cellText(cell)}`];
+    }
+    return row.cells.flatMap((cell, column) => {
+      const value = cellText(cell);
+      return value == null ? [] : [`${tierFeeName(row.name, row.labels[column])} | ${value}`];
+    });
+  }).join("\n");
+}
+
+/** The tier table read: v185's one fee per tier while `TIER_COLUMN_FEES_LIVE` is on, else v100's split. */
+export function withTierColumnFeeRows(text: string): string {
+  return tierColumnFeesLive() ? perTierLines(text) : withTierColumnRows(text);
 }

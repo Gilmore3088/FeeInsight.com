@@ -293,11 +293,30 @@ function htmlCellListPairing(report: SwitchDryRunReport): string[] {
   ];
 }
 
+function tierColumnFees(report: SwitchDryRunReport): string[] {
+  const { rowsRead, summary } = report.tierColumnFees;
+  const lines = [
+    "## 12. TIER_COLUMN_TAKEDOWN_LIVE and TIER_COLUMN_FEES_LIVE (#1092, Knox v185, one fee per tier)",
+    "Method: every live fee of a document whose stored text has a relationship-tier header line (two tier words on one line of capitals), " +
+      "judged by Darwin's re-check function (findTierColumnFees) on that text: a live name that is a tier row's name with no tier, on a row whose " +
+      "tiers charge differently, at one tier's amount, is unscoped (the takedown switch's); a name that keeps a free allowance's words is counted, " +
+      "report only. TIER_COLUMN_FEES_LIVE changes Knox's read of the per-tier rows counted here on each document's next re-read.",
+    `READ: ${rowsRead.read} live fees on texts with a tier header${rowsRead.truncated ? ` (stopped at the cap of ${rowsRead.cap}; more may exist)` : ""}; ` +
+      `${summary.tierTexts} texts hold a tier table, with ${summary.perTierRows} rows whose tiers charge differently.`,
+    `WOULD TAKE DOWN: ${summary.wouldTakeDown} unscoped fees at ${summary.institutions} institutions (each after its 12-hour second look); ` +
+      `${summary.allowanceNames} allowance names, report only; ${summary.onTierRows} live fees carry a tier row's name.`,
+  ];
+  for (const fee of summary.samples) {
+    lines.push(`- ${fee.feePublishedId} inst ${fee.institutionId} ${fee.canonicalFeeKey ?? "?"} "${fee.feeName}" $${fee.amount} (${fee.kind}: ${fee.tiers.join(", ")}) | ${fee.line.slice(0, 120)}`);
+  }
+  return lines;
+}
+
 function accuracy(report: SwitchDryRunReport): string[] {
   const a = report.liveAccuracy;
-  if (!a.readable) return ["## 12. Live accuracy", "The fresh audit could not read the live fees: accuracy is unknown."];
+  if (!a.readable) return ["## 13. Live accuracy", "The fresh audit could not read the live fees: accuracy is unknown."];
   return [
-    "## 12. Live accuracy (stored source, not the bank's current schedule)",
+    "## 13. Live accuracy (stored source, not the bank's current schedule)",
     `Method: ${a.method}`,
     `Seed ${a.seed}; source check v${a.sourceCheckVersion}; category guard v${a.categoryGuardVersion}.`,
     `Sampled ${a.sampled}; scorable ${a.scorable}; no stored text ${a.noText}.`,
@@ -312,7 +331,7 @@ export function formatSwitchDryRuns(report: SwitchDryRunReport): string {
     `# Switch dry runs (read-only), ${report.generatedAt}`,
     "One read-only snapshot for the whole run: it holds back vacuum while it runs, so run it off-peak (or on a replica).",
     `Samples capped at ${report.options.sampleCap} per list; totals count every row read.` +
-      (report.options.institutionIds ? ` Sections 1-7, 9, 10 and 11 limited to institutions ${report.options.institutionIds.join(", ")}.` : ""),
+      (report.options.institutionIds ? ` Sections 1-7, 9, 10, 11 and 12 limited to institutions ${report.options.institutionIds.join(", ")}.` : ""),
     "",
     ...dailyCap(report),
     "",
@@ -335,6 +354,8 @@ export function formatSwitchDryRuns(report: SwitchDryRunReport): string {
     ...pdfTextDirection(report),
     "",
     ...htmlCellListPairing(report),
+    "",
+    ...tierColumnFees(report),
     "",
     ...accuracy(report),
     "",

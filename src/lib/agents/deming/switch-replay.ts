@@ -59,6 +59,11 @@ const READ_REPLAYS: Readonly<Record<string, SwitchReplay>> = {
     replays: "every stage of the shadow-case replay runs under `withFootnotedAtmHeading(on)`, the module flag the fold's ATM heading read (`ownAtmSection`) consults; the regression members replay the PR head's own checks, and the answer keys always fold with it on",
     config: (on) => ({ switches: { footnotedAtmHeading: on } }),
   },
+  TIER_COLUMN_FEES_LIVE: {
+    scope: "full on shadow cases",
+    replays: "every stage of the shadow-case replay runs under `withTierColumnFees(on)`, the module flag Knox's tier table read, the shared source check's tier-cell trace, the wire scope review, Darwin's conditional-$0 check and Hamilton's same-line check consult; the regression members replay the PR head's own checks",
+    config: (on) => ({ switches: { tierColumnFees: on } }),
+  },
   DASH_LIST_ROWS_LIVE: {
     scope: "full",
     replays: "Knox's free read (`runFreeSpecialists` `dashListRows`), its only read on the replay path",

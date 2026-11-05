@@ -1,5 +1,6 @@
 import { abbreviatesInternationalWire, wireOutsideUsWords } from "@/lib/fee-fold";
 import { wireClausePrices } from "./wire-clause-prices";
+import { tierColumnFeesLive, tierTableRows } from "@/lib/tier-column-table";
 
 export type WireDirection = "incoming" | "outgoing";
 export type WireGeography = "international" | "domestic" | "shared" | "unspecified";
@@ -172,6 +173,12 @@ function headingBefore(lines: string[], rows: ReadonlyMap<number, PhysicalRow[]>
  * Scope evidence after ordinary name/price admission; this never admits a price,
  * chooses a category or borrows a direction from a model key, URL or neighboring row.
  */
+/** True when line `lineIndex` is a tier table's row and every price it prints is the same amount (#1092). */
+function equalTierPriceRow(text: string, lineIndex: number, prices: readonly RegExpMatchArray[]): boolean {
+  const amounts = new Set(prices.map((price) => Number(price[1].replace(/,/g, ""))));
+  return amounts.size === 1 && tierTableRows(text).some((row) => row.lineIndex === lineIndex);
+}
+
 export function sourceOwnedWireScope(text: string, feeName: string, admittedAmount: number): OwnWireScope {
   if (!Number.isFinite(admittedAmount) || admittedAmount < 0) return { kind: "unresolved", reason: "missing_owner" };
   const key = labelKey(feeName), lines = text.split(/\r?\n/), rows = physicalRows(lines);
@@ -241,7 +248,10 @@ export function sourceOwnedWireScope(text: string, feeName: string, admittedAmou
       // Some existing readers name the noun printed immediately after this own price.
       if (/^per\s+wire\b/i.test(after)) aliases.push(...aliases.map(alias => `${alias} wire`));
       if (!aliases.some(alias => labelKey(alias) === key)) continue;
-      if (prices.length !== 1 || /%/.test(ownText)) { unsupported = true; continue; }
+      // #1092 (`TIER_COLUMN_FEES_LIVE`): a relationship-tier table row printing one price in every tier
+      // ("Incoming Wire Tranfer - International $10 $10 $10 $10 $10") states that one price.
+      const oneTierPrice = prices.length > 1 && tierColumnFeesLive() && equalTierPriceRow(text, lineIndex, prices);
+      if ((prices.length !== 1 && !oneTierPrice) || /%/.test(ownText)) { unsupported = true; continue; }
       if (zeroMarker && (!/^(?:(?:per wire|each|per item)[.!]?)?\s*$/i.test(after)
         || cells.slice(cellIndex + 1).some(next => next.length > 0))) { unsupported = true; continue; }
       const tailScope = INTERNATIONAL.test(after) || DOMESTIC.test(after) || INCOMING.test(after) || OUTGOING.test(after);

@@ -24,6 +24,7 @@ import { serviceMaintenanceOf, serviceMaintenanceRead } from "@/lib/service-main
 import { unscopedTierRead } from "@/lib/agents/darwin/tier-scope";
 import { foldContext } from "@/lib/fee-fold";
 import { withFootnotedAtmHeading } from "@/lib/fee-fold-atm-heading";
+import { withTierColumnFees } from "@/lib/tier-column-table";
 import { isProductPage } from "@/lib/agents/hamilton/product-page";
 import { ZERO_FEE_RAW_FLAG, ZERO_FEE_VERIFIED_FLAG } from "@/lib/agents/darwin/envelopes";
 import {
@@ -103,6 +104,12 @@ export interface SwitchOverrides {
    * (`SERVICE_MAINTENANCE_TAKEDOWN_LIVE`), so this override exists to measure what the hold changes.
    */
   serviceMaintenanceHold?: boolean;
+  /**
+   * `TIER_COLUMN_FEES_LIVE` (#1092, `@/lib/tier-column-table`): every stage runs under `withTierColumnFees`,
+   * the module flag Knox's tier table read, the shared source check's tier-cell trace and the wire scope
+   * review consult.
+   */
+  tierColumnFees?: boolean;
   /** Category guard switches: the replay's re-file of Knox's hint and Hamilton's publish guard. */
   category?: Pick<CategoryGuardOptions, "borrowedDirection" | "nonCustomerCashiersCheck" | "intlAbbreviation" | "loanPaymentNsf">;
 }
@@ -177,6 +184,13 @@ export const EXPERIMENTS: Readonly<Record<string, ExperimentConfig>> = {
       "Rosetta's PDF reader reads a page whose text is essentially all drawn a quarter turn from upright (a landscape table stored turned) with its items turned back first (`PDF_TEXT_DIRECTION_LIVE` switched on). A reader switch: the frozen-text lab cannot move, and the source replay (`source-replay.test.ts`) re-reads the answer-key documents' bytes with it on.",
     excerptAtPublish: false,
     switches: { pdfTextDirection: true },
+  },
+  "tier-column-fees": {
+    id: "tier-column-fees",
+    description:
+      "A relationship-tier table is one fee per tier (`TIER_COLUMN_FEES_LIVE` switched on, DECISIONS 2026-11-04): Knox v185 reads each tier's cell as its own fee named with its tier (\"Courtesy Pay (Platinum)\" $20, \"Stop Payment (Platinum)\" $0), a row with the same cell in every tier as one fee, and a free allowance (\"1 Free → $5\") as the $5 fee's condition; the shared source check traces a tier fee to its own cell, and the wire scope review reads a row of equal tier prices as one price.",
+    excerptAtPublish: false,
+    switches: { tierColumnFees: true },
   },
   "daily-cap-lines": {
     id: "daily-cap-lines",
@@ -363,7 +377,10 @@ function buildVariant(config: ExperimentConfig): PipelineVariant {
   const underAtm = <T>(read: () => T): T => (atmHeading == null ? underPath(read) : withFootnotedAtmHeading(atmHeading, () => underPath(read)));
   // v161's held-name vocabulary is a module flag every name read consults.
   const vocabulary = switches.heldNameVocabulary;
-  const under = <T>(read: () => T): T => (vocabulary == null ? underAtm(read) : withHeldNameVocabulary(vocabulary, () => underAtm(read)));
+  const underVocabulary = <T>(read: () => T): T => (vocabulary == null ? underAtm(read) : withHeldNameVocabulary(vocabulary, () => underAtm(read)));
+  // `TIER_COLUMN_FEES_LIVE` (#1092) is a module flag Knox's tier read, the source check and the wire scope review consult.
+  const tierColumns = switches.tierColumnFees;
+  const under = <T>(read: () => T): T => (tierColumns == null ? underVocabulary(read) : withTierColumnFees(tierColumns, () => underVocabulary(read)));
   return {
     id: config.id,
     description: config.description,
@@ -375,6 +392,7 @@ function buildVariant(config: ExperimentConfig): PipelineVariant {
     extract: (text) => under(() => readText(text, config.dailyCapLines ?? DAILY_CAP_LINES_LIVE, config.dashListRows ?? DASH_LIST_ROWS_LIVE, switches)),
     verify: (fee, text) => under(() => verifyFee(fee, text, config.dailyCapLines ?? DAILY_CAP_LINES_LIVE, switches)),
     publishGate: (fee, text, live) => under(() => gateFee(config, fee, text, live)),
+    within: under,
   };
 }
 

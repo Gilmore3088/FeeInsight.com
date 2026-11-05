@@ -446,6 +446,8 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   BANDED_ZERO_CHECK_VERSION: "First version: each verify step re-reads every live $0 overdraft, NSF and continuous overdraft fee (about 140 rows, no cursor); its switch is on (Oct 26), so matches come down after the second look; nothing older to replay.",
   // v1 (#1110, Knox v183): a live fee that is one tier of a fee priced in tiers whose name hides its tier, or whose sibling tiers are not all live.
   TIER_COMPLETENESS_CHECK_VERSION: "First version (Knox v183, owner's audit Nov 3): each verify step re-reads every live dollar fee whose stored line carries a balance, amount or count condition beside its price (no cursor, at most 6,000 rows) against a window of whole lines of its document's stored text: a fee that is one tier of a group whose name does not state its tier (unscoped) is the switch's; one whose group's other tiers are not all live under scoped names (incomplete) is counted, report only. Its switch (TIER_COMPLETENESS_TAKEDOWN_LIVE) is off, so it only reports. Dry run Nov 3 (prod, read-only, re-run after the review of #2981): 2,982 candidates, 86 in a tier group, 48 matched at 33 institutions (31 unscoped at 26 institutions, 17 incomplete), Moose Lake's live 116685 among the unscoped; nothing older to replay.",
+  // v1 (#1092, Knox v185): a live fee of a relationship-tier table named without its tier.
+  TIER_COLUMN_CHECK_VERSION: "First version (Knox v185, DECISIONS 2026-11-04, one fee per tier): each verify step re-reads every live fee of a document whose stored text has a relationship-tier header line (no cursor, at most 6,000 rows) against that text: a name that is a tier row's name with no tier, on a row whose tiers charge differently, at one tier's amount (unscoped), is the switch's; a name that keeps a free allowance's words is counted, report only. Its switch (TIER_COLUMN_TAKEDOWN_LIVE) is off, so it only reports. Dry run count pending (switch dry-run audit, section 12); nothing older to replay.",
   // v1 (#1397): a live $0 that is an item in one named account's list of benefits (Knox rules v157 holds new ones).
   ACCOUNT_BENEFIT_ZERO_CHECK_VERSION: "First version: each verify step re-reads every live $0 fee whose stored line is a free item (no cursor, 142 rows on Nov 1); its switch (DARWIN_ACCOUNT_BENEFIT_ZERO_LIVE) is off, so it only reports; nothing older to replay. v2 (Nov 3, Knox v171): also reads an item under \"This account also includes:\" and a perk an account's own cell of a comparison table prices free, and selects live $0 cell rows on texts with an account header (308 candidates on Nov 3, the same 12 matches as v1, none new); still a report while the switch is off, re-read every step, nothing to replay.",
   SERVICE_MAINTENANCE_CHECK_VERSION: "First version: each verify step re-reads every live flat monthly maintenance fee whose text prints a service's words (no cursor; not yet counted on prod); its switch (SERVICE_MAINTENANCE_TAKEDOWN_LIVE) is off, so it only reports; nothing older to replay.",
@@ -846,6 +848,10 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
     // pair by column. Slice (205 texts): 10 wrong and 9 wrong-name rows to 0, live fees lost 0, v3 score unchanged.
     // Harnesses rb..rb12 (v183 vs v184): live fees not reproduced 456 to 453. Darwin's section misread check v5
     // re-checks the new rules on live fees (switch off; Nov 3: #133756). No replay. Floor stays v97.
+    // v185 (#1092, DECISIONS 2026-11-04): a relationship-tier table is one fee per tier, named with its tier, and a free
+    // allowance is the priced fee's condition, all behind TIER_COLUMN_FEES_LIVE (off), so every read is v184's until it
+    // flips. Darwin's tier column check v1 re-checks live tier fees (switch off; count pending, audit section 12). No
+    // replay. Floor stays v97.
     {
       key: "knox.rules",
       owner: "knox",

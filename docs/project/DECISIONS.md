@@ -34,6 +34,30 @@ Intended consequences (not part of the decision):
   and the lab's R5 group) are re-keyed in the fixture. A re-key that needs a migration stops for
   James.
 
+**A tier table row with the same price in every tier is one fee.** James, 2026-11-04, through the
+session's question tool, as the session coordinator relayed it. He chose "one fee", matching #2981's
+rule: a uniform row ("Copy of Paid Check $2 $2 $2 $2 $2") is one fee, not one per tier column.
+
+Intended consequences (not part of the decision):
+- Knox v185 leaves a uniform priced row as printed and reads a row free in every tier as one free fee.
+
+**Tier fee names are title case, from the page's header.** James, 2026-11-04, through the session's
+question tool, as relayed. He chose title case from the page's header: "Courtesy Pay (Platinum)",
+"(Silver+)".
+
+Intended consequences (not part of the decision):
+- Knox v185 names a tier fee with its header label in title case (`tierTitle` in
+  `src/lib/tier-column-table.ts`).
+
+**The tier column live re-check ships off with its count pending.** James, 2026-11-04, through the
+session's question tool, as relayed. He chose that Darwin's live re-check ships behind an off switch
+with its own dry-run section, its count pending; James runs the dry run before anyone flips the
+switch.
+
+Intended consequences (not part of the decision):
+- `TIER_COLUMN_TAKEDOWN_LIVE` (off) and its section in `npm run audit:switch-dry-runs`; the PR body and
+  the finding say "count pending".
+
 ## 2026-11-03
 
 **Re-run the pipeline from fee one and reconcile every fee, instead of fixing a few fees a day.** James,

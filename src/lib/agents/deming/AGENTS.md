@@ -625,7 +625,15 @@ DATABASE_URL=<prod URL> npm run audit:switch-dry-runs -- --json > switch-dry-run
      fees on them. Stored rows keep cell text, not list markup, so it never says which rows would
      split; the change is measured on the answer-key documents' bytes (shadow-lab experiment
      `html-cell-list-pairing`) and on St. Cloud's archived page (`cell-list-proxy.test.ts`).
-  12. Live accuracy. Deming's fresh audit is re-run on today's seed (`fresh-audit.ts`). It leads
+  12. `TIER_COLUMN_TAKEDOWN_LIVE` and `TIER_COLUMN_FEES_LIVE` (#1092, Knox v185, DECISIONS 2026-11-04,
+     one fee per tier). Within the institution scope: every live fee of a document whose stored text has
+     a relationship-tier header line, Darwin's own read (`tierColumnRowsSql`), judged by its re-check's
+     function (`findTierColumnFees`): unscoped fees (a tier row's name with no tier, on a row whose tiers
+     charge differently, at one tier's amount), the takedown switch's, and allowance names, report only;
+     also the tier tables and per-tier rows the read switch changes on a re-read. Count pending: James
+     runs it before either switch flips. The read switch replays on the golden set and in the shadow
+     lab (`tier-column-fees`); the takedown does not (`switch-replay-reasons.ts`).
+  13. Live accuracy. Deming's fresh audit is re-run on today's seed (`fresh-audit.ts`). It leads
      with the daily receipt's own figure (right / scorable), then the amount-and-category-only
      share (`traceLiveFee`, `checkFeeCategory`). This is a stored-copy measure, not a check
      against the bank's current schedule.

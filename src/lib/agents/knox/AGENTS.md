@@ -2723,6 +2723,24 @@ holds. Darwin's verify refuses the same reads (`service_maintenance_heading`) an
 is live (`SERVICE_MAINTENANCE_TAKEDOWN_LIVE`, off). The shared check is unchanged. The stale-read floor stays at
 v97.
 
+v185 (#1092; DECISIONS 2026-11-04; State key 7450, Schools FCU), behind `TIER_COLUMN_FEES_LIVE` (off, in
+`src/lib/tier-column-table.ts`): a relationship-tier table (v100's header and table) is one fee per tier
+(`withTierColumnFeeRows` in `tier-columns.ts`). A row whose tiers differ is one "Name (Tier) | price" line per
+tier, the tier in title case from the header ("Courtesy Pay (Platinum) | $20", "Courtesy Pay (Gold) | $30"), a
+free cell its tier's $0 ("Stop Payment (Platinum) | Free"), a not-offered cell ("N/A") no line. A row with the
+same cell in every tier is one fee: a price left as printed, free in every tier "Name | Free". A free allowance
+cell ("1 Free → $5", "3 Free \" $5", "2 Free $1") is the priced fee's condition: "Name | $5 (first 1 free)", so
+the name loses the allowance and the excerpt keeps it, and no $0 is read for it. The same switch makes the shared
+source check trace a tier name to its own cell (`checkFeeAgainstSource`, any other tier's price refused), the wire
+scope review read a row of equal tier prices as one price (`sourceOwnedWireScope`: the incoming international
+wire's "$10 $10 $10 $10 $10"), Darwin's conditional-$0 check take a tier's free cell as its fee, and Hamilton's
+same-line check keep two tiers at one price as two fees. Off, every read is v184's (inertness test
+`tier-columns-per-tier.test.ts`). Frozen lab (`tier-column-fees` experiment): answer-key recall 973 -> 979 of
+1,302, false publication 29 / 160 unchanged; source replay 922 -> 928 of 1,216, 0 keys lost, 0 new fees
+outside the key. The two allowance $0 keys stay misses until the answer key is re-keyed (a separate migration
+PR). Darwin's `darwin.tier_column` re-check reports live unscoped tier fees (`TIER_COLUMN_TAKEDOWN_LIVE`, off;
+count pending). The stale-read floor stays at v97.
+
 v184 (built on its branch as v182; Knox slice dry run and cross-category scan, Nov 3; the live slice's 671 changed
 rows at v180 held 10 wrong fees and 9 wrong names, and 5 live fees were re-read into a wrong category, each against
 the bank's own line): every read gets a last name review (`withReviewedNames`, `read-name-review.ts`) for words
@@ -3578,7 +3596,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v3 | `knox/paid-extract.ts` |
 | `KNOX_PAID_FIND_MISS_VERSION` | — | v1 | `knox/paid-find-misses.ts` |
 | `TWO_READ_AGREEMENT_STRATEGY` | `knox.two_read_agreement` | v2 | `knox/two-read-agreement.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v184 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v185 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v13 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v2 | `knox/takedown-lessons.ts` |

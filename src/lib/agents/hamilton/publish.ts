@@ -93,6 +93,7 @@ import {
 } from "./publication-evidence";
 import { deferInternationalPublication, withInternationalPublicationWrite, type InternationalPublicationDeferral, type InternationalPublicationWrite } from "./international-publication";
 import type { LockedSourceSnapshot } from "../darwin/locked-raw-source";
+import { differentTierFees, tierColumnFeesLive, tierSiblingNames } from "@/lib/tier-column-table";
 
 type SqlTag = typeof sql;
 
@@ -1786,6 +1787,9 @@ export function linesApartOnPage(
   amount: number | string | null,
   canonicalKey?: string | null,
 ): boolean {
+  // #1092 (`TIER_COLUMN_FEES_LIVE`, DECISIONS 2026-11-04): two tiers of one tier table row are two fees,
+  // even at the same price ("Stop Payment (Gold)" and "Stop Payment (Silver)" $25).
+  if (tierColumnFeesLive() && differentTierFees(text, rowName, priorName)) return true;
   const reader = pageReader(text, amount, canonicalKey);
   if (!reader) return false;
   const { printed, places } = reader;
@@ -1933,7 +1937,9 @@ function sameValueLines(row: VerifiedFeeRow, live: PriorPublishedFeeRow[]): { ca
   const value = feeValue(row);
   const sameValue = live.filter((prior) => feeValue(prior) === value);
   return {
-    candidates: sameValue.filter((prior) => separateLines(row, prior) || qualifiedLines(row, prior)),
+    candidates: sameValue.filter((prior) => separateLines(row, prior) || qualifiedLines(row, prior) ||
+      // #1092 (`TIER_COLUMN_FEES_LIVE`): two tiers' names; `linesApartOnPage` reads the tier table.
+      (tierColumnFeesLive() && tierSiblingNames(row.fee_name, prior.fee_name))),
     balanced: sameValue.filter((prior) => balanceThreshold(prior.fee_name) != null),
   };
 }

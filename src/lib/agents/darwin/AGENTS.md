@@ -1794,6 +1794,20 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   the review): 48 of 2,982 candidates at 33 institutions (86 in a tier group): 31 unscoped at 26
   institutions, the switch's, and 17 incomplete, report only; 102393 is doubtful
   (`docs/project/findings/2026-11-03-tiered-price-conditions.md`).
+- A live fee of a relationship-tier table named without its tier (`tier-column-check.ts`, #1092;
+  DECISIONS 2026-11-04, one fee per tier). Schools FCU's (State key 7450) "Courtesy Pay $20 $30 $30 $30
+  $30" under "PLATINUM GOLD SILVER+ SILVER COLLEGE" was read by Knox v100 as "Courtesy Pay" $20: the
+  PLATINUM tier's price shown as the bank's only overdraft price. Each verify step reads every live fee
+  of a document whose stored text has a tier header line, with that text's first 60,000 characters;
+  `findTierColumnFees` decides with the shared reader (`@/lib/tier-column-table`): `unscoped` (a tier
+  row's name with no tier, on a row whose tiers charge differently, at one tier's amount), the switch's,
+  and `allowance_name` (a name keeping "1 Free →"), report only. The switch (`TIER_COLUMN_TAKEDOWN_LIVE`)
+  is off, and acts only while `TIER_COLUMN_FEES_LIVE` is on too, because a takedown adds no fee: Knox
+  v185's re-read writes the scoped tier fees. On, a match goes through the second look
+  (`darwin.tier_column`) and is archived with `tier_column_unscoped: <tiers> of N tiers`. Step detail
+  `tier_column_check`. Dry run: count pending (switch dry-run audit, section 12). Under
+  `TIER_COLUMN_FEES_LIVE` verify also takes a tier's own free cell as its fee, not a conditional $0
+  (`conditionalZero`), and the shared check traces a tier name to its own cell.
 - A $0 overdraft, NSF or continuous overdraft fee that is not the fee's price (`banded-zero-check.ts`,
   #1882). "Safety Net Overdraft | $0 if the negative balance is $5 or less. $10 if ... $35 per item**"
   went live as a credit union's only overdraft price, $0: the conditional-$0 test reads a price cell of
@@ -3101,6 +3115,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `INTERNATIONAL_DIRECTION_CHECK_VERSION` | `darwin.international_direction` | v4 | `darwin/international-direction-check.ts` |
 | `BANDED_ZERO_CHECK_VERSION` | `darwin.banded_zero` | v1 | `darwin/banded-zero-check.ts` |
 | `TIER_COMPLETENESS_CHECK_VERSION` | `darwin.tier_completeness` | v1 | `darwin/tier-completeness-check.ts` |
+| `TIER_COLUMN_CHECK_VERSION` | `darwin.tier_column` | v1 | `darwin/tier-column-check.ts` |
 | `ACCOUNT_BENEFIT_ZERO_CHECK_VERSION` | `darwin.account_benefit_zero` | v2 | `darwin/account-benefit-zero-check.ts` |
 | `ZERO_WAIVER_ROW_CHECK_VERSION` | `darwin.zero_waiver_row` | v2 | `darwin/zero-waiver-row-check.ts` |
 | `FREE_LIST_ITEM_CHECK_VERSION` | `darwin.free_list_item` | v1 | `darwin/free-list-item-check.ts` |

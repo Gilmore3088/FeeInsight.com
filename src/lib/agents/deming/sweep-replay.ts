@@ -1,7 +1,6 @@
 import { BANDED_ZERO_CATEGORIES } from "@/lib/banded-zero";
 import { BANDED_ZERO_TAKEDOWN_LIVE, findBandedZeros } from "@/lib/agents/darwin/banded-zero-check";
-import { findTierGaps, TIER_COMPLETENESS_TAKEDOWN_LIVE } from "@/lib/agents/darwin/tier-completeness-check";
-import { findRateFloors, RATE_FLOOR_TAKEDOWN_LIVE } from "@/lib/agents/darwin/rate-floor-check";
+import { findTierGaps, TIER_COMPLETENESS_TAKEDOWN_LIVE } from "@/lib/agents/darwin/tier-completeness-check";import { findRateFloors, RATE_FLOOR_TAKEDOWN_LIVE } from "@/lib/agents/darwin/rate-floor-check";
 import { findLateChargeBounds, LATE_CHARGE_BOUND_TAKEDOWN_LIVE } from "@/lib/agents/darwin/late-charge-bound-check";
 import { findNoFeeSentences, NO_FEE_SENTENCE_TAKEDOWN_LIVE } from "@/lib/agents/darwin/no-fee-sentence-check";
 import { findZeroWaiverRows, ZERO_WAIVER_ROW_TAKEDOWN_LIVE } from "@/lib/agents/darwin/zero-waiver-row-check";
