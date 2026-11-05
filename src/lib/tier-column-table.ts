@@ -37,11 +37,16 @@ export function withTierColumnFees<T>(on: boolean, read: () => T): T {
 }
 
 const TIER_LABEL = /^[A-Z][A-Z0-9'’&-]*\+?$/;
-const TIER_WORDS = new Set([
+/** Metals and gems: each names a relationship tier on its own. */
+const METAL_WORDS = new Set([
   "PLATINUM", "GOLD", "SILVER", "BRONZE", "COPPER", "TITANIUM", "DIAMOND", "SAPPHIRE", "EMERALD",
-  "RUBY", "PEARL", "ONYX", "JADE", "ELITE", "PRESTIGE", "PREFERRED", "PREMIER",
+  "RUBY", "PEARL", "ONYX", "JADE",
 ]);
+/** Rank words: a tier only beside a metal or gem ("PREFERRED PREMIER CHECKING" is three products). */
+const RANK_WORDS = new Set(["ELITE", "PRESTIGE", "PREFERRED", "PREMIER"]);
 const MIN_TIER_WORDS = 2;
+/** At most one header label may be no tier word (Schools FCU's "COLLEGE" beside four metals). */
+const MAX_OTHER_LABELS = 1;
 export const MIN_TIERS = 3;
 const MAX_TIERS = 8;
 export const MIN_TIER_ROWS = 3;
@@ -50,6 +55,8 @@ const MAX_TITLE_WORDS = 10;
 export const TIER_CELL = /^(?:\$\s?\d[\d,]*(?:\.\d{1,2})?|free|n\/a)$/i;
 const TABLE_CELL = /^(?:\$\s?\d[\d,]*(?:\.\d{1,2})?|free|n\/a|varies)$/i;
 const PRICE_TOKEN = /^\$\s?\d[\d,]*(?:\.\d{1,2})?$/;
+/** A cell token no tier fee reads, but still a cell: one before the run makes the row one cell too many. */
+const NO_PRICE_CELL = /^(?:—|–|-|varies|n\/c|nc|none|waived|included|\*)$/i;
 /** The mark a PDF prints between an allowance and its price: an arrow, or a quote the arrow became. */
 const ALLOWANCE_MARK = /^(?:→|->|➔|➜|"|”|“|»)$/;
 const MAX_ALLOWANCE = 99;
@@ -60,8 +67,13 @@ export function tierHeaderLabels(line: string): string[] | null {
   if (labels.length < MIN_TIERS || labels.length > MAX_TIERS) return null;
   if (!labels.every((label) => TIER_LABEL.test(label))) return null;
   if (new Set(labels).size !== labels.length) return null;
-  const tierWords = new Set(labels.map((label) => label.replace(/\+$/, "")).filter((label) => TIER_WORDS.has(label)));
-  return tierWords.size >= MIN_TIER_WORDS ? labels : null;
+  // Positive evidence only (review of #2993): most labels are tier words, and a rank word counts only beside a metal or gem.
+  const words = labels.map((label) => label.replace(/\+$/, ""));
+  const metals = words.some((word) => METAL_WORDS.has(word));
+  const isTier = (word: string) => METAL_WORDS.has(word) || (metals && RANK_WORDS.has(word));
+  const tierWords = new Set(words.filter(isTier));
+  const others = words.filter((word) => !isTier(word)).length;
+  return tierWords.size >= MIN_TIER_WORDS && others <= MAX_OTHER_LABELS ? labels : null;
 }
 
 /** A header label in title case, as a tier fee's name carries it: "SILVER+" is "Silver+". */
@@ -131,7 +143,7 @@ export function tierRowCells(line: string, tiers: number): { name: string; cells
   }
   if (cells.length !== tiers) return null;
   // A cell before the run would make it one cell too many: the row does not line up with the tiers.
-  if (at > 0 && TIER_CELL.test(tokens[at - 1])) return null;
+  if (at > 0 && (TIER_CELL.test(tokens[at - 1]) || NO_PRICE_CELL.test(tokens[at - 1]))) return null;
   const name = tokens.slice(0, at).join(" ");
   if (!/[a-z]{2}/i.test(name) || /[$|]/.test(name)) return null;
   return { name, cells };
@@ -183,22 +195,66 @@ export function allowanceCondition(free: number): string {
 }
 
 const labelKey = (value: string) => value.toLowerCase().replace(/[^a-z0-9+]+/g, " ").trim();
+const cellsKey = (row: TierRow) => JSON.stringify(row.cells);
+
+/**
+ * The tier rows a row name names. When two rows of the text carry the name with different cells (a
+ * fee printed in two tier tables, "Courtesy Pay" under general fees and under loan fees), the name
+ * alone does not say which row is the fee's: `ambiguous`, and no row is returned.
+ */
+export function tierRowsNamed(rows: readonly TierRow[], name: string): { row: TierRow | null; ambiguous: boolean } {
+  const key = labelKey(name);
+  const named = rows.filter((row) => labelKey(row.name) === key);
+  if (named.length === 0) return { row: null, ambiguous: false };
+  if (new Set(named.map(cellsKey)).size > 1) return { row: null, ambiguous: true };
+  return { row: named[0], ambiguous: false };
+}
+
+/** A tier fee name's base and bracket ("Courtesy Pay (Gold)" is "Courtesy Pay" and "Gold"), or null. */
+function tierNameParts(feeName: string): { base: string; tier: string } | null {
+  const match = feeName.trim().match(/^(.*\S)\s*\(([^()]+)\)$/);
+  return match ? { base: match[1], tier: labelKey(match[2]) } : null;
+}
 
 /**
  * The tier row and column a tier fee's name names: the name is a row's name with one of its table's
- * labels in brackets. Null when no tier row carries that name and label.
+ * labels in brackets. Null when no tier row carries that name and label, or when two rows carry the
+ * name with different cells (`tierFeeCellAmbiguous`).
  */
 export function tierFeeCell(rows: readonly TierRow[], feeName: string): { row: TierRow; cell: TierCell; label: string } | null {
-  const match = feeName.trim().match(/^(.*\S)\s*\(([^()]+)\)$/);
-  if (!match) return null;
-  const base = labelKey(match[1]);
-  const tier = labelKey(match[2]);
-  for (const row of rows) {
-    if (labelKey(row.name) !== base) continue;
-    const column = row.labels.findIndex((label) => labelKey(label) === tier);
-    if (column >= 0) return { row, cell: row.cells[column], label: row.labels[column] };
-  }
-  return null;
+  const parts = tierNameParts(feeName);
+  if (!parts) return null;
+  const { row } = tierRowsNamed(rows, parts.base);
+  if (!row) return null;
+  const column = row.labels.findIndex((label) => labelKey(label) === parts.tier);
+  return column >= 0 ? { row, cell: row.cells[column], label: row.labels[column] } : null;
+}
+
+/** True when the name is a tier fee's name ("Courtesy Pay (Gold)") whose row name two tier rows carry with different cells. */
+export function tierFeeCellAmbiguous(rows: readonly TierRow[], feeName: string): boolean {
+  const parts = tierNameParts(feeName);
+  if (!parts) return false;
+  const named = rows.filter((row) => labelKey(row.name) === labelKey(parts.base));
+  return new Set(named.map(cellsKey)).size > 1 && named.some((row) => row.labels.some((label) => labelKey(label) === parts.tier));
+}
+
+/**
+ * True when a stored line is the tier row's own: the row as printed, or v100's split line of it,
+ * "<row name> | <price or Free>" at a price one of its cells charges.
+ */
+export function isTierRowLine(row: TierRow, line: string | null | undefined): boolean {
+  if (!line) return false;
+  const flat = (value: string) => value.replace(/\s+/g, " ").trim();
+  if (flat(line) === flat(row.line)) return true;
+  // A cut of the row's own line from its start, through its first price ("Debit/Credit Card Replacement* 1 Free → $5").
+  if (flat(row.line).startsWith(flat(line)) && /\$\s?\d/.test(line) && labelKey(line).startsWith(labelKey(row.name))) return true;
+  const split = flat(line).match(/^(.*\S)\s*\|\s*(\$\s?\d[\d,]*(?:\.\d{1,2})?|free)$/i);
+  if (!split || labelKey(split[1]) !== labelKey(row.name)) return false;
+  const amount = /^free$/i.test(split[2]) ? 0 : Number(split[2].replace(/[$,\s]/g, ""));
+  return row.cells.some((cell) => {
+    const charged = tierCellAmount(cell);
+    return charged != null && Math.abs(charged - amount) < 0.005;
+  });
 }
 
 /** True when two names share a base and name different brackets ("Courtesy Pay (Gold)", "Courtesy Pay (Silver)"); the text decides if they are tiers. */

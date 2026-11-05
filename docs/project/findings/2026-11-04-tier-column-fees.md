@@ -34,13 +34,26 @@ such as "Courtesy Pay $20 $30 $30 $30 $30"):
 - The wire scope review reads a tier table row of equal prices as one price.
 - Darwin's conditional-$0 check takes a tier's own free cell as its fee.
 - Hamilton's same-line check keeps two tiers at one price as two fees.
-- Off, every read is v184's (`tier-columns-per-tier.test.ts` checks the off read byte for byte).
+- The header is positive evidence only (review of #2993): at most one label may be no tier word, and a rank
+  word (PREFERRED, PREMIER, ELITE, PRESTIGE) counts only beside a metal or gem, so "PREFERRED PREMIER
+  CHECKING" arms nothing. A row with a no-price cell before its tier cells ("—", "Varies", "N/C", "None")
+  is one cell too many and is not read.
+- The discontinued-account refusal (#2070) reads a tier fee's row by the row's name; business-only rows
+  never reach a tier read, because Knox drops them before the tier split.
+- Off, every Knox read is v184's (`tier-columns-per-tier.test.ts` checks the off read byte for byte). What
+  off still adds: Darwin's re-check runs its read-only SQL each verify step and writes a `darwin.tier_column`
+  event when it finds a match.
 
 **Darwin live re-check** `darwin.tier_column` (`tier-column-check.ts`, `TIER_COLUMN_TAKEDOWN_LIVE`, off):
 every live fee of a document whose stored text has a tier header line, judged on that text. A tier row's
 name with no tier, on a row whose tiers charge differently, at one tier's amount, is `unscoped` (the
 switch's; second look, then archived as `tier_column_unscoped`); a name keeping an allowance's words is
-`allowance_name`, report only. It acts only while `TIER_COLUMN_FEES_LIVE` is on too, because a takedown
+`allowance_name`, report only. A fee is judged only when Knox's stored line (the extraction note's
+excerpt) is the tier row's own: the row as printed, a cut of it from its start, or v100's split line
+"<row name> | <price>" at a price the row charges. The review of #2993 found the first cut matched by name
+and amount alone, so a business section's own "Stop Payment $25 per item" below the tier table would have
+been taken down. A name two tier rows carry with different cells is refused as ambiguous, by this check and
+by the shared source check. It acts only while `TIER_COLUMN_FEES_LIVE` is on too, because a takedown
 adds no fee: the scoped tier fees come from Knox's re-read. **Dry run: count pending.** This session had
 no database access; `npm run audit:switch-dry-runs` section 12 counts it on prod (read-only), and James
 runs it before either switch flips. Live accuracy stays the audit's last section (13).
@@ -56,6 +69,11 @@ runs it before either switch flips. Live accuracy stays the audit's last section
 | Source replay: recall | 922 / 1,216 | 928 / 1,216 |
 | Source replay: keys lost / published outside the key, added | | 0 / 0 |
 | Golden set (switch gate, `TIER_COLUMN_FEES_LIVE`) | recall 1,341 / 1,766 | 1,347 / 1,766, 0 lost |
+| Frozen lab: all expected fees (answer keys, category cases, live audit) | 1,341 / 1,756 | 1,347 / 1,756 |
+
+The two 1,341 lines are different measures: the golden set's 1,766 is its committed baseline
+(`deming/__fixtures__/golden-gate-baseline.json`, publish stage: 1,766 expected, 1,341 found), and the lab's
+1,756 is its "all expected fees" line in `report.md`.
 
 - The 6 keys gained, all state:7450, each checked by hand against the page's row and header:
   atm_non_network $0 (PLATINUM's FREE on "ATM Transaction (Non Co-Op) FREE $1 $1 $1 $1"), notary_fee $0

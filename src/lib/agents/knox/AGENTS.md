@@ -2734,7 +2734,7 @@ the name loses the allowance and the excerpt keeps it, and no $0 is read for it.
 source check trace a tier name to its own cell (`checkFeeAgainstSource`, any other tier's price refused), the wire
 scope review read a row of equal tier prices as one price (`sourceOwnedWireScope`: the incoming international
 wire's "$10 $10 $10 $10 $10"), Darwin's conditional-$0 check take a tier's free cell as its fee, and Hamilton's
-same-line check keep two tiers at one price as two fees. Off, every read is v184's (inertness test
+same-line check keep two tiers at one price as two fees. The header must be mostly tier words (a rank word counts only beside a metal or gem), and a row with a no-price cell before its tier cells is not read. Off, every Knox read is v184's (inertness test
 `tier-columns-per-tier.test.ts`). Frozen lab (`tier-column-fees` experiment): answer-key recall 973 -> 979 of
 1,302, false publication 29 / 160 unchanged; source replay 922 -> 928 of 1,216, 0 keys lost, 0 new fees
 outside the key. The two allowance $0 keys stay misses until the answer key is re-keyed (a separate migration

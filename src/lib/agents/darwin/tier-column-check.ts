@@ -2,7 +2,7 @@ import type { sql } from "@/lib/data-store/connection";
 import { invalidatePublicReadCache } from "@/lib/data-store/fee-cache";
 import { inSavepoint } from "@/lib/agents/savepoint";
 import { secondLook } from "@/lib/agents/hamilton/second-look";
-import { tierCellAmount, tierColumnFeesLive, tierFeeCell, tierTableRows, tierTitle, uniformTierCells, type TierRow } from "@/lib/tier-column-table";
+import { isTierRowLine, tierCellAmount, tierColumnFeesLive, tierFeeCell, tierRowsNamed, tierTableRows, tierTitle, uniformTierCells, type TierRow } from "@/lib/tier-column-table";
 
 type SqlTag = typeof sql;
 
@@ -41,6 +41,8 @@ export const TIER_COLUMN_TAKEDOWN_LIVE = false;
 export const TIER_COLUMN_REASON = "tier_column_unscoped";
 export const TIER_COLUMN_FLAG = "tier_column_unscoped";
 export const TIER_COLUMN_LIMIT = 6_000;
+/** The most rows any read returns, whatever limit it asks for (the dry-run audit asks for its row cap). */
+export const TIER_COLUMN_MAX_ROWS = 20_000;
 export const TIER_COLUMN_SAMPLES = 20;
 /** Characters of the stored text read from its start: a tier table and the rows under it. */
 export const TIER_COLUMN_TEXT_CHARS = 60_000;
@@ -61,6 +63,8 @@ export interface TierColumnRow {
   /** The live name, as the catalog shows it. */
   fee_name: string | null;
   amount: number | string | null;
+  /** Knox's own line (the extraction note's excerpt): only a fee read from the tier row itself is judged. */
+  excerpt: string | null;
   /** The stored text Knox read (its first `TIER_COLUMN_TEXT_CHARS`). */
   text: string | null;
 }
@@ -99,6 +103,9 @@ export interface TierColumnResult extends TierColumnFindings {
   flagged: number;
   waiting: number;
   takenDown: number[];
+  /** The read's row cap, and whether the read stopped at it (more live fees may exist past it). */
+  rowCap: number;
+  capped: boolean;
 }
 
 function num(value: number | string | null | undefined): number | null {
@@ -107,14 +114,18 @@ function num(value: number | string | null | undefined): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-const nameKey = (value: string) => value.toLowerCase().replace(/[^a-z0-9+]+/g, " ").trim();
 /** A free allowance's words left in a name: "1 Free →", "3 Free "". */
 const ALLOWANCE_WORDS = /\b\d{1,2}\s+free\b\s*(?:→|->|➔|➜|"|”|“|»)?\s*$/i;
 
-/** The tier row a live name reads, by the row's own name (the name a v100 read carries). */
-function rowOfName(rows: readonly TierRow[], feeName: string): TierRow | null {
-  const key = nameKey(feeName);
-  return rows.find((row) => nameKey(row.name) === key) ?? null;
+/**
+ * The tier row a live fee was read from: the row its name names (the name a v100 read carries), and
+ * only when Knox's stored line is that row's own (review of #2993): the page's other rows of the same
+ * name and price ("BUSINESS ACCOUNTS" / "Stop Payment $25 per item") are other fees. Null too when two
+ * tier rows carry the name with different cells.
+ */
+function rowOfName(rows: readonly TierRow[], feeName: string, excerpt: string | null): TierRow | null {
+  const { row } = tierRowsNamed(rows, feeName);
+  return row && isTierRowLine(row, excerpt) ? row : null;
 }
 
 /** Pure: the matches among the rows the read selected (see the module note). */
@@ -133,8 +144,8 @@ export function findTierColumnFees(rows: TierColumnRow[]): TierColumnFindings & 
     const tierRows = tables.get(row.text) ?? tierTableRows(row.text);
     tables.set(row.text, tierRows);
     if (tierRows.length === 0 || tierFeeCell(tierRows, name)) continue;
-    const allowance = ALLOWANCE_WORDS.test(name) ? rowOfName(tierRows, name.replace(ALLOWANCE_WORDS, "")) : null;
-    const tierRow = allowance ?? rowOfName(tierRows, name);
+    const allowance = ALLOWANCE_WORDS.test(name) ? rowOfName(tierRows, name.replace(ALLOWANCE_WORDS, ""), row.excerpt) : null;
+    const tierRow = allowance ?? rowOfName(tierRows, name, row.excerpt);
     if (!tierRow) continue;
     onTierRows++;
     const charging = tierRow.cells.flatMap((cell, column) => {
@@ -174,18 +185,24 @@ export function findTierColumnFees(rows: TierColumnRow[]): TierColumnFindings & 
   };
 }
 
+/** The most rows one read returns: the asked-for limit (default `TIER_COLUMN_LIMIT`), never above `TIER_COLUMN_MAX_ROWS`. */
+export function tierColumnRowLimit(limit?: number): number {
+  return Math.max(1, Math.min(limit ?? TIER_COLUMN_LIMIT, TIER_COLUMN_MAX_ROWS));
+}
+
 /**
  * Read-only: every live fee of a document whose stored text (the extraction note's artifact) has a tier
- * header line, with that text's first `TIER_COLUMN_TEXT_CHARS`.
+ * header line, with Knox's own line and that text's first `TIER_COLUMN_TEXT_CHARS`.
  */
 export function tierColumnRowsSql(db: SqlTag, options: { institutionId?: number; institutionIds?: number[] | null; limit?: number } = {}) {
   const institutions = options.institutionId != null ? [options.institutionId] : options.institutionIds?.length ? options.institutionIds : null;
   const scoped = institutions != null;
-  const limit = Math.max(1, Math.min(options.limit ?? TIER_COLUMN_LIMIT, 20_000));
+  const limit = tierColumnRowLimit(options.limit);
   return db<TierColumnRow[]>`
     WITH candidates AS (
       SELECT fp.fee_published_id, fp.lineage_ref AS fee_verified_id, fp.institution_id, fr.source_document_id,
              fp.canonical_fee_key, fp.fee_name, fp.amount,
+             substring(COALESCE(fr.extraction_note, fr.conditions) FROM 'excerpt="(.*)"') AS excerpt,
              (substring(COALESCE(fr.extraction_note, fr.conditions) FROM 'artifact #([0-9]+)'))::bigint AS text_id
         FROM published_fee_records fp
         JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
@@ -203,7 +220,7 @@ export function tierColumnRowsSql(db: SqlTag, options: { institutionId?: number;
          AND left(adt.normalized_text, ${TIER_COLUMN_TEXT_CHARS}::int) ~ ${TIER_HEADER_SQL_PATTERN}
     )
     SELECT c.fee_published_id, c.fee_verified_id, c.institution_id, c.source_document_id, c.canonical_fee_key,
-           c.fee_name, c.amount, t.text
+           c.fee_name, c.amount, c.excerpt, t.text
       FROM candidates c
       JOIN tier_texts t ON t.id = c.text_id
      ORDER BY c.fee_published_id
@@ -224,7 +241,7 @@ export async function recheckTierColumnFees(
   const result: TierColumnResult = {
     live, dryRun: options.dryRun, scoped: options.institutionId != null,
     checked: 0, onTierRows: 0, matched: 0, institutions: 0, byKind: { unscoped: 0, allowance_name: 0 }, reportOnly: 0, samples: [],
-    flagged: 0, waiting: 0, takenDown: [],
+    flagged: 0, waiting: 0, takenDown: [], rowCap: tierColumnRowLimit(options.limit), capped: false,
   };
 
   let rows: TierColumnRow[];
@@ -234,6 +251,8 @@ export async function recheckTierColumnFees(
     console.warn("[darwin] tier column check read failed", error instanceof Error ? error.message : error);
     return result;
   }
+  result.capped = rows.length >= result.rowCap;
+  if (result.capped) console.warn(`[darwin] tier column check read stopped at its cap of ${result.rowCap} rows; later live fees were not judged`);
   const { matches, ...findings } = findTierColumnFees(rows);
   Object.assign(result, findings);
 
@@ -359,6 +378,8 @@ export function tierColumnDetail(result: TierColumnResult) {
     flagged: result.flagged,
     waiting: result.waiting,
     taken_down: result.takenDown,
+    row_cap: result.rowCap,
+    capped: result.capped,
     samples: result.samples.map(sampleDetail),
   };
 }

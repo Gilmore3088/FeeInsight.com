@@ -54,9 +54,29 @@ describe("the tier table reader (#1092)", () => {
     ["lower case", "Platinum Gold Silver"],
     ["nine labels", "PLATINUM GOLD SILVER BRONZE A B C D E"],
     ["no tier words", "PERSONAL BUSINESS COMMERCIAL"],
+    // Review of #2993 (S2): rank words name tiers only beside a metal or gem, and most labels are tier words.
+    ["rank words with no metal", "PREFERRED PREMIER CHECKING"],
+    ["rank words alone", "ELITE PRESTIGE PREMIER"],
+    ["two products beside two metals", "GOLD SILVER CHECKING SAVINGS"],
   ])("should_not_take_%s_for_a_tier_header", (_, line) => {
     expect(tierHeaderLabels(line)).toBeNull();
   });
+
+  it("should_take_a_rank_word_beside_a_metal_and_one_other_label", () => {
+    expect(tierHeaderLabels("PREMIER GOLD SILVER")).toEqual(["PREMIER", "GOLD", "SILVER"]);
+    expect(tierHeaderLabels("PLATINUM GOLD STUDENT")).toEqual(["PLATINUM", "GOLD", "STUDENT"]);
+  });
+
+  it("should_read_no_rows_under_preferred_premier_checking", () => {
+    const text = ["PREFERRED PREMIER CHECKING", "Stop Payment $10 $20 $30", "Overdraft $25 $30 $35", "Copies $1 $2 $3"].join("\n");
+    expect(tierTableRows(text)).toEqual([]);
+  });
+
+  it.each([["an em dash", "—"], ["a hyphen", "-"], ["Varies", "Varies"], ["N/C", "N/C"], ["None", "None"]])(
+    "should_not_read_a_row_with_%s_before_its_tier_cells", (_, token) => {
+      // Review of #2993 (S3): a no-price cell is a cell too, so the row has one cell more than the tiers.
+      expect(tierRowCells(`Stop Payment ${token} $25 $30 $35`, 3)).toBeNull();
+    });
 
   it("should_title_case_each_tier", () => {
     expect(["PLATINUM", "SILVER+", "COLLEGE", "PRE-FERRED"].map(tierTitle)).toEqual(["Platinum", "Silver+", "College", "Pre-Ferred"]);
@@ -137,6 +157,25 @@ describe("the shared source check traces a tier fee to its own cell (TIER_COLUMN
     expect(check("Courtesy Pay", 20)).toEqual(checkFeeAgainstSource(SCHOOLS, "Courtesy Pay", 20, ".", null, { tierColumnFees: false }));
   });
 
+  // Review of #2993 (note 2): one name in two tier tables with different cells does not say which row is the fee's.
+  it("should_refuse_a_tier_name_two_tier_rows_carry_with_different_cells", () => {
+    const text = `${SCHOOLS}\nLOAN FEES\nCourtesy Pay $15 $15 $25 $25 $25`;
+    expect(checkFeeAgainstSource(text, "Courtesy Pay (Gold)", 30, ".", null, { tierColumnFees: true })).toEqual({ ok: false, reason: "amount_not_the_fee" });
+    expect(checkFeeAgainstSource(text, "Courtesy Pay (Gold)", 15, ".", null, { tierColumnFees: true })).toEqual({ ok: false, reason: "amount_not_the_fee" });
+    expect(differentTierFees(text, "Courtesy Pay (Gold)", "Courtesy Pay (Silver)")).toBe(false);
+  });
+
+  it("should_accept_a_name_two_tier_rows_carry_with_the_same_cells", () => {
+    const text = `${SCHOOLS}\nLOAN FEES\nCourtesy Pay $20 $30 $30 $30 $30`;
+    expect(checkFeeAgainstSource(text, "Courtesy Pay (Gold)", 30, ".", null, { tierColumnFees: true }).ok).toBe(true);
+  });
+
+  // Review of #2993 (note b): the discontinued-account refusal (#2070) reads a tier fee's row too.
+  it("should_refuse_a_tier_fee_under_a_legacy_heading", () => {
+    const text = ["Legacy Accounts", "PLATINUM GOLD SILVER", "Courtesy Pay $20 $30 $30", "Stop Payment FREE $25 $25", "Copies $1 $2 $2"].join("\n");
+    expect(checkFeeAgainstSource(text, "Courtesy Pay (Gold)", 30, ".", null, { tierColumnFees: true })).toEqual({ ok: false, reason: "discontinued_account" });
+  });
+
   it("should_leave_the_check_as_main_reads_it_with_the_switch_off", () => {
     expect(check("Courtesy Pay (Gold)", 30, false).ok).toBe(false);
     expect(checkFeeAgainstSource(SCHOOLS, "Courtesy Pay (Gold)", 30, ".")).toEqual(check("Courtesy Pay (Gold)", 30, false));
@@ -178,6 +217,14 @@ describe("Hamilton keeps two tiers at one price as two fees (TIER_COLUMN_FEES_LI
   it("should_set_two_tiers_apart_with_the_switch_on_only", () => {
     expect(withTierColumnFees(true, () => linesApartOnPage(SCHOOLS, "Stop Payment (Gold)", "Stop Payment (Silver)", 25, "stop_payment"))).toBe(true);
     expect(withTierColumnFees(false, () => linesApartOnPage(SCHOOLS, "Stop Payment (Gold)", "Stop Payment (Silver)", 25, "stop_payment"))).toBe(false);
+  });
+
+  // Review of #2993 (note b): bracket siblings that are no tier row's tiers read as main reads them, switch on.
+  it("should_judge_a_non_tier_bracket_pair_on_a_tier_page_as_main_does", () => {
+    const text = `${SCHOOLS}\nWire Transfer (Domestic) $25\nWire Transfer (International) $25`;
+    const apart = (on: boolean) => withTierColumnFees(on, () => linesApartOnPage(text, "Wire Transfer (Domestic)", "Wire Transfer (International)", 25, "wire_domestic_outgoing"));
+    expect(apart(true)).toBe(apart(false));
+    expect(differentTierFees(text, "Wire Transfer (Domestic)", "Wire Transfer (International)")).toBe(false);
   });
 
   it("should_not_set_apart_two_brackets_on_a_page_with_no_tier_table", () => {

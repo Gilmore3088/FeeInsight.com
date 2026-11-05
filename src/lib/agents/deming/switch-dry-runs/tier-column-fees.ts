@@ -1,4 +1,4 @@
-import { findTierColumnFees, type TierColumnMatch, type TierColumnRow } from "@/lib/agents/darwin/tier-column-check";
+import { findTierColumnFees, tierColumnRowLimit, type TierColumnMatch, type TierColumnRow } from "@/lib/agents/darwin/tier-column-check";
 import { tierTableRows } from "@/lib/tier-column-table";
 import { bounded, type Bounded, type SwitchAuditOptions, type SwitchAuditReader } from "./types";
 
@@ -61,7 +61,8 @@ export async function tierColumnFeesSection(reader: SwitchAuditReader, options: 
     switch: "TIER_COLUMN_TAKEDOWN_LIVE",
     readSwitch: "TIER_COLUMN_FEES_LIVE",
     issue: 1092,
-    rowsRead: bounded(rows.length, options.rowCap),
+    // The read clamps its limit (`tierColumnRowLimit`), so the cut-off is judged against what it can return (review of #2993).
+    rowsRead: bounded(rows.length, tierColumnRowLimit(options.rowCap)),
     summary: summarizeTierColumnFees(rows, options.sampleCap),
   };
 }

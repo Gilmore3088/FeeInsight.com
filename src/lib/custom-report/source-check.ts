@@ -37,7 +37,7 @@ import { stopPaymentVariantRow } from "./stop-payment-variant";
 import { rateBoundOf } from "@/lib/rate-bound";
 import { rewardCreditOf } from "@/lib/reward-credit";
 import { sourceLineTerms, type SourceLineTerms } from "./source-line-terms";
-import { tierCellAmount, tierColumnFeesLive, tierFeeCell, tierTableRows } from "@/lib/tier-column-table";
+import { tierCellAmount, tierColumnFeesLive, tierFeeCell, tierFeeCellAmbiguous, tierTableRows } from "@/lib/tier-column-table";
 const NSF_POLICY_CATEGORIES = new Set(["nsf", "overdraft"]);
 
 export type SourceCheckFailure =
@@ -1617,11 +1617,18 @@ export function checkFeeAgainstSource(
  */
 function tierColumnFeeCheck(sourceText: string | null | undefined, feeName: string, amount: number, categoryPattern: string): SourceCheckResult | null {
   if (!sourceText || !/\)\s*$/.test(feeName)) return null;
-  const found = tierFeeCell(tierTableRows(sourceText), feeName);
+  const rows = tierTableRows(sourceText);
+  // Two tier rows of the name with different cells (review of #2993): the name does not say which is the fee's.
+  if (tierFeeCellAmbiguous(rows, feeName)) return { ok: false, reason: "amount_not_the_fee" };
+  const found = tierFeeCell(rows, feeName);
   if (!found) return null;
   const charged = tierCellAmount(found.cell);
   if (charged == null || Math.abs(charged - amount) > 0.005) return { ok: false, reason: "amount_not_the_fee" };
   if (!new RegExp(categoryPattern.replace(/\\m|\\M/g, "\\b"), "i").test(found.row.line)) return { ok: false, reason: "category_not_in_text" };
+  // #2070 still holds for a tier fee: a row under a legacy heading or marked as no longer offered refuses,
+  // read by the row's own name. Business-only rows never reach a tier read: Knox drops them before the
+  // tier split (`withoutBusinessOnlyFees`).
+  if (discontinuedRow(sourceText, found.row.name, amount)) return { ok: false, reason: "discontinued_account" };
   return { ok: true, sourceLine: found.row.line.slice(0, 240) };
 }
 
