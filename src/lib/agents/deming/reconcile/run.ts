@@ -36,8 +36,19 @@ export const RECONCILE_BATCH_INSTITUTIONS: readonly number[] = FIXED_ANSWER_KEY_
 
 /** Banks a step reconciles at most, and the time after which it starts no new bank. */
 export const RECONCILE_BANKS_PER_STEP = 12;
-/** No bank starts, and no document of a bank is read, after this long; a bank cut short is read again next step. */
-export const RECONCILE_STOP_AFTER_MS = 120_000;
+/** No bank starts, and no document of a later bank is read, after this long; a bank cut short is read again next step. */
+export const RECONCILE_STOP_AFTER_MS = 25_000;
+/**
+ * The step's first bank may read documents until this long: it is recorded as failed when cut short
+ * (it alone outlasts a step), so it gets the room the step is priced for (90 s in STEP_EXPECTED_MS),
+ * less its event and the grade.
+ */
+export const RECONCILE_FIRST_BANK_DEADLINE_MS = 55_000;
+
+/** Pure: whether a bank's document reads are out of time, measured from the step's start. */
+export function bankOutOfTime(elapsedMs: number, firstOfStep: boolean): boolean {
+  return elapsedMs > (firstOfStep ? RECONCILE_FIRST_BANK_DEADLINE_MS : RECONCILE_STOP_AFTER_MS);
+}
 /** One stored text is read at most this long (characters): a few schedules run to 300k. */
 const MAX_TEXT_CHARS = 400_000;
 const READ_TIMEOUT_MS = 20_000;
@@ -176,7 +187,8 @@ export async function runReconcileStep({ db = sql, runId, stepId, dryRun, batchI
     try {
       const bankStarted = now();
       const [live, current] = await withTimeout(db, async (scope) => [await readLiveFees(scope, institutionId), await readCurrentTexts(scope, institutionId)] as const);
-      const shadow = readShadow(current, undefined, outOfTime);
+      const first = reconciled.length === 0 && failed.length === 0;
+      const shadow = readShadow(current, undefined, () => bankOutOfTime(now() - started, first));
       const result = reconcileBank({ institutionId, live, current, shadow, keys: keyByBank.get(institutionId) ?? null, ms: now() - bankStarted });
       if (!dryRun) {
         await inSavepoint(db, (scope) => scope`
