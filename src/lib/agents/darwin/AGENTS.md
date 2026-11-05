@@ -1802,10 +1802,11 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   `findTierColumnFees` decides with the shared reader (`@/lib/tier-column-table`): `unscoped` (a tier
   row's name with no tier, on a row whose tiers charge differently, at one tier's amount), the switch's,
   and `allowance_name` (a name keeping "1 Free →"), report only. A fee is judged only when Knox's stored
-  excerpt is the tier row's own line (as printed, a cut of it from its start, or v100's "<row name> |
-  <price>" split at a price the row charges), and never when two tier rows carry its name with different
-  cells (review of #2993: by name and amount alone a business section's "Stop Payment $25 per item" would
-  match). Its read clamps to 20,000 rows; the step's detail says when it stopped at its cap (`capped`,
+  excerpt is the tier row's own line (as printed; or a cut of it from its start past its first cell, or
+  v100's "<row name> | <price>" split at a price the row charges, either only when no other line of the
+  page prints it), and never when two tier rows carry its name with different cells (review and
+  re-review of #2993: a business section's "Stop Payment $25 per item", "Courtesy Pay $20" or printed
+  "Stop Payment | $25" would otherwise match). What cannot be proved is refused. Its read clamps to 20,000 rows; the step's detail says when it stopped at its cap (`capped`,
   `row_cap`). The switch (`TIER_COLUMN_TAKEDOWN_LIVE`)
   is off, and acts only while `TIER_COLUMN_FEES_LIVE` is on too, because a takedown adds no fee: Knox
   v185's re-read writes the scoped tier fees. On, a match goes through the second look

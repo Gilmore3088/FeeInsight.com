@@ -49,10 +49,15 @@ every live fee of a document whose stored text has a tier header line, judged on
 name with no tier, on a row whose tiers charge differently, at one tier's amount, is `unscoped` (the
 switch's; second look, then archived as `tier_column_unscoped`); a name keeping an allowance's words is
 `allowance_name`, report only. A fee is judged only when Knox's stored line (the extraction note's
-excerpt) is the tier row's own: the row as printed, a cut of it from its start, or v100's split line
-"<row name> | <price>" at a price the row charges. The review of #2993 found the first cut matched by name
-and amount alone, so a business section's own "Stop Payment $25 per item" below the tier table would have
-been taken down. A name two tier rows carry with different cells is refused as ambiguous, by this check and
+excerpt) is the tier row's own: the row as printed, or a cut of it from its start that reaches past its
+first cell, or v100's split line "<row name> | <price>" at a price the row charges, and a cut or split form
+only when no other line of the page prints it (v100's split lines are Knox's rewrite and never appear in
+stored text). The review of #2993 found the first cut matched by name and amount alone, so a business
+section's own "Stop Payment $25 per item" below the tier table would have been taken down; its re-review
+found a business "Courtesy Pay $20" (a prefix of the tier row) and a printed "Stop Payment | $25" still
+matched. What cannot be proved is refused: state:7450's allowance excerpts ("Debit/Credit Card
+Replacement* 1 Free → $5") stop at the first cell, so the report-only `allowance_name` kind does not count
+them; its split excerpts ("Courtesy Pay | $20", "Stop Payment | $25") still match. A name two tier rows carry with different cells is refused as ambiguous, by this check and
 by the shared source check. It acts only while `TIER_COLUMN_FEES_LIVE` is on too, because a takedown
 adds no fee: the scoped tier fees come from Knox's re-read. **Dry run: count pending.** This session had
 no database access; `npm run audit:switch-dry-runs` section 12 counts it on prod (read-only), and James

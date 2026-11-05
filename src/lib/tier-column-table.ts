@@ -242,19 +242,35 @@ export function tierFeeCellAmbiguous(rows: readonly TierRow[], feeName: string):
  * True when a stored line is the tier row's own: the row as printed, or v100's split line of it,
  * "<row name> | <price or Free>" at a price one of its cells charges.
  */
-export function isTierRowLine(row: TierRow, line: string | null | undefined): boolean {
+export function isTierRowLine(row: TierRow, line: string | null | undefined, text: string): boolean {
   if (!line) return false;
   const flat = (value: string) => value.replace(/\s+/g, " ").trim();
-  if (flat(line) === flat(row.line)) return true;
-  // A cut of the row's own line from its start, through its first price ("Debit/Credit Card Replacement* 1 Free → $5").
-  if (flat(row.line).startsWith(flat(line)) && /\$\s?\d/.test(line) && labelKey(line).startsWith(labelKey(row.name))) return true;
-  const split = flat(line).match(/^(.*\S)\s*\|\s*(\$\s?\d[\d,]*(?:\.\d{1,2})?|free)$/i);
+  const own = flat(line);
+  if (own === flat(row.line)) return true;
+  // Re-review of #2993: a cut or split form proves the row only when no other line of the page prints it
+  // (v100's split lines are Knox's rewrite, never stored text): "Courtesy Pay $20" or "Stop Payment | $25"
+  // printed in a business section is that section's own row. What cannot be proved is refused.
+  const elsewhere = text.split("\n").some((other, index) => index !== row.lineIndex && flat(other).length > 0 && flat(other).startsWith(own));
+  if (elsewhere) return false;
+  // A cut of the row's own line from its start must reach past its first cell: a cut that stops there
+  // reads the same as a one-price line of its own.
+  if (flat(row.line).startsWith(own)) return labelKey(line).startsWith(labelKey(row.name)) && cutPassesFirstCell(row, own);
+  const split = own.match(/^(.*\S)\s*\|\s*(\$\s?\d[\d,]*(?:\.\d{1,2})?|free)$/i);
   if (!split || labelKey(split[1]) !== labelKey(row.name)) return false;
   const amount = /^free$/i.test(split[2]) ? 0 : Number(split[2].replace(/[$,\s]/g, ""));
   return row.cells.some((cell) => {
     const charged = tierCellAmount(cell);
     return charged != null && Math.abs(charged - amount) < 0.005;
   });
+}
+
+/** True when a cut of the row's line has more tokens than the row's name and its first cell. */
+function cutPassesFirstCell(row: TierRow, cut: string): boolean {
+  const tokens = row.line.trim().split(/\s+/);
+  const nameTokens = row.name.trim().split(/\s+/).length;
+  const first = row.cells[0];
+  const width = first.kind !== "allowance" ? 1 : ALLOWANCE_MARK.test(tokens[nameTokens + 2] ?? "") ? 4 : 3;
+  return cut.split(/\s+/).length > nameTokens + width;
 }
 
 /** True when two names share a base and name different brackets ("Courtesy Pay (Gold)", "Courtesy Pay (Silver)"); the text decides if they are tiers. */

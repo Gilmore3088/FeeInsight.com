@@ -123,9 +123,9 @@ const ALLOWANCE_WORDS = /\b\d{1,2}\s+free\b\s*(?:→|->|➔|➜|"|”|“|»)?\s
  * name and price ("BUSINESS ACCOUNTS" / "Stop Payment $25 per item") are other fees. Null too when two
  * tier rows carry the name with different cells.
  */
-function rowOfName(rows: readonly TierRow[], feeName: string, excerpt: string | null): TierRow | null {
+function rowOfName(rows: readonly TierRow[], feeName: string, excerpt: string | null, text: string): TierRow | null {
   const { row } = tierRowsNamed(rows, feeName);
-  return row && isTierRowLine(row, excerpt) ? row : null;
+  return row && isTierRowLine(row, excerpt, text) ? row : null;
 }
 
 /** Pure: the matches among the rows the read selected (see the module note). */
@@ -144,8 +144,8 @@ export function findTierColumnFees(rows: TierColumnRow[]): TierColumnFindings & 
     const tierRows = tables.get(row.text) ?? tierTableRows(row.text);
     tables.set(row.text, tierRows);
     if (tierRows.length === 0 || tierFeeCell(tierRows, name)) continue;
-    const allowance = ALLOWANCE_WORDS.test(name) ? rowOfName(tierRows, name.replace(ALLOWANCE_WORDS, ""), row.excerpt) : null;
-    const tierRow = allowance ?? rowOfName(tierRows, name, row.excerpt);
+    const allowance = ALLOWANCE_WORDS.test(name) ? rowOfName(tierRows, name.replace(ALLOWANCE_WORDS, ""), row.excerpt, row.text) : null;
+    const tierRow = allowance ?? rowOfName(tierRows, name, row.excerpt, row.text);
     if (!tierRow) continue;
     onTierRows++;
     const charging = tierRow.cells.flatMap((cell, column) => {

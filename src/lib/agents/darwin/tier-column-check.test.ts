@@ -48,11 +48,17 @@ describe("Darwin's tier column re-check (#1092)", () => {
   });
 
   it("should_count_an_allowance_left_in_a_name_report_only", () => {
-    // v100 left an allowance row as printed: Knox's line is a cut of the row through its first price.
-    const found = findTierColumnFees([{ ...row("Debit/Credit Card Replacement 1 Free →", 5), excerpt: "Debit/Credit Card Replacement* 1 Free → $5" }]);
+    const line = "Debit/Credit Card Replacement* 1 Free → $5 1 Free → $5 1 Free → $5 1 Free → $5 1 Free → $5";
+    const found = findTierColumnFees([{ ...row("Debit/Credit Card Replacement 1 Free →", 5), excerpt: line }]);
     expect(found.matches.map((m) => m.kind)).toEqual(["allowance_name"]);
     expect(found.reportOnly).toBe(1);
     expect(found.byKind).toEqual({ unscoped: 0, allowance_name: 1 });
+  });
+
+  // State key 7450's real allowance excerpt is a cut through the first cell only: it cannot be told from a
+  // one-price line of its own, so it is refused (re-review of #2993; report-only kind, so no takedown is lost).
+  it("should_refuse_an_allowance_cut_that_stops_at_its_first_cell", () => {
+    expect(findTierColumnFees([{ ...row("Debit/Credit Card Replacement 1 Free →", 5), excerpt: "Debit/Credit Card Replacement* 1 Free → $5" }]).matches).toEqual([]);
   });
 
   it.each([
@@ -83,6 +89,40 @@ describe("Darwin's tier column re-check (#1092)", () => {
     expect(findTierColumnFees([{ ...row("Stop Payment", 25, text), excerpt: "Stop Payment FREE $25 $25 $25 $25" }]).matches).toHaveLength(1);
     // A split line at a price the row does not print is not the row's.
     expect(findTierColumnFees([{ ...row("Stop Payment", 25, text), excerpt: "Stop Payment | $40" }]).matches).toEqual([]);
+  });
+
+  // Re-review of #2993 (B1, round 2): a cut or split form is the tier row's only when no other line of the
+  // page prints it. v100's split lines are Knox's rewrite and never appear in stored text.
+  describe("a stored line another row of the page prints", () => {
+    const text = ["PLATINUM GOLD SILVER+ SILVER COLLEGE", "Stop Payment FREE $25 $25 $25 $25", "Courtesy Pay $20 $30 $30 $30 $30",
+      "Copy of Paid Check $2 $2 $2 $2 $2", "", "BUSINESS ACCOUNTS", "Courtesy Pay $20", "Stop Payment | $25", "Stop Payment $25 per item"].join("\n");
+
+    it("should_not_match_a_business_line_that_is_also_a_prefix_of_the_tier_row", () => {
+      expect(findTierColumnFees([{ ...row("Courtesy Pay", 20, text), excerpt: "Courtesy Pay $20" }]).matches).toEqual([]);
+    });
+
+    it("should_not_match_a_pipe_line_the_page_prints", () => {
+      expect(findTierColumnFees([{ ...row("Stop Payment", 25, text), excerpt: "Stop Payment | $25" }]).matches).toEqual([]);
+    });
+
+    it("should_not_match_a_cut_that_stops_at_the_row's_first_cell", () => {
+      expect(findTierColumnFees([{ ...row("Courtesy Pay", 20), excerpt: "Courtesy Pay $20" }]).matches).toEqual([]);
+    });
+
+    it("should_still_match_the_row_as_printed_and_a_cut_past_its_first_cell", () => {
+      expect(findTierColumnFees([{ ...row("Courtesy Pay", 20, text), excerpt: "Courtesy Pay $20 $30 $30 $30 $30" }]).matches).toHaveLength(1);
+      expect(findTierColumnFees([{ ...row("Courtesy Pay", 20, text), excerpt: "Courtesy Pay $20 $30" }]).matches).toHaveLength(1);
+    });
+  });
+
+  // State key 7450's own stored excerpts (the lab's current read): v100's split lines match; the allowance
+  // rows' cuts end at their first cell, so they cannot be told from a line of their own and are refused.
+  it("should_match_state_7450's_real_split_excerpts", () => {
+    const fees = [["Courtesy Pay", 20, "Courtesy Pay | $20"], ["Stop Payment", 25, "Stop Payment | $25"],
+      ["Returned Mail (Bad Address)", 5, "Returned Mail (Bad Address) | $5"], ["ATM Transaction (Non Co-Op)", 1, "ATM Transaction (Non Co-Op) | $1"]] as const;
+    const found = findTierColumnFees(fees.map(([name, amount, excerpt]) => ({ ...row(name, amount), excerpt })));
+    expect(found.matches.map((m) => [m.feeName, m.kind])).toEqual(fees.map(([name]) => [name, "unscoped"]));
+    expect(findTierColumnFees([{ ...row("Copy of Paid Check", 2), excerpt: "Copy of Paid Check $2 $2 $2 $2 $2" }]).matches).toEqual([]);
   });
 
   // Review of #2993 (note 2): two tier rows of one name with different cells leave the fee's row unknown.

@@ -141,7 +141,7 @@ const TIER_TEXT = ["PLATINUM GOLD SILVER+ SILVER COLLEGE", "GENERAL FEES", "Cour
 const tierRow = (id: number, feeName: string, amount: number, excerpt: string) => ({ fee_published_id: id, fee_verified_id: id + 1, institution_id: 4770,
   source_document_id: 3, canonical_fee_key: null, fee_name: feeName, amount, excerpt, text: TIER_TEXT });
 const TIER_COLUMN_ROWS = [tierRow(1, "Courtesy Pay", 20, "Courtesy Pay | $20"),
-  tierRow(3, "Debit/Credit Card Replacement 1 Free →", 5, "Debit/Credit Card Replacement* 1 Free → $5"), tierRow(5, "Copy of Paid Check", 2, "Copy of Paid Check $2 $2 $2 $2 $2")];
+  tierRow(3, "Debit/Credit Card Replacement 1 Free →", 5, "Debit/Credit Card Replacement* 1 Free → $5 1 Free → $5 1 Free → $5 1 Free → $5 1 Free → $5"), tierRow(5, "Copy of Paid Check", 2, "Copy of Paid Check $2 $2 $2 $2 $2")];
 
 const SERVICE_ROWS = [
       { fee_published_id: 10, fee_verified_id: 6, institution_id: 32, fee_name: "Monthly Maintenance Fee", amount: 0,
