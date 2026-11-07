@@ -735,8 +735,12 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
     // item coming back, not the member's own NSF item ("foreign" was already out).
     // v97 (#1905): a home equity loan or line, a HELOC or a line of credit (`LOAN_LINE_NAME`) is the loan's fee.
     // v101 (#1947): a collection item ("NSF Collection Item (incoming)"; `COLLECTION_NSF_NAME`) is not the member's NSF.
+    // v111 (#1026): "All Others" is a price tier's label, not other people's items ("Insufficient Funds (NSF)- All
+    // Others | $35 per presentment", America's CU 8162, beside its Flexible Checking and Business tiers), and a
+    // bracket saying the fee is charged each time an item is "presented or re-presented" prices each presentment,
+    // not a re-presentment fee ("Returned Item Fee (Each Time Item is Presented or Represented)" $32, 1552).
     exclude: new RegExp(String.raw`${FOREIGN_DEPOSIT_RETURN.source}|${LOAN_LINE_NAME.source}|${COLLECTION_NSF_NAME.source}|` +
-      /(deposit|dep[oó]sit|tarjeta de cr[eé]dito|pr[eé]stamo|\bpagos?\b|saliente|transferencia|distint[oa]|otr[oa]s? (motivo|raz[oó]n)|máxim|\bcap\b|daily max|maximum|\bpaid\b|\(\s*honou?red\s*\)|de minimis|after \d+ consecutive|\bsustained\b|\bcontinuous\b|others|re-?present|credit card|loan|transfer|cover|3rd party|third[- ]party|foreign|drawn on (an ?)?other|other inst|self[- ]to[- ]self|returned payment|payment returned|nsf payment|visa payment|re-?activation|card capture|converted|cancell?ation|returned ach origination|return ach origination|ach origination nsf|nsf ach origination|debit origination|reg d limit|\(reg d\)|sent for collection|presented multiple times|in the amount of|\bbox\b|check printing|statement cop(y|ies)|photo ?cop(y|ies)|\bcopy fee|\bcop(y|ies) of\b|written to you|re-?route|business only|payee[- ]returned|\b\d+ ?x ?\d+\b|\bmerchants?\b|\bbonds?\b|\bcoupons?\b)/.source, "i"), // v33: "03 x 10" is a worked sum; v39: a merchant presenting a member's NSF check is not the member's NSF fee
+      /(deposit|dep[oó]sit|tarjeta de cr[eé]dito|pr[eé]stamo|\bpagos?\b|saliente|transferencia|distint[oa]|otr[oa]s? (motivo|raz[oó]n)|máxim|\bcap\b|daily max|maximum|\bpaid\b|\(\s*honou?red\s*\)|de minimis|after \d+ consecutive|\bsustained\b|\bcontinuous\b|(?<![-–:|]\s*all\s+)others|(?<!\([^()|]*\bpresented(?:\s+(?:or|and)\s+|\s*\/\s*))re-?present|credit card|loan|transfer|cover|3rd party|third[- ]party|foreign|drawn on (an ?)?other|other inst|self[- ]to[- ]self|returned payment|payment returned|nsf payment|visa payment|re-?activation|card capture|converted|cancell?ation|returned ach origination|return ach origination|ach origination nsf|nsf ach origination|debit origination|reg d limit|\(reg d\)|sent for collection|presented multiple times|in the amount of|\bbox\b|check printing|statement cop(y|ies)|photo ?cop(y|ies)|\bcopy fee|\bcop(y|ies) of\b|written to you|re-?route|business only|payee[- ]returned|\b\d+ ?x ?\d+\b|\bmerchants?\b|\bbonds?\b|\bcoupons?\b)/.source, "i"), // v33: "03 x 10" is a worked sum; v39: a merchant presenting a member's NSF check is not the member's NSF fee
     // v35: "NSF Returned Item(s) Charge (NSF charge maximum of $100 per day)" $25 (First State Bank
     // of Rosemount) is the per-item fee; its note states the daily cap.
     capInNotes: {
@@ -865,8 +869,9 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
     // reissue alone is not a card replacement, but "Debit Card (replacement or PIN)" is.
     // v35: express, priority or two-day delivery of a replacement card is the rush card fee
     // ("Replacement Card - Express Mail" $40, "Debit Card Replacement Priority Delivery" $40).
+    // v111 (#1026): "Check (Debit) Card" is a check card too ("Replacement Check (Debit) Card | $10/ea", 8162).
     exclude: new RegExp(
-      `${CREDIT_CARD_ONLY.source}|(check(?!\\s?card)|statement|key|book|expedit|rush|overnight|gift|${EXPRESS_CARD}|^(?!.*\\b(cards?|tarjetas?)\\b${NOT_A_LONE_PIN}{0,20}(replace|reemplaz))(?!.*(replace|reemplaz)[^|]{0,20}\\b(cards?|tarjetas?)\\b).*\\bpins?\\b|liabilit|closed account|chequera|llave|estado de cuenta|regalo|expr[eé]s\\b|urgente)`,
+      `${CREDIT_CARD_ONLY.source}|(check(?!\\s?(?:\\(\\s*(?:debit|atm)\\s*\\)\\s*)?card)|statement|key|book|expedit|rush|overnight|gift|${EXPRESS_CARD}|^(?!.*\\b(cards?|tarjetas?)\\b${NOT_A_LONE_PIN}{0,20}(replace|reemplaz))(?!.*(replace|reemplaz)[^|]{0,20}\\b(cards?|tarjetas?)\\b).*\\bpins?\\b|liabilit|closed account|chequera|llave|estado de cuenta|regalo|expr[eé]s\\b|urgente)`,
       "i",
     ),
   },
@@ -1475,7 +1480,15 @@ export const GUARDED_CATEGORIES: readonly string[] = [...new Set([...Object.keys
 // Overdraft fee ...", raw 760358) are judged as before. Accept-only: no rule refuses more. Read-only dry run (Nov 3):
 // of 1,038 live priced names ending in a bracket with a condition, 137 lose it and 0 change verdict; see the finding
 // `docs/project/findings/2026-11-03-tiered-price-conditions.md`.
-export const CATEGORY_GUARD_VERSION = 110;
+// v111 (Nov 7, #1026; findings/2026-11-07-cohort-post-knox-losses.md): three exclusions read a word out of its
+// place. nsf's "others" no longer fires on a tier's "All Others" label, nsf's "re-present" no longer fires inside
+// a bracket that charges each item "presented or re-presented", and card_replacement's "check" no longer fires on
+// "Check (Debit) Card" / "Check (ATM) Card". Accept-only: no rule refuses more. Read-only dry run (Nov 7): 8 Knox
+// rows held category_mismatch match the new words (1 "All Others" NSF, 4 "presented or re-presented" NSF,
+// 3 "Check (Debit) Card" replacements); 7 pass under v111 and each is its document's own line at that price and
+// type (8162, 7142 x2, 1552, 3965, 2584 and 8162's NSF tier); the eighth (188352, a sentence) still fails. No
+// live fee's verdict changes, so 0 come down and 0 re-file.
+export const CATEGORY_GUARD_VERSION = 111;
 
 /** v87 (#1916): where a late charge printed in a safe deposit box section is filed. */
 export const BOX_LATE_TARGET = "safe_deposit_box";

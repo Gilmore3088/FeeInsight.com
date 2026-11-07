@@ -1299,6 +1299,19 @@ export async function loadSourceTextRecords(db: SqlTag, documentIds: number[]): 
  */
 export const DARWIN_BATCH_KEY_VERSION = 4;
 
+/** SQL (alias `twin`): a verified row that still stands, so a duplicate held behind it stays held (#1026). */
+export const DUPLICATE_TWIN_STANDS_SQL = "twin.review_status IN ('verified', 'approved')";
+/**
+ * #1026 (Nov 7): re-read an in-batch duplicate whose twin no longer stands (`darwinStandingDecisionSql`).
+ * Off: the read-only count (Nov 7) found 41 Knox rows at 38 banks on current copies with every
+ * `verify.rules` v3 decision `duplicate_in_batch` and no verified or approved fee of their category
+ * and price at the bank, 1 of them at the 62 answer-key banks (Geovista's "Inactive Account Fee" $5,
+ * right on its line). Read by eye on their own source lines, several are not fees ("-$1.00 for
+ * eStatement" is a reward, "$2 Off Service Charge" a discount), so the re-read waits for a sampled
+ * Darwin dry run of the 41 before it goes on. Off, the standing-decision SQL reads the same rows as before.
+ */
+export const DUPLICATE_TWIN_GONE_REREAD_LIVE = false;
+
 /** The source line Knox read, spacing folded; empty when the row has none. */
 function sourceLineKey(conditions: string | null): string {
   return (excerptOf(conditions) ?? "").replace(/\s+/g, " ").trim().toLowerCase();
@@ -1341,29 +1354,54 @@ export function darwinStandingDecisionSql(
   currentCopy = true,
   escheatHoldsLive: boolean = ESCHEAT_HOLD_REREAD_LIVE,
   holdRereadLive: boolean = HOLD_SOURCE_REREAD_LIVE,
+  twinGoneRereadLive: boolean = DUPLICATE_TWIN_GONE_REREAD_LIVE,
 ): string {
   const envelopes = `${sqlLiteral(JSON.stringify(CATEGORY_AMOUNT_ENVELOPES))}::jsonb`;
   // A row held as an in-batch duplicate under an older key is re-checked once when it sits
   // on the bank's current copy and nothing on that same document is verified as the same fee
   // from the same source line (v3); a row with a verified twin on its own line stays a
   // duplicate. Needs the current-copy column (source_documents.superseded_by_id).
+  // #1026 (Nov 7, behind `DUPLICATE_TWIN_GONE_REREAD_LIVE`): a duplicate is held for its twin, so when
+  // the twin is later rejected it is re-read once, at any key version, if no fee of that category and
+  // price stands (verified or approved) at the bank at all. Re-read, it meets every rule a new row
+  // does; held again, it has a standing twin, so its decision stands. Geovista's "Inactive Account
+  // Fee" $5 (raw 117266) was held behind "Vacation Club Withdrawal" $5 (117265), which Knox read on the
+  // same printed line under the same category and the guard then rejected, so the bank's dormant fee
+  // never reached Darwin's rules (findings/2026-11-07-cohort-post-knox-losses.md).
+  // With the switch on, (older key OR no standing twin) AND current copy AND (no twin on its line OR no
+  // standing twin) reads: current copy AND ((older key AND no twin on its line) OR no standing twin).
+  // Once only: a hold written with `twin_gone_rule` (every duplicate decided since this rule) is never
+  // re-read this way, so a row held again behind a twin that is later rejected cannot loop on every tick.
+  const noStandingTwin = twinGoneRereadLive ? `
+                  OR (pa.detail->>'twin_gone_rule' IS NULL AND NOT EXISTS (
+                    SELECT 1
+                      FROM verified_fee_observations twin
+                     WHERE twin.institution_id = fr.institution_id
+                       AND twin.canonical_fee_key = pa.detail->>'canonical_fee_key'
+                       AND twin.amount IS NOT DISTINCT FROM fr.amount
+                       AND ${DUPLICATE_TWIN_STANDS_SQL}
+                  ))` : "";
   const duplicateRecheck = currentCopy ? `
               AND NOT (
                 pa.detail->>'reason_code' = 'duplicate_in_batch'
-                AND COALESCE((pa.detail->>'batch_key_version')::int, 1) < ${DARWIN_BATCH_KEY_VERSION}
+                AND (
+                  COALESCE((pa.detail->>'batch_key_version')::int, 1) < ${DARWIN_BATCH_KEY_VERSION}${noStandingTwin}
+                )
                 AND EXISTS (
                   SELECT 1 FROM source_documents sd
                    WHERE sd.id = fr.source_document_id AND sd.superseded_by_id IS NULL
                 )
-                AND NOT EXISTS (
-                  SELECT 1
-                    FROM verified_fee_observations twin
-                    JOIN raw_fee_observations twin_raw ON twin_raw.fee_raw_id = twin.fee_raw_id
-                   WHERE twin_raw.source_document_id = fr.source_document_id
-                     AND twin.canonical_fee_key = pa.detail->>'canonical_fee_key'
-                     AND twin.amount IS NOT DISTINCT FROM fr.amount
-                     AND lower(regexp_replace(COALESCE(substring(COALESCE(twin_raw.extraction_note, twin_raw.conditions) from 'excerpt="?(.*?)"?$'), ''), '\\s+', ' ', 'g'))
-                         = lower(regexp_replace(COALESCE(substring(COALESCE(fr.extraction_note, fr.conditions) from 'excerpt="?(.*?)"?$'), ''), '\\s+', ' ', 'g'))
+                AND (
+                  NOT EXISTS (
+                    SELECT 1
+                      FROM verified_fee_observations twin
+                      JOIN raw_fee_observations twin_raw ON twin_raw.fee_raw_id = twin.fee_raw_id
+                     WHERE twin_raw.source_document_id = fr.source_document_id
+                       AND twin.canonical_fee_key = pa.detail->>'canonical_fee_key'
+                       AND twin.amount IS NOT DISTINCT FROM fr.amount
+                       AND lower(regexp_replace(COALESCE(substring(COALESCE(twin_raw.extraction_note, twin_raw.conditions) from 'excerpt="?(.*?)"?$'), ''), '\\s+', ' ', 'g'))
+                           = lower(regexp_replace(COALESCE(substring(COALESCE(fr.extraction_note, fr.conditions) from 'excerpt="?(.*?)"?$'), ''), '\\s+', ' ', 'g'))
+                  )${noStandingTwin}
                 )
               )` : "";
   const escheatRecheck = escheatHoldsLive ? `
@@ -2276,6 +2314,9 @@ export async function runDarwinVerify(
               // A peer hold is re-decided once when the peer check's version rises (v5, #1112).
               peer_version: DARWIN_PEER_STRATEGY.version,
               batch_key_version: DARWIN_BATCH_KEY_VERSION,
+              // #1026: a duplicate decided from now on is never re-read for a gone twin, so the
+              // `DUPLICATE_TWIN_GONE_REREAD_LIVE` re-read happens once per old hold and cannot loop.
+              twin_gone_rule: 1,
               // Darwin's audience decision (#1059), when it made one; else the raw row's stands.
               fee_audience: row.fee_audience ?? "unknown",
               audience_evidence: audience?.audienceEvidence,
