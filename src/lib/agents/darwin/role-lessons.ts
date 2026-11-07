@@ -970,4 +970,14 @@ export const DARWIN_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-11-03",
   },
+  {
+    id: "cohort-2026-11-07-the-word-in-its-place-and-the-twin-that-stands",
+    agent: "darwin",
+    stage: "verify",
+    lesson: "An exclusion word refuses a fee only where it means what the rule was written for. \"All Others\" after a price tier is that tier's label, not other people's items; \"presented or re-presented\" in a bracket says the fee is charged each presentment, not that it is a re-presentment fee; \"Check (Debit) Card\" is a check card, not a check. Test each exclusion on the bank's own line before it refuses a row Knox read right, and keep refusing the plain cases it was written for. A duplicate is held only for its twin: when the twin no longer stands and no fee of that category and price stands at the bank, read the held row again under today's rules, behind a switch until the re-read rows are sampled.",
+    why: "On the 62 answer-key banks (prod, read-only, Nov 7) Knox read right fees that never reached live: America's Credit Union's \"Insufficient Funds (NSF)- All Others\" $35 and \"Replacement Check (Debit) Card\" $10 (8162) and institution 1552's \"Returned Item Fee (Each Time Item is Presented or Represented)\" $32 were refused as category_mismatch at guard v110, and Geovista's \"Inactive Account Fee\" $5 (6109) sat as duplicate_in_batch behind \"Vacation Club Withdrawal\" $5, read on the same printed line under the same category, which the guard took down on Oct 7. Guard v111 passes 7 of the 8 held rows that match the new words, each its document's own line; the duplicate re-read reaches 41 rows at 38 banks, some not fees, so it waits behind DUPLICATE_TWIN_GONE_REREAD_LIVE (off).",
+    evidence: { issues: [1026], prs: [], files: ["src/lib/fee-category-guard.ts", "src/lib/agents/darwin/verify.ts", "src/lib/agents/darwin/cohort-post-knox-losses.test.ts", "docs/project/findings/2026-11-07-cohort-post-knox-losses.md"] },
+    appliesTo: "all",
+    since: "2026-11-07",
+  },
 ];

@@ -42,6 +42,7 @@ export const NOT_REPLAYABLE_REASONS: Readonly<Record<string, string>> = {
   DARWIN_TAKEOVER_CATEGORY_PROOF_LIVE: `proves a takeover's category against the fee it replaces; ${DATABASE("the replaced live fee")}`,
   DARWIN_WORKED_EXAMPLE_TAKEDOWN_LIVE: "not wired yet: Darwin's worked example re-check reads each live fee's stored source text before its excerpt (a database read of agent_source_texts) and takes matches down after a second look; Knox's own read of the same rule (rules v160) is not behind the switch and is already replayed by the golden set, so a switch replay could only pass vacuously",
   DATED_EDITION_TAKEOVER_LIVE: `retires a fee when a newer dated edition of its schedule is live; ${ONE_DOCUMENT}`,
+  DUPLICATE_TWIN_GONE_REREAD_LIVE: `an SQL predicate over Darwin's past duplicate_in_batch decisions and the bank's standing verified rows (\`darwinStandingDecisionSql\`); ${DATABASE("earlier verify decisions")}`,
   EDITION_CHECK_LIVE: `compares a bank's schedule editions by effective date; ${ONE_DOCUMENT}`,
   EDITION_LATE_HEADING_LIVE: `reads a late edition heading only to order a bank's editions (\`judgeEditions\`); ${ONE_DOCUMENT}`,
   ESCHEAT_HOLD_REREAD_LIVE: "an SQL predicate over Knox's held rows (`escheatProcessingNameSql`); the replay has no held queue to re-read",

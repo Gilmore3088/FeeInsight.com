@@ -503,6 +503,13 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   once more. The hold list (`DARWIN_CATEGORY_HOLDS`) is empty. Its one entry, "Bond return items"
   $35 filed `nsf` (raw 246460, 2026-10-09), left when guard v58 learned that a returned bond or
   coupon filed as NSF is a returned deposited item.
+- A `duplicate_in_batch` hold is held for its twin. With `DUPLICATE_TWIN_GONE_REREAD_LIVE` on (#1026,
+  Nov 7; off), a hold on the bank's current copy is read once more when no verified or approved fee of
+  its category and price stands at the bank (`DUPLICATE_TWIN_STANDS_SQL`): Geovista's "Inactive Account
+  Fee" $5 (raw 117266) waited behind "Vacation Club Withdrawal" $5, read on the same printed line under
+  the same category, which the guard took down on Oct 7. Re-read, it meets every rule a new row does.
+  The read-only count (Nov 7) is 41 rows at 38 banks; by eye on their own lines several are not fees,
+  so the switch waits for a sampled dry run (`docs/project/findings/2026-11-07-cohort-post-knox-losses.md`).
 - A Knox category change is a reason to judge a row again (#1295, `category-change.ts`): new
   category, new decision. A row qualifies only when Knox marked it as re-read (`knox_reread_took_over`,
   `knox_stale_hint_repaired`, or `knox_refiled_from:<old>` from #1291), it waits for Darwin
@@ -2640,7 +2647,13 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
 - Guard v35 (2026-10-08) accepts a per-item overdraft or NSF fee whose note states the daily cap: a dollar cap above the row's own price ("NSF Returned Item(s) Charge (NSF charge maximum of $100 per day)" $25, First State Bank of Rosemount), and a cap note that names the returned items sharing it ("Overdraft Fee ... (Consumer Accts: 5 max total OD or Returned Item fees daily)", BankIowa).
 - Guard v36 (2026-10-08) changes no rule: PRs 665 and 668 both shipped v35, so rows rejected between their deploys are re-checked under both.
 - Guard v42 (2026-10-08; v40 and v41 are Accuracy's, PR 682) files an NSF item marked paid after a dash or in brackets ("NSF Fee Charge - Paid (per item)", "Nonsufficient Funds Fee-Paid", "Insufficient Funds Charge (Check Paid, Per Item)") as the overdraft fee and re-files it there from NSF; "per non-paid item", "Paid from other ... account" and "We will not assess ..." stay out. "Overdraft Privilege Standard or Extended Coverage" names the program, not an extended overdraft fee.
-- The guard is at v110 (`CATEGORY_GUARD_VERSION` in `src/lib/fee-category-guard.ts`). v110 (Nov 3, with
+- The guard is at v111 (`CATEGORY_GUARD_VERSION` in `src/lib/fee-category-guard.ts`). v111 (Nov 7, #1026):
+  three exclusions no longer fire on a word out of its place: nsf's "others" on a tier's "All Others" label
+  ("Insufficient Funds (NSF)- All Others | $35 per presentment"), nsf's "re-present" inside a bracket that
+  charges each item "presented or re-presented", and card_replacement's "check" on "Check (Debit) Card".
+  Accept-only: on the read-only dry run 8 held Knox rows match the new words, 7 pass and each is its
+  document's own line at that price and type, and no live fee's verdict changes
+  (`docs/project/findings/2026-11-07-cohort-post-knox-losses.md`). v110 (Nov 3, with
   Knox v183, #1110): a priced fee whose name ends in its own tier bracket, one balance, amount or count
   condition after nothing but the threshold's own noun ("(overdraft balance $30.00 or less)", "(4+ items)"),
   is judged without that bracket
