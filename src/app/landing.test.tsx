@@ -459,7 +459,7 @@ describe("one question section", () => {
     // Financial performance: deposit service charges for the latest quarter.
     expect(card("financial")).toContain("$1.8M Deposit service charges · Q2 2026");
     // Competitive position: the bank's fee against the local median (the fixture's wire: $25 against $25).
-    expect(card("competitive")).toContain("$25 vs. $25 Our wire fee vs. local median");
+    expect(card("competitive")).toContain("$25 vs. $25 Wire fee vs. local median");
     // Market conditions: its share of bank deposits in its counties.
     expect(card("market")).toContain("21.0% Local bank deposit share");
     // Regulatory context: the word Evidence, one small Capability tag, no records.
@@ -479,7 +479,7 @@ describe("one question section", () => {
     line.comparable = false;
     const v = buildOneQuestionView({ report: thin, revenue, peers, branches })!;
     const fig = cardFigure("competitive", v, v.fee);
-    expect(fig.caption).toBe("Our wire fee vs. banks our size");
+    expect(fig.caption).toBe("Wire fee vs. banks its size");
     expect(renderToStaticMarkup(<>{fig.metric}</>).replace(/<[^>]+>/g, "")).toBe("$25 vs. $20");
   });
 
@@ -507,8 +507,8 @@ describe("one question section", () => {
   it("previews each output in a sentence or two, with the fuller output behind Show detail", () => {
     const html = full();
     const words = text(html);
-    expect(words).toContain("How do we compare? Our outgoing domestic wire fee is $25, compared with a $25 local median and a $20 asset-size peer median.");
-    expect(words).toContain("What stands out? Our overdraft fee is $37 against a $34.50 local median; 8 of 8 local competitors that publish it charge less.");
+    expect(words).toContain("How do we compare? Capital City Bank’s outgoing domestic wire fee is $25, compared with a $25 local median and a $20 asset-size peer median.");
+    expect(words).toContain("What stands out? Capital City Bank’s overdraft fee is $37 against a $34.50 local median; 8 of 8 local competitors that publish it charge less.");
     expect(words).toContain("Capital City Bank charges $8 for its monthly maintenance fee, against an $8 local median.");
     expect(words).not.toMatch(/\(per item\)|&#x27;/);
     expect([a("$8"), a("$18"), a("$11,000"), a("$25"), a("$80.50"), a("$1.8 million"), a("$180")]).toEqual(["an $8", "an $18", "an $11,000", "a $25", "an $80.50", "a $1.8 million", "a $180"]);
@@ -632,7 +632,7 @@ describe("one question section", () => {
     // The next question fades in; the competitive card now shows its fee; its output opens after its evidence.
     act(() => vi.advanceTimersByTime(ASK_MS));
     expect(questionNow()).toBe(`“${asks[1].question}”`);
-    expect(document.querySelector('[data-evidence="competitive"] [data-evidence-caption]')!.textContent).toContain("Our overdraft fee vs. local median");
+    expect(document.querySelector('[data-evidence="competitive"] [data-evidence-caption]')!.textContent).toContain("Overdraft fee vs. local median");
     expect(tabNow()).toBe("benchmark");
     act(() => vi.advanceTimersByTime(LEAD_MS + STEP_MS * asks[1].evidence.length + 1));
     expect(tabNow()).toBe("investigate");
@@ -740,7 +740,7 @@ describe("one question section", () => {
     // The competitive card holds each fee's figure in one cell; one is shown.
     const card = html.slice(html.indexOf('data-evidence="competitive"'), html.indexOf('data-evidence="market"'));
     expect(card.match(/data-evidence-caption=""/g)).toHaveLength(1);
-    expect(text(card)).toContain("Our overdraft fee vs. local median");
+    expect(text(card)).toContain("Overdraft fee vs. local median");
   });
 
   it("announces a question politely only after a visitor picks one", () => {
