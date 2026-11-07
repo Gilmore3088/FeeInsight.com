@@ -409,6 +409,10 @@ Rosetta owns source text normalization.
     most `PAID_PASS_ITEMS_PER_RUN`), and stores the transcription as a normal completed
     text (fee-page check included). A budget cap or the automation stop ends the step
     with `budgetStopped`; nothing is recorded for documents not sent.
+    Paid request boundary v3 keeps the transcription task and explicit untrusted-source policy
+    in system instructions; the user message carries only the unchanged PDF document block.
+    Commands, fake role labels and tool requests printed in the PDF remain literal source text.
+    This prospective prompt change reopens no settled paid attempt and authorizes no provider work.
     Pass 3 also takes text PDFs whose fees did not hold up after free OCR had the same
     bytes (below); their transcription replaces the stored text only when it lists at
     least as many fees with an amount, otherwise the attempt is `low_yield` and the
@@ -569,7 +573,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `ROSETTA_OCR_VERSION` | — | v3 | `rosetta/reader-versions.ts` |
 | `HTML_READ_VERSION` | `read.html_dom`, `read.js_fallback` reader replay (`detail.html_read`); +1 for each of `HTML_ROW_PAIRING_LIVE`, `HTML_CELL_LIST_PAIRING_LIVE` on | v1 | `rosetta/reader-versions.ts` |
 | `PDF_READ_VERSION` | `read.pdf_layout` reader replay (`detail.pdf_read`); v2 with `PDF_TEXT_DIRECTION_LIVE` | v1 | `rosetta/reader-versions.ts` |
-| `ROSETTA_PAID_READ_VERSION` | — | v2 | `rosetta/paid-read.ts` |
+| `ROSETTA_PAID_READ_VERSION` | — | v3 | `rosetta/paid-read.ts` |
 | `PDF_LAYOUT_VERSION` | — | v6 | `rosetta/reader-versions.ts` |
 | `PDF_LAYOUT_REPLAY_VERSION` | `read.pdf_layout` reader replay | v6 | `rosetta/reader-versions.ts` |
 | `PDF_PROSE_REREAD_VERSION` | — | v4 | `rosetta/reader-versions.ts` |

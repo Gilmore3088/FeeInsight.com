@@ -49,7 +49,7 @@ export interface FixtureInstitution {
 }
 
 export const HOME: FixtureInstitution = {
-  id: 9_701_001, name: "Space Coast Test Credit Union", charter: "credit_union", city: "Melbourne", state: "FL", assetsThousands: 9_000_000,
+  id: 9_701_001, name: "Lakeshore Test Credit Union", charter: "credit_union", city: "Melbourne", state: "FL", assetsThousands: 9_000_000,
 };
 
 /** Twelve credit unions within half to double the home's assets: the "ten similarly sized" pool. */

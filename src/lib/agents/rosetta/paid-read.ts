@@ -7,6 +7,7 @@ import { documentVaultSchemaReady, getDocumentVault, type DocumentVault } from "
 import { FEE_PAGE_CHECK_VERSION, scoreFeePage } from "@/lib/agents/learning/fee-page";
 import { learningSchemaReady, recordAttempt } from "@/lib/agents/learning/attempts";
 import { lessonsForModel } from "@/lib/agents/learning/lesson-reader";
+import { SOURCE_DATA_BOUNDARY_INSTRUCTIONS } from "@/lib/agents/source-data-boundary";
 import { feedbackSchemaReady } from "@/lib/agents/learning/feedback";
 import { detectFormat } from "@/lib/agents/learning/format";
 import { classifyFetchFailure, type AttemptOutcome } from "@/lib/agents/learning/outcomes";
@@ -66,7 +67,7 @@ type SqlTag = typeof sql;
  */
 
 export const PAID_READ_STRATEGY = "read.paid_transcribe";
-export const ROSETTA_PAID_READ_VERSION = 2;
+export const ROSETTA_PAID_READ_VERSION = 3;
 /** The Messages API reads PDFs up to 100 pages. */
 export const PAID_READ_MAX_PAGES = 100;
 const PAID_READ_MAX_TOKENS = 16_000;
@@ -382,7 +383,10 @@ export async function runRosettaPaidRead(options: RosettaPaidReadOptions): Promi
         params: {
           model,
           max_tokens: PAID_READ_MAX_TOKENS,
-          ...(roleLessons.system ? { system: roleLessons.system } : {}),
+          system: [
+            { type: "text", text: `${SOURCE_DATA_BOUNDARY_INSTRUCTIONS}\n\n${PAID_READ_PROMPT}` },
+            ...(roleLessons.system ? [{ type: "text" as const, text: roleLessons.system }] : []),
+          ],
           messages: [
             {
               role: "user",
@@ -391,7 +395,6 @@ export async function runRosettaPaidRead(options: RosettaPaidReadOptions): Promi
                   type: "document",
                   source: { type: "base64", media_type: "application/pdf", data: Buffer.from(loaded.bytes).toString("base64") },
                 },
-                { type: "text", text: PAID_READ_PROMPT },
               ],
             },
           ],

@@ -21,6 +21,15 @@ export async function signIn(page: Page, email: string, next = "/pro/analyze"): 
   await page.getByLabel(/^password/i).first().fill(FIXTURE_PASSWORD);
   await page.getByRole("button", { name: /sign in|log in/i }).click();
   await page.waitForURL((url) => !url.pathname.startsWith("/login"), { timeout: 120_000 });
+  // URL change can precede the login Server Action's final RSC chunks.
+  await page.waitForLoadState("networkidle");
+}
+
+/** Scripted full navigation must not cancel an unfinished action on the page it leaves. */
+export async function navigate(page: Page, url: string): Promise<void> {
+  await page.waitForLoadState("networkidle");
+  await page.goto(url);
+  await page.waitForLoadState("networkidle");
 }
 
 /** Types a question into the one Ask box and sends it. */

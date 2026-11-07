@@ -45,6 +45,8 @@ describe.skipIf(!connection)("vault retention in isolated PostgreSQL", () => {
       throw new Error("Vault retention tests require a loopback E2E database; production connections are forbidden");
     }
     db = postgres(connection, { max: 1, ssl: "require", types: { numeric: NUMERIC_AS_NUMBER, json: JSON_TEXT_PASSTHROUGH, text: TEXT_WITHOUT_NUL } });
+    // Optional lineage tables must not fall through to other suites' public fixture rows.
+    await db`SET search_path TO pg_temp`;
     await db`CREATE TEMP TABLE source_documents (id bigint PRIMARY KEY, institution_id bigint, status text, content_hash text,
       document_url text, document_r2_key text, content_type text, byte_size bigint, fees_extracted integer NOT NULL DEFAULT 0, duplicate_of_id bigint,
       crawled_at timestamptz NOT NULL, last_checked_at timestamptz)`;

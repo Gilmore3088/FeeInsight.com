@@ -124,7 +124,7 @@ export function validateSkillManifest(json: unknown): string[] {
   if (Array.isArray(m.evaluation_suite)) {
     m.evaluation_suite.forEach((item, index) => {
       if (!relativePath(item)) problems.push(`evaluation_suite[${index}] must be a repo-relative path`);
-      else if (!/\.test\.tsx?$/.test(item as string)) problems.push(`evaluation_suite[${index}] must be a test file`);
+      else if (!/\.test\.tsx?$/.test(item as string) && !/^tests\/e2e\/[^\s]+\.pw\.ts$/.test(item as string)) problems.push(`evaluation_suite[${index}] must be a test file`);
     });
   }
 

@@ -3485,6 +3485,9 @@ only on what the free team could not read.
   budget, stop or circuit error ends the pass before the call and writes no attempt, so the text
   stays eligible; any other call error records its outcome. Each attempt records its cost.
 
+  Request boundary (v4, #1048): the cached system prefix explicitly treats source commands,
+  fake role labels and tool requests as untrusted evidence. Source text is unchanged user data;
+  provider access, grounded-row checks and selection stay the same, and no settled text is replayed.
   Lessons (v3, #2068): every paid read carries the lessons the free read learns from, scoped to
   its document. The fixed instructions and fee list are the first system block, marked for the
   prompt cache. That block is about 3,400 characters, roughly 860 tokens: over the default model's
@@ -3610,7 +3613,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `ANCILLARY_OWNER_CORRECT_STRATEGY` | `knox.ancillary_owner_correct` | v2 | `knox/ancillary-owner-correct.ts` |
 | `LINEUP_CORRECT_STRATEGY` | `knox.lineup_correct` | v2 | `knox/lineup-correct.ts` |
 | `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v28 | `knox/name-retidy.ts` |
-| `KNOX_PAID_STRATEGY` | `extract.paid` | v3 | `knox/paid-extract.ts` |
+| `KNOX_PAID_STRATEGY` | `extract.paid` | v4 | `knox/paid-extract.ts` |
 | `KNOX_PAID_FIND_MISS_VERSION` | — | v1 | `knox/paid-find-misses.ts` |
 | `KNOX_SECOND_READER_STRATEGY` | `extract.second_reader` | v1 | `knox/second-reader.ts` |
 | `NEVER_READ_LESSONS_VERSION` | — | v1 | `knox/never-read-lessons.ts` |

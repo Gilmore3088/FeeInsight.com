@@ -188,17 +188,21 @@ describe("Knox paid extraction (pass 3)", () => {
     expect(request.system[0].text).toContain("wire_domestic_outgoing (Wire Transfer (Domestic Out))");
     expect(request.system[0].cache_control).toEqual({ type: "ephemeral" });
     expect(prompt).not.toContain("Canonical keys:");
-    // The lessons written for the paid step always ride, at most ten in all.
+    // Paid-step lessons have priority within the bounded ten-lesson request.
     const own = lessonsFor("knox", "extract-paid").filter((lesson) => lesson.appliesTo !== "all").map((lesson) => lesson.id);
     expect(own.length).toBeGreaterThan(0);
     const lessons = request.system[1].text;
     expect(lessons).toContain("LESSONS FOR YOUR ROLE");
-    for (const id of own) expect(lessons).toContain(`[${id}]`);
+    const sentOwn = own.filter((id) => lessons.includes(`[${id}]`));
+    expect(sentOwn).toHaveLength(Math.min(own.length, 10));
+    const sentIds = [...lessons.matchAll(/^- \[([^\]]+)\]/gm)].map((match) => match[1]);
     expect(lessons.split("\n").filter((line) => line.startsWith("- [")).length).toBeLessThanOrEqual(10);
     expect(trackAnthropicRequest).toHaveBeenCalledWith(
-      expect.objectContaining({ metadata: expect.objectContaining({ lessons_applied: expect.arrayContaining(own), category_lessons_sent: [] }) }),
+      expect.objectContaining({ metadata: expect.objectContaining({ lessons_applied: expect.arrayContaining(sentOwn), category_lessons_sent: [] }) }),
       expect.any(Function),
     );
+    const usageContext = trackAnthropicRequest.mock.calls[0][0] as { metadata: { lessons_applied: string[] } };
+    expect([...usageContext.metadata.lessons_applied].sort()).toEqual([...sentIds].sort());
     expect(result.lessonsSent).toMatchObject({ reads: 1, readsWithCategoryLessons: 0 });
 
     expect(result).toMatchObject({ selected: 1, processed: 1, succeeded: 1, failed: 0, budgetStopped: false });
@@ -357,7 +361,10 @@ describe("Knox paid extraction (pass 3)", () => {
     expect(paidReadLessons(text, 52, new Map()).categoryLessons).toEqual([]);
     // A text about nothing in particular carries only the lessons written for the paid step.
     const own = lessonsFor("knox", "extract-paid").filter((lesson) => lesson.appliesTo !== "all").map((lesson) => lesson.id);
-    expect(paidReadLessons("Zzz $1.00", 52, new Map()).roleLessonIds.sort()).toEqual([...own].sort());
+    const scoped = paidReadLessons("Zzz $1.00", 52, new Map());
+    expect(scoped.roleLessonIds).toHaveLength(Math.min(own.length, 10));
+    expect(scoped.roleLessonIds.every((id) => own.includes(id))).toBe(true);
+    expect(scoped.roleLessonsCappedOut).toBe(own.length - scoped.roleLessonIds.length);
   });
 
   it("records evidence_mismatch when the model returns only ungrounded rows", async () => {

@@ -60,7 +60,7 @@ reads the same stored text without seeing Knox's output and lists every fee with
   is left and at least one left text's worst case fits under the cap (`fitsUnderCap`, the step's own
   test). The cohort's 15 texts take three runs.
 
-**Dry-run cost estimate** (no provider call made;
+**Original dry-run cost estimate** (no provider call made;
 `/mnt/project-files/data-quality/blind-second-reader-2026-11-07/cost-estimate.json`):
 - Texts: 15 current texts on the 8 banks, 101,750 characters, none over the 60,000-character cut.
 - Model: `claude-sonnet-5-5` (the paid extract default), priced $2 / $10 per million input / output
@@ -69,6 +69,15 @@ reads the same stored text without seeing Knox's output and lists every fee with
   2,269 + 0.3254 per document character (r2 0.936); output mean 1,106, p95 2,756, cap 8,000.
 - Expected $0.27 (49,910 input, 16,590 output tokens); p95 output $0.51; worst case $1.30 (3
   characters a token, all 8,000 output tokens on all 15 calls). No cache discount counted. Cap $1.50.
+
+**Prospective estimate after the source-data instruction boundary:** fixed instructions grow from
+3,427 to 4,059 characters, adding 9,480 request characters across the same 15 texts. Reusing the
+historical token-rate and output scenarios gives 52,995 input tokens, expected $0.271890 and p95
+$0.519390 (each $0.006170 higher). The aggregate worst case is $1.308574, $0.006320 higher; the
+admission guard's sum of independently rounded per-request ceilings is $1.308582, leaving $0.191418
+under the unchanged $1.50 cap. These are recalculated projections with no cache discount, not new
+observed token usage, a new calibration or a provider bill. The original observations above remain
+historical evidence for the earlier instructions.
 
 **Guard:** `src/lib/agents/knox/second-reader.test.ts` (blind request, trace
 drops, diff, switch off makes no call and no read, scoping, cap, lesson rows and drafts, the cost

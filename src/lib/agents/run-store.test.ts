@@ -424,6 +424,44 @@ describe("agentic run store", () => {
     });
   });
 
+  it("binds successful step execution to server deployment identity before work, ignoring run input", async () => {
+    const previousSha = process.env.VERCEL_GIT_COMMIT_SHA;
+    const previousEnv = process.env.VERCEL_ENV;
+    process.env.VERCEL_GIT_COMMIT_SHA = "a".repeat(40);
+    process.env.VERCEL_ENV = "production";
+    try {
+      getExecutionBackendMock.mockReturnValue("agentic_v1");
+      const steps = queuedStepRows.slice(0, 1);
+      const run = { ...runRow, progress_total: 1, params_json: { deployment_sha: "b".repeat(40), environment: "preview" } };
+      installSqlMocks({ finalRun: run, finalSteps: steps }); installTxMocks(steps, run);
+      runMagellanDiscoveryMock.mockImplementation(async () => {
+        expect(txMock.mock.calls.some((call) => templateText(call[0]).includes("'step.execution'"))).toBe(true);
+        return { selected: 0, attempted: 0, discovered: 0, inserted: 0, failed: 0, dryRun: true, results: [] };
+      });
+      await executeAgentRun(101, { maxSteps: 1 });
+      const receipt = txMock.mock.calls.find((call) => templateText(call[0]).includes("'step.execution'"));
+      expect(receipt).toBeDefined();
+      expect(JSON.parse(String(receipt!.at(-1)))).toEqual({ protocol: 1, deployment_sha: "a".repeat(40), environment: "production" });
+      expect(receipt!.slice(1, 3)).toEqual([101, steps[0].id]);
+    } finally {
+      if (previousSha === undefined) delete process.env.VERCEL_GIT_COMMIT_SHA; else process.env.VERCEL_GIT_COMMIT_SHA = previousSha;
+      if (previousEnv === undefined) delete process.env.VERCEL_ENV; else process.env.VERCEL_ENV = previousEnv;
+    }
+  });
+
+  it("does not invent execution identity outside a valid Vercel deployment", async () => {
+    const previous = process.env.VERCEL_GIT_COMMIT_SHA;
+    process.env.VERCEL_GIT_COMMIT_SHA = "local-build";
+    try {
+      getExecutionBackendMock.mockReturnValue("agentic_v1");
+      installSqlMocks(); installTxMocks();
+      await executeAgentRun(101, { maxSteps: 1 });
+      expect(txMock.mock.calls.some((call) => templateText(call[0]).includes("'step.execution'"))).toBe(false);
+    } finally {
+      if (previous === undefined) delete process.env.VERCEL_GIT_COMMIT_SHA; else process.env.VERCEL_GIT_COMMIT_SHA = previous;
+    }
+  });
+
   it.each([
     { label: "mixed", processed: 2, succeeded: 1, failed: 1, costMicrousd: 220, unknownCostResponses: 1, budgetStopped: false },
     { label: "all unknown", processed: 1, succeeded: 1, failed: 0, costMicrousd: 0, unknownCostResponses: 1, budgetStopped: false },

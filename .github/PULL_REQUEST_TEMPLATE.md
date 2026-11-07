@@ -19,6 +19,11 @@ reports the rest (#2058). Other PRs write "none".
 ## Verification
 - Commands run and their results (`npm run guard:legacy`, tests, typecheck, lint).
 - What was not tested.
+- Frozen engineering contract: `<!-- engineering-contract: ISSUE_NUMBER -->` and contract hash.
+- Actual changed-path risk, independent test designer, source authority and requirement coverage.
+- Baseline assertion failure and exact-head GREEN: authenticated workflow/artifact links, or explicit BLOCKED.
+- Exact-head reviewer and finding dispositions; owner sign-off is recorded separately.
+- Deployment, Deming, Atlas and Bayes receipts, or PRODUCTION_UNVERIFIED with next safe action.
 
 ## Data, SQL and spend
 - [ ] None, or: what SQL or production data changes, whether it waits for James, and any effect

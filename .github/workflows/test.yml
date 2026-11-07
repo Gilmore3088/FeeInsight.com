@@ -17,16 +17,21 @@ on:
   pull_request:
   push:
     branches: [main]
-    paths-ignore:
-      - "**/*.md"
-      - "docs/**"
   workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+  actions: read
 
 concurrency:
   group: tests-${{ github.event.pull_request.number || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
+  # Migration catch-up must start from a fresh snapshot, before shared DB suites add fixture rows.
+  FIXTURE_SCHEMA_TEST: tests/e2e/hamilton/schema-catch-up.test.ts
+
   # Prospective paid/returned proof uses native constraints; keep it outside unit shards.
   PAID_RETURNED_EVENT_TEST: src/lib/agents/knox/paid-returned-events.db.test.ts
 
@@ -53,13 +58,37 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Does this change anything but Markdown and docs/?
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: "22"
+      - name: Classify changed paths with the trusted base policy
         id: diff
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          DIFF_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          DIFF_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
-          if [ "${{ github.event_name }}" != pull_request ]; then echo "code=true" >> "$GITHUB_OUTPUT"; exit 0; fi
-          changed=$(git diff --name-only "${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }}" | grep -v -E '\.md$|^docs/' || true)
-          if [ -n "$changed" ]; then echo "code=true" >> "$GITHUB_OUTPUT"; else echo "code=false" >> "$GITHUB_OUTPUT"; fi
-          echo "Changed outside Markdown and docs/:"; echo "${changed:-(nothing)}"
+          node --input-type=module <<'NODE'
+          import {execFileSync,spawnSync} from 'node:child_process';
+          import {appendFileSync,writeFileSync} from 'node:fs';
+          import {join} from 'node:path';
+          import {pathToFileURL} from 'node:url';
+          let code=true;
+          const {DIFF_BASE:base,DIFF_HEAD:head,EVENT_NAME:event}=process.env;
+          if (event !== 'workflow_dispatch' && /^[a-f0-9]{40}$/.test(base ?? '') && /^[a-f0-9]{40}$/.test(head ?? '')) {
+            // Renames are deletion + addition so a protected old path cannot disappear.
+            const paths=execFileSync('git',['diff','--no-renames','--name-only','-z',base+'...'+head],{encoding:'utf8'}).split('\0').filter(Boolean);
+            const policy=spawnSync('git',['show',base+':src/lib/engineering-verification/contract.mjs'],{encoding:'utf8'});
+            if (policy.status === 0) {
+              const file=join(process.env.RUNNER_TEMP,'trusted-verification-policy.mjs');
+              writeFileSync(file,policy.stdout);
+              const {mayUseDocsOnlyFastPath}=await import(pathToFileURL(file).href);
+              code=!mayUseDocsOnlyFastPath(paths);
+            }
+          }
+          appendFileSync(process.env.GITHUB_OUTPUT,'code='+code+'\n');
+          console.log('Full checks required:',code);
+          NODE
       # A findings-only PR skips `checks`, so the one guard that reads docs/ runs here (#1108).
       - name: New findings name their guard
         if: steps.diff.outputs.code == 'false'
@@ -91,6 +120,8 @@ jobs:
         run: npx tsc --noEmit
       - name: Lint
         run: npm run lint
+      - name: Validate verification plan and frozen acceptance identities
+        run: node src/lib/engineering-verification/cli.mjs validate
 
   unit:
     needs: changes
@@ -166,7 +197,7 @@ jobs:
       - name: Unit tests (shard ${{ matrix.shard }} of 2)
         run: |
           excludes=""
-          for file in $KNOX_GATES $E2E_TESTS $PUBLIC_FEE_APPLICABILITY_TEST $DARWIN_RECHECK_TEST $ROSETTA_BYTE_IDENTITY_TEST $PAID_RETURNED_EVENT_TEST src/lib/agents/deming/hard-documents.test.ts src/lib/agents/deming/regression-gate.test.ts src/lib/agents/deming/shadow-lab/ratchet-gate.test.ts src/lib/fee-category-guard.test.ts src/lib/fee-taxonomy.test.ts src/lib/fee-fold.test.ts; do
+          for file in $KNOX_GATES $E2E_TESTS $FIXTURE_SCHEMA_TEST $PUBLIC_FEE_APPLICABILITY_TEST $DARWIN_RECHECK_TEST $ROSETTA_BYTE_IDENTITY_TEST $PAID_RETURNED_EVENT_TEST src/lib/agents/deming/hard-documents.test.ts src/lib/agents/deming/regression-gate.test.ts src/lib/agents/deming/shadow-lab/ratchet-gate.test.ts src/lib/fee-category-guard.test.ts src/lib/fee-taxonomy.test.ts src/lib/fee-fold.test.ts; do
             excludes="$excludes --exclude $file"
           done
           npx vitest run --shard=${{ matrix.shard }}/2 $excludes
@@ -200,8 +231,17 @@ jobs:
         # One real state-lane run against the production schema in a throwaway database.
         # The runner's PostgreSQL has SSL on, which the app's connection requires.
         run: |
+          mkdir -p test-results/engineering-verification
           sudo systemctl start postgresql.service
           sudo -u postgres psql -q -c "ALTER USER postgres PASSWORD 'postgres'"
+          # Catch-up repairs the captured schema before other tests insert append-only fixture data.
+          sudo -u postgres createdb e2e_fixture_schema
+          PGPASSWORD=postgres psql -h localhost -U postgres -d e2e_fixture_schema -q -v ON_ERROR_STOP=1 -f tests/e2e/production-schema.sql
+          export E2E_DATABASE_URL=postgres://postgres:postgres@localhost:5432/e2e_fixture_schema
+          export DATABASE_URL="$E2E_DATABASE_URL"
+          node src/lib/engineering-verification/required-database-tests.mjs check-env
+          npx vitest run $FIXTURE_SCHEMA_TEST --maxWorkers=1 --reporter=default --reporter=json --outputFile=test-results/engineering-verification/required-db-fixture.json
+          node src/lib/engineering-verification/required-database-tests.mjs check-results --report test-results/engineering-verification/required-db-fixture.json --files $FIXTURE_SCHEMA_TEST
           sudo -u postgres createdb e2e
           PGPASSWORD=postgres psql -h localhost -U postgres -d e2e -q -v ON_ERROR_STOP=1 -f tests/e2e/production-schema.sql
           # Deming corrective replay uses the existing canonical case-store schema.
@@ -210,12 +250,26 @@ jobs:
           # HMDA fixtures share the real year-lock namespace across isolated schemas, so files run serially.
           # These shared-schema suites use transactional DDL/failure triggers;
           # serialize files so another reader cannot observe a temporary fixture.
-          E2E_DATABASE_URL=postgres://postgres:postgres@localhost:5432/e2e npx vitest run $E2E_TESTS $PUBLIC_FEE_APPLICABILITY_TEST $DARWIN_RECHECK_TEST $ROSETTA_BYTE_IDENTITY_TEST $PAID_RETURNED_EVENT_TEST --maxWorkers=1
+          export E2E_DATABASE_URL=postgres://postgres:postgres@localhost:5432/e2e
+          export DATABASE_URL="$E2E_DATABASE_URL"
+          node src/lib/engineering-verification/required-database-tests.mjs check-env
+          npx vitest run $E2E_TESTS $PUBLIC_FEE_APPLICABILITY_TEST $DARWIN_RECHECK_TEST $ROSETTA_BYTE_IDENTITY_TEST $PAID_RETURNED_EVENT_TEST --maxWorkers=1 --reporter=default --reporter=json --outputFile=test-results/engineering-verification/required-db-pipeline.json
+          node src/lib/engineering-verification/required-database-tests.mjs check-results --report test-results/engineering-verification/required-db-pipeline.json --files $E2E_TESTS $PUBLIC_FEE_APPLICABILITY_TEST $DARWIN_RECHECK_TEST $ROSETTA_BYTE_IDENTITY_TEST $PAID_RETURNED_EVENT_TEST
+      - name: Retain required database execution reports
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: required-database-tests-${{ github.run_id }}-attempt-${{ github.run_attempt }}
+          path: |
+            test-results/engineering-verification/required-db-fixture.json
+            test-results/engineering-verification/required-db-pipeline.json
+          if-no-files-found: error
+          retention-days: 90
 
   app-tests:
     # The one required check: green only when every job above passed.
     if: always()
-    needs: [changes, checks, unit, knox-gates, e2e]
+    needs: [changes, checks, unit, knox-gates, e2e, fee-audience-sql]
     runs-on: ubuntu-latest
     steps:
       - name: Every job passed
@@ -227,6 +281,7 @@ jobs:
           test "${{ needs.unit.result }}" = success
           test "${{ needs.knox-gates.result }}" = success
           test "${{ needs.e2e.result }}" = success
+          test "${{ needs.fee-audience-sql.result }}" = success
 
   fee-audience-sql:
     needs: changes

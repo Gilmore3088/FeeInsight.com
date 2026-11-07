@@ -1,0 +1,36 @@
+{
+  "id": "buyer-journey-mapper",
+  "version": 1,
+  "maintainer": "atlas",
+  "owning_agent": "hamilton",
+  "inputs": [
+    "user task, entry URL, role and selected institution",
+    "affected routes and existing journey tests"
+  ],
+  "outputs": [
+    "action and outcome journey map",
+    "scoped acceptance IDs and unresolved decisions"
+  ],
+  "data_access": [],
+  "external_endpoints": [],
+  "provider_inference": false,
+  "budget": "repository review; no paid calls",
+  "triggering_workflows": [
+    "UI flow contract or Hamilton journey change"
+  ],
+  "evaluation_suite": [
+    "tests/e2e/hamilton/research-journey.pw.ts",
+    "tests/e2e/hamilton/reports-journey.pw.ts"
+  ],
+  "failure_behavior": "Unresolved scope, role or source authority stays explicit; do not invent a completed journey.",
+  "approval_requirements": "Existing repository rules apply to implementation and separately controlled actions.",
+  "dependencies": [
+    {
+      "path": "docs/plans/hamilton-h07-acceptance-matrix.md"
+    }
+  ],
+  "abstain_when": [
+    "the intended user task cannot be established from available context"
+  ],
+  "last_validated": "2026-11-06"
+}

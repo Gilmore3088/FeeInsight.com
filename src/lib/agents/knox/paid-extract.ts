@@ -51,6 +51,7 @@ import { closedInstitutionSql } from "@/lib/agents/hamilton/closed-institution";
 import { articleLinkSql } from "@/lib/agents/magellan/link-coverage";
 import { DOCUMENT_OWNER_STRATEGY, documentOwnerFingerprintPrefix } from "@/lib/agents/darwin/document-owner";
 import { checkTwoReadAgreement, twoReadAgreementDetail } from "@/lib/agents/knox/two-read-agreement";
+import { SOURCE_DATA_BOUNDARY_INSTRUCTIONS } from "@/lib/agents/source-data-boundary";
 
 type SqlTag = typeof sql;
 
@@ -100,8 +101,10 @@ type SqlTag = typeof sql;
  * Version 3 (#2068): document-scoped role and category lessons ride each read, and kept fees are
  * re-filed by the category lessons. Selection ignores the version (one paid read per text hash),
  * so the bump buys no new reads.
+ * Version 4 (#1048): the trusted system prefix explicitly treats source commands and role labels
+ * as untrusted evidence. Source text, selectors and grounded-row checks are unchanged.
  */
-export const KNOX_PAID_STRATEGY = { strategy: "extract.paid", version: 3 } as const;
+export const KNOX_PAID_STRATEGY = { strategy: "extract.paid", version: 4 } as const;
 /** The step keys whose role lessons a paid read carries: its own and the free read's (#2068). */
 export const PAID_LESSON_STEPS = ["extract-paid", "extract"] as const;
 export const PAID_MIN_PRICED_LINES = 15;
@@ -332,6 +335,7 @@ function canonicalFeeList(): string {
  */
 export function paidExtractInstructions(): string {
   return [
+    SOURCE_DATA_BOUNDARY_INSTRUCTIONS,
     "The user message is the text of a bank or credit union fee schedule. List every fee it states.",
     "Return only JSON: {\"fees\": [{\"fee_name\", \"canonical_key\", \"amount\", \"frequency\", \"conditions\", \"source_line\", \"product_name\", \"min_balance_to_avoid\", \"min_opening_deposit\", \"waiver_text\"}]}.",
     "- fee_name: the fee's name as written.",

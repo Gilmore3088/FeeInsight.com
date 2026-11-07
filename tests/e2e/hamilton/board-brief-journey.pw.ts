@@ -5,21 +5,21 @@
  * brief from a second answer, edits its title and note, saves it and downloads the PDF. The PDF's
  * figures, identity and sources are checked against the fixture database.
  *
- * The shared fixture home's name echoes a real credit union, so this journey renames it for its
- * own run and restores it after. No provider is called: serve.mjs blanks every key and the
+ * The shared fixture home has one fictional name across journeys, including cached briefings.
+ * No provider is called: serve.mjs blanks every key and the
  * fixtures switch the provider stop on. HAMILTON_SCREENS_DIR=<dir> also saves desktop and phone
  * screenshots.
  */
 import path from "node:path";
 import { readFileSync } from "node:fs";
 import { extractText } from "unpdf";
-import { expect, test, type Page } from "playwright/test";
+import { expect, test, withJourneyCapture, type Page } from "./evidence";
 import { FIXTURE_USERS, HOME, connectFixtureDb, type FixtureDb } from "./fixtures";
-import { ask, signIn } from "./helpers";
+import { ask, navigate, signIn } from "./helpers";
 
 test.describe.configure({ mode: "serial" });
 
-const NAME = "Lakeshore Test Credit Union";
+const NAME = HOME.name;
 const TESTED = 32;
 
 let db: FixtureDb;
@@ -51,7 +51,7 @@ test.afterAll(async () => {
 });
 
 for (const width of [1440, 390]) {
-  test(`#1899 at ${width}: added findings carry their evidence into an edited, sourced board brief whose PDF matches the data`, async ({ page }) => {
+  test(`#1899 at ${width}: added findings carry their evidence into an edited, sourced board brief whose PDF matches the data`, async ({ page, browser }) => {
     await page.setViewportSize({ width, height: width > 500 ? 900 : 844 });
     await signIn(page, FIXTURE_USERS.pro.email, `/pro/analyze?instId=${HOME.id}`);
     // A fresh report list for this run.
@@ -63,7 +63,7 @@ for (const width of [1440, 390]) {
     const ownFee = `$${Number(own.amount).toFixed(2)}`;
 
     // 1. Try a price: a tested NSF price, placed among the peers, added to the report.
-    await page.goto(`/pro/simulate?instId=${HOME.id}&fee=nsf&check=${TESTED}#position-check`);
+    await navigate(page, `/pro/simulate?instId=${HOME.id}&fee=nsf&check=${TESTED}#position-check`);
     const check = page.locator("#position-check");
     await expect(check.getByRole("status")).toContainText(`$${TESTED}`);
     await page.getByRole("button", { name: "+ Add to report" }).click();
@@ -72,7 +72,7 @@ for (const width of [1440, 390]) {
     await shoot(page, `try-a-price-added-${width}`);
 
     // 2. Ask: an overdraft answer, saved, added to the report.
-    await page.goto(`/pro/analyze?instId=${HOME.id}`);
+    await navigate(page, `/pro/analyze?instId=${HOME.id}`);
     await ask(page, `What is the overdraft fee at ${NAME}?`);
     const overdraftRow = page.getByRole("region", { name: "Use this answer" }).first();
     await expect(overdraftRow.getByText("Saved", { exact: false }).first()).toBeVisible();
@@ -80,10 +80,10 @@ for (const width of [1440, 390]) {
     await expect(overdraftRow.getByText("In your report")).toBeVisible();
 
     // 3. Build board brief from a second answer.
-    await page.goto(`/pro/analyze?instId=${HOME.id}`);
+    await navigate(page, `/pro/analyze?instId=${HOME.id}`);
     await ask(page, `What is the NSF fee at ${NAME}?`);
     await expect(page.getByText(`${NAME}'s ${ownFee.replace(".00", "")} NSF / returned item fee`).first()).toBeVisible();
-    await page.getByRole("link", { name: "Build board brief" }).first().click();
+    await page.getByRole("link", { name: "Add to board brief", exact: true }).first().click();
     await page.waitForURL(/from_analysis=/);
     await expect(page.getByRole("heading", { name: "Board brief", level: 1 })).toBeVisible();
 
@@ -139,5 +139,28 @@ for (const width of [1440, 390]) {
     expect(text).toContain("Dates: Read from published fee schedules on");
     expect(text).toContain("Answer saved");
     expect(text).not.toMatch(/—/);
+
+    if (width === 1440) {
+      // Reopen the same desktop-created artifact after a new phone login and a different research selection.
+      const phone = await browser.newContext({ viewport: { width: 390, height: 844 } });
+      try {
+        const mobile = await phone.newPage();
+        await withJourneyCapture(mobile, test.info(), async () => {
+        await signIn(mobile, FIXTURE_USERS.pro.email, `/pro/analyze?instId=${HOME.id}`);
+        await mobile.getByRole("button", { name: "Research another institution", exact: true }).click();
+        await mobile.getByLabel("Institution", { exact: true }).fill("Indian River Test CU");
+        await mobile.getByRole("button", { name: /Indian River Test CU/ }).click();
+        await expect(mobile).toHaveURL(/instId=9701002(?:&|$)/);
+        await expect(mobile.getByText(/Researching: Indian River Test CU/)).toBeVisible();
+        await navigate(mobile, `/pro/reports?report_id=${encodeURIComponent(reportId)}`);
+        await expect(mobile.getByRole("heading", { name: "Board brief", exact: true })).toBeVisible();
+        await expect(mobile.getByLabel("Title")).toHaveValue(title);
+        await expect(mobile.getByLabel("Team note")).toHaveValue("Prepared for the October committee.");
+        await expect(mobile.getByRole("region", { name: "Findings you added" })).toContainText(`test of $${TESTED}.00`);
+        await expect(mobile.getByRole("region", { name: "Findings you added" })).toContainText(ownFee);
+        await noSideScroll(mobile);
+        }, "same-saved-report-phone");
+      } finally { await phone.close(); }
+    }
   });
 }
