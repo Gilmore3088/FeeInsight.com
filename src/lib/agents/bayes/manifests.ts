@@ -346,6 +346,10 @@ export function rosettaReaderManifests(versions: RosettaVersions): ReplayManifes
  * in a manifest above.
  */
 export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
+  // 2026-11-07 (James's yes to a blind second reader): a capped audit read behind an off switch, not a selector that replays fee work.
+  KNOX_SECOND_READER_STRATEGY: "v1 names the `extract.second_reader` attempt and `knox.second_reader` event: a blind paid read of a named batch's current texts (KNOX_SECOND_READER_LIVE, off; $1.50 cap a batch) whose traced finds are diffed against today's free Knox read. A free miss becomes a `never_read` pipeline_feedback row; the 2026-11-07 cohort batch writes no fee row, and a batch that writes candidates sends them to Darwin like any raw row. It holds, rejects or re-files no fee and selects only its batch's texts, so nothing is replayed by the version.",
+  // 2026-11-07: groups never-read flags into lesson drafts, writes no fee.
+  NEVER_READ_LESSONS_VERSION: "v1 names the `knox.never_read_lessons` event: the second reader's `never_read` feedback rows grouped into Knox lesson drafts by text layout and line shape. It reads only feedback rows, writes one event, and holds, rejects, re-files or replays no fee.",
   // Nov 2 pipeline wiring audit, gap 8: which website a search result saves, not a selector that replays fee work.
   REDIRECT_WEBSITE_PROOF_VERSION: "v1 names the `detail.moved_to_proof` judgement on discover attempts whose homepage redirected to another domain: whether the landing is proven the institution's own site before it replaces `institution_sources.website_url`. It selects no bank, re-searches nothing, and holds, rejects or re-files no fee; a landing judged `not_own_site` (a social, bot-wall, hosting or file host) is no longer saved as the website, and an `unproven` one (a challenge page included) stays saved while `REDIRECT_WEBSITE_PROOF_LIVE` is off.",
   // Fix plan step 3 (Oct 27): a discovery selector for links that gave no live fee, not fee work.
