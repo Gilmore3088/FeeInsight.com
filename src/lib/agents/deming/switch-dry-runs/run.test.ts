@@ -128,9 +128,20 @@ function reader(): SwitchAuditReader & { calls: Record<string, unknown[]> } {
       [41, "Consumer Online Banking Services and Mobile Banking Fees\n\nSet Up Fee | No charge\n\nMonthly Maintenance Fee | No charge"],
       [42, "Personal Checking\n\nMonthly Maintenance Fee | $8.00\n\nOnline Banking\n\nBill Pay | Free"],
     ].filter(([id]) => ids.includes(id as number)) as Array<[number, string]>)),
+    // #1092 (state key 7450): Schools FCU's "Courtesy Pay" $20 is the PLATINUM tier alone; "Copy of Paid Check"
+    // is $2 in every tier, and the card replacement keeps its allowance in its name.
+    tierColumnRows: vi.fn(async (limit: number) => TIER_COLUMN_ROWS.slice(0, limit)),
     freshAudit: vi.fn(async () => fresh),
   };
 }
+
+const TIER_TEXT = ["PLATINUM GOLD SILVER+ SILVER COLLEGE", "GENERAL FEES", "Courtesy Pay $20 $30 $30 $30 $30",
+  "Copy of Paid Check $2 $2 $2 $2 $2", "Stop Payment FREE $25 $25 $25 $25",
+  "Debit/Credit Card Replacement* 1 Free → $5 1 Free → $5 1 Free → $5 1 Free → $5 1 Free → $5"].join("\n");
+const tierRow = (id: number, feeName: string, amount: number, excerpt: string) => ({ fee_published_id: id, fee_verified_id: id + 1, institution_id: 4770,
+  source_document_id: 3, canonical_fee_key: null, fee_name: feeName, amount, excerpt, text: TIER_TEXT });
+const TIER_COLUMN_ROWS = [tierRow(1, "Courtesy Pay", 20, "Courtesy Pay | $20"),
+  tierRow(3, "Debit/Credit Card Replacement 1 Free →", 5, "Debit/Credit Card Replacement* 1 Free → $5 1 Free → $5 1 Free → $5 1 Free → $5 1 Free → $5"), tierRow(5, "Copy of Paid Check", 2, "Copy of Paid Check $2 $2 $2 $2 $2")];
 
 const SERVICE_ROWS = [
       { fee_published_id: 10, fee_verified_id: 6, institution_id: 32, fee_name: "Monthly Maintenance Fee", amount: 0,
@@ -257,8 +268,14 @@ describe("switch dry runs: one pass over every pending count", () => {
     expect(text).toContain("## 11. HTML_CELL_LIST_PAIRING_LIVE (#1092, Rosetta read.html_dom)");
     expect(text).toContain("EXPOSED: 7 current HTML documents (5 with live fees) carry 61 live fees; the flip re-reads each once.");
     expect(text).toContain("SHAPED: 14 stored rows on 3 of those documents at 2 institutions have the one-line shape; 2 of the documents carry 30 live fees.");
-    expect(text.indexOf("## 11. HTML_CELL_LIST_PAIRING_LIVE")).toBeLessThan(text.indexOf("## 12. Live accuracy"));
-    expect(text).toContain("## 12. Live accuracy");
+    expect(text).toContain("## 12. TIER_COLUMN_TAKEDOWN_LIVE and TIER_COLUMN_FEES_LIVE (#1092, Knox v185, one fee per tier)");
+    expect(text).toContain("READ: 2 live fees on texts with a tier header (stopped at the cap of 2; more may exist); 1 texts hold a tier table, with 2 rows whose tiers charge differently.");
+    expect(text).toContain("WOULD TAKE DOWN: 1 unscoped fees at 1 institutions (each after its 12-hour second look); 1 allowance names, report only; 2 live fees carry a tier row's name.");
+    expect(text).toContain('- 1 inst 4770 ? "Courtesy Pay" $20 (unscoped: Platinum)');
+    expect(text.indexOf("## 11. HTML_CELL_LIST_PAIRING_LIVE")).toBeLessThan(text.indexOf("## 12. TIER_COLUMN_TAKEDOWN_LIVE"));
+    // Live accuracy stays the last section.
+    expect(text.indexOf("## 12. TIER_COLUMN_TAKEDOWN_LIVE")).toBeLessThan(text.indexOf("## 13. Live accuracy"));
+    expect(text).toContain("## 13. Live accuracy");
     // The daily receipt's own figure leads; the derived share follows, labelled.
     const receipt = text.indexOf("Daily receipt's figure (right on amount, category, source, fee line and name): 5 / 8 = 62.50%");
     const derived = text.indexOf("Amount and category only (not the receipt's figure): 6 / 8 = 75.00%");

@@ -11,6 +11,7 @@ import { summarizeHtmlCellListExposure, type HtmlCellListPairingSummary } from "
 import { addZeroWaiverRows, emptyZeroWaiverRowSummary, type ZeroWaiverRowSummary } from "./zero-waiver-row";
 import { ZERO_WAIVER_ROW_MAX_ROWS, type ZeroWaiverRowLiveRow } from "@/lib/agents/darwin/zero-waiver-row-check";
 import { serviceMaintenanceSection, type ServiceMaintenanceSection } from "./service-maintenance";
+import { tierColumnFeesSection, type TierColumnFeesSection } from "./tier-column-fees";
 import { bounded, type Bounded, type LiveFeeRow, type SwitchAuditOptions, type SwitchAuditReader } from "./types";
 
 /**
@@ -65,6 +66,7 @@ export interface SwitchDryRunReport {
   pdfTextDirection: { switch: "PDF_TEXT_DIRECTION_LIVE"; issue: number; summary: PdfTextDirectionSummary };
   htmlCellListPairing: { switch: "HTML_CELL_LIST_PAIRING_LIVE"; issue: number; summary: HtmlCellListPairingSummary };
   serviceMaintenance: ServiceMaintenanceSection;
+  tierColumnFees: TierColumnFeesSection;
   liveAccuracy: LiveAccuracy;
 }
 
@@ -262,6 +264,7 @@ export async function runSwitchDryRuns(reader: SwitchAuditReader, options: Switc
       summary: summarizeHtmlCellListExposure(htmlExposure.html, await reader.htmlCellListExposure()),
     },
     serviceMaintenance: await serviceMaintenanceSection(reader, options),
+    tierColumnFees: await tierColumnFeesSection(reader, options),
     liveAccuracy: liveAccuracyFrom(await reader.freshAudit(options.accuracySample)),
   };
 }

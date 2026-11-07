@@ -51,7 +51,7 @@ import { monthlyAccountOwnerReview } from "./monthly-account-owners";
 import { accountlessMonthlyOnPage } from "./accountless-monthly";
 import { ACCOUNT_PRODUCT_CATEGORIES } from "./lineup";
 import { ownFeeUnit, withOwnFeeUnit } from "@/lib/custom-report/own-fee-unit";
-import { withTierColumnRows } from "./tier-columns";
+import { withTierColumnFeeRows } from "./tier-columns";
 import { mayHaveSymbolicLesserFee, symbolicLesserOfReview } from "./symbolic-lesser-of";
 import { internationalWireEligibility } from "./international-wire-eligibility";
 import { belongsToPaidReturnedUnit, paidReturnedUnits } from "@/lib/custom-report/paid-returned-events";
@@ -949,7 +949,12 @@ import { onlineServiceMonthlyFee } from "@/lib/service-monthly-charge";
 // monthly fee is held (Ameris). Two label cells over two price cells pair by column (`parallelColumnRows`: Advia); a
 // wire name never borrows a non-wire heading (Crow Wing); a code after a heading is no price digit (St. Cloud); an
 // account name that files as a fee is no account (Austin). The stale-read floor stays at v97.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 184 } as const;
+// v185 (#1092; DECISIONS 2026-11-04; State key 7450, Schools FCU), behind `TIER_COLUMN_FEES_LIVE` (off): a
+// relationship-tier table is one fee per tier, each named with its tier in title case from the header ("Courtesy Pay
+// (Platinum)" $20, "Courtesy Pay (Gold)" $30, "Stop Payment (Platinum)" $0); a row with the same cell in every tier is one
+// fee; a free allowance ("1 Free → $5") is the $5 fee's condition, kept in its excerpt, never a $0 fee or part of its
+// name (`withTierColumnFeeRows`, `@/lib/tier-column-table`). Off, every read is v184's. The stale-read floor stays at v97.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 185 } as const;
 
 export interface SpecialistRun {
   strategy: string;
@@ -1394,7 +1399,7 @@ function readFreeText(sourceText: string, discontinuedRows: DiscontinuedTableFla
   const checkText = withSidewaysBoxTable(withBoxSizeCellsSplit(withoutBusinessOnlyFees(joinLabeledFeeCardText(withGluedFootnotePrices(withoutCardProgramSections(withoutGluedPricePairs(withoutColumnLabelEchoes(sourceText))))))));
   // v115 (#1905): an ATM network table's rows are read only by their non-network column
   // (`withNetworkColumnFees`); no other reader sees them, so none takes another column's price.
-  const text = withoutNetworkTableRows(withTierColumnRows(checkText));
+  const text = withoutNetworkTableRows(withTierColumnFeeRows(checkText));
   // v168 (second re-read backlog dry run, Nov 2): a box table's late-fee column is no rent (`boxLateColumnRead`).
   const boxLatePrices = boxLateColumnPrices(checkText);
   // v175 (backlog dry run 6): a card replacement under a credit card title in its own column is the credit card's.

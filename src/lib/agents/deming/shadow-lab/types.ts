@@ -97,4 +97,10 @@ export interface PipelineVariant {
   extract(text: string): StageOutput;
   verify(fee: StageFee, text: string): VerifyResult;
   publishGate(fee: StageFee, text: string, live: StageFee[]): { publish: boolean; reason: string | null };
+  /**
+   * Runs a read under the variant's module-flag switches (`withTierColumnFees` and the like), so the
+   * replay's own attribution trace reads the source check the way the variant's stages do. Unset is
+   * no switch held.
+   */
+  within?<T>(read: () => T): T;
 }

@@ -2,6 +2,7 @@ import type { FreshAuditResult } from "@/lib/agents/deming/fresh-audit";
 import type { DocumentText, LiveKnoxRow } from "@/lib/agents/hamilton/rules-recheck";
 import type { ZeroWaiverRowLiveRow } from "@/lib/agents/darwin/zero-waiver-row-check";
 import type { ServiceMaintenanceLiveRow } from "@/lib/agents/darwin/service-maintenance-check";
+import type { TierColumnRow } from "@/lib/agents/darwin/tier-column-check";
 
 /**
  * Types for the switch dry-run audit (#1092): one read-only pass that prints the production counts
@@ -220,6 +221,8 @@ export interface SwitchAuditReader {
   serviceMaintenanceRemaining(afterId: number): Promise<number>;
   /** The texts Knox read that print a service's words, by artifact id (`serviceMaintenanceTexts`). */
   serviceMaintenanceTexts(artifactIds: number[]): Promise<Map<number, string>>;
+  /** The live fees Darwin's tier column re-check selects (`tierColumnRowsSql`), for the `TIER_COLUMN_TAKEDOWN_LIVE` section. */
+  tierColumnRows(limit: number): Promise<TierColumnRow[]>;
   /** Deming's fresh audit, as Atlas runs it daily, on a sample of this size. */
   freshAudit(sampleSize: number): Promise<FreshAuditResult>;
 }

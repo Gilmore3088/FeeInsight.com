@@ -111,6 +111,7 @@ export const NOT_REPLAYABLE_REASONS: Readonly<Record<string, string>> = {
   SUPERSEDED_RECHECK_LIVE: `re-checks Knox's held rows from a superseded document against its current text; ${ONE_DOCUMENT}`,
   SUPERSEDED_REFILE_LIVE: `re-files held rows from a superseded document on a state lane's extract; ${DATABASE("the held rows")}`,
   TEXAS_CAPITAL_TAKEDOWN_LIVE: "a hand list of named production fee ids (#1880); no golden fee is one of them, so a replay could only pass vacuously",
+  TIER_COLUMN_TAKEDOWN_LIVE: "acts only with TIER_COLUMN_FEES_LIVE on, and its takedowns are replaced only by Knox's later re-read of the bank's text under that switch, which a one-pass sweep replay cannot run (on the golden set it would take down state:7450's unscoped tier prices with nothing to replace them); TIER_COLUMN_FEES_LIVE's own replay measures the reads that replace them, and the switch dry-run audit's section 12 counts the live takedowns (count pending)",
   TRANSLATED_COPY_RESTORE_LIVE: `restores a fee taken down as a translated copy once its English twin is gone; ${ONE_DOCUMENT}`,
   TRANSLATED_COPY_TAKEDOWN_LIVE: `takes down a Spanish copy's fee beside its live English twin; ${ONE_DOCUMENT}`,
   VAULT_RETENTION_LIVE: `Atlas's document vault retention; ${SYSTEM}`,

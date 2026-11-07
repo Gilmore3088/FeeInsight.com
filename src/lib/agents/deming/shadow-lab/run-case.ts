@@ -53,7 +53,8 @@ export function runCase(variant: PipelineVariant, c: ShadowCase, clock: Clock = 
     if (decision.publish) live.push(verified.fee);
     else trace.stages.publish_gate.dropped.push({ ...verified.fee, reason: decision.reason });
   }
-  trace.published = trace.stages.publish_gate.passed.map((fee) => attribute(fee, text));
+  const within = variant.within ?? (<T>(read: () => T): T => read());
+  trace.published = within(() => trace.stages.publish_gate.passed.map((fee) => attribute(fee, text)));
   return trace;
 }
 

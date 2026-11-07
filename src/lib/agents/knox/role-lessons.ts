@@ -1504,4 +1504,14 @@ export const KNOX_LESSONS: AgentLesson[] = [
     appliesTo: ["extract"],
     since: "2026-11-03",
   },
+  {
+    id: "issue-1092-2026-11-04-one-fee-per-tier-column",
+    agent: "knox",
+    stage: "extract",
+    lesson: "A relationship-tier table (a header row naming the tiers, \"PLATINUM GOLD SILVER+ SILVER COLLEGE\", over rows with one cell per tier) is one fee per tier: read each tier's cell as its own fee named with its tier in title case from the header (\"Courtesy Pay (Platinum)\" $20, \"Courtesy Pay (Gold)\" $30), and a free cell as that tier's $0 fee (\"Stop Payment (Platinum)\" $0). A row with the same cell in every tier is one fee under the row's own name. A free allowance in a cell (\"1 Free → $5\", \"3 Free \\\" $5\") is a condition on the priced fee: read only the $5, keep \"first 1 free\" in its excerpt, and never leave the allowance's count or arrow in its name or write a $0 for it. Read a tier only from a header the bank printed: no tier is guessed from a column's position without one.",
+    why: "Schools FCU (State key 7450) prints its fees in five relationship tiers. Knox v100 wrote one read per distinct price named with the row's name alone, so \"Courtesy Pay\" $20 went out as the bank's only overdraft price although only PLATINUM pays $20, the $30 the other tiers pay was held untraced, the free tiers' $0s were dropped as perks, and the allowance rows were named \"Cashier Checks 3 Free \\\"\". James decided (DECISIONS 2026-11-04) one fee per tier, $0 tiers included, uniform rows as one fee, title-case tier names and allowances as conditions. Knox v185 reads it that way behind TIER_COLUMN_FEES_LIVE (off): frozen lab and source replay both gain 6 keys, lose none and publish nothing new outside the key.",
+    evidence: { issues: [1092], prs: [], files: ["src/lib/tier-column-table.ts", "src/lib/agents/knox/tier-columns.ts", "src/lib/agents/knox/tier-columns-per-tier.test.ts", "src/lib/custom-report/source-check.ts", "docs/project/findings/2026-11-04-tier-column-fees.md"] },
+    appliesTo: ["extract"],
+    since: "2026-11-04",
+  },
 ];

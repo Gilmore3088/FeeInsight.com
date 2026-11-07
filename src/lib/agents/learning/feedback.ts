@@ -306,6 +306,7 @@ export const TAKEDOWN_REASON_CHECKS: Readonly<Record<string, string>> = {
   // Darwin's re-checks of live fees.
   banded_zero: "darwin.banded_zero",
   tier_incomplete: "darwin.tier_completeness",
+  tier_column_unscoped: "darwin.tier_column",
   account_benefit_zero: "darwin.account_benefit_zero",
   zero_waiver_row: "darwin.zero_waiver_row",
   free_list_item: "darwin.free_list_item",
