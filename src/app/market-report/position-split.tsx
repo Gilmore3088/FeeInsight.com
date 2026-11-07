@@ -1,8 +1,4 @@
-"use client";
-
 import { ArrowDown, ArrowUp, Equal, type LucideIcon } from "lucide-react";
-import { useRef } from "react";
-import { useCountUp } from "@/app/landing-motion";
 import "@/app/landing-motion.css";
 
 type Part = "above" | "inside" | "below";
@@ -14,13 +10,11 @@ const PARTS: Record<Part, { label: string; Icon: LucideIcon; text: string; chip:
 };
 
 function Figure({ part, n }: { part: Part; n: number }) {
-  const ref = useRef<HTMLSpanElement>(null);
-  const shown = useCountUp(n, ref);
   const { label, Icon, text, chip } = PARTS[part];
   return (
     <div className="min-w-0">
-      <span ref={ref} className={`block font-mono text-[44px] font-semibold leading-none tabular-nums tracking-[-0.03em] sm:text-[56px] ${text}`}>
-        {shown}
+      <span className={`block font-mono text-[44px] font-semibold leading-none tabular-nums tracking-[-0.03em] sm:text-[56px] ${text}`}>
+        {n}
       </span>
       <span className="mt-2 flex items-center gap-1.5 text-[14px] font-medium text-ink sm:text-[15px]">
         <span className={`inline-flex size-6 shrink-0 items-center justify-center rounded-full ${chip}`}>
@@ -34,7 +28,7 @@ function Figure({ part, n }: { part: Part; n: number }) {
 
 /**
  * The report's opening figure (James, Oct 18): how many compared fees sit above, inside and below
- * the local middle 50%, as three counted figures over one stacked bar. Drawn only; the sentence
+ * the local middle 50%, as three still figures over one stacked bar. Drawn only; the sentence
  * that says the same goes beside it for screen readers (`summary`).
  */
 export function PositionSplit({ above, inside, below, summary }: { above: number; inside: number; below: number; summary: string }) {

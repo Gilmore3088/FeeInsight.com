@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { PositionSplit } from "./position-split";
 
 afterEach(() => vi.unstubAllGlobals());
@@ -20,6 +21,12 @@ describe("PositionSplit", () => {
     expect(figures).toEqual(["2", "6", "1"]);
     expect(screen.getByText("Two of nine compared fees sit above.")).toHaveClass("sr-only");
     expect(container.textContent).toContain("across 9 compared fees");
+  });
+
+  it("should_paint_the_final_counts_first_when_rendered_on_the_server", () => {
+    const html = renderToStaticMarkup(<PositionSplit above={3} inside={7} below={1} summary="x" />);
+    const figures = [...html.matchAll(/font-mono[^>]*>(\d+)</g)].map((m) => m[1]);
+    expect(figures).toEqual(["3", "7", "1"]);
   });
 
   it("leaves an empty part out of the bar", () => {

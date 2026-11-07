@@ -1,6 +1,6 @@
 import { PRODUCT_NAME } from "@/lib/constants";
 import { formatAbsoluteDate } from "@/lib/public-stats";
-import { CountUp, type CountUnit } from "./count-up";
+import { formatCardFigure, type CountUnit } from "./card-figure";
 import type { CohortDistribution } from "./fee-share-cohort";
 import { MIN_COHORT_PEERS, ordinal } from "./fee-share-cohort";
 import type { FeeIncomeTerms } from "./financial-units";
@@ -65,7 +65,7 @@ function MetricCard({ card }: { card: Card }) {
       <div className="mt-2 flex items-end">
         {card.value ? (
           <p className="text-[30px] font-medium leading-none tracking-[-0.01em] text-ink [font-variant-numeric:tabular-nums] sm:text-[34px]" style={SERIF}>
-            <CountUp value={card.value.n} unit={card.value.unit} />
+            {formatCardFigure(card.value.unit, card.value.n)}
           </p>
         ) : (
           <p className="text-[15px] font-semibold leading-snug text-ink-soft">{card.empty ?? "Not reported"}</p>
