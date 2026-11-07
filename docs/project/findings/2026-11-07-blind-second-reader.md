@@ -63,7 +63,7 @@ reads the same stored text without seeing Knox's output and lists every fee with
 - Expected $0.27 (49,910 input, 16,590 output tokens); p95 output $0.51; worst case $1.30 (3
   characters a token, all 8,000 output tokens on all 15 calls). No cache discount counted. Cap $1.50.
 
-**What stops a repeat:** **Guard** `src/lib/agents/knox/second-reader.test.ts` (blind request, trace
+**Guard:** `src/lib/agents/knox/second-reader.test.ts` (blind request, trace
 drops, diff, switch off makes no call and no read, scoping, cap, lesson rows and drafts, the cost
 numbers above); `src/lib/agents/dispatch-readiness.test.ts` maps the new caller to its provider
 step; `feedback-kinds.ts` registers `never_read` with its reader.
