@@ -1,13 +1,11 @@
 import { sql } from "@/lib/data-store/connection";
 import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
 import { estimateAnthropicCostMicrousd } from "@/lib/ai-provider-usage";
-import type { Anthropic } from "@/lib/ai-provider";
+import { anthropicPriceFor, type Anthropic } from "@/lib/ai-provider";
 import { recordAttempt } from "@/lib/agents/learning/attempts";
 import type { AttemptOutcome } from "@/lib/agents/learning/outcomes";
 import { recordFeedback, type FeedbackRow } from "@/lib/agents/learning/feedback";
 import { PAID_PASS_MODELS, paidModelCall, paidResponseJson, type PaidMessageCreator } from "@/lib/agents/paid-pass";
-import { confidenceFor } from "@/lib/agents/knox/rules";
-import { insertCandidate, type KnoxTextRow } from "@/lib/agents/knox/extract";
 import { KNOX_RULES_STRATEGY, runFreeSpecialists } from "@/lib/agents/knox/specialists";
 import { groundPaidRow, paidExtractInstructions, paidExtractPrompt, type AcceptedPaidFee, type PaidFeeRow, type PaidRowRejection } from "@/lib/agents/knox/paid-extract";
 import { summarizePaidFindMisses, type FreeTeamRead, type PaidFindMiss, type PaidFindMissKind, type PaidFindMissSummary } from "@/lib/agents/knox/paid-find-misses";
@@ -39,16 +37,22 @@ type SqlTag = typeof sql;
  *   grouped by the line's shape and the text's layout. A builder turns a draft into a
  *   `role-lessons.ts` entry in the PR that fixes the rule; nothing edits source at runtime.
  * - in the step's `knox.second_reader` event and the text's attempt detail.
- * - and, only for a batch whose `writeCandidates` is true, as a raw candidate (`insertCandidate`,
- *   `needs_darwin_verification`, flags `knox_second_reader` and `knox_never_read`) that Darwin verifies
- *   against the document like any other read. The Nov 7 cohort batch writes none.
  *
- * Gates: `KNOX_SECOND_READER_LIVE` (off by default). Off, the step makes no call and the tick queues
- * no run. The step (`knox-second-reader`) is in PROVIDER_STEP_KEYS, so the global provider stop and
+ * A recovered fee may later become a raw candidate that Darwin verifies against the document, never a
+ * live fee. That path is not built: a batch with `writeCandidates: true` is refused (no read, no call)
+ * until it carries the lineup, own unit and own condition and retires older-text rows the way
+ * `paid-extract.ts` does.
+ *
+ * Gates: `KNOX_SECOND_READER_LIVE` (off by default). Off, a live run of the step selects nothing and
+ * makes no call, and the tick queues no run; a dry-run run still selects and lists the texts it would
+ * read, with no call. A model with no list price (`anthropicPriceFor`) is refused, so every call's
+ * cost is known. The step (`knox-second-reader`) is in PROVIDER_STEP_KEYS, so the global provider stop and
  * the tick's provider budget hold it, and every call goes through `paidModelCall` under Knox's budget
  * line (`agent:knox`). A run reads only its batch's institutions (`SECOND_READER_BATCHES`); the batch
  * also caps itself: before each call the batch's logged spend plus that text's worst case must stay
- * under `capMicrousd`. A new batch needs a new id and James's yes on its dollar amount.
+ * under `capMicrousd` (`fitsUnderCap`, the same test the scheduler queues by). A step starts no read
+ * after SECOND_READER_STOP_STARTING_AFTER_MS, so at most one read is in flight past it. A new batch
+ * needs a new id and James's yes on its dollar amount.
  */
 
 export const KNOX_SECOND_READER_SWITCH = "KNOX_SECOND_READER_LIVE";
@@ -57,14 +61,19 @@ export const SECOND_READER_SOURCE = "knox.second_reader";
 export const SECOND_READER_OPERATION = "knox_second_read";
 export const SECOND_READER_CHECK = "knox.second_reader";
 export const NEVER_READ_KIND = "never_read" as const;
-export const SECOND_READER_FLAG = "knox_second_reader";
-export const NEVER_READ_FLAG = "knox_never_read";
 export const KNOX_SECOND_READER_STRATEGY = { strategy: "extract.second_reader", version: 1 } as const;
 export const SECOND_READER_EVENT = "knox.second_reader";
 /** Output tokens per read, at most; the paid pass's own cap (19 of 4,110 paid reads reached it, Oct 5 - Nov 7). */
 export const SECOND_READER_MAX_OUTPUT_TOKENS = 8_000;
 /** Texts read per step, one after another (the cohort's 15 texts take three runs). */
 export const SECOND_READER_TEXTS_PER_STEP = 5;
+/**
+ * No read starts once this long has passed since the step began, so at most one is in flight past it.
+ * Sizing (paid_extract, 4,110 calls Oct 5 - Nov 7, same instructions and 8,000-token cap): latency p99
+ * 32.8 s, max 74.5 s (max 60.0 s at 7,000 output tokens or more). 120 s plus one 75 s read plus the
+ * step's writes stays under the tick's 270 s finish budget (STEP_FINISH_BUDGET_MS) and the route's 300 s.
+ */
+export const SECOND_READER_STOP_STARTING_AFTER_MS = 120_000;
 /** Outcomes a later run may retry: nothing about the text caused them. */
 const TRANSIENT_OUTCOMES = ["timeout", "network_error", "http_429", "http_5xx", "budget_blocked"] as const;
 const STOP_ERRORS = new Set(["ProviderBudgetBlockedError", "EmergencyStopActiveError", "ProviderCircuitOpenError"]);
@@ -90,6 +99,7 @@ export interface SecondReaderBatch {
   capMicrousd: number;
   /** True writes each never-read as a raw candidate for Darwin; false records flags and lessons only. */
   writeCandidates: boolean;
+  /* writeCandidates: true is refused until that path is built (see the module comment). */
   note: string;
 }
 
@@ -295,6 +305,19 @@ export function estimateSecondReaderCost(
   return { model, texts: texts.length, documentChars, inputTokens, outputTokens, microusd };
 }
 
+/** The cap test the step and the scheduler share: the worst case of one more read still fits. */
+export function fitsUnderCap(spentMicrousd: number, ceilingMicrousd: number, capMicrousd: number): boolean {
+  return spentMicrousd + ceilingMicrousd <= capMicrousd;
+}
+
+/** Why a batch may not run at all, before any read or call; null when it may. */
+export function batchRefusal(batch: SecondReaderBatch | undefined, model: string): "unknown_batch" | "write_candidates_unsupported" | "unpriced_model" | null {
+  if (!batch) return "unknown_batch";
+  if (batch.writeCandidates) return "write_candidates_unsupported";
+  if (anthropicPriceFor(model) == null) return "unpriced_model";
+  return null;
+}
+
 /** One text's worst case: every output token used, 3 characters a token, no cache. */
 export function textCeilingMicrousd(text: string, model: string): number {
   const inputTokens = Math.ceil(secondReaderRequestChars(text) / 3);
@@ -383,8 +406,8 @@ export interface SecondReaderTextResult {
 export interface SecondReaderResult {
   batchId: string;
   dryRun: boolean;
-  /** Why the step read nothing: the switch is off, or the batch id is unknown. */
-  skipped: "switch_off" | "unknown_batch" | null;
+  /** Why the step read nothing and made no call. */
+  skipped: "switch_off" | "unknown_batch" | "write_candidates_unsupported" | "unpriced_model" | null;
   selected: number;
   processed: number;
   failed: number;
@@ -412,11 +435,11 @@ const isStopError = (error: unknown) => error instanceof Error && STOP_ERRORS.ha
 const usd = (micro: number) => `$${(micro / 1e6).toFixed(2)}`;
 
 /**
- * The `knox-second-reader` step. With the switch off, or for a batch id not in
- * `SECOND_READER_BATCHES`, it reads nothing and makes no call. A dry-run run lists the texts it
- * would read. Otherwise each text gets one blind call, its finds are traced and diffed with Knox's
- * free read, and each never-read is recorded (feedback row, event, and a candidate only when the
- * batch writes them).
+ * The `knox-second-reader` step. An unknown batch, a batch that would write candidates or a model
+ * with no price is refused before anything is selected. With the switch off a live run selects
+ * nothing and makes no call; a dry-run run lists the texts it would read, with no call. Otherwise
+ * each text gets one blind call while the batch cap and the time budget allow, its finds are traced
+ * and diffed with Knox's free read, and each never-read is recorded (feedback row, attempt, event).
  */
 export async function runKnoxSecondReader(options: {
   runId: number;
@@ -427,6 +450,8 @@ export async function runKnoxSecondReader(options: {
   create?: PaidMessageCreator;
   env?: NodeJS.ProcessEnv;
   limit?: number;
+  /** Test seam for the time budget. */
+  now?: () => number;
 }): Promise<SecondReaderResult> {
   const db = options.db ?? sql;
   const env = options.env ?? process.env;
@@ -437,9 +462,13 @@ export async function runKnoxSecondReader(options: {
     traced: 0, neverRead: 0, feedbackWritten: 0, candidatesWritten: 0, costMicrousd: 0, spentMicrousd: 0,
     capMicrousd: batch?.capMicrousd ?? 0, lessonDrafts: [], texts: [],
   };
-  if (!batch) return { ...result, skipped: "unknown_batch" };
+  const model = secondReaderModel(env);
+  const refusal = batchRefusal(batch, model);
+  if (refusal || !batch) return { ...result, skipped: refusal ?? "unknown_batch" };
   // A dry-run run only lists; a live run needs the switch, checked before any read or call.
   if (!result.dryRun && !secondReaderLive(env)) return { ...result, skipped: "switch_off" };
+  const now = options.now ?? Date.now;
+  const stepStartedAt = now();
 
   const limit = Math.min(Math.max(Math.floor(Number(options.limit) || SECOND_READER_TEXTS_PER_STEP), 1), SECOND_READER_TEXTS_PER_STEP);
   const rows = await selectSecondReaderTexts(db, batch, limit);
@@ -449,14 +478,17 @@ export async function runKnoxSecondReader(options: {
     return result;
   }
 
-  const model = secondReaderModel(env);
   let spent = await secondReaderBatchSpend(db, batch.id);
   for (const row of rows) {
     const institutionId = Number(row.institution_id);
     const documentTextId = Number(row.document_text_id);
     const ceiling = textCeilingMicrousd(row.normalized_text, model);
-    if (spent + ceiling > batch.capMicrousd) {
+    if (!fitsUnderCap(spent, ceiling, batch.capMicrousd)) {
       result.stopped = `Batch cap: ${usd(spent)} spent of ${usd(batch.capMicrousd)}; the next text's worst case is ${usd(ceiling)}.`;
+      break;
+    }
+    if (now() - stepStartedAt > SECOND_READER_STOP_STARTING_AFTER_MS) {
+      result.stopped = `Time budget: no read starts after ${SECOND_READER_STOP_STARTING_AFTER_MS / 1000} s; the rest wait for the next run.`;
       break;
     }
     const startedAt = Date.now();
@@ -495,6 +527,7 @@ export async function runKnoxSecondReader(options: {
       await recordAttempt(db, { ...base, outcome, yieldCount: 0, costMicrousd: 0, durationMs: Date.now() - startedAt, detail: { batch_id: batch.id, document_text_id: documentTextId, model, error: message } });
       continue;
     }
+    // The model is priced (batchRefusal), so the call's cost is its billed usage.
     const cost = call.costMicrousd ?? ceiling;
     spent += cost;
     result.processed += 1;
@@ -518,32 +551,8 @@ export async function runKnoxSecondReader(options: {
       documentTextId, textHash: row.text_hash, sourceUrl: row.source_url, summary: diff.summary, neverRead: diff.neverRead,
     }));
 
-    let candidatesWritten = 0;
-    if (batch.writeCandidates) {
-      const textRow: KnoxTextRow = row;
-      for (const find of diff.neverRead) {
-        // A $0 find is reported only: a free line is a held read on every other path.
-        if (find.amount <= 0) continue;
-        const excerpt = find.sourceLine.slice(0, 280);
-        const ok = await insertCandidate(db, {
-          runId: options.runId,
-          row: textRow,
-          candidate: {
-            feeName: find.feeName,
-            amount: find.amount,
-            frequency: find.frequency,
-            canonicalHint: find.canonicalKey,
-            confidence: confidenceFor(excerpt),
-            excerpt,
-            waivable: /\bwaiv/i.test(find.sourceLine),
-          },
-          extraFlags: [SECOND_READER_FLAG, NEVER_READ_FLAG],
-          method: `second reader (${model})`,
-        });
-        if (ok) candidatesWritten += 1;
-      }
-    }
-    result.candidatesWritten += candidatesWritten;
+    // No fee row is written: writeCandidates batches are refused (batchRefusal).
+    const candidatesWritten = 0;
 
     const outcome: AttemptOutcome = returned == null ? "parse_error" : finds.length > 0 ? "ok" : returned.length > 0 ? "evidence_mismatch" : "no_candidates";
     if (outcome === "parse_error") result.failed += 1;
@@ -601,6 +610,8 @@ export async function runKnoxSecondReader(options: {
 export function secondReaderSummaryLine(result: SecondReaderResult): string {
   if (result.skipped === "switch_off") return `Knox's second reader is off (${KNOX_SECOND_READER_SWITCH}); no call made.`;
   if (result.skipped === "unknown_batch") return `Knox's second reader: batch ${result.batchId} is not an approved batch; no call made.`;
+  if (result.skipped === "write_candidates_unsupported") return `Knox's second reader: batch ${result.batchId} would write candidates, which is not built yet; no call made.`;
+  if (result.skipped === "unpriced_model") return `Knox's second reader: the configured model has no list price, so its cost is unknown; no call made.`;
   if (result.dryRun) return `Knox's second reader (dry run of the step): would read ${result.selected} texts of batch ${result.batchId}.`;
   return (
     `Knox's second reader, batch ${result.batchId}: read ${result.processed} texts blind (${result.failed} failed), ` +

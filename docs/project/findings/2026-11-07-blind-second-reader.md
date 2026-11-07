@@ -29,8 +29,9 @@ reads the same stored text without seeing Knox's output and lists every fee with
 `knox/never-read-lessons.ts`):
 - Step `knox-second-reader`, in PROVIDER_STEP_KEYS: the global provider stop and the tick's provider
   budget hold it, and each call goes through `paidModelCall` under `agent:knox`. Switch
-  `KNOX_SECOND_READER_LIVE`, off by default: off, the step reads nothing and calls nothing, and the
-  tick queues no run.
+  `KNOX_SECOND_READER_LIVE`, off by default: off, a live run selects nothing and makes no call, a
+  dry_run run still selects and lists the texts (no call), and the tick queues no run. A model with no
+  list price (`anthropicPriceFor`) is refused before any read, so every call's cost is known.
 - The request is the paid pass's fixed instructions (cached block) and the text, nothing else: no
   Knox row, lesson or key.
 - A returned row is grounded (`groundPaidRow`), then traced: its quoted line must be in the text and
@@ -47,11 +48,17 @@ reads the same stored text without seeing Knox's output and lists every fee with
   in code) and only current texts (completed, `superseded_by_id IS NULL`). Batch
   `2026-11-07-cohort8` is the 8 banks, `writeCandidates: false` (flags and lesson rows only, no fee
   row), capped at $1.50 of logged spend (`ai_api_usage_events`, operation `knox_second_read`,
-  `metadata.batch_id`). A batch with `writeCandidates: true` writes each never-read as a raw candidate
-  (`needs_darwin_verification`, flags `knox_second_reader`, `knox_never_read`) for Darwin to verify
-  against the document; nothing is published on the second reader's word.
-- A step reads at most 5 texts, one after another; the tick queues one run at a time until the
-  batch has no text left or reaches its cap, so the cohort's 15 texts take three runs.
+  `metadata.batch_id`). A batch with `writeCandidates: true` is refused in code (no read, no call)
+  until that path carries the lineup, own unit and own condition and retires older-text rows the way
+  `paid-extract.ts` does; then a recovered fee becomes a raw candidate for Darwin to verify against
+  the document. Nothing is published on the second reader's word.
+- A step reads at most 5 texts, one after another, and starts none after 120 s
+  (`SECOND_READER_STOP_STARTING_AFTER_MS`), so at most one read is in flight past it. The paid
+  extract's 4,110 calls took at most 74.5 s (p99 32.8 s), so a step fits the tick's 270 s finish
+  budget; run-store expects 200 s.
+- The tick queues one run at a time, under a transaction-scoped advisory lock per batch, while a text
+  is left and at least one left text's worst case fits under the cap (`fitsUnderCap`, the step's own
+  test). The cohort's 15 texts take three runs.
 
 **Dry-run cost estimate** (no provider call made;
 `/mnt/project-files/data-quality/blind-second-reader-2026-11-07/cost-estimate.json`):

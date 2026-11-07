@@ -36,13 +36,12 @@ import {
   diffSecondRead,
   estimateSecondReaderCost,
   KNOX_SECOND_READER_STRATEGY,
-  NEVER_READ_FLAG,
   NEVER_READ_KIND,
   OBSERVED_INPUT_TOKENS_PER_CHAR,
   OBSERVED_OUTPUT_TOKENS,
   runKnoxSecondReader,
   SECOND_READER_BATCHES,
-  SECOND_READER_FLAG,
+  SECOND_READER_STOP_STARTING_AFTER_MS,
   SECOND_READER_MAX_OUTPUT_TOKENS,
   secondReaderLive,
   secondReaderRequest,
@@ -51,12 +50,12 @@ import {
   traceSecondReadFind,
   type SecondReaderBatch,
 } from "./second-reader";
-import { scheduleKnoxSecondReaderRun } from "./second-reader-schedule";
+import { scheduleKnoxSecondReaderRun, secondReaderScheduleLockKey } from "./second-reader-schedule";
 import { neverReadLessonDrafts } from "./never-read-lessons";
 import { FEEDBACK_KINDS } from "@/lib/agents/learning/feedback-kinds";
 import { isProviderStep } from "@/lib/agents/types";
 
-type DbMock = ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };
+type DbMock = ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn>; begin: ReturnType<typeof vi.fn> };
 const ON = { KNOX_SECOND_READER_LIVE: "true" } as unknown as NodeJS.ProcessEnv;
 const OFF = {} as unknown as NodeJS.ProcessEnv;
 const BATCH = "2026-11-07-cohort8";
@@ -93,20 +92,23 @@ function templateText(strings: unknown): string {
   return Array.isArray(strings) ? strings.join(" ") : String(strings);
 }
 
-function createDb(rows: Array<Record<string, unknown>>, options: { spent?: number; feedback?: Array<Record<string, unknown>> } = {}): DbMock {
+function createDb(rows: Array<Record<string, unknown>>, options: { spent?: number; feedback?: Array<Record<string, unknown>>; active?: boolean } = {}): DbMock {
   const db = vi.fn((strings: TemplateStringsArray) => {
     const sqlText = templateText(strings);
     if (sqlText.includes("FROM ai_api_usage_events")) return Promise.resolve([{ spent: options.spent ?? 0 }]);
     if (sqlText.includes("INSERT INTO pipeline_feedback")) return Promise.resolve([{ id: 1 }]);
     if (sqlText.includes("FROM pipeline_feedback")) return Promise.resolve(options.feedback ?? []);
-    if (sqlText.includes("FROM agent_runs")) return Promise.resolve([]);
+    if (sqlText.includes("FROM agent_runs")) return Promise.resolve(options.active ? [{ id: 55 }] : []);
     return Promise.resolve([]);
   }) as DbMock;
   db.unsafe = vi.fn(() => Promise.resolve(rows));
+  db.begin = vi.fn(async (work: (tx: DbMock) => unknown) => work(db));
   return db;
 }
 const asDb = (db: DbMock) => db as unknown as NonNullable<Parameters<typeof runKnoxSecondReader>[0]["db"]>;
 
+/** The test model's cost of one `reply`: 2,000 input and 400 output tokens at $2 / $10 a million. */
+const REPLY_COST = 2_000 * 2 + 400 * 10;
 const reply = (fees: unknown[]) =>
   ({ content: [{ type: "text", text: JSON.stringify({ fees }) }], usage: { input_tokens: 2_000, output_tokens: 400 } }) as never;
 
@@ -187,19 +189,78 @@ describe("Knox's blind second reader", () => {
     expect(db.mock.calls.some((call) => call.includes("knox.second_reader"))).toBe(true);
   });
 
-  it("writes a never-read as a candidate for Darwin only in a batch that writes candidates", async () => {
+  it("refuses a batch that would write candidates, with no read and no call", async () => {
     const batch: SecondReaderBatch = { ...SECOND_READER_BATCHES[BATCH], id: "test-writes", writeCandidates: true };
     (SECOND_READER_BATCHES as Record<string, SecondReaderBatch>)["test-writes"] = batch;
     try {
-      await runKnoxSecondReader({ runId: 1, db: asDb(createDb([textRow()])), create: vi.fn(async () => reply(modelFees)), env: ON, batchId: "test-writes" });
-      expect(insertCandidate).toHaveBeenCalledTimes(1);
-      expect((insertCandidate.mock.calls[0] as unknown[])[1]).toMatchObject({
-        candidate: { canonicalHint: "wire_domestic_outgoing", amount: 27.5 },
-        extraFlags: [SECOND_READER_FLAG, NEVER_READ_FLAG],
-      });
+      const db = createDb([textRow()]);
+      const create = vi.fn(async () => reply(modelFees));
+      const result = await runKnoxSecondReader({ runId: 1, db: asDb(db), create, env: ON, batchId: "test-writes" });
+      expect(result.skipped).toBe("write_candidates_unsupported");
+      expect(create).not.toHaveBeenCalled();
+      expect(db.unsafe).not.toHaveBeenCalled();
+      expect(insertCandidate).not.toHaveBeenCalled();
+      // Even a dry-run run of such a batch is refused.
+      expect((await runKnoxSecondReader({ runId: 1, db: asDb(db), create, env: ON, dryRun: true, batchId: "test-writes" })).skipped).toBe("write_candidates_unsupported");
     } finally {
       delete (SECOND_READER_BATCHES as Record<string, SecondReaderBatch>)["test-writes"];
     }
+  });
+
+  it("refuses a model with no list price, so no call's cost is unknown", async () => {
+    const env = { ...ON, PIPELINE_SECOND_READ_MODEL: "unlisted-model-1" } as unknown as NodeJS.ProcessEnv;
+    const db = createDb([textRow()]);
+    const create = vi.fn(async () => reply(modelFees));
+    expect((await runKnoxSecondReader({ runId: 1, db: asDb(db), create, env, batchId: BATCH })).skipped).toBe("unpriced_model");
+    expect(create).not.toHaveBeenCalled();
+    expect(await scheduleKnoxSecondReaderRun(asDb(db), new Date(0), env)).toEqual({ scheduled: false, runId: null, reason: "unpriced_model" });
+    expect(db).not.toHaveBeenCalled();
+  });
+
+  it("stops mid-loop once the next text's worst case no longer fits under the cap", async () => {
+    const cap = SECOND_READER_BATCHES[BATCH].capMicrousd;
+    const ceiling = textCeilingMicrousd(text, "claude-sonnet-5-5");
+    // The first text fits exactly; after its cost is added, the second does not.
+    const create = vi.fn(async () => reply(modelFees));
+    const result = await runKnoxSecondReader({ runId: 1, db: asDb(createDb([textRow(395, 1), textRow(395, 2)], { spent: cap - ceiling })), create, env: ON, batchId: BATCH });
+    expect(create).toHaveBeenCalledTimes(1);
+    expect(result.processed).toBe(1);
+    expect(result.costMicrousd).toBe(REPLY_COST);
+    expect(result.spentMicrousd).toBe(cap - ceiling + REPLY_COST);
+    expect(result.stopped).toMatch(/Batch cap/);
+  });
+
+  it("starts no read once the time budget has passed, so at most one is in flight past it", async () => {
+    let clock = 0;
+    const create = vi.fn(async () => {
+      clock += SECOND_READER_STOP_STARTING_AFTER_MS + 1;
+      return reply(modelFees);
+    });
+    const result = await runKnoxSecondReader({ runId: 1, db: asDb(createDb([textRow(395, 1), textRow(395, 2), textRow(395, 3)])), create, env: ON, batchId: BATCH, now: () => clock });
+    expect(create).toHaveBeenCalledTimes(1);
+    expect(result.stopped).toMatch(/Time budget/);
+  });
+
+  it("leaves a text unread when the provider stop or a budget cap refuses the call", async () => {
+    const db = createDb([textRow(395, 1), textRow(395, 2)]);
+    const create = vi.fn(async () => {
+      throw Object.assign(new Error("Provider budget blocked"), { name: "ProviderBudgetBlockedError" });
+    });
+    const result = await runKnoxSecondReader({ runId: 1, db: asDb(db), create, env: ON, batchId: BATCH });
+    expect(create).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({ processed: 0, failed: 0, stopped: "Provider budget blocked" });
+    // No attempt row: the text stays selectable for the next run.
+    expect(db.mock.calls.some((call) => templateText(call[0]).includes("INSERT INTO pipeline_attempts"))).toBe(false);
+    expect(db.mock.calls.some((call) => templateText(call[0]).includes("INSERT INTO pipeline_feedback"))).toBe(false);
+  });
+
+  it("re-selects a text only when its earlier read ended for a transient reason", async () => {
+    const db = createDb([]);
+    await runKnoxSecondReader({ runId: 1, db: asDb(db), env: OFF, dryRun: true, batchId: BATCH });
+    const [query, params] = db.unsafe.mock.calls[0] as [string, unknown[]];
+    expect(query).toContain("done.outcome NOT IN ('timeout', 'network_error', 'http_429', 'http_5xx', 'budget_blocked')");
+    expect(query).toContain("done.detail->>'batch_id' = $3");
+    expect(params.slice(1, 3)).toEqual([KNOX_SECOND_READER_STRATEGY.strategy, BATCH]);
   });
 
   it("makes no call and reads nothing with the switch off", async () => {
@@ -247,10 +308,28 @@ describe("Knox's blind second reader", () => {
     expect(create).not.toHaveBeenCalled();
   });
 
-  it("queues one run of the approved batch only with the switch on", async () => {
+  it("queues one run of the approved batch only with the switch on, under an advisory lock", async () => {
     const db = createDb([textRow()]);
     expect(await scheduleKnoxSecondReaderRun(asDb(db), new Date(0), ON)).toEqual({ scheduled: true, runId: 77 });
+    expect(db.begin).toHaveBeenCalledTimes(1);
+    const lock = db.mock.calls.findIndex((call) => templateText(call[0]).includes("pg_advisory_xact_lock"));
+    const activeCheck = db.mock.calls.findIndex((call) => templateText(call[0]).includes("FROM agent_runs"));
+    expect(lock).toBeGreaterThanOrEqual(0);
+    expect(db.mock.calls[lock]).toContain(secondReaderScheduleLockKey(BATCH));
+    expect(lock).toBeLessThan(activeCheck);
     expect(startAgentRun).toHaveBeenCalledWith(expect.objectContaining({ params: { source: "knox.second_reader", batch_id: BATCH }, steps: [expect.objectContaining({ key: "knox-second-reader" })] }));
+  });
+
+  it("queues nothing while a run is active, when no text is left, at the cap or under the provider stop", async () => {
+    expect(await scheduleKnoxSecondReaderRun(asDb(createDb([textRow()], { active: true })), new Date(0), ON)).toEqual({ scheduled: false, runId: 55, reason: "active" });
+    expect(await scheduleKnoxSecondReaderRun(asDb(createDb([])), new Date(0), ON)).toEqual({ scheduled: false, runId: null, reason: "done" });
+    // Under the cap by less than any left text's worst case: the step could not read one, so none is queued.
+    const cap = SECOND_READER_BATCHES[BATCH].capMicrousd;
+    const ceiling = textCeilingMicrousd(text, "claude-sonnet-5-5");
+    expect(await scheduleKnoxSecondReaderRun(asDb(createDb([textRow()], { spent: cap - ceiling + 1 })), new Date(0), ON)).toEqual({ scheduled: false, runId: null, reason: "capped" });
+    getAutomationControl.mockResolvedValueOnce({ enabled: false });
+    expect(await scheduleKnoxSecondReaderRun(asDb(createDb([textRow()])), new Date(0), ON)).toEqual({ scheduled: false, runId: null, reason: "provider_stop" });
+    expect(startAgentRun).not.toHaveBeenCalled();
   });
 });
 

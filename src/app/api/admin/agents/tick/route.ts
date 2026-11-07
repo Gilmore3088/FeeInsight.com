@@ -263,8 +263,8 @@ async function handleGET(request: NextRequest) {
   // three runs, until no unreviewed "review" fee is left. A provider step, like the re-key above.
   const releaseReviewSample = await scheduleReleaseReviewSample()
     .catch((error: unknown) => ({ error: error instanceof Error ? error.message : "Release-review sample admission failed" }));
-  // Knox's blind second reader (James, 2026-11-07): queues nothing, and reads nothing, until
-  // KNOX_SECOND_READER_LIVE is on; then one run at a time of the approved batch, under its cap.
+  // Knox's blind second reader (James, 2026-11-07): queues no run until KNOX_SECOND_READER_LIVE is
+  // on; then one run at a time of the approved batch, while a text's worst case fits under its cap.
   const knoxSecondReader = await scheduleKnoxSecondReaderRun()
     .catch((error: unknown) => ({ error: error instanceof Error ? error.message : "Knox second reader admission failed" }));
   const result = await executeQueuedAgentRuns({

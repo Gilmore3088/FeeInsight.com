@@ -490,7 +490,8 @@ async function executeAgenticStep(
   }
 
   // Knox's blind second reader (James, 2026-11-07): one blind paid read per text of an approved
-  // batch, diffed with Knox's free read; reads nothing and calls nothing while its switch is off.
+  // batch, diffed with Knox's free read. With its switch off a live run selects nothing and makes no
+  // call; a dry_run run still selects and lists the texts, with no call.
   if (step.stepKey === "knox-second-reader") {
     const { runKnoxSecondReader, secondReaderSummaryLine } = await import("@/lib/agents/knox/second-reader");
     const batchId = typeof params.batch_id === "string" ? params.batch_id : null;
@@ -4612,8 +4613,9 @@ const STEP_EXPECTED_MS: Record<string, number> = {
   "hamilton-paid-gate-replay": 290_000,
   // Two banks at once, each two reads at once of up to 16,000 output tokens (deming/answer-key-rekey.ts).
   "deming-answer-key-rekey": 260_000,
-  // Up to 5 blind reads one after another, each up to 8,000 output tokens (knox/second-reader.ts).
-  "knox-second-reader": 280_000,
+  // Up to 5 blind reads one after another, none started after 120 s; one read in flight past it took
+  // at most 74.5 s on the paid extract's 4,110 calls (knox/second-reader.ts), so 200 s fits the tick's 270 s.
+  "knox-second-reader": 200_000,
   // Up to 12 banks, starting none after 150 s (deming/reconcile/run.ts).
   "deming-reconcile": 200_000,
   // Five release-review calls of 25 fees, one after another, then their settlement.

@@ -3360,11 +3360,14 @@ attempt's detail (`extract.second_reader` v1) and the step's `knox.second_reader
 `never-read-lessons.ts` reads the rows back into lesson drafts by text layout and line shape
 (`knox.never_read_lessons`, `repeats` at two banks or more); the builder who writes the free rule
 for a draft adds its role lesson here in `role-lessons.ts`. A batch (`SECOND_READER_BATCHES`) names
-its institutions, its dollar cap (logged spend of operation `knox_second_read`) and whether it writes
-never-reads as raw candidates for Darwin (`knox_second_reader`, `knox_never_read`,
-`needs_darwin_verification`). Batch `2026-11-07-cohort8` (James's 8 banks) writes none and is capped
-at $1.50. The step is a provider step under `agent:knox`; off, it reads and calls nothing and the tick
-queues no run. It changes no read, so no rules version bump.
+its institutions and its dollar cap (logged spend of operation `knox_second_read`); a batch with
+`writeCandidates: true` is refused until that path carries the lineup, own unit and own condition and
+retires older-text rows as the paid pass does. Batch `2026-11-07-cohort8` (James's 8 banks) writes no
+fee row and is capped at $1.50; a model with no list price is refused. A step starts no read after
+120 s, and the tick queues one run at a time under an advisory lock while a left text's worst case
+fits under the cap. The step is a provider step under `agent:knox`; off, a live run selects nothing
+and makes no call (a dry_run run still lists its texts), and the tick queues no run. It changes no
+read, so no rules version bump.
 
 ## Extraction Passes
 
