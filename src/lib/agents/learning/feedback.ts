@@ -56,7 +56,8 @@ export type FeedbackStage = (typeof FEEDBACK_STAGES)[number];
  *   Read level (Rosetta, `rosetta/batch-review.ts`): no_fees_found, short_text, missed_fee_page,
  *     unresolved_fee_page, unread, batch_error_rate (one row per batch of reads)
  *   Extract level (Knox, `knox/batch-review.ts`): batch_miss, batch_error_rate (one row per
- *     batch of 500 Knox reads)
+ *     batch of 500 Knox reads); never_read (`knox/second-reader.ts`: a fee the blind second reader
+ *     traced to its source line that Knox's free read misses; `knox/never-read-lessons.ts` reads it)
  *   Second look (Hamilton, `hamilton/second-look.ts`): takedown_pending, takedown_confirmed,
  *     takedown_cleared (a fee's current state, one row per fee and check) and the appended
  *     audit trail flag_recorded, flag_cleared, flag_confirmed (one row per event, never rewritten)

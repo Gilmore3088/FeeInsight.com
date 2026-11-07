@@ -25,6 +25,7 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 
 Newest first. The full text, who decided and why are in [DECISIONS.md](DECISIONS.md).
 
+- 2026-11-07 — Build a blind second reader into the pipeline: a model lists every fee in a stored text without seeing Knox's read, a traced fee Knox missed becomes a never-read flag and a Knox lesson, and nothing goes live on its word. — [decision](DECISIONS.md#2026-11-07) — `src/lib/agents/knox/second-reader.test.ts`
 - 2026-11-04 — A relationship-tier table is one fee per tier: each column is its own fee named with its tier, $0 tiers included ("Courtesy Pay (Platinum)" $20, "Courtesy Pay (Gold)" $30 on Schools FCU's PLATINUM GOLD SILVER+ SILVER COLLEGE table). — [decision](DECISIONS.md#2026-11-04)
 - 2026-11-04 — A free allowance ("1 Free → $5", "first 3 free, then $5") is a condition on the priced fee, in its name or notes, not a separate $0 fee; answer-key rows that key $0 for an allowance get re-keyed. — [decision](DECISIONS.md#2026-11-04)
 - 2026-11-03 — Re-run today's pipeline over every bank as a shadow, diff each live fee against it, decide each difference by the bank's own document (answer key, source check, category guard, else review) and fix the steps the differences are charged to; pilot on the 62 answer-key banks. — [decision](DECISIONS.md#2026-11-03) — `src/lib/agents/deming/reconcile/reconcile.test.ts`
@@ -323,6 +324,7 @@ Every finding in `findings/`, grouped by where the problem was, newest first in 
 
 ### Provider calls and paid reads
 
+- 2026-11-07 — A fee Knox never reads is found only by reading the text a second, independent way: a blind model read, traced line by line with `checkFeeAgainstSource`, files each miss as a `never_read` lesson row (KNOX_SECOND_READER_LIVE, off). — [finding](findings/2026-11-07-blind-second-reader.md) — Guard: `src/lib/agents/knox/second-reader.test.ts`
 - 2026-10-20 — A refusal that describes the account (billing, quota) must never be recorded as a fact about the item. — [finding](findings/2026-10-20-billing-refusal-settled-paid-items.md) — Agent lesson: rosetta/issue-1056-billing-refusal-is-not-the-scan
 - 2026-10-19 — Rosetta paid transcription response and cost contract. — [finding](findings/2026-10-19-rosetta-paid-response-policy.md) — Guard: `src/lib/agents/rosetta/paid-read.integration.test.ts`; 2 more Guard line(s)
 - 2026-10-19 — Raw terminal callers accepted unfinished answers and omitted their incurred usage. — [finding](findings/2026-10-19-raw-terminal-completion-and-incurred-usage.md) — Guard: `src/lib/raw-terminal-response.integration.test.ts`; 3 more Guard line(s)

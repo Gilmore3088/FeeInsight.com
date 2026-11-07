@@ -63,6 +63,7 @@ export const NOT_REPLAYABLE_REASONS: Readonly<Record<string, string>> = {
   KNOX_REREAD_BACKLOG_LIVE: "not wired yet: the re-read backlog only chooses which stored texts Knox reads again (current texts read under an older rules version, behind live fees first); it changes no read, and the golden set replays every document under today's rules already, so a replay could only pass vacuously",
   KNOX_REREAD_FEEDBACK_LIVE: `acts on re-read requests other checks filed in pipeline feedback; ${DATABASE("the requests")}`,
   KNOX_REREAD_PUBLISHED_NAME_LIVE: `renames a live fee from a re-read request; ${DATABASE("the request")}, and the golden set does not score names`,
+  KNOX_SECOND_READER_LIVE: "a provider switch: on, it buys blind model reads of an approved batch's stored texts and records the fees Knox never reads; the golden-set replay makes no provider call and scores Knox's free read, which the switch never changes, so a replay could only pass vacuously",
   KNOX_SINGLE_ACCOUNT_OWNER_LIVE: `re-owns single-account disclosures' fees across live raw rows; ${DATABASE("the raw rows' product ownership")}`,
   KNOX_TWO_READ_AGREEMENT_LIVE: "not wired yet: the two-read check pairs the free and paid Knox rows already stored for one text and holds raw rows still waiting for Darwin; the golden set replays one read per document and has no paid read to pair, so a replay could only pass vacuously",
   LIVE_NAME_REFRESH_LIVE: "renames live fees to a better name; the golden set scores category, price and frequency, not names",

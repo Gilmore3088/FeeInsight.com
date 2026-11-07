@@ -97,6 +97,7 @@ const PAID_CALLERS: Record<string, string[]> = {
   "src/lib/agents/darwin/adjudicate.ts": ["verify-paid"],
   "src/lib/agents/darwin/release-review.ts": ["verify-paid", "darwin-release-review-sample"],
   "src/lib/agents/knox/paid-extract.ts": ["extract-paid"],
+  "src/lib/agents/knox/second-reader.ts": ["knox-second-reader"],
   "src/lib/agents/rosetta/paid-read.ts": ["read-paid"],
   "src/lib/agents/magellan/paid-find.ts": ["discover-paid"],
   "src/lib/agents/magellan/website-find.ts": ["discover-paid"],

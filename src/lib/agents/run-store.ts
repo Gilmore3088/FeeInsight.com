@@ -489,6 +489,15 @@ async function executeAgenticStep(
     return { status: "completed", summary: rekeySummaryLine(result), detail: { ...result } };
   }
 
+  // Knox's blind second reader (James, 2026-11-07): one blind paid read per text of an approved
+  // batch, diffed with Knox's free read; reads nothing and calls nothing while its switch is off.
+  if (step.stepKey === "knox-second-reader") {
+    const { runKnoxSecondReader, secondReaderSummaryLine } = await import("@/lib/agents/knox/second-reader");
+    const batchId = typeof params.batch_id === "string" ? params.batch_id : null;
+    const result = await runKnoxSecondReader({ runId: run.id, stepId: step.id, dryRun: run.runKind === "dry_run", batchId });
+    return { status: "completed", summary: secondReaderSummaryLine(result), detail: { ...result } };
+  }
+
   // The full-pipeline reconciliation (James, 2026-11-03): a shadow run of today's pipeline on each
   // bank's current documents, diffed fee by fee with what is live and graded; run events only.
   if (step.stepKey === "deming-reconcile") {
@@ -4603,6 +4612,8 @@ const STEP_EXPECTED_MS: Record<string, number> = {
   "hamilton-paid-gate-replay": 290_000,
   // Two banks at once, each two reads at once of up to 16,000 output tokens (deming/answer-key-rekey.ts).
   "deming-answer-key-rekey": 260_000,
+  // Up to 5 blind reads one after another, each up to 8,000 output tokens (knox/second-reader.ts).
+  "knox-second-reader": 280_000,
   // Up to 12 banks, starting none after 150 s (deming/reconcile/run.ts).
   "deming-reconcile": 200_000,
   // Five release-review calls of 25 fees, one after another, then their settlement.

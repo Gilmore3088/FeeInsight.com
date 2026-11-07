@@ -194,6 +194,7 @@ export const FEEDBACK_KINDS = {
   set_aside_no_category: { unread: "Knox's held recheck records it; Knox's lessons should read it." },
   range_band_set_aside: { unread: "Knox's range band records it; Knox's lessons should read it." },
   promotion_withdrawn: { unread: "Knox's promotion recheck records it; Knox's lessons should read it." },
+  never_read: { readers: ["src/lib/agents/knox/never-read-lessons.ts"], readStages: EXTRACT, note: "Knox's blind second reader (second-reader.ts, James 2026-11-07) records a fee it found and traced to its own source line with checkFeeAgainstSource that today's free Knox team never reads. never-read-lessons.ts reads the rows back into Knox lesson drafts by line shape and layout; a builder writes the role lesson with the rule fix." },
   batch_miss: { unread: "Knox's batch review records it; Knox's lessons should read it." },
 
   // Re-reads and renames.

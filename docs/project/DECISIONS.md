@@ -3,6 +3,24 @@
 Newest first. Each entry: date, what was decided, who, why, and what it means for the work.
 Seeded 2026-10-05 from the project's working memory; earlier decisions were not recorded here.
 
+## 2026-11-07
+
+**Build a blind second reader into the pipeline.** James, 2026-11-07 04:30 UTC, answering the
+proposal relayed by the session coordinator: "Yeah let's build it into the pipeline". A model reads
+the same stored source text (`agent_source_texts`) without seeing Knox's output and lists every fee
+with its exact source line; that list is diffed against Knox's read of the same text, and a fee the
+second reader finds that Knox missed becomes a never-read flag. Each confirmed miss (its line traced
+in the text with `checkFeeAgainstSource`) feeds a Knox lesson. Nothing goes live on the second
+reader's word: a recovered fee only becomes a candidate that Darwin verifies against the document.
+The first target is the 45 never-read fees on his 8-bank cohort (answer-key score run 117).
+
+Intended consequences (not part of the decision):
+- It ships as the `knox-second-reader` provider step behind `KNOX_SECOND_READER_LIVE`, off
+  (`findings/2026-11-07-blind-second-reader.md`). Paid calls still need his yes on the dollar amount:
+  the 8-bank dry run is estimated at $0.27 (worst case $1.30, capped at $1.50).
+- It uses the existing Anthropic provider only; another vendor would need a new dependency, a new
+  key and his yes.
+
 ## 2026-11-04
 
 **A relationship-tier table is one fee per tier.** James, 2026-11-04, answering question 1 of
