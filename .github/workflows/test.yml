@@ -73,7 +73,8 @@ jobs:
           let code=true;
           const {DIFF_BASE:base,DIFF_HEAD:head,EVENT_NAME:event}=process.env;
           if (event !== 'workflow_dispatch' && /^[a-f0-9]{40}$/.test(base ?? '') && /^[a-f0-9]{40}$/.test(head ?? '')) {
-            const paths=execFileSync('git',['diff','--name-only','-z',base+'...'+head],{encoding:'utf8'}).split('\0').filter(Boolean);
+            // Renames are deletion + addition so a protected old path cannot disappear.
+            const paths=execFileSync('git',['diff','--no-renames','--name-only','-z',base+'...'+head],{encoding:'utf8'}).split('\0').filter(Boolean);
             const policy=spawnSync('git',['show',base+':src/lib/engineering-verification/contract.mjs'],{encoding:'utf8'});
             if (policy.status === 0) {
               const file=join(process.env.RUNNER_TEMP,'trusted-verification-policy.mjs');

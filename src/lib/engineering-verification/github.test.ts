@@ -73,13 +73,29 @@ describe('independent review authority', () => {
   const binding = { head_sha: sha, contract_sha256: contractSha256, policy_sha256: policySha256, reviewed_scope: ['src/lib/a.ts'], findings: [] };
   const body = (data: unknown) => `<!-- engineering-verification: ${JSON.stringify(data)} -->`;
   function review(extra = {}) { return { id: 1, user: { id: 2, login: 'reviewer', type: 'User' }, state: 'APPROVED', author_association: 'COLLABORATOR', commit_id: sha, submitted_at: now.toISOString(), body: body(binding), ...extra }; }
-  async function assess(reviews: unknown[]) {
-    sourceFetch.mockImplementation(api({ '/pulls/1/reviews': reviews }));
+  async function assess(reviews: unknown[], files: unknown = [{ filename: 'src/lib/a.ts', status: 'modified' }]) {
+    sourceFetch.mockImplementation(api({ '/pulls/1/reviews': reviews, '/pulls/1/files': files }));
     const snapshot = await collectGithubEvidence({ repository: 'o/r', prNumber: 1, token: 'secret', now });
     return assessReviewEvidence(snapshot, { headSha: sha, contractSha256, policySha256, now, ownerLogins: ['builder'] });
   }
   it('verifies an independently authenticated exact-head scope and frozen hashes', async () => {
     expect((await assess([review()])).status).toBe('INDEPENDENT_REVIEW_VERIFIED');
+  });
+  it('requires the old protected path and new destination in a pure-rename review', async () => {
+    const files = [{ filename: 'docs/old-guide.md', previous_filename: 'AGENTS.md', status: 'renamed' }];
+    const partial = review({ body: body({ ...binding, reviewed_scope: ['docs/old-guide.md'] }) });
+    expect((await assess([partial], files)).status).toBe('BLOCKED');
+    const complete = review({ body: body({ ...binding, reviewed_scope: ['AGENTS.md', 'docs/old-guide.md'] }) });
+    expect((await assess([complete], files)).status).toBe('INDEPENDENT_REVIEW_VERIFIED');
+  });
+  it.each([
+    [{ filename: 'docs/old-guide.md', status: 'renamed' }],
+    [{ filename: 'docs/old-guide.md', previous_filename: '../AGENTS.md', status: 'renamed' }],
+    [{ filename: 'docs/old-guide.md', previous_filename: ['AGENTS.md'], status: 'renamed' }],
+    [{ filename: 'docs/old-guide.md', status: 'invented' }],
+  ])('does not let a destination-only review hide a malformed changed-file inventory: %j', async file => {
+    const partial = review({ body: body({ ...binding, reviewed_scope: ['docs/old-guide.md'] }) });
+    expect((await assess([partial], [file])).status).toBe('BLOCKED');
   });
   it('records owner sign-off separately and never counts same-account approval as independent', async () => {
     const result = await assess([review({ user: { id: 1, login: 'builder', type: 'User' }, body: body({ ...binding, owner_signoff: true }) })]);

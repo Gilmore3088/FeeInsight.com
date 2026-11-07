@@ -1,6 +1,8 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { createRequire } from 'node:module';
 import { spawnSync } from 'node:child_process';
 
@@ -12,6 +14,32 @@ function workflow(name: string): Workflow {
 }
 
 describe('engineering verification workflow trust boundary', () => {
+  it('runs full CI for a real protected-file rename to an inert document', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'feeinsight-rename-'));
+    const git = (...args: string[]) => {
+      const result = spawnSync('git', args, { cwd: directory, encoding: 'utf8' });
+      expect(result.status, result.stderr).toBe(0);
+      return result.stdout.trim();
+    };
+    try {
+      git('init', '--quiet'); git('config', 'user.name', 'Offline fixture'); git('config', 'user.email', 'fixture@example.invalid'); git('config', 'diff.renames', 'true');
+      mkdirSync(join(directory, 'src/lib/engineering-verification'), { recursive: true });
+      mkdirSync(join(directory, 'docs'));
+      writeFileSync(join(directory, 'AGENTS.md'), 'Protected instructions unchanged by the rename.\n');
+      writeFileSync(join(directory, 'src/lib/engineering-verification/contract.mjs'), readFileSync(new URL('./contract.mjs', import.meta.url)));
+      git('add', '.'); git('commit', '--quiet', '-m', 'Frozen trusted base');
+      const base = git('rev-parse', 'HEAD');
+      git('mv', 'AGENTS.md', 'docs/old-guide.md'); git('commit', '--quiet', '-m', 'Pure rename');
+      const head = git('rev-parse', 'HEAD');
+      expect(git('diff', '--name-status', '-M', base, head)).toBe('R100\tAGENTS.md\tdocs/old-guide.md');
+      const classifier = workflow('test.yml').jobs.changes.steps.find(step => step.id === 'diff');
+      const output = join(directory, 'classification.txt');
+      const result = spawnSync('bash', ['-c', classifier?.run ?? 'exit 90'], { cwd: directory, encoding: 'utf8',
+        env: { ...process.env, EVENT_NAME: 'pull_request', DIFF_BASE: base, DIFF_HEAD: head, RUNNER_TEMP: directory, GITHUB_OUTPUT: output } });
+      expect(result.status, result.stderr).toBe(0);
+      expect(readFileSync(output, 'utf8')).toBe('code=true\n');
+    } finally { rmSync(directory, { recursive: true, force: true }); }
+  });
   it('keeps the proof adapter on explicit main dispatch with immutable actions and read-only permissions', () => {
     const proof = workflow('engineering-verification.yml');
     expect(Object.keys(proof.on)).toEqual(['workflow_dispatch']);
@@ -44,7 +72,7 @@ describe('engineering verification workflow trust boundary', () => {
     expect(execute?.env).not.toHaveProperty('GH_TOKEN');
     expect(execute?.env).not.toHaveProperty('GITHUB_TOKEN');
     const artifact = steps.find(step => step.uses?.startsWith('actions/upload-artifact@'));
-    expect(artifact?.with?.name).toBe('engineering-verification-${{ inputs.pr_number }}-${{ steps.prepare.outputs.head_sha }}-${{ inputs.contract }}');
+    expect(artifact?.with?.name).toBe('engineering-verification-${{ inputs.pr_number }}-${{ steps.prepare.outputs.head_sha }}-${{ inputs.contract }}-attempt-${{ github.run_attempt }}');
     expect(artifact?.with?.['retention-days']).toBe(90);
   });
   it('refreshes audit evidence on empty workflow-run PR associations without writing checks', () => {

@@ -67,13 +67,13 @@ describe('engineering evidence assessment', () => {
 
 describe('authenticated deployment to runtime observation', () => {
   afterEach(() => sourceFetch.mockReset());
-  async function collected({ wrongDeployment = false, wrongMerge = false } = {}) {
+  async function collected({ wrongDeployment = false, wrongMerge = false, environment = 'production', githubObservedAt = now, runtimeObservedAt = now } = {}) {
     const deployedSha = 'd'.repeat(40);
-    const observationPolicy = { ...policy, deployedSha };
+    const observationPolicy = { ...policy, deployedSha, environment };
     const data = runtime();
-    data.atlas.forEach(row => { row.execution.deployedSha = deployedSha; });
-    data.deming.forEach(row => { row.execution.deployedSha = deployedSha; });
-    data.bayes.forEach(row => { row.execution.deployedSha = deployedSha; });
+    data.atlas.forEach(row => { row.execution.deployedSha = deployedSha; row.execution.environment = environment; });
+    data.deming.forEach(row => { row.execution.deployedSha = deployedSha; row.execution.environment = environment; });
+    data.bayes.forEach(row => { row.execution.deployedSha = deployedSha; row.execution.environment = environment; });
     const since = '2026-11-02T00:00:00Z', until = now.toISOString();
     const request = { deployedSha, since, until, changeKeys: policy.replayChangeKeys };
     const values: Record<string, unknown> = {
@@ -81,8 +81,8 @@ describe('authenticated deployment to runtime observation', () => {
       '/pulls/1': { number: 1, head: { sha }, user: { login: 'builder', id: 1 }, state: 'closed', merged: true, merge_commit_sha: wrongMerge ? 'e'.repeat(40) : deployedSha, merged_at: '2026-11-01T00:00:00Z' },
       '/pulls/1/files': [], '/pulls/1/reviews': [], '/issues/1/comments': [],
       [`/commits/${sha}/check-runs`]: { check_runs: [] }, '/actions/workflows/test.yml': { id: 7, path: '.github/workflows/test.yml' }, '/actions/workflows/7/runs': { workflow_runs: [] },
-      '/deployments': [{ id: 10, sha: wrongDeployment ? 'e'.repeat(40) : deployedSha, environment: 'production', created_at: '2026-11-01T23:00:00Z' }],
-      '/deployments/10/statuses': [{ id: 11, state: 'success', environment: 'production', created_at: since }],
+      '/deployments': [{ id: 10, sha: wrongDeployment ? 'e'.repeat(40) : deployedSha, environment, created_at: '2026-11-01T23:00:00Z' }],
+      '/deployments/10/statuses': [{ id: 11, state: 'success', environment, created_at: since }],
     };
     sourceFetch.mockImplementation(async (input: string | URL | Request) => {
       const url = new URL(input instanceof Request ? input.url : String(input));
@@ -91,8 +91,8 @@ describe('authenticated deployment to runtime observation', () => {
       const key = url.pathname.replace('/repos/o/r', '');
       return key in values ? Response.json(values[key]) : Response.json({ message: 'missing' }, { status: 404 });
     });
-    const github = await collectGithubEvidence({ repository: 'o/r', prNumber: 1, token: 'token', now });
-    const evidence = await collectRuntimeEvidence({ adminCookie: 'session=private', deployedSha, since, until, changeKeys: policy.replayChangeKeys, now });
+    const github = await collectGithubEvidence({ repository: 'o/r', prNumber: 1, token: 'token', now: githubObservedAt });
+    const evidence = await collectRuntimeEvidence({ adminCookie: 'session=private', deployedSha, since, until, changeKeys: policy.replayChangeKeys, now: runtimeObservedAt });
     return { github, evidence, observationPolicy };
   }
   it('accepts only authenticated, reconciled, versioned observations with head-to-merge lineage', async () => {
@@ -104,5 +104,27 @@ describe('authenticated deployment to runtime observation', () => {
   it.each([{ wrongDeployment: true }, { wrongMerge: true }])('rejects a different current production deployment or an unrelated merge SHA', async options => {
     const { github, evidence, observationPolicy } = await collected(options);
     expect(assessOperationalEvidence(evidence, observationPolicy, { github, now }).status).toBe('PRODUCTION_UNVERIFIED');
+  });
+  it('never reports a fully observed preview environment as production verified', async () => {
+    const { github, evidence, observationPolicy } = await collected({ environment: 'preview', wrongMerge: true });
+    const result = assessOperationalEvidence(evidence, observationPolicy, { github, now });
+    expect(result.status).toBe('PRODUCTION_UNVERIFIED');
+    expect(result.blockers).toContain('Production verification requires the production environment');
+  });
+  it.each([
+    { githubObservedAt: new Date(now.getTime() - 15 * 60000 - 1) },
+    { runtimeObservedAt: new Date(now.getTime() - 15 * 60000 - 1) },
+    { githubObservedAt: new Date(now.getTime() + 1) },
+    { runtimeObservedAt: new Date(now.getTime() + 1) },
+  ])('requires both native snapshots to have been observed within fifteen minutes: %j', async options => {
+    const { github, evidence, observationPolicy } = await collected(options);
+    const result = assessOperationalEvidence(evidence, observationPolicy, { github, now });
+    expect(result.status).toBe('PRODUCTION_UNVERIFIED');
+    expect(result.blockers.join(' ')).toContain('snapshot is stale');
+  });
+  it('accepts the inclusive fifteen-minute freshness boundary for both snapshots', async () => {
+    const observedAt = new Date(now.getTime() - 15 * 60000);
+    const { github, evidence, observationPolicy } = await collected({ githubObservedAt: observedAt, runtimeObservedAt: observedAt });
+    expect(assessOperationalEvidence(evidence, observationPolicy, { github, now }).status).toBe('PRODUCTION_VERIFIED');
   });
 });

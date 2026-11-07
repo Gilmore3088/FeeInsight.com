@@ -19,7 +19,7 @@
     },
     {
       "path": "src/lib/engineering-verification/contract.mjs",
-      "sha256": "18772308ea183fe5566e5f8a9b4a26dc9180576e5348f4b27ba3e071f9d5154e"
+      "sha256": "0483efc0f45b04ab7fc82c18771e93b5172ac976b46e3e1e0e6ed9f70109abb9"
     },
     {
       "path": "src/lib/engineering-verification/loader.mjs",
@@ -64,6 +64,7 @@
     "docs/project/acceptance/engineering/plan-validation.md",
     "docs/project/acceptance/engineering/program.json",
     "docs/project/findings/2026-11-06-source-document-instruction-boundary.md",
+    "docs/project/findings/2026-11-07-blind-second-reader.md",
     "src/app/api/admin/engineering-verification/route.test.ts",
     "src/app/api/admin/engineering-verification/route.ts",
     "src/lib/agents/atlas/AGENTS.md",
@@ -72,6 +73,7 @@
     "src/lib/agents/knox/paid-extract.test.ts",
     "src/lib/agents/knox/paid-extract.ts",
     "src/lib/agents/knox/role-lessons.ts",
+    "src/lib/agents/knox/second-reader.test.ts",
     "src/lib/agents/rosetta/AGENTS.md",
     "src/lib/agents/rosetta/paid-read.test.ts",
     "src/lib/agents/rosetta/paid-read.ts",
@@ -91,6 +93,7 @@
     "src/lib/engineering-verification/browser-evidence.test.ts",
     "src/lib/engineering-verification/child.mjs",
     "src/lib/engineering-verification/cli.mjs",
+    "src/lib/engineering-verification/cli.test.ts",
     "src/lib/engineering-verification/contract.d.mts",
     "src/lib/engineering-verification/contract.mjs",
     "src/lib/engineering-verification/contract.test.ts",
@@ -102,6 +105,7 @@
     "src/lib/engineering-verification/github.mjs",
     "src/lib/engineering-verification/github.test.ts",
     "src/lib/engineering-verification/loader.mjs",
+    "src/lib/engineering-verification/owner-review.test.ts",
     "src/lib/engineering-verification/pilot.d.mts",
     "src/lib/engineering-verification/pilot.mjs",
     "src/lib/engineering-verification/pilot.test.ts",

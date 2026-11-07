@@ -24,6 +24,27 @@ export function contractDigest(rawText) {
   return createHash('sha256').update(rawText, 'utf8').digest('hex');
 }
 
+/** GitHub rename/copy metadata is part of the diff; the destination alone is incomplete. */
+export function changedPaths(files) {
+  const paths = new Set(), problems = [];
+  if (!Array.isArray(files) || files.length === 0) return { paths: [], problems: ['Changed-file inventory missing'] };
+  const filenames = new Set();
+  for (const [index, file] of files.entries()) {
+    if (!RECORD(file)) { problems.push(`Changed-file entry ${index} is malformed`); continue; }
+    if (!['added', 'removed', 'modified', 'renamed', 'copied', 'changed'].includes(file.status)) problems.push(`Changed-file entry ${index} has unknown status`);
+    if (!SAFE_PATH(file.filename)) problems.push(`Changed-file entry ${index} has an unsafe filename`);
+    else {
+      if (filenames.has(file.filename)) problems.push(`Changed-file entry ${index} duplicates a filename`);
+      filenames.add(file.filename); paths.add(file.filename);
+    }
+    if (Object.hasOwn(file, 'previous_filename')) {
+      if (!SAFE_PATH(file.previous_filename) || file.previous_filename === file.filename) problems.push(`Changed-file entry ${index} has an unsafe previous filename`);
+      else paths.add(file.previous_filename);
+    } else if (['renamed', 'copied'].includes(file.status)) problems.push(`Changed-file entry ${index} is missing its previous filename`);
+  }
+  return { paths: [...paths].sort(), problems };
+}
+
 export function isPolicySensitive(path) {
   if (!SAFE_PATH(path)) return true;
   return /(^|\/)(AGENTS\.md|CLAUDE\.md)$/.test(path)

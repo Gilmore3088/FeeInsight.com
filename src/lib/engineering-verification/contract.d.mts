@@ -5,6 +5,7 @@ export type StructuralProofAssessment = {
 };
 
 export function contractDigest(rawText: string): string;
+export function changedPaths(files: unknown): { paths: string[]; problems: string[] };
 export function isPolicySensitive(path: unknown): boolean;
 export function classifyPath(path: unknown): RiskTier;
 export function classifyChange(paths: unknown): {

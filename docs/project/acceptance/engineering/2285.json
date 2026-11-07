@@ -19,7 +19,7 @@
     },
     {
       "path": "src/lib/engineering-verification/contract.mjs",
-      "sha256": "18772308ea183fe5566e5f8a9b4a26dc9180576e5348f4b27ba3e071f9d5154e"
+      "sha256": "0483efc0f45b04ab7fc82c18771e93b5172ac976b46e3e1e0e6ed9f70109abb9"
     },
     {
       "path": "src/lib/engineering-verification/loader.mjs",

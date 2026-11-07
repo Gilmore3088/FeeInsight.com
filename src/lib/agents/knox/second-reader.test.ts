@@ -367,13 +367,18 @@ describe("the 8-bank dry run's cost estimate", () => {
     const expected = estimateSecondReaderCost(texts, model, { tokensPerChar: OBSERVED_INPUT_TOKENS_PER_CHAR, outputTokensPerText: OBSERVED_OUTPUT_TOKENS.mean });
     const p95 = estimateSecondReaderCost(texts, model, { tokensPerChar: OBSERVED_INPUT_TOKENS_PER_CHAR, outputTokensPerText: OBSERVED_OUTPUT_TOKENS.p95 });
     const worst = estimateSecondReaderCost(texts, model, { tokensPerChar: 1 / 3, outputTokensPerText: SECOND_READER_MAX_OUTPUT_TOKENS });
-    // The finding's numbers (2026-11-07-blind-second-reader.md): $0.27 expected, $0.51 at p95, $1.30 worst case.
-    expect(paidExtractInstructions().length).toBe(3_427);
-    expect([expected.inputTokens, expected.outputTokens, expected.microusd]).toEqual([49_910, 16_590, 265_720]);
-    expect([p95.outputTokens, p95.microusd]).toEqual([41_340, 513_220]);
-    expect([worst.inputTokens, worst.outputTokens, worst.microusd]).toEqual([51_127, 120_000, 1_302_254]);
+    // The trusted source-data boundary adds 632 instruction characters to each of the 15 reads.
+    // Fixed expectations independently price 162,860 total request characters at $2 / $10 per
+    // million input / output tokens. Historical output scenarios remain projections, not new usage.
+    expect(paidExtractInstructions().length).toBe(4_059);
+    expect([expected.inputTokens, expected.outputTokens, expected.microusd]).toEqual([52_995, 16_590, 271_890]);
+    expect([p95.inputTokens, p95.outputTokens, p95.microusd]).toEqual([52_995, 41_340, 519_390]);
+    expect([worst.inputTokens, worst.outputTokens, worst.microusd]).toEqual([54_287, 120_000, 1_308_574]);
+    expect(SECOND_READER_BATCHES[BATCH].capMicrousd).toBe(1_500_000);
     expect(worst.microusd as number).toBeLessThanOrEqual(SECOND_READER_BATCHES[BATCH].capMicrousd);
     const ceilings = COHORT_TEXT_CHARS.reduce((sum, chars) => sum + textCeilingMicrousd("x".repeat(chars), model), 0);
+    // The actual admission guard rounds every request up, independently of the aggregate estimate.
+    expect(ceilings).toBe(1_308_582);
     expect(ceilings).toBeLessThanOrEqual(SECOND_READER_BATCHES[BATCH].capMicrousd);
   });
 });

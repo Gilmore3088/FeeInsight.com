@@ -13,8 +13,8 @@ export async function resolveWorkflowRun({ runId, token, fetchImpl = fetch }) {
   const payload = await get('/actions/runs/' + runId + '/artifacts?per_page=100');
   if (!Array.isArray(payload.artifacts) || payload.total_count > 100) throw new Error('Incomplete proof artifact inventory');
   const candidates = payload.artifacts.map(artifact => {
-    const match = artifact.name?.match(/^engineering-verification-([1-9][0-9]*)-([a-f0-9]{40})-([1-9][0-9]*)$/);
-    return match && !artifact.expired && (!artifact.workflow_run || artifact.workflow_run.id === runId)
+    const match = artifact.name?.match(/^engineering-verification-([1-9][0-9]*)-([a-f0-9]{40})-([1-9][0-9]*)-attempt-([1-9][0-9]*)$/);
+    return match && Number(match[4]) === run.run_attempt && !artifact.expired && (!artifact.workflow_run || artifact.workflow_run.id === runId)
       ? { prNumber: Number(match[1]), headSha: match[2], contractNumber: match[3] } : null;
   }).filter(Boolean);
   const unique = [...new Map(candidates.map(item => [item.prNumber + ':' + item.headSha + ':' + item.contractNumber, item])).values()];

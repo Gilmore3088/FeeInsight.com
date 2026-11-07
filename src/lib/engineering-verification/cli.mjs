@@ -2,7 +2,7 @@ import { readFileSync, writeFileSync, readdirSync, existsSync, mkdirSync } from 
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { createHash } from 'node:crypto';
-import { classifyChange, contractDigest, validateContract, routeSkillRequirements } from './contract.mjs';
+import { changedPaths, classifyChange, contractDigest, validateContract, routeSkillRequirements } from './contract.mjs';
 import { frozenIdentities } from './runner.mjs';
 import { collectGithubEvidence } from './github.mjs';
 import { collectProofEvidence, assessCollectedProof } from './proof.mjs';
@@ -68,9 +68,18 @@ export async function main(args = process.argv.slice(2), root = process.cwd()) {
   if (command === 'scorecard') {
     const values = opts.prs?.split(',');
     if (!values?.length || values.some(value => !/^[1-9][0-9]*$/.test(value))) throw new Error('Provide --prs as 1–20 comma-separated PR numbers');
-    const snapshot = await collectScorecard({ prNumbers: values.map(Number), token });
-    const assessment = assessScorecard(snapshot);
     const directory = resolve(opts.output ?? 'test-results/engineering-verification/scorecard');
+    let snapshot;
+    try { snapshot = await collectScorecard({ prNumbers: values.map(Number), token }); }
+    catch (error) {
+      const reason = String(error?.message ?? 'Trusted scorecard collection unavailable').replaceAll(token, '[redacted]').slice(0, 4096);
+      const result = { schemaVersion: 1, status: 'BLOCKED', provenance: 'COLLECTION_FAILED', prNumbers: values.map(Number), metrics: null, problems: [reason] };
+      output(directory, 'scorecard.json', result);
+      output(directory, 'summary.md', '# Engineering scorecard\n\nStatus: BLOCKED\n\n' + reason + '\n');
+      process.stdout.write(JSON.stringify(result) + '\n');
+      return result;
+    }
+    const assessment = assessScorecard(snapshot);
     output(directory, 'scorecard.json', { ...snapshot, assessment });
     output(directory, 'summary.md', renderScorecard(snapshot));
     process.stdout.write(JSON.stringify({ status: assessment.status, changes: snapshot.changes.length, problems: assessment.problems }) + '\n');
@@ -89,16 +98,22 @@ export async function main(args = process.argv.slice(2), root = process.cwd()) {
   const prNumber = Number(opts.pr);
   if (!Number.isSafeInteger(prNumber) || prNumber < 1) throw new Error('Positive --pr number required');
   const directory = resolve(opts.output ?? 'test-results/engineering-verification/audit');
-  const github = await collectGithubEvidence({ repository: REPOSITORY, prNumber, token, requiredChecks: policy.required_checks });
+  const github = await collectGithubEvidence({ repository: REPOSITORY, prNumber, token, requiredChecks: policy.required_checks,
+    includeDeployments: command === 'audit' && Boolean(opts['operational-policy']) });
   const contractNumber = opts.contract ?? github.pullRequest.body?.match(/<!--\s*engineering-contract:\s*([1-9][0-9]*)\s*-->/)?.[1];
   if (!contractNumber) throw new Error('PR needs an explicit engineering-contract marker; a historical pilot cannot substitute for its acceptance contract');
   const { contract, raw, path: contractPath } = contractAt(root, contractNumber);
-  const actualRisk = classifyChange(github.files.map(file => file.filename));
+  const inventory = changedPaths(github.files);
+  const paths = inventory.paths;
+  const actualRisk = inventory.problems.length
+    ? { risk_tier: 'R3', policy_sensitive: true, reasons: inventory.problems }
+    : classifyChange(paths);
   if (command === 'prepare') {
+    if (inventory.problems.length) throw new Error(inventory.problems.join('; '));
     if (github.problems.some(problem => /head changed/.test(problem))) throw new Error('Head changed during preparation');
     if (!/^[a-f0-9]{40}$/.test(github.pullRequest.headSha)) throw new Error('Exact PR head unavailable');
     frozenIdentities(root, contract);
-    const result = { prNumber, headSha: github.pullRequest.headSha, baseSha: contract.base_sha, contractPath, contractSha256: contractDigest(raw), actualRisk };
+    const result = { prNumber, headSha: github.pullRequest.headSha, baseSha: contract.base_sha, contractPath, contractSha256: contractDigest(raw), actualRisk, actualChangedPaths: paths };
     output(directory, 'inputs.json', result);
     if (process.env.GITHUB_OUTPUT) {
       const { appendFileSync } = await import('node:fs');
@@ -111,10 +126,13 @@ export async function main(args = process.argv.slice(2), root = process.cwd()) {
   const proofSnapshot = await collectProofEvidence({ github, contract, contractRaw: raw, token });
   const proof = assessCollectedProof(proofSnapshot);
   const review = assessReviewEvidence(github, { headSha: github.pullRequest.headSha, contractSha256: contractDigest(raw), policySha256: hash(policyRaw), allowedReviewers: policy.allowed_reviewers, ownerLogins: policy.owner_logins });
-  review.blockers.push(...assessChangedScope(contract, github.files.map(file => file.filename)).problems);
+  review.blockers.push(...inventory.problems, ...assessChangedScope(contract, paths).problems);
   const availableSkills = readdirSync(join(root, '.claude/skills')).filter(name => existsSync(join(root, '.claude/skills', name, 'SKILL.md')));
-  for (const skill of routeSkillRequirements(github.files.map(file => file.filename), availableSkills).unavailable_skills) review.blockers.push('Required skill unavailable: ' + skill);
+  for (const skill of routeSkillRequirements(paths, availableSkills).unavailable_skills) review.blockers.push('Required skill unavailable: ' + skill);
   if (actualRisk.risk_tier > contract.risk_tier) review.blockers.push('Contract understates actual changed-path risk');
+  const ownerRequired = contract.human_approval_required === true || actualRisk.risk_tier === 'R3';
+  const ownerAuthorized = !ownerRequired || review.ownerSignoff != null;
+  if (!ownerAuthorized) review.blockers.push('Required owner authorization for R3 risk or contract approval is missing');
   if (review.blockers.length) review.status = 'BLOCKED';
   let operational = { status: 'PRODUCTION_UNVERIFIED', blockers: ['No frozen operational policy and authenticated runtime observation supplied'] };
   if (opts['operational-policy']) {
@@ -133,8 +151,8 @@ export async function main(args = process.argv.slice(2), root = process.cwd()) {
   if (!response.ok || (await response.json()).head?.sha !== github.pullRequest.headSha) {
     proof.status = 'BLOCKED'; proof.blockers = [...(proof.blockers ?? []), 'PR head changed or could not be rechecked before finalization'];
   }
-  const codeReady = proof.status === 'VERIFIED' && github.ci.status === 'PASSED' && review.status === 'INDEPENDENT_REVIEW_VERIFIED';
-  const audit = { schemaVersion: 1, repository: REPOSITORY, prNumber, headSha: github.pullRequest.headSha, contractPath, contractSha256: contractDigest(raw), policySha256: hash(policyRaw), actualRisk,
+  const codeReady = proof.status === 'VERIFIED' && github.ci.status === 'PASSED' && review.status === 'INDEPENDENT_REVIEW_VERIFIED' && ownerAuthorized;
+  const audit = { schemaVersion: 1, repository: REPOSITORY, prNumber, headSha: github.pullRequest.headSha, contractPath, contractSha256: contractDigest(raw), policySha256: hash(policyRaw), actualRisk, actualChangedPaths: paths,
     status: codeReady ? 'CODE_VERIFIED' : 'BLOCKED', enforcementEnabled: policy.enforcement_enabled === true, proof, ci: github.ci, review, operational,
     authorization: actualRisk.risk_tier === 'R3' ? 'SEPARATE_OWNER_AUTHORIZATION_REQUIRED' : 'EXISTING_REPOSITORY_MERGE_RULES_APPLY' };
   const metrics = calculateEngineeringMetrics([{ riskTier: actualRisk.risk_tier, mergedAt: github.pullRequest.mergedAt, proofStatus: proof.status }]);

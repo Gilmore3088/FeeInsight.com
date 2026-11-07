@@ -129,18 +129,20 @@ export async function collectProofEvidence({ github, contract, contractRaw, toke
     if (!positive(workflow.id) || workflow.path !== WORKFLOW || workflow.state !== 'active') throw new Error('Registered engineering verification workflow unavailable');
     const inventory = await get(`/actions/workflows/${workflow.id}/runs?event=workflow_dispatch&branch=main&per_page=20&page=1`);
     if (!Array.isArray(inventory.workflow_runs) || inventory.workflow_runs.length > 20) throw new Error('Bounded workflow-run inventory unavailable');
-    const expectedName = `engineering-verification-${prNumber}-${headSha}-${contract.issue.slice(1)}`;
+    const artifactPrefix = `engineering-verification-${prNumber}-${headSha}-${contract.issue.slice(1)}-attempt-`;
     let selected;
     for (const run of [...inventory.workflow_runs].sort((a, b) => b.id - a.id)) {
       if (!positive(run.id)) continue;
+      const expectedName = artifactPrefix + run.run_attempt;
       const artifacts = await get(`/actions/runs/${run.id}/artifacts?per_page=100&page=1`);
       if (!Array.isArray(artifacts.artifacts) || artifacts.artifacts.length >= 100) throw new Error('Proof artifact inventory unavailable or exceeds bound');
       const matches = artifacts.artifacts.filter(item => item.name === expectedName);
       if (matches.length > 1) throw new Error('Ambiguous proof artifacts for exact target');
-      if (matches.length) { selected = { run, artifact: matches[0] }; break; }
+      if (matches.length) { selected = { run, artifact: matches[0], expectedName }; break; }
     }
     if (!selected) throw new Error('Exact-head proof artifact unavailable in the latest 20 dispatch runs');
     const run = selected.run;
+    const expectedName = selected.expectedName;
     const validRun = row => positive(row?.id) && row.id === run.id && row.workflow_id === workflow.id
       && positive(row.run_attempt) && row.head_branch === 'main' && sha(row.head_sha)
       && row.event === 'workflow_dispatch' && row.status === 'completed' && row.conclusion === 'success'

@@ -25,7 +25,7 @@ export interface OperationalPolicy {
 }
 export function assessReviewEvidence(snapshot: unknown, policy: ReviewPolicy): {
   status: string;
-  ownerSignoff: { actor: string; id: number; url: string } | null;
+  ownerSignoff: { actor: string; id: number; url: string; decidedAt: string; eventKind: 'review' | 'comment' } | null;
   independentReviewers: Array<{ actor: string; id: number; url: string }>;
   findings: unknown[];
   blockers: string[];

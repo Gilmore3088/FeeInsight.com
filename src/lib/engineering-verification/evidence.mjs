@@ -1,5 +1,6 @@
 /** Evidence assessment is read-only. No result authorizes deployment, merge, rollback or production writes. */
 import { isGithubEvidence } from './github.mjs';
+import { changedPaths } from './contract.mjs';
 const SHA = { test: value => typeof value === 'string' && /^[a-f0-9]{40}$/i.test(value) }, HASH = { test: value => typeof value === 'string' && /^[a-f0-9]{64}$/i.test(value) };
 const trustedFetch = globalThis.fetch;
 const DAY = 86400000, runtimeSources = new WeakSet();
@@ -9,6 +10,7 @@ const time = value => typeof value === 'string' ? Date.parse(value) : NaN;
 const freeze = value => { if (value && typeof value === 'object') { Object.values(value).forEach(freeze); Object.freeze(value); } return value; };
 const authenticGithub = snapshot => isGithubEvidence(snapshot) && snapshot.provenance?.kind === 'authenticated-github-api';
 const unique = items => [...new Set(items)];
+const freshObservation = (observedAt, now) => Number.isFinite(time(observedAt)) && Number.isFinite(now.getTime()) && time(observedAt) <= now.getTime() && now.getTime() - time(observedAt) <= 15 * 60000;
 
 export function assessRetention({ createdAt, expiresAt = null, expired = false, now = new Date(), retentionDays = 90 }) {
   const created = time(createdAt), declaredExpiry = expiresAt == null ? Infinity : time(expiresAt), at = now.getTime();
@@ -24,23 +26,43 @@ function attestation(body) {
   try { const value = JSON.parse(matched[1]); return value && typeof value === 'object' && !Array.isArray(value) ? value : null; } catch { return null; }
 }
 const sameScope = (a, b) => Array.isArray(a) && a.length === b.length && [...a].sort().every((path, i) => path === [...b].sort()[i]);
+function latestOwnerDecision(snapshot, ownerLogins, headSha, bindingsMatch, now) {
+  if (!authenticGithub(snapshot)) return null;
+  let unorderableDismissal = false;
+  const decisions = [...(snapshot?.reviews ?? []).map(row => ({ row, eventKind: 'review' })), ...(snapshot?.comments ?? []).map(row => ({ row, eventKind: 'comment' }))].flatMap(({ row, eventKind }) => {
+    if (!ownerLogins.includes(row.user?.login) || row.user?.type !== 'User' || !Number.isSafeInteger(row.user?.id) || row.user.id <= 0 || !Number.isSafeInteger(row.id) || row.id <= 0) return [];
+    const value = attestation(row.body);
+    if (!bindingsMatch(value)) return [];
+    if (eventKind === 'review' && (row.commit_id !== headSha || !['APPROVED', 'COMMENTED', 'CHANGES_REQUESTED', 'DISMISSED'].includes(row.state))) return [];
+    const revocation = eventKind === 'review' && ['CHANGES_REQUESTED', 'DISMISSED'].includes(row.state);
+    if (!revocation && typeof value.owner_signoff !== 'boolean') return [];
+    const createdAt = eventKind === 'review' ? row.submitted_at : row.created_at;
+    const decidedAt = row.updated_at ?? createdAt;
+    // REST omits when a review was dismissed. Its original submission cannot prove a comment came after revocation.
+    if (eventKind === 'review' && row.state === 'DISMISSED' && (!Number.isFinite(time(row.updated_at)) || time(row.updated_at) < time(createdAt) || time(row.updated_at) > now.getTime())) unorderableDismissal = true;
+    if (!Number.isFinite(time(createdAt)) || !Number.isFinite(time(decidedAt)) || time(decidedAt) < time(createdAt) || time(decidedAt) > now.getTime()) return [];
+    // Edits order decisions but do not renew the original record's retention. Revocation wins ties across API namespaces.
+    return [{ row, eventKind, decidedAt, granted: !revocation && value.owner_signoff === true && assessRetention({ createdAt, now }).status === 'AVAILABLE' }];
+  }).sort((a, b) => time(b.decidedAt) - time(a.decidedAt) || Number(a.granted) - Number(b.granted) || b.row.id - a.row.id);
+  return !unorderableDismissal && decisions[0]?.granted ? decisions[0] : null;
+}
 export function assessReviewEvidence(snapshot, { headSha, contractSha256, policySha256, allowedReviewers = [], ownerLogins = ['Gilmore3088'], now = new Date() }) {
   const blockers = [];
   if (!authenticGithub(snapshot)) blockers.push('Review evidence provenance is not authenticated in this process');
   if (!SHA.test(headSha ?? '') || snapshot?.pullRequest?.headSha !== headSha) blockers.push('Review must bind to exact current head');
   if (!HASH.test(contractSha256 ?? '') || !HASH.test(policySha256 ?? '')) blockers.push('Frozen contract and policy hashes required');
   blockers.push(...(snapshot?.problems ?? []));
-  if (!Number.isFinite(time(snapshot?.observedAt)) || now.getTime() - time(snapshot.observedAt) > 15 * 60000 || time(snapshot.observedAt) > now.getTime()) blockers.push('GitHub review snapshot is stale or has no observation time');
+  if (!freshObservation(snapshot?.observedAt, now)) blockers.push('GitHub review snapshot is stale or has no observation time');
   if (snapshot?.pullRequest?.mergeable !== true) blockers.push('PR mergeability is not confirmed');
   if (snapshot?.pullRequest?.draft || snapshot?.pullRequest?.state !== 'open') blockers.push('PR is draft or not open');
   if (!Array.isArray(snapshot?.threads)) blockers.push('Review thread inventory missing');
   else if (snapshot.threads.some(thread => thread.isResolved !== true)) blockers.push('Unresolved review threads remain');
-  const paths = snapshot?.files?.map(file => file.filename) ?? [];
+  const { paths, problems } = changedPaths(snapshot?.files);
+  blockers.push(...problems);
   const author = snapshot?.pullRequest?.author;
   if (!Number.isSafeInteger(author?.id) || author.id <= 0 || !text(author?.login)) blockers.push('Authenticated PR author identity is missing');
   const bindingsMatch = value => value && value.head_sha === headSha && value.contract_sha256 === contractSha256 && value.policy_sha256 === policySha256 && sameScope(value.reviewed_scope, paths);
-  const records = [...(snapshot?.reviews ?? []), ...(snapshot?.comments ?? [])].filter(row => assessRetention({ createdAt: row.submitted_at ?? row.created_at, now }).status === 'AVAILABLE');
-  const owner = records.find(row => ownerLogins.includes(row.user?.login) && row.user?.type === 'User' && Number.isSafeInteger(row.user?.id) && row.user.id > 0 && bindingsMatch(attestation(row.body)) && attestation(row.body).owner_signoff === true);
+  const owner = latestOwnerDecision(snapshot, ownerLogins, headSha, bindingsMatch, now);
   const latest = new Map();
   for (const review of [...(snapshot?.reviews ?? [])].sort((a, b) => time(a.submitted_at) - time(b.submitted_at) || a.id - b.id)) {
     if (['APPROVED', 'CHANGES_REQUESTED', 'DISMISSED'].includes(review.state)) latest.set(review.user?.id, review);
@@ -60,7 +82,7 @@ export function assessReviewEvidence(snapshot, { headSha, contractSha256, policy
       if (['P0', 'P1'].includes(finding.severity) || !/^https:\/\/github\.com\/[^/]+\/[^/]+\/issues\/\d+(#.*)?$/.test(finding.root_cause_issue ?? '')) blockers.push(`Finding ${finding.id} cannot be deferred without a nonblocking root-cause issue`);
     } else blockers.push(`Finding ${finding.id} remains unresolved`);
   }
-  return { status: blockers.length ? 'BLOCKED' : 'INDEPENDENT_REVIEW_VERIFIED', ownerSignoff: owner ? { actor: owner.user.login, id: owner.id, url: owner.html_url } : null, independentReviewers: independent.map(review => ({ actor: review.user.login, id: review.id, url: review.html_url })), findings, blockers: unique(blockers) };
+  return { status: blockers.length ? 'BLOCKED' : 'INDEPENDENT_REVIEW_VERIFIED', ownerSignoff: owner ? { actor: owner.row.user.login, id: owner.row.id, url: owner.row.html_url, decidedAt: owner.decidedAt, eventKind: owner.eventKind } : null, independentReviewers: independent.map(review => ({ actor: review.user.login, id: review.id, url: review.html_url })), findings, blockers: unique(blockers) };
 }
 
 /** Reads only the fixed production admin endpoint; credentials never enter returned artifacts. */
@@ -92,8 +114,11 @@ export function assessOperationalEvidence(runtime, policy, { github, now = new D
   const blockers = [];
   if (!runtimeSources.has(runtime)) blockers.push('Runtime evidence provenance is not authenticated in this process');
   if (!authenticGithub(github)) blockers.push('Deployment evidence provenance is not authenticated in this process');
+  if (runtimeSources.has(runtime) && !freshObservation(runtime?.transport?.observedAt, now)) blockers.push('Runtime observation snapshot is stale or has no observation time');
+  if (authenticGithub(github) && !freshObservation(github?.observedAt, now)) blockers.push('GitHub deployment snapshot is stale or has no observation time');
   blockers.push(...(runtime?.problems ?? []), ...(github?.problems ?? []));
   if (!SHA.test(policy?.headSha ?? '') || !SHA.test(policy?.deployedSha ?? '') || !text(policy?.environment) || !text(policy?.cohortId) || !count(policy?.scorerVersion) || !count(policy?.protocol)) blockers.push('Scoped deployment, fixed cohort and measurement version policy required');
+  if (policy?.environment !== 'production') blockers.push('Production verification requires the production environment');
   if (!['minScoredInstitutions', 'minExpectedFees', 'minPredictedFees'].every(key => count(policy?.[key]) && policy[key] > 0) || !['minPrecision', 'minRecall'].every(key => typeof policy?.[key] === 'number' && policy[key] >= 0 && policy[key] <= 1)) blockers.push('Explicit sample sizes and outcome thresholds required');
   const days = policy?.observationDays ?? 7, gap = policy?.maxSampleGapHours ?? 24;
   if (!(days > 0 && days <= 90 && gap > 0 && gap <= 168)) blockers.push('Observation window and sample cadence invalid');

@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { collectGithubEvidence, isGithubEvidence } from './github.mjs';
 import { collectProofEvidence, assessCollectedProof } from './proof.mjs';
 import { assessReviewEvidence } from './evidence.mjs';
-import { classifyChange, validateContract } from './contract.mjs';
+import { classifyChange, validateContract, changedPaths } from './contract.mjs';
 const NATIVE_FETCH = globalThis.fetch, collected = new WeakSet();
 export const SCORECARD_REPOSITORY = 'Gilmore3088/FeeInsight.com';
 const POLICY_PATH = 'src/lib/engineering-verification/policy.json';
@@ -37,7 +37,7 @@ function historicalReview(github, contractRaw, policyRaw, policy, now) {
   if (!github.pullRequest.merged || !Number.isFinite(mergedAt) || !approvals.length) blockers.push('Independent approval before authenticated merge is missing');
   const approvedAt = Math.min(...approvals.map(actor => at(github.reviews.find(event => event.id === actor.id).submitted_at)));
   const latency = (approvedAt - at(github.pullRequest.openedAt)) / 3600000;
-  return { status: blockers.length ? 'BLOCKED' : 'VERIFIED', blockers, approvedAt: Number.isFinite(approvedAt) ? new Date(approvedAt).toISOString() : null, latencyHours: !blockers.length && Number.isFinite(latency) && latency >= 0 ? latency : null, actors: approvals };
+  return { status: blockers.length ? 'BLOCKED' : 'VERIFIED', blockers, ownerSignoff: review.ownerSignoff, approvedAt: Number.isFinite(approvedAt) ? new Date(approvedAt).toISOString() : null, latencyHours: !blockers.length && Number.isFinite(latency) && latency >= 0 ? latency : null, actors: approvals };
 }
 function runnerSeconds(jobs, run, now) {
   if (!run || !positive(run.id) || !positive(run.run_attempt) || !Array.isArray(jobs) || !jobs.length) return null;
@@ -61,7 +61,7 @@ function deriveMetrics(changes, ciRuns, proofRuns, proofFailures, proofAttemptIn
     redProofCoverage: coverage(proofEligible, row => row.proof.status === 'VERIFIED'),
     proofBeforeMergeCoverage: coverage(proofEligible, row => row.proof.status === 'VERIFIED' && row.proof.completedBeforeMerge === true),
     independentReviewCoverage: coverage(reviewEligible, row => row.review.status === 'VERIFIED'),
-    verifiedEngineeringCoverage: coverage(proofEligible, row => row.proof.status === 'VERIFIED' && row.review.status === 'VERIFIED' && row.ci.status === 'PASSED' && row.contractSha256 === row.historicalContractSha256),
+    verifiedEngineeringCoverage: coverage(proofEligible, row => row.proof.status === 'VERIFIED' && row.review.status === 'VERIFIED' && ['AUTHORIZED', 'NOT_REQUIRED'].includes(row.ownerAuthorization.status) && row.ci.status === 'PASSED' && row.contractSha256 === row.historicalContractSha256),
     reviewLatencyMedianHours: latencies.length ? { status: 'MEASURED', value: median(latencies), samples: latencies.length } : unknown('No independently verified exact-head review latency available'),
     ciRunnerTimeSeconds: timing(ciSamples, ciRuns.size), verificationRunnerTimeSeconds: timing(proofSamples, proofRuns.size),
     proofEvidenceUnavailable: { status: 'MEASURED', value: proofEligible.filter(row => row.proof.status !== 'VERIFIED').length, eligibleChanges: proofEligible.length, meaning: 'Missing, expired or invalid evidence; not a count of observed behavioral failures' },
@@ -125,8 +125,9 @@ export async function collectScorecard({ prNumbers, token, now = new Date(), fet
       proofAttemptInventoryRead = true;
       return { workflow, runs: inventory.workflow_runs, trustedBytes };
     })();
-    const inventory = await attempts, expectedName = `engineering-verification-${prNumber}-${headSha}-${contractNumber}`;
+    const inventory = await attempts;
     for (const run of inventory.runs) {
+      const expectedName = `engineering-verification-${prNumber}-${headSha}-${contractNumber}-attempt-${run.run_attempt}`;
       if (run.conclusion !== 'failure' || run.status !== 'completed' || run.event !== 'workflow_dispatch' || run.head_branch !== 'main' || !sha(run.head_sha) || !positive(run.id) || !positive(run.run_attempt) || run.workflow_id !== inventory.workflow.id || run.repository?.id !== repo.id || run.repository?.full_name !== SCORECARD_REPOSITORY || run.head_repository?.id !== repo.id || run.head_repository?.full_name !== SCORECARD_REPOSITORY || run.path?.split('@')[0] !== inventory.workflow.path) continue;
       const artifacts = await metadata(`/actions/runs/${run.id}/artifacts?per_page=100&page=1`);
       if (!Array.isArray(artifacts.artifacts) || artifacts.artifacts.length >= 100) throw new Error('Proof-attempt artifact association inventory unavailable');
@@ -143,7 +144,7 @@ export async function collectScorecard({ prNumbers, token, now = new Date(), fet
     }
   };
   const readChange = async prNumber => {
-    const row = { prNumber, headSha: null, merged: null, mergedAt: null, riskTier: null, contractNumber: null, contractSha256: null, historicalContractSha256: null, policySha256: null, review: { status: 'BLOCKED', latencyHours: null, blockers: ['Historical review has not been established'] }, proof: { status: 'BLOCKED', blockers: ['No authenticated proof artifact established'] }, ci: { status: 'UNKNOWN' }, problems: [] };
+    const row = { prNumber, headSha: null, merged: null, mergedAt: null, riskTier: null, contractNumber: null, contractSha256: null, historicalContractSha256: null, policySha256: null, review: { status: 'BLOCKED', latencyHours: null, blockers: ['Historical review has not been established'] }, ownerAuthorization: { required: null, status: 'UNKNOWN', decidedAt: null }, proof: { status: 'BLOCKED', blockers: ['No authenticated proof artifact established'] }, ci: { status: 'UNKNOWN' }, problems: [] };
     try {
       const github = await collectGithubEvidence({ repository: SCORECARD_REPOSITORY, prNumber, token, requiredChecks: policy.required_checks, includeDeployments: false, now, fetchImpl });
       row.headSha = github.pullRequest.headSha; row.merged = github.pullRequest.merged; row.mergedAt = github.pullRequest.mergedAt;
@@ -151,8 +152,9 @@ export async function collectScorecard({ prNumbers, token, now = new Date(), fet
       if (!isGithubEvidence(github)) row.problems.push('PR source provenance is not authenticated');
       row.problems.push(...github.problems);
       if (github.problems.some(problem => /head changed/.test(problem))) problems.push(`PR #${prNumber} head changed during collection`);
-      const paths = [...new Set(github.files.flatMap(file => [file.filename, file.previous_filename].filter(text)))];
-      if (paths.length && !github.problems.some(problem => /changed files/.test(problem))) row.riskTier = classifyChange(paths).risk_tier;
+      const inventory = changedPaths(github.files), paths = inventory.paths;
+      row.problems.push(...inventory.problems);
+      if (paths.length && !inventory.problems.length && !github.problems.some(problem => /changed files/.test(problem))) row.riskTier = classifyChange(paths).risk_tier;
       else row.problems.push('Changed-path risk cannot be determined');
       if (github.ci.run && isGithubEvidence(github)) ciRuns.set(`${github.ci.run.id}:${github.ci.run.run_attempt}`, runnerSeconds(github.ci.jobs, github.ci.run, now));
       if (!row.merged || row.riskTier === 'R0') return row;
@@ -170,6 +172,11 @@ export async function collectScorecard({ prNumbers, token, now = new Date(), fet
         if (!validateContract(historicalContract).ok || historicalContract.issue !== contract.issue || historicalContract.risk_tier < row.riskTier || !scopeCovers(paths, historicalContract.scope)) throw new Error('Immutable historical contract does not cover the merge');
         row.policySha256 = hash(historicalPolicyRaw); row.historicalContractSha256 = hash(historicalContractRaw);
         row.review = historicalReview(github, historicalContractRaw, historicalPolicyRaw, historicalPolicy, now);
+        const ownerRequired = historicalContract.human_approval_required || row.riskTier === 'R3';
+        const decidedAt = row.review.ownerSignoff?.decidedAt ?? null;
+        const authorized = decidedAt && at(decidedAt) <= at(row.mergedAt);
+        row.ownerAuthorization = { required: ownerRequired, status: ownerRequired ? authorized ? 'AUTHORIZED' : 'BLOCKED' : 'NOT_REQUIRED', decidedAt };
+        if (ownerRequired && !authorized) row.problems.push('Required owner authorization before the authenticated merge is unavailable');
       } catch (error) { row.review = { status: 'BLOCKED', latencyHours: null, blockers: ['Immutable historical review policy/contract unavailable: ' + error.message] }; }
       if (['R2', 'R3'].includes(row.riskTier)) {
         const proof = await collectProofEvidence({ github, contract, contractRaw, token, now, fetchImpl });

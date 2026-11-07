@@ -80,7 +80,7 @@ jobs:
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always() && steps.prepare.outcome == 'success'
         with:
-          name: engineering-verification-${{ inputs.pr_number }}-${{ steps.prepare.outputs.head_sha }}-${{ inputs.contract }}
+          name: engineering-verification-${{ inputs.pr_number }}-${{ steps.prepare.outputs.head_sha }}-${{ inputs.contract }}-attempt-${{ github.run_attempt }}
           path: test-results/engineering-verification/proof/
           if-no-files-found: error
           retention-days: 90

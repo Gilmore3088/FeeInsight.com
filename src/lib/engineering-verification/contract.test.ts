@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest';
 import {
+  changedPaths,
   classifyChange,
   classifyPath,
   routeSkills,
@@ -131,6 +132,31 @@ describe('M0/M1 engineering verification contract', () => {
     expect(mayUseDocsOnlyFastPath(['.claude/skills/tdd/SKILL.md'])).toBe(false);
     expect(mayUseDocsOnlyFastPath(['docs/project/acceptance/engineering/README.md'])).toBe(false);
     expect(mayUseDocsOnlyFastPath(['.github/workflows/test.yml'])).toBe(false);
+  });
+
+  it('includes safe rename/copy origins for risk, skill routing and review scope', () => {
+    const inventory = changedPaths([
+      { filename: 'docs/old-guide.md', previous_filename: 'AGENTS.md', status: 'renamed' },
+      { filename: 'docs/old-extractor.txt', previous_filename: 'src/lib/agents/knox/paid-extract.ts', status: 'renamed' },
+      { filename: 'docs/old-provider.txt', previous_filename: 'src/lib/ai-provider.ts', status: 'copied' },
+    ]);
+    expect(inventory).toEqual({ paths: ['AGENTS.md', 'docs/old-extractor.txt', 'docs/old-guide.md', 'docs/old-provider.txt', 'src/lib/agents/knox/paid-extract.ts', 'src/lib/ai-provider.ts'], problems: [] });
+    expect(classifyChange(inventory.paths)).toMatchObject({ risk_tier: 'R3', policy_sensitive: true });
+    expect(mayUseDocsOnlyFastPath(inventory.paths)).toBe(false);
+    expect(routeSkills(inventory.paths)).toEqual(['adversarial-document-testing', 'error-to-test', 'tdd']);
+  });
+
+  it.each([null, {}, [], [null], [4], [{ filename: 'docs/readme.md' }],
+    [{ filename: 'docs/readme.md', status: 'unknown' }],
+    [{ filename: '../AGENTS.md', status: 'removed' }],
+    [{ filename: 'docs/readme.md', status: 'renamed' }],
+    [{ filename: 'docs/readme.md', previous_filename: ['AGENTS.md'], status: 'renamed' }],
+    [{ filename: 'docs/readme.md', previous_filename: '../AGENTS.md', status: 'renamed' }],
+    [{ filename: 'docs/readme.md', previous_filename: 'docs/readme.md', status: 'renamed' }],
+    [{ filename: 'docs/readme.md', status: 'added' }, { filename: 'docs/readme.md', status: 'added' }],
+  ])('blocks incomplete or malformed changed-file inventory without throwing: %j', files => {
+    expect(() => changedPaths(files)).not.toThrow();
+    expect(changedPaths(files).problems.length).toBeGreaterThan(0);
   });
 
   it('cannot down-classify security mutations or avoid separate approval', () => {

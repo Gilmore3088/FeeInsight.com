@@ -51,7 +51,7 @@ function fixture() {
   const run = { id: 101, workflow_id: 33, run_attempt: 2, head_branch: 'main', head_sha: ORCHESTRATOR, event: 'workflow_dispatch', status: 'completed', conclusion: 'success',
     path: WORKFLOW_PATH, repository: { id: 17, full_name: 'o/r' }, head_repository: { id: 17, full_name: 'o/r' },
     html_url: 'https://github.com/o/r/actions/runs/101', created_at: '2026-11-06T11:00:00Z', run_started_at: '2026-11-06T12:00:00Z', updated_at: '2026-11-06T12:02:00Z' };
-  const artifact = () => ({ id: 88, name: 'engineering-verification-1-' + HEAD + '-2285', expired: false, digest: 'sha256:' + hash(archive()), size_in_bytes: archive().length,
+  const artifact = () => ({ id: 88, name: 'engineering-verification-1-' + HEAD + '-2285-attempt-2', expired: false, digest: 'sha256:' + hash(archive()), size_in_bytes: archive().length,
     created_at: '2026-11-06T12:01:10Z', expires_at: '2027-02-04T12:01:10Z', workflow_run: { id: 101, repository_id: 17, head_repository_id: 17, head_branch: 'main', head_sha: ORCHESTRATOR } });
   const overrides: Record<string, unknown> = {};
   const fetchImpl = async (input: string | URL | Request, options: RequestInit = {}) => {
@@ -122,10 +122,21 @@ describe('trusted GitHub proof artifact collection', () => {
   it('does not let a newer run for another contract mask the requested proof', async () => {
     const f = fixture();
     f.overrides['/actions/workflows/33/runs'] = { workflow_runs: [{ ...f.run, id: 202 }, f.run] };
-    f.overrides['/actions/runs/202/artifacts'] = { artifacts: [{ ...f.artifact(), id: 99, name: `engineering-verification-1-${HEAD}-1048` }] };
+    f.overrides['/actions/runs/202/artifacts'] = { artifacts: [{ ...f.artifact(), id: 99, name: `engineering-verification-1-${HEAD}-1048-attempt-2` }] };
     const result = await collectProofEvidence({ github: await githubSnapshot(), ...f, token: 'secret', now: NOW });
     expect(result.receipt?.contract_id).toBe('EV-KNOX-2285');
     expect(result.validation.problems).toEqual(['GitHub snapshot provenance is not authenticated in this process']);
+  });
+  it('keeps rerun artifacts separate and cannot reuse an earlier attempt receipt', async () => {
+    const f = fixture();
+    const prior = { ...f.artifact(), id: 87, name: `engineering-verification-1-${HEAD}-2285-attempt-1` };
+    f.overrides['/actions/runs/101/artifacts'] = { artifacts: [prior, f.artifact()] };
+    const current = await collectProofEvidence({ github: await githubSnapshot(), ...f, token: 'secret', now: NOW });
+    expect(current.receipt?.head_sha).toBe(HEAD);
+    f.overrides['/actions/runs/101/artifacts'] = { artifacts: [prior] };
+    const stale = await collectProofEvidence({ github: await githubSnapshot(), ...f, token: 'secret', now: NOW });
+    expect(stale.receipt).toBeNull();
+    expect(stale.validation.problems.join(' ')).toContain('Exact-head proof artifact unavailable');
   });
   it.each([
     { workflow_id: 999 }, { event: 'pull_request_target' }, { head_branch: 'attacker' },

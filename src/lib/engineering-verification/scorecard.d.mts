@@ -23,6 +23,7 @@ export interface ScorecardChange {
   historicalContractSha256: string | null;
   policySha256: string | null;
   review: { status: string; latencyHours: number | null; blockers: string[] };
+  ownerAuthorization: { required: boolean | null; status: string; decidedAt: string | null };
   proof: { status: string; blockers: string[]; completedBeforeMerge?: boolean };
   ci: { status: string; runId?: number; runAttempt?: number };
   problems: string[];
