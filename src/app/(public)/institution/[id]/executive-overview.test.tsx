@@ -39,7 +39,7 @@ const cohort = buildCohortDistribution(cohortInput, 1);
 
 describe("overview and financial performance", () => {
   beforeAll(() => {
-    // jsdom has no matchMedia; the cards' count-up reads it for reduced motion.
+    // jsdom has no matchMedia; the drawer and chart read it for reduced motion.
     window.matchMedia ??= ((media: string) => ({ matches: true, media, addEventListener() {}, removeEventListener() {} })) as never;
   });
 
