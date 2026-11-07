@@ -115,6 +115,8 @@ export const PROVIDER_STEP_KEYS: readonly string[] = [
   "deming-answer-key-rekey",
   // The one-off Darwin release-review sample (James, 2026-11-01): verdicts only, at most 20 calls.
   "darwin-release-review-sample",
+  // Knox's blind second reader (James, 2026-11-07): one capped batch, off until KNOX_SECOND_READER_LIVE.
+  "knox-second-reader",
   // The consumer guide draft writes with a model (src/lib/agents/guides/draft.ts, #1580).
   "guide-draft",
 ];

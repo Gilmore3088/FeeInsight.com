@@ -95,6 +95,7 @@ export const SWITCH_FACTS: Readonly<Record<string, SwitchFacts>> = {
   KNOX_REREAD_BACKLOG_LIVE: { firstSeen: "2026-11-01 bd1ac531d" },
   KNOX_REREAD_FEEDBACK_LIVE: { firstSeen: "2026-10-16 fa0a730db" },
   KNOX_REREAD_PUBLISHED_NAME_LIVE: { firstSeen: "2026-10-26 354e9153b" },
+  KNOX_SECOND_READER_LIVE: { note: "a provider switch: on, the tick queues the approved second-reader batch (knox/second-reader.ts) under its own dollar cap; flip only with James's yes on that batch's amount" },
   KNOX_SINGLE_ACCOUNT_OWNER_LIVE: { firstSeen: "2026-11-01 801376893" },
   KNOX_TWO_READ_AGREEMENT_LIVE: { firstSeen: "2026-11-01 65b3e82c6" },
   LATE_CHARGE_BOUND_TAKEDOWN_LIVE: { firstSeen: "2026-10-25 9dd049402" },

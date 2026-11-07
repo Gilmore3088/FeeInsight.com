@@ -3348,6 +3348,27 @@ dry run over the whole backlog (no 200-document limit): would-hold 171 at v1, 83
 pairs 187 to 94 (amount pairs 6, unchanged); paired paid fees agreeing 1,218 to 1,297 of 1,425; live
 rows in a disagreement 77 to 50.
 
+## Blind second reader (`second-reader.ts`, James 2026-11-07, `KNOX_SECOND_READER_LIVE` off)
+A model reads an approved batch's current texts (completed, no newer copy) blind: the request is
+the paid pass's fixed instructions and fee list and the text, with no Knox row, lesson or key.
+Each returned row is grounded (`groundPaidRow`) and traced (its quoted line in the text, and
+`checkFeeAgainstSource` finding the amount stated as that fee); a row that does not trace is
+dropped and counted, never flagged. Traced finds are filed against today's free team with the paid
+pass's classifier (`paid-find-misses.ts`), and each `free_missed` find is a never-read: one
+`never_read` row in `pipeline_feedback` (check `knox.second_reader`, about `extract.rules`), the
+attempt's detail (`extract.second_reader` v1) and the step's `knox.second_reader` event.
+`never-read-lessons.ts` reads the rows back into lesson drafts by text layout and line shape
+(`knox.never_read_lessons`, `repeats` at two banks or more); the builder who writes the free rule
+for a draft adds its role lesson here in `role-lessons.ts`. A batch (`SECOND_READER_BATCHES`) names
+its institutions and its dollar cap (logged spend of operation `knox_second_read`); a batch with
+`writeCandidates: true` is refused until that path carries the lineup, own unit and own condition and
+retires older-text rows as the paid pass does. Batch `2026-11-07-cohort8` (James's 8 banks) writes no
+fee row and is capped at $1.50; a model with no list price is refused. A step starts no read after
+120 s, and the tick queues one run at a time under an advisory lock while a left text's worst case
+fits under the cap. The step is a provider step under `agent:knox`; off, a live run selects nothing
+and makes no call (a dry_run run still lists its texts), and the tick queues no run. It changes no
+read, so no rules version bump.
+
 ## Extraction Passes
 
 Knox reads one whole document at a time. The free team runs first; the paid pass runs
@@ -3577,6 +3598,8 @@ fails a PR that changes one of these constants without updating its line here (#
 | `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v28 | `knox/name-retidy.ts` |
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v3 | `knox/paid-extract.ts` |
 | `KNOX_PAID_FIND_MISS_VERSION` | — | v1 | `knox/paid-find-misses.ts` |
+| `KNOX_SECOND_READER_STRATEGY` | `extract.second_reader` | v1 | `knox/second-reader.ts` |
+| `NEVER_READ_LESSONS_VERSION` | — | v1 | `knox/never-read-lessons.ts` |
 | `TWO_READ_AGREEMENT_STRATEGY` | `knox.two_read_agreement` | v2 | `knox/two-read-agreement.ts` |
 | `KNOX_RULES_STRATEGY` | `extract.rules` | v184 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |

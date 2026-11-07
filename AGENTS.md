@@ -107,6 +107,10 @@ Knox owns conservative raw fee extraction and anomaly surfacing.
 - Compares its two reads of one text where both exist (the free team and the paid pass,
   `knox/two-read-agreement.ts`): a fee they disagree on is held before Darwin publishes it, behind
   `KNOX_TWO_READ_AGREEMENT_LIVE` (off: report only).
+- Has a blind second reader (`knox/second-reader.ts`, step `knox-second-reader`, a provider step
+  behind `KNOX_SECOND_READER_LIVE`, off): a model lists every fee in an approved batch's stored
+  texts without seeing Knox's read; a find traced to its own line that Knox misses is a `never_read`
+  lesson row (`knox/never-read-lessons.ts`), never a live fee.
 - Emits aggregate Hamilton Monitor signals when raw observations are inserted or normalized source text needs manual fee review.
 
 ### Darwin

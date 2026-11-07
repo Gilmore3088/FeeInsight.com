@@ -16,6 +16,7 @@ import { scheduleLiveSourceAudit } from "@/lib/agents/deming/live-source-schedul
 import { scheduleAnswerKeyRekeyRun } from "@/lib/agents/deming/answer-key-rekey-schedule";
 import { scheduleReconcileRun } from "@/lib/agents/deming/reconcile/schedule";
 import { scheduleReleaseReviewSample } from "@/lib/agents/darwin/release-review-sample";
+import { scheduleKnoxSecondReaderRun } from "@/lib/agents/knox/second-reader-schedule";
 import { scheduleDueStateLaneRuns, STATE_LANE_LIMIT_PER_TICK } from "@/lib/agents/state-lane-scheduler";
 import { getMarketingControl, getPipelineControl } from "@/lib/automation-control";
 import { matchesConfiguredCronSecret } from "@/lib/cron-secret";
@@ -262,6 +263,10 @@ async function handleGET(request: NextRequest) {
   // three runs, until no unreviewed "review" fee is left. A provider step, like the re-key above.
   const releaseReviewSample = await scheduleReleaseReviewSample()
     .catch((error: unknown) => ({ error: error instanceof Error ? error.message : "Release-review sample admission failed" }));
+  // Knox's blind second reader (James, 2026-11-07): queues no run until KNOX_SECOND_READER_LIVE is
+  // on; then one run at a time of the approved batch, while a text's worst case fits under its cap.
+  const knoxSecondReader = await scheduleKnoxSecondReaderRun()
+    .catch((error: unknown) => ({ error: error instanceof Error ? error.message : "Knox second reader admission failed" }));
   const result = await executeQueuedAgentRuns({
     runLimit,
     maxStepsPerRun,
@@ -295,6 +300,7 @@ async function handleGET(request: NextRequest) {
     answerKeyRekey,
     reconcile,
     releaseReviewSample,
+    knoxSecondReader,
     ...result,
   });
 }
