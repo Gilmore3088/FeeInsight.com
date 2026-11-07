@@ -71,4 +71,6 @@ The proposed default is **seven days**, with explicit frozen sample thresholds a
 
 Remaining activation includes concrete owner security approval, a distinct reviewer identity, authentic post-bootstrap Actions proof, deployment/outcome observations and any separately authorized reruns. Broader UI/Hamilton contract adoption, actual browser evidence, independent private holdouts and corroborated multi-change scorecard acceptance remain explicit work in `program.json`. The native scorecard mechanism exists; trusted collection against real changes still depends on bootstrap and does not complete M5.
 
+The Hamilton functional diagnostics now run desktop and phone report/research flows, including picker selection and the same saved artifact across contexts. Strict browser acceptance still blocks uncorroborated request cancellations; native same-document/action completion evidence remains M5 work. All failed requests are retained, and only the reviewed, explicitly corroborated prefetch case is classified as expected. The private sample is a separate local diagnostic whose expected values and case results stay outside builder tuning.
+
 No command automatically rolls back, reprocesses live fees, changes GitHub protections, activates a paid provider, sends outreach or creates production tables.

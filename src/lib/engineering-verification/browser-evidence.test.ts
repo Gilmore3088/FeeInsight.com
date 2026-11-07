@@ -28,4 +28,24 @@ describe('browser journey evidence boundaries', () => {
     expect(assessBrowserCapture({ ...capture, test: { status: 'skipped' } }).status).toBe('BLOCKED');
     expect(assessBrowserCapture({ ...capture, truncated: true }).status).toBe('BLOCKED');
   });
+
+  it('retains an explicitly identified RSC prefetch cancellation superseded by a successful main-frame load', () => {
+    const request = { method: 'GET', url: 'http://localhost:3197/pro/reports', error: 'net::ERR_ABORTED', resourceType: 'fetch',
+      fixtureOrigin: 'http://localhost:3197', rsc: true, routerPrefetch: true, responseStatus: 200, rscResponse: true, startedNavigation: 1,
+      supersedingNavigation: { sequence: 2, status: 200, url: 'http://localhost:3197/pro/analyze', source: 'main-frame-load', afterFailure: true } };
+    const capture = { diagnosticPolicy: 'next-rsc-prefetch-cancellation-v1',
+      identity: { headSha: 'a'.repeat(40), buildHeadSha: 'a'.repeat(40), buildId: 'fresh-build', clean: true },
+      test: { status: 'passed' }, screenshot: 'screen.png', truncated: false,
+      consoleErrors: [], pageErrors: [], failedRequests: [request], httpErrors: [] };
+    expect(assessBrowserCapture(capture).status).toBe('LOCAL_BROWSER_UNTRUSTED');
+    expect(capture.failedRequests).toHaveLength(1);
+    for (const change of [{ method: 'POST' }, { error: 'net::ERR_FAILED' }, { resourceType: 'script' }, { routerPrefetch: false }, { rsc: false },
+      { responseStatus: 500 }, { rscResponse: false }, { fixtureOrigin: 'https://other.test' }, { supersedingNavigation: null },
+      { supersedingNavigation: { ...request.supersedingNavigation, sequence: 1 } },
+      { supersedingNavigation: { ...request.supersedingNavigation, afterFailure: false } },
+      { supersedingNavigation: { ...request.supersedingNavigation, url: 'https://other.test/pro/analyze' } },
+    ]) expect(assessBrowserCapture({ ...capture, failedRequests: [{ ...request, ...change }] }).status).toBe('BLOCKED');
+    expect(assessBrowserCapture({ ...capture, diagnosticPolicy: undefined }).status).toBe('BLOCKED');
+    expect(assessBrowserCapture({ ...capture, test: { status: 'failed' } }).status).toBe('BLOCKED');
+  });
 });

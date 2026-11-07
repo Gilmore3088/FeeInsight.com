@@ -8,7 +8,7 @@ import path from "node:path";
 import { expect, test, type Page } from "./evidence";
 import { CCB_ID, lendFixtureAccount, returnFixtureAccount, seedCcbFixture, teardownCcbFixture } from "./ccb-fixture";
 import { FIXTURE_USERS, connectFixtureDb } from "./fixtures";
-import { signIn } from "./helpers";
+import { navigate, signIn } from "./helpers";
 
 async function shoot(page: Page, name: string): Promise<void> {
   const dir = process.env.HAMILTON_SCREENS_DIR;
@@ -42,7 +42,7 @@ test.describe("reports builder", () => {
     test(`builds, reorders and exports a report at ${width}`, async ({ page }) => {
       await page.setViewportSize({ width, height: width > 500 ? 900 : 844 });
       await signIn(page, FIXTURE_USERS.pro.email, "/pro/reports");
-      await page.goto(`/pro/reports?instId=${CCB_ID}`);
+      await navigate(page, `/pro/reports?instId=${CCB_ID}`);
       await expect(page.getByRole("heading", { name: "Briefs for your board and pricing committee", level: 1 })).toBeVisible();
       await expect(page.getByRole("heading", { name: "Your saved reports", level: 2 })).toBeVisible();
 

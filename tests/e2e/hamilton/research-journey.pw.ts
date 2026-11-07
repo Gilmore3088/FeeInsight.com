@@ -11,8 +11,8 @@
  */
 import { readFileSync } from "node:fs";
 import { expect, test, type Page } from "./evidence";
-import { EXCLUDED, FIXTURE_USERS, HOME, connectFixtureDb } from "./fixtures";
-import { ask, signIn } from "./helpers";
+import { EXCLUDED, FIXTURE_USERS, HOME, connectFixtureDb, seedHamiltonFixtures } from "./fixtures";
+import { ask, navigate, signIn } from "./helpers";
 
 test.describe.configure({ mode: "serial" });
 
@@ -38,10 +38,16 @@ async function snap(page: Page, name: string): Promise<void> {
 
 let savedResearchHref = "";
 
+test.beforeAll(async () => {
+  // Other serial journeys replace the home's filings. Research owns the original $9B fixture baseline.
+  const db = connectFixtureDb();
+  try { await seedHamiltonFixtures(db); } finally { await db.end(); }
+});
+
 test("H07-AC2 H02-AC1 H02-AC3 H02-AC4 H05-AC1 H06-AC3 H04-AC1: ask, ten peers, refine, compare fees, save, reopen", async ({ page }) => {
   await signIn(page, FIXTURE_USERS.pro.email, `/pro/analyze?instId=${HOME.id}`);
-  await page.goto(`/pro/analyze?instId=${HOME.id}`);
-  await expect(page.getByText(`Researching ${HOME.name}`).first()).toBeVisible();
+  await navigate(page, `/pro/analyze?instId=${HOME.id}`);
+  await expect(page.getByRole("region", { name: "Institution context" })).toContainText(`Researching: ${HOME.name}`);
   await expectOneComposer(page);
 
   // Ten similarly sized credit unions: a list with assets and dates, never a report.
@@ -97,7 +103,7 @@ test("H07-AC2 H02-AC1 H02-AC3 H02-AC4 H05-AC1 H06-AC3 H04-AC1: ask, ten peers, r
   expect(savedResearchHref).toMatch(/^\/pro\/peer-research\/[0-9a-f-]{36}$/);
   await expectOneComposer(page);
 
-  await page.goto(savedResearchHref);
+  await navigate(page, savedResearchHref);
   await expect(page.getByText(`Research subject: ${HOME.name}`).first()).toBeVisible();
   await expect(page.getByText("Indian River Test CU").first()).toBeVisible();
   await expect(page.getByText("Peachtree Test CU")).toHaveCount(0);
@@ -113,7 +119,7 @@ test("H07-AC2 H02-AC1 H02-AC3 H02-AC4 H05-AC1 H06-AC3 H04-AC1: ask, ten peers, r
 
 test("H01-AC3 H05-AC4: a fee answer is saved, reopens about the same institution, and downloads as a PDF", async ({ page }) => {
   await signIn(page, FIXTURE_USERS.pro.email, `/pro/analyze?instId=${HOME.id}`);
-  await page.goto(`/pro/analyze?instId=${HOME.id}`);
+  await navigate(page, `/pro/analyze?instId=${HOME.id}`);
   await ask(page, `What is the NSF fee at ${HOME.name}?`);
   await expect(page.getByText(`${HOME.name}'s $27 NSF / returned item fee`).first()).toBeVisible();
   const brief = page.getByRole("link", { name: "Add to board brief" }).first();
@@ -132,7 +138,7 @@ test("H01-AC3 H05-AC4: a fee answer is saved, reopens about the same institution
   expect(pdf.length).toBeGreaterThan(2_000);
 
   // Reopen the saved answer while another institution is selected: it still names the home.
-  await page.goto(`/pro/analyze?analysis=${analysisId}&instId=${EXCLUDED[1].id}`);
+  await navigate(page, `/pro/analyze?analysis=${analysisId}&instId=${EXCLUDED[1].id}`);
   await expect(page.getByText(HOME.name).first()).toBeVisible();
   await expect(page.getByText("$27").first()).toBeVisible();
   await expect(page.getByText(EXCLUDED[1].name)).toHaveCount(0);
@@ -141,7 +147,7 @@ test("H01-AC3 H05-AC4: a fee answer is saved, reopens about the same institution
 
 test("H01-AC2: with no linked institution, \"us\" is never the institution being researched", async ({ page }) => {
   await signIn(page, FIXTURE_USERS.proNoHome.email, `/pro/analyze?instId=${HOME.id}`);
-  await page.goto(`/pro/analyze?instId=${HOME.id}`);
+  await navigate(page, `/pro/analyze?instId=${HOME.id}`);
   await ask(page, "List ten similarly sized credit unions");
   await expect(peerRows(page)).toHaveCount(10);
   await ask(page, "How does this compare with us?");
@@ -155,12 +161,12 @@ test("H01-AC4: another account's saved work, and Hamilton without a subscription
   await signIn(page, FIXTURE_USERS.proNoHome.email, "/pro/analyze");
   // The first account's saved peer research and its legacy answer.
   // The page streams, so the refusal is read from what renders rather than the status line.
-  await page.goto(savedResearchHref);
+  await navigate(page, savedResearchHref);
   // The Hamilton not-found page (src/app/pro/(hamilton)/not-found.tsx); "Page not found" is only its tab title.
   await expect(page.getByRole("heading", { name: "We couldn't find that page" })).toBeVisible();
   await expect(page.getByText("Saved work opens only in the account that saved it.", { exact: false })).toBeVisible();
   await expect(page.getByText("Indian River Test CU")).toHaveCount(0);
-  await page.goto("/pro/analyze?analysis=00000000-0000-4000-8000-000009701301");
+  await navigate(page, "/pro/analyze?analysis=00000000-0000-4000-8000-000009701301");
   await expect(page.getByRole("heading", { name: "We couldn't find that page" })).toBeVisible();
   await expect(page.getByText("A legacy synthetic answer saved without a research subject.")).toHaveCount(0);
 
@@ -182,7 +188,7 @@ test("H01-AC4: another account's saved work, and Hamilton without a subscription
 
 test("H06-AC4: a saved answer with no recorded institution reopens unscoped", async ({ page }) => {
   await signIn(page, FIXTURE_USERS.pro.email, "/pro/analyze");
-  await page.goto("/pro/analyze?analysis=00000000-0000-4000-8000-000009701301");
+  await navigate(page, "/pro/analyze?analysis=00000000-0000-4000-8000-000009701301");
   await expect(page.getByText("No institution was recorded with this saved answer.", { exact: false })).toBeVisible();
   await expect(page.getByText("A legacy synthetic answer saved without a research subject.")).toBeVisible();
   // Read-only: no question field that could relabel it.
@@ -223,7 +229,7 @@ test("no paid model call was recorded for any journey", async () => {
 test("H01-AC1: a linked home is the account institution, and \"with us\" adds it to the peer fees", async ({ page }) => {
   // Found by this journey on 2026-10-17: the bigint user id arrived as a string and never matched.
   await signIn(page, FIXTURE_USERS.pro.email, `/pro/analyze?instId=${HOME.id}`);
-  await page.goto(`/pro/analyze?instId=${HOME.id}`);
+  await navigate(page, `/pro/analyze?instId=${HOME.id}`);
   await expect(page.getByText(`Researching: ${HOME.name} (your institution)`)).toBeVisible();
   await ask(page, "List ten similarly sized credit unions");
   await expect(peerRows(page)).toHaveCount(10);
@@ -235,18 +241,18 @@ test("H01-AC1: a linked home is the account institution, and \"with us\" adds it
 test("H02-AC1: a first-turn peer list can be saved and reopened", async ({ page }) => {
   // Found by this journey on 2026-10-17: the save sent previousPeerList: null and got a 409.
   await signIn(page, FIXTURE_USERS.pro.email, `/pro/analyze?instId=${HOME.id}`);
-  await page.goto(`/pro/analyze?instId=${HOME.id}`);
+  await navigate(page, `/pro/analyze?instId=${HOME.id}`);
   await ask(page, "List ten similarly sized credit unions");
   await page.getByRole("button", { name: "Save this peer research" }).click();
   const reopen = page.getByRole("link", { name: "Reopen saved research" });
   await expect(reopen).toBeVisible();
-  await page.goto((await reopen.getAttribute("href"))!);
+  await navigate(page, (await reopen.getAttribute("href"))!);
   await expect(page.getByText("Peachtree Test CU").first()).toBeVisible();
 });
 
 test("H02-AC3: the criteria line keeps \"FL\" after a fee follow-up", async ({ page }) => {
   await signIn(page, FIXTURE_USERS.pro.email, `/pro/analyze?instId=${HOME.id}`);
-  await page.goto(`/pro/analyze?instId=${HOME.id}`);
+  await navigate(page, `/pro/analyze?instId=${HOME.id}`);
   await ask(page, "List ten similarly sized credit unions");
   await expect(peerRows(page)).toHaveCount(10);
   await ask(page, "Only Florida");

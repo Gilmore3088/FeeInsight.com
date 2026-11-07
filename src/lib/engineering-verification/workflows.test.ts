@@ -1,19 +1,58 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest';
-import { readFileSync, writeFileSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, mkdtempSync, rmSync, chmodSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { delimiter, join } from 'node:path';
 import { createRequire } from 'node:module';
 import { spawnSync } from 'node:child_process';
 
 type Step = { id?: string; name?: string; uses?: string; run?: string; env?: Record<string, string>; with?: Record<string, unknown>; if?: string };
-type Workflow = { name: string; on: Record<string, unknown>; permissions: Record<string, string>; jobs: Record<string, { if?: string; steps: Step[] }> };
+type Workflow = { name: string; on: Record<string, unknown>; permissions: Record<string, string>; env?: Record<string, string>; jobs: Record<string, { if?: string; steps: Step[] }> };
 const yaml = createRequire(import.meta.url)('js-yaml') as { load: (text: string) => unknown };
 function workflow(name: string): Workflow {
   return yaml.load(readFileSync(new URL(`../../../.github/workflows/${name}`, import.meta.url), 'utf8')) as Workflow;
 }
 
 describe('engineering verification workflow trust boundary', () => {
+  it('runs fixture schema catch-up exactly once on a fresh separate database before shared DB suites', () => {
+    const ci = workflow('test.yml');
+    const fixtureTest = 'tests/e2e/hamilton/schema-catch-up.test.ts';
+    expect(ci.env?.FIXTURE_SCHEMA_TEST).toBe(fixtureTest);
+    expect(ci.env?.E2E_TESTS.split(/\s+/)).not.toContain(fixtureTest);
+    const directory = mkdtempSync(join(tmpdir(), 'feeinsight-ci-fixture-'));
+    const log = join(directory, 'commands.jsonl');
+    type Command = { command: string; args: string[]; database: string | null };
+    // Exercise the actual workflow shell and variable expansion; intercept all database/test executables.
+    const stub = '#!/usr/bin/env node\nconst {appendFileSync}=require("node:fs"); const {basename}=require("node:path"); appendFileSync(process.env.CI_FIXTURE_COMMAND_LOG,JSON.stringify({command:basename(process.argv[1]),args:process.argv.slice(2),database:process.env.E2E_DATABASE_URL??null})+"\\n");\n';
+    try {
+      for (const command of ['sudo', 'psql', 'npx']) { const file = join(directory, command); writeFileSync(file, stub); chmodSync(file, 0o755); }
+      const run = (script: string) => {
+        writeFileSync(log, '');
+        const result = spawnSync('bash', ['-e', '-o', 'pipefail', '-c', script], { cwd: directory, encoding: 'utf8', env: { ...process.env, ...ci.env, PATH: directory + delimiter + process.env.PATH, CI_FIXTURE_COMMAND_LOG: log } });
+        expect(result.status, result.stderr).toBe(0);
+        return readFileSync(log, 'utf8').trim().split('\n').map(line => JSON.parse(line) as Command);
+      };
+      const e2e = ci.jobs.e2e.steps.find(step => step.name === 'End-to-end pipeline test');
+      const commands = run(e2e?.run ?? 'exit 90');
+      const fixtureRun = commands.findIndex(row => row.command === 'npx' && row.args.includes(fixtureTest));
+      const sharedRun = commands.findIndex(row => row.command === 'npx' && row.database?.endsWith('/e2e'));
+      expect(fixtureRun).toBeGreaterThan(-1);
+      expect(sharedRun).toBeGreaterThan(fixtureRun);
+      expect(commands.filter(row => row.command === 'npx' && row.args.includes(fixtureTest))).toHaveLength(1);
+      expect(commands[fixtureRun].database).toBe('postgres://postgres:postgres@localhost:5432/e2e_fixture_schema');
+      const creation = commands.findIndex(row => row.command === 'sudo' && row.args.join(' ') === '-u postgres createdb e2e_fixture_schema');
+      const snapshot = commands.findIndex(row => row.command === 'psql' && row.args.includes('e2e_fixture_schema') && row.args.includes('tests/e2e/production-schema.sql') && row.args.includes('ON_ERROR_STOP=1'));
+      expect(creation).toBeGreaterThan(-1);
+      expect(snapshot).toBeGreaterThan(creation);
+      expect(fixtureRun).toBeGreaterThan(snapshot);
+      expect(commands[sharedRun].args).not.toContain(fixtureTest);
+      const unit = ci.jobs.unit.steps.find(step => step.name?.startsWith('Unit tests (shard'));
+      const unitCommands = run((unit?.run ?? 'exit 90').replaceAll('${{ matrix.shard }}', '1'));
+      const unitRun = unitCommands.find(row => row.command === 'npx');
+      const exclusions = unitRun?.args.flatMap((argument, i, args) => argument === '--exclude' ? [args[i + 1]] : []) ?? [];
+      expect(exclusions.filter(file => file === fixtureTest)).toHaveLength(1);
+    } finally { rmSync(directory, { recursive: true, force: true }); }
+  });
   it('runs full CI for a real protected-file rename to an inert document', () => {
     const directory = mkdtempSync(join(tmpdir(), 'feeinsight-rename-'));
     const git = (...args: string[]) => {
