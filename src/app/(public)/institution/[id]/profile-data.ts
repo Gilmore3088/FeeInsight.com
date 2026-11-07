@@ -183,6 +183,21 @@ export function pickHeadlineFees(verifiedFees: ExtractedFee[]): HeadlineFees {
 /** Search results cut a title near 60 characters; the root template adds " | Fee Insight" (14). */
 export const PROFILE_TITLE_MAX = 46;
 
+/**
+ * The title of the profile opened on one fee (`?fee=monthly_maintenance`): it names that fee and
+ * its published price or range, so a tab never shows an overdraft price on a monthly fee's page.
+ * Year, then price, come off until it fits.
+ */
+export function buildFocusFeeTitle(institutionName: string, feeLabel: string, price: string | null): string {
+  const label = feeLabel.replace(/\s*\([^)]*\)/g, "").trim();
+  const fee = /\bfee$/i.test(label) ? label : `${label} Fee`;
+  const year = ` (${new Date().getFullYear()})`;
+  const candidates = price
+    ? [`${institutionName} ${fee}: ${price}${year}`, `${institutionName} ${fee}: ${price}`]
+    : [`${institutionName} ${fee}${year}`];
+  return candidates.find((title) => title.length <= PROFILE_TITLE_MAX) ?? `${institutionName} ${fee}`;
+}
+
 export function buildProfileTitle(institutionName: string, headline: HeadlineFees): string {
   const parts = [
     headline.overdraft !== null ? `Overdraft ${formatFeeAmount(headline.overdraft)}` : null,
