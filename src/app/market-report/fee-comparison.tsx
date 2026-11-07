@@ -8,7 +8,7 @@
 import { incompleteNote, isIncomplete, type ReportLine } from "@/lib/custom-report/analysis";
 import { evidenceOf, listedNotCompared, reasonOf, type AmountEvidence, type EvidenceRecord } from "@/lib/custom-report/evidence";
 import type { MarketBranchFootprint } from "@/lib/data-store/branches";
-import { rankOf, ordinal, type PlottedLine } from "./[token]/at-a-glance";
+import { middleHalfText, rankOf, rankPhrase, type PlottedLine } from "./[token]/at-a-glance";
 import { ShowAll } from "./show-all";
 import { EXTRA_BLOCK_ROW, ROWS_SHOWN, comparedAt, comparedLines, medianMethod, money, positionWord, priceText } from "./report-view";
 
@@ -171,8 +171,7 @@ export function FeeComparison({ name, lines, names, branches, footprint }: FeeCo
                     style={{ left: `${Math.min(98, Math.max(2, rank))}%` }}
                   />
                   <span className="sr-only">
-                    {ordinal(Math.round(rank))} percentile among {line.peers.n} local competitors; middle 50% {money(line.peers.p25)} to{" "}
-                    {money(line.peers.p75)}, median {money(line.peers.median)}.
+                    {`${rankPhrase(line, rank)}; ${middleHalfText(line.peers.p25, line.peers.p75)}, median ${money(line.peers.median)}.`}
                   </span>
                 </span>
                 <span className="text-right text-[14px] font-semibold tabular-nums text-ink">

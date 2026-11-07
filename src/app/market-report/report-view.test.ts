@@ -52,7 +52,7 @@ describe("the report's section findings", () => {
 
   it("says once which fees were left out and why", () => {
     expect(leftOutNote("Capital City Bank", lines)).toBe(
-      "Not compared, because fewer than 8 local competitors publish them: Stop payment. Not found on Capital City Bank's published schedule: ATM, out of network.",
+      "Not compared, because fewer than 8 local competitors publish them: Stop payment. No price on file yet from Capital City Bank's published schedule: ATM, out of network.",
     );
     expect(leftOutNote("Capital City Bank", [lines[0]])).toBeNull();
   });
