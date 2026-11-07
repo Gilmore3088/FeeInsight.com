@@ -23,6 +23,7 @@ import { HamiltonClose } from "./[token]/hamilton-close";
 import type { CheckingLineupView } from "@/lib/custom-report/checking-lineup";
 import { CheckingLineupSection } from "./checking-lineup-section";
 import { HubSection, KICKER } from "@/app/(public)/research/district/[id]/district-hub";
+import { formatAbsoluteDate } from "@/lib/absolute-date";
 import { Disclosure } from "./disclosure";
 import { ShowAll } from "./show-all";
 import { EXTRA_ROW, ROWS_SHOWN, bandText, countiesText, headlineFinding, identifiedText, incompleteTail, leftOutNote, marketFinding, reviewPriorities, widestGapFinding, type ReviewPriority } from "./report-view";
@@ -33,7 +34,10 @@ import { ArrowUp, ChartPie, Scale } from "lucide-react";
 import { PeerSection } from "./peer-section";
 import type { ReportPeerContext } from "@/lib/custom-report/peer-context";
 
-const DATE = new Intl.DateTimeFormat("en-US", { month: "long", day: "numeric", year: "numeric", timeZone: "UTC" });
+/** "November 6, 2026": a calendar date keeps its own day; a moment is dated in U.S. Pacific (never tomorrow). */
+function longDate(value: Date): string {
+  return formatAbsoluteDate(value, "long") ?? "";
+}
 
 export function money(value: number | null | undefined): string {
   if (value === null || value === undefined || Number.isNaN(value)) return "-";
@@ -52,7 +56,7 @@ export const POSITION_LABEL: Record<LinePosition, string> = {
  * local competitors publish the line to compare it.
  */
 export function notComparableNote(line: Pick<ReportLine, "own" | "peers">): string {
-  if (!line.own && (line.peers?.n ?? 0) >= MIN_LOCAL_PEERS_PER_LINE) return "Not found in your schedule";
+  if (!line.own && (line.peers?.n ?? 0) >= MIN_LOCAL_PEERS_PER_LINE) return "No price on file from your schedule yet";
   return "Too few local competitors";
 }
 
@@ -250,7 +254,7 @@ export function MarketReportBody({ report, eyebrow, preparedOn, actions, contact
             {name}: competitive fee position
           </Title>
           <p className="mx-auto mt-3 text-[14px] text-ink-soft sm:mx-0">
-            {counties} · prepared {DATE.format(preparedOn)} by {SITE_NAME}
+            {counties} · prepared {longDate(preparedOn)} by {SITE_NAME}
           </p>
           {analysis.readiness.ready && split.above + split.inside + split.below > 0 ? (
             <>
@@ -303,7 +307,7 @@ export function MarketReportBody({ report, eyebrow, preparedOn, actions, contact
         <>
           {savedAt && (
             <p className="-mt-6 rounded-md border border-border bg-surface-0 px-4 py-3 text-sm text-ink-soft sm:-mt-10 sm:mx-0 sm:text-left" role="status">
-              These figures are the ones saved on {DATE.format(new Date(savedAt))}, when this report was bought. The live data for
+              These figures are the ones saved on {longDate(new Date(savedAt))}, when this report was bought. The live data for
               this market is being refreshed; the report switches back to live figures once it passes its checks again.
             </p>
           )}

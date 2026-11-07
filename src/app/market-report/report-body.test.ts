@@ -61,7 +61,7 @@ describe("cityLabel and placeLabel", () => {
 
 describe("notComparableNote", () => {
   it("says the fee was not found when enough competitors publish it", () => {
-    expect(notComparableNote({ own: null, peers: { n: 12 } as never })).toBe("Not found in your schedule");
+    expect(notComparableNote({ own: null, peers: { n: 12 } as never })).toBe("No price on file from your schedule yet");
   });
 
   it("keeps the small-group wording for thin lines", () => {
