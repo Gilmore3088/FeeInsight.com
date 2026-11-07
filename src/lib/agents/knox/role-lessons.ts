@@ -1514,4 +1514,14 @@ export const KNOX_LESSONS: AgentLesson[] = [
     appliesTo: ["extract"],
     since: "2026-11-03",
   },
+  {
+    id: "cohort-misses-2026-11-07-a-leader-cell-is-a-whole-row",
+    agent: "knox",
+    stage: "extract",
+    lesson: "In a two-column PDF schedule each cell is often a whole dot-leader row (\"Incoming (each) ........ $15.00\"), so read it as the name and price pair it prints, exactly as an HTML row's two cells, and let the right column's own heading (\"| Wire Transfer\", \"| Wire transfers (outgoing)\") name the bare rows under it. A cell priced in words (\"Check printing……(varies by style)\", \"Prices Vary\") is a closed row: the next cell's price is never its own. A box size written with the times sign (\"3×10\") is a name like \"3 x 10\". Do not read past what the page decides: a bare \"International\" under a heading with no direction stays for the direction review.",
+    why: "Answer-key score run 117 (Nov 7) listed Knox misses on James's scored cohort that sit in the banks' own stored text. Austin Bank's and Utility District FCU's right-column wires were never read because the column reader paired only \"name | price\" cells; Utility District's $20 domestic wire was read as check printing from the cell beside it (Darwin refused it); Rabun County Bank's \"3×10 | $55.00\" box had no usable name and did not trace. Knox v186 reads all five, with 0 live fees lost on the cohort and on the 180-text slice.",
+    evidence: { issues: [1026, 1092], prs: [], files: ["src/lib/agents/knox/column-heading-rows.ts", "src/lib/agents/knox/rules.ts", "src/lib/agents/knox/layout.ts", "src/lib/agents/knox/table-rows.ts", "src/lib/custom-report/source-check.ts", "src/lib/agents/knox/leader-column-rows.test.ts", "docs/project/findings/2026-11-07-cohort-knox-misses-leader-columns.md"] },
+    appliesTo: ["extract"],
+    since: "2026-11-07",
+  },
 ];

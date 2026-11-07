@@ -140,9 +140,9 @@ const ADD_ON_RATE = /^\s*(?:each|per|for each|\/)\s*(?:additional|add'?l|extra)\
  * fee's row ("Incoming | $10.00").
  */
 // A box size opening a line ("3x5 | $60") is that box's row, not a price for the row above.
-const PRICE_LINE = /^\s*[-–:•*~]?\s*~?\s*(\$|\d(?!\d*\s*["”']?\s*x\s*\d)|free\b|no charge|no fee|n\/c|none\b|waived|per\b|each\b|\/)/i;
-/** A box or item size ("3 X 10", "5\" x 10\"") read as one word. */
-const SIZE = /\b(\d+)\s*["”']?\s*x\s*(\d+)\b(?:\s*["”']?\s*x\s*\d+\b)?/gi;
+const PRICE_LINE = /^\s*[-–:•*~]?\s*~?\s*(\$|\d(?!\d*\s*["”']?\s*[x×]\s*\d)|free\b|no charge|no fee|n\/c|none\b|waived|per\b|each\b|\/)/i;
+/** A box or item size ("3 X 10", "5\" x 10\"", v186: "3×10" with the times sign) read as one word. */
+const SIZE = /\b(\d+)\s*["”']?\s*[x×]\s*(\d+)\b(?:\s*["”']?\s*[x×]\s*\d+\b)?/gi;
 /** A price printed under its fee's name: up to this many following lines, each this short. */
 const PRICE_BELOW_LINES = 2;
 const PRICE_BELOW_MAX_LENGTH = 40;
@@ -1292,13 +1292,18 @@ function sourcePageRows(lines: string[]): SourcePageRows {
  * read again on its own, top to bottom. Only pages where many rows split into exactly two
  * cells count as two-column; a column can only add a trace, never take one away.
  */
+/** v186: a whole dot-leader row in one cell: a name of letters, a leader and a dollar price. */
+const LEADER_ROW_CELL = /^[A-Za-z][A-Za-z ()'’/-]{2,40}?\s*(?:(?:\.\s?){3,}|…+)[\s.…]*\$\s?\d[\d,]*(?:\.\d{2})?\s*$/;
+
 function columnLines(text: string): string[][] {
   const rows = text.split(/\r?\n/).map((row) => row.split(" | "));
   // A table row's cells ("Stop Payment | $30") are one fee; a column's cell carries words
   // ("($15.00 Minimum) | IRS or Court-ordered Garnishments ... $100.00").
   const words = (cell: string) => (cell.match(/[a-z]{3,}/gi) ?? []).length;
   // A cell that opens with its price ("| $2.00 per page", "| No Charge") is the row's price cell.
-  const split = rows.map((cells) => cells.length === 2 && words(cells[1]) >= 2 && !PRICE_FIRST_CELL.test(cells[1]));
+  // v186 (Utility District FCU text 6730): a one-word dot-leader row of its own ("| Domestic......$20.00",
+  // "| Foreign......$30.00" under "| Wire transfers (outgoing)") is the right column's cell too.
+  const split = rows.map((cells) => cells.length === 2 && (words(cells[1]) >= 2 || LEADER_ROW_CELL.test(cells[1])) && !PRICE_FIRST_CELL.test(cells[1]));
   const pairs = rows.filter((cells) => cells.length === 2).length;
   const columns = rows.filter((cells) => cells.length === 2 && cells.every((cell) => words(cell) >= 2)).length;
   if (columns < TWO_COLUMN_MIN_ROWS || columns < pairs * TWO_COLUMN_MIN_SHARE) return [];

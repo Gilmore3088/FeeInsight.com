@@ -24,7 +24,7 @@ import {
   inPriceFirstListRun,
   inPriceFirstRun,
   STOP_PAYMENT_ITEM_WORDS,
-  LEADER_PRICE_WORDS,
+  closedLeaderCell,
   LEADING_VALUE,
   looksLikeHeading,
   nameAfterPrice,
@@ -67,7 +67,10 @@ import { FREE_ROW_CONTINUES } from "@/lib/custom-report/source-check";
 // (`table_row_guard_refused`), unless only its heading filed it: then its bare name is held.
 // v13 (Knox rules v171, backlog dry run 4): a list of free items, one per line, is no stacked table: a
 // free word that opens an item never prices the line above (`freeItemList`).
-export const KNOX_TABLE_STRATEGY = { strategy: "extract.table", version: 13 } as const;
+// v14 (Knox rules v186, cohort Knox misses Nov 7): a PDF dot-leader cell ("Incoming (each) ..... $15.00") pairs as
+// its name and price for the column headings (`columnHeadingRows`), and a name cell closed by a price in words in
+// brackets ("Check printing……(varies by style)") never takes the next column's price (`closedLeaderCell`).
+export const KNOX_TABLE_STRATEGY = { strategy: "extract.table", version: 14 } as const;
 
 export interface KnoxTableRow {
   cells: string[];
@@ -316,7 +319,7 @@ export function extractFromTableRows(inputRows: KnoxTableRow[]): ExtractionRules
     // activity……$5") is a row of its own; the next cell's price is another column's.
     // A next cell that only sets the free row's tier or audience ("FREE | Each Additional …. $3")
     // continues the same fee, as the shared check reads it.
-    if (LEADER_PRICE_WORDS.test(nameCell.trim()) && !FREE_ROW_CONTINUES.test(row.cells[nameIndex + 1] ?? "")) continue;
+    if (closedLeaderCell(nameCell.trim()) && !FREE_ROW_CONTINUES.test(row.cells[nameIndex + 1] ?? "")) continue;
     const valueCell = row.cells[valueIndex];
     const name = cleanFeeName(nameCell);
     if (!name || /\b(no (?:[a-z]+ ){0,2}(?:fee|charge)s?|not charged|without charge)\b/i.test(name)) continue;

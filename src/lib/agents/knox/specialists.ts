@@ -949,7 +949,18 @@ import { onlineServiceMonthlyFee } from "@/lib/service-monthly-charge";
 // monthly fee is held (Ameris). Two label cells over two price cells pair by column (`parallelColumnRows`: Advia); a
 // wire name never borrows a non-wire heading (Crow Wing); a code after a heading is no price digit (St. Cloud); an
 // account name that files as a fee is no account (Austin). The stale-read floor stays at v97.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 184 } as const;
+// v185 is left to the parallel tier-column branch (#2993).
+// v186 (cohort Knox misses, Nov 7; answer-key score run 117): two-column PDF schedules printed as dot-leader cells.
+// (1) A leader cell ("Incoming (each) ..... $15.00", "Mobile Banking .....FREE") pairs as its name and price, so a
+// right column's own heading ("| Wire Transfer", "| Wire transfers (outgoing)") names the bare rows under it
+// (`columnHeadingRows`, table pass v14): Austin Bank's incoming and outgoing wires, Utility District FCU's domestic and
+// foreign outgoing wires. (2) A leader cell priced in words ("Check printing……(varies by style)") is a closed row, so
+// the next column's price is never its own (`closedLeaderSplit`): Knox read Utility District's $20 domestic wire as
+// check printing, which Darwin refused. (3) A box size written with the times sign ("3×10 | $55.00") is a usable
+// name, and the shared source check reads it as the size it is (Rabun County Bank, Bank of Gueydan). The shared check
+// also reads a one-word leader row in the right column ("| Domestic......$20.00") as that column's cell. Admit-only:
+// slice dry run (180 texts, 66 banks) 8 fees gained, 0 lost. The stale-read floor stays at v97.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 186 } as const;
 
 export interface SpecialistRun {
   strategy: string;

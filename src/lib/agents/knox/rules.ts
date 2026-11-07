@@ -3,7 +3,7 @@ import { ocrComparable } from "@/lib/agents/knox/ocr-leader-noise";
 import { IRA_SECTION_TARGET, iraSectionClosingFee } from "@/lib/custom-report/ira-section-fee";
 import { scopedFeeStatements, type FeeApplicability } from "@/lib/fee-audience";
 import { CELL_SEPARATOR } from "@/lib/agents/rosetta/html-dom";
-import { composableTail, LEADER_PRICE_WORDS, nameAfterPrice, passesDarwinChecks, QUALIFIER, splitCapsHeading, titleTail } from "@/lib/agents/knox/layout";
+import { closedPricedLeaderCell, composableTail, LEADER_PRICE_WORDS, nameAfterPrice, passesDarwinChecks, QUALIFIER, splitCapsHeading, titleTail } from "@/lib/agents/knox/layout";
 import type { AccountLineup } from "@/lib/agents/knox/lineup";
 import type { AncillaryProduct } from "@/lib/agents/knox/ancillary-product";
 import { CANONICAL_KEY_MAP } from "@/lib/fee-taxonomy";
@@ -2339,7 +2339,9 @@ export function withoutLeadingFootnoteMark(name: string, texts: readonly string[
 }
 
 export function usableName(name: string): boolean {
-  return name.length >= 3 && /[a-z]/i.test(name) && !/^\$/.test(name);
+  // v186 (Rabun County Bank text 41042, "3×10 | $55.00"): a box size written with the times sign
+  // has no letter, yet it is the row's whole name, as "3 x 10" is.
+  return name.length >= 3 && (/[a-z]/i.test(name) || BOX_SIZE_NAME.test(name)) && !/^\$/.test(name);
 }
 
 /** "$5.00 Monthly fee for paper statements": the words after an opening price name it only when they say it is a fee ("$5 gift cards" is a gift card worth $5). */
@@ -3278,10 +3280,42 @@ function withoutTrailingProse(segment: string, amounts: readonly AmountMatch[]):
   return prose ? segment.slice(0, cut) : segment;
 }
 
+/**
+ * v186: a two-column PDF row whose left cell is a closed dot-leader row priced in words, beside the
+ * right column's priced row ("Check printing……(varies by style) | Domestic……$20.00"). The right
+ * cell's price is its own row's: the left row's words never name it (Knox read it as a $20 check
+ * printing fee, which Darwin refused). Each side is read as its own segment, so the right cell
+ * stays a bare row the column heading above it can name (`columnHeadingRows`).
+ */
+function closedLeaderSplit(cells: string[] | null): [string, string] | null {
+  if (!cells || cells.length < 2) return null;
+  // A free row ("E-Statements ......FREE") keeps its v76 reading (`freeCells` below): only a row
+  // priced in other words splits the line.
+  const closed = cells.findLastIndex((cell, index) => index < cells.length - 1 && closedPricedLeaderCell(cell));
+  if (closed < 0) return null;
+  const left = cells.slice(0, closed + 1);
+  const right = cells.slice(closed + 1);
+  if (amountsIn(left.join(" ")).length > 0 || amountsIn(right.join(" ")).length === 0) return null;
+  return [left.join(CELL_SEPARATOR), right.join(CELL_SEPARATOR)];
+}
+
+function mergedReads(parts: ExtractionRulesResult[]): ExtractionRulesResult {
+  const result: ExtractionRulesResult = { candidates: [], held: [] };
+  for (const read of parts) {
+    result.candidates.push(...read.candidates);
+    result.held.push(...read.held);
+    if (read.tableHeld?.length) (result.tableHeld ??= []).push(...read.tableHeld);
+    for (const [reason, count] of Object.entries(read.dropped ?? {})) countDrop(result, reason as DroppedLineReason, count);
+  }
+  return result;
+}
+
 function readPlainSegment(segment: string): ExtractionRulesResult {
   const result: ExtractionRulesResult = { candidates: [], held: [] };
 
   const cells = segment.includes(CELL_SEPARATOR) ? segment.split(CELL_SEPARATOR).map((cell) => cell.trim()) : null;
+  const split = closedLeaderSplit(cells);
+  if (split) return mergedReads(split.map(readPlainSegment));
   const amounts = amountsIn(segment);
   const firstAmount = amounts[0];
   // v147: a counted free allowance joined to the first price ("Starter Checks | 4 sheets free (then
