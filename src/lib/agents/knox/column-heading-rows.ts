@@ -81,12 +81,32 @@ function headingCell(cell: string): boolean {
   return /^[A-Z]/.test(cell) && cell.length <= 60 && !hasPrice(cell) && looksLikeHeading(cell);
 }
 
-/** The line's cells, with a price split over two cells ("$ | 17.00") joined again. */
+/**
+ * v186: a PDF cell that prints its name, a dot leader and its price in one cell ("Incoming (each)
+ * .......... $15.00", "Mobile Banking .......FREE"). The name stops at the first leader; the rest of
+ * the leader is no part of either.
+ */
+const LEADER_CELL = /^(.*?[a-z)\]])\s*(?:(?:\.\s?){2,}|…+|_{3,})[.…\s]*(\S.*)$/i;
+
+/**
+ * v186: a leader cell as the name and price pair it prints, so a two-column PDF schedule flattened
+ * to "Mobile Banking .....FREE | Incoming (each) ..... $15.00" pairs the way an HTML table's
+ * "Mobile Banking | FREE | Incoming (each) | $15.00" does. Only a cell whose two halves are a bare
+ * name and a price cell splits; any other cell ("Check printing ......(varies by style)") stays whole.
+ */
+function leaderPair(cell: string): string[] {
+  const match = cell.match(LEADER_CELL);
+  if (!match) return [cell];
+  const [name, value] = [match[1].trim(), match[2].trim()];
+  return isNameCell(name) && isValueCell(value) ? [name, value] : [cell];
+}
+
+/** The line's cells, with a price split over two cells ("$ | 17.00") joined again and each leader cell split in two. */
 function cellsOf(line: string): string[] {
   const cells: string[] = [];
   for (const cell of line.split(CELL_SEPARATOR).map((value) => value.trim()).filter(Boolean)) {
     if (BARE_FIGURE.test(cell) && SPLIT_DOLLAR.test(cells[cells.length - 1] ?? "")) cells[cells.length - 1] = `$${cell}`;
-    else cells.push(cell);
+    else cells.push(...leaderPair(cell));
   }
   return cells;
 }

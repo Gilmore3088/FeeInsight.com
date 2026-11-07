@@ -30,6 +30,26 @@ const LEADERS = /(?:\.\s?){3,}|…+|_{3,}|…+/g;
  */
 export const LEADER_PRICE_WORDS =
   /[A-Za-z)]\s*(?:(?:\.\s?){2,}|…+)[\s.…]*(?:free|none|no charge|n\/c|n\/a|waived|included|varies|prices?\s+vary|fees?\s+may\s+vary|actual\s+cost|at\s+cost|cost(?:\s+incurred)?|call(?:\s+for\s+\w+)?)\s*\.?\s*$/i;
+/**
+ * v186 (Utility District FCU text 6730): a dot-leader cell priced in words in brackets ("Check
+ * printing……(varies by style)") is a closed row too. Kept apart from `LEADER_PRICE_WORDS`, whose
+ * other callers (a line with no price, in the rules pass and the family experts' windows) keep their v93 reading.
+ */
+const LEADER_VARIES_NOTE = /[A-Za-z)]\s*(?:(?:\.\s?){2,}|…+)[\s.…]*\(\s*(?:varies|prices?\s+vary)\b[^()]{0,30}\)\s*\.?\s*$/i;
+
+/** v186: a cell that is a whole dot-leader row priced in words: its name never owns the next cell's price. */
+export function closedLeaderCell(cell: string): boolean {
+  return LEADER_PRICE_WORDS.test(cell) || LEADER_VARIES_NOTE.test(cell);
+}
+const FREE_CLOSED_ROW_END = /\b(?:free|none|no charge|n\/c|n\/a|waived|included)\s*\.?\s*$/i;
+/**
+ * v186 (review): a closed leader cell priced in words other than free ("Check printing……(varies by
+ * style)", "Check Orders……Prices Vary"). A free row ("E-Statements ......FREE") keeps its earlier
+ * reading: its free word is a price of its own (v76 `freeCells`, the family experts' zero token).
+ */
+export function closedPricedLeaderCell(cell: string): boolean {
+  return closedLeaderCell(cell) && !FREE_CLOSED_ROW_END.test(cell);
+}
 const MAX_NAME_WORDS = 14;
 
 /** A cleaned fee name, or null when the text reads as prose or is too long to be one. */
@@ -248,9 +268,9 @@ function trimEnd(name: string): string {
 export function tidyFeeName(raw: string, options: { nameBoxSize?: boolean } = {}): string {
   // v93 (#1828): a cell that is a row priced in words ("Check Orders .. Prices Vary | Duplicate Lien
   // Release", "Reconveyance .. Actual Cost: Returned payment") is the row before this fee's, so the
-  // name starts after it.
+  // name starts after it. v186: so is one priced in words in brackets (`closedLeaderCell`).
   const rawCells = raw.split(/\s*\|\s*|(?<=[A-Za-z])\s*:\s+/);
-  const closedRow = rawCells.findLastIndex((cell, index) => index < rawCells.length - 1 && LEADER_PRICE_WORDS.test(cell));
+  const closedRow = rawCells.findLastIndex((cell, index) => index < rawCells.length - 1 && closedLeaderCell(cell));
   const after = closedRow >= 0 ? rawCells.slice(closedRow + 1).join(" | ") : raw;
   let cells = (/[a-z]{2,}/i.test(after) ? after : raw)
     .replace(LEADERS, " ")

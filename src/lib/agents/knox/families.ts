@@ -20,6 +20,7 @@ import {
 } from "@/lib/agents/knox/rules";
 import {
   cleanFeeName,
+  closedPricedLeaderCell,
   composableTail,
   inPriceFirstListRun,
   inPriceFirstRun,
@@ -216,6 +217,12 @@ export function priceWindows(text: string): PriceWindow[] {
         return;
       }
       let own = line.slice(nameStart, value.start);
+      // v186 (review): a cell before this price that is a whole leader row priced in words ("Check
+      // printing……(varies by style) | Domestic……$20.00", Utility District FCU text 6730) is a closed
+      // row: its name never takes the next cell's price. The name starts after it.
+      const ownCells = own.split(CELL_SEPARATOR);
+      const closedCell = ownCells.findLastIndex((cell, cellIndex) => cellIndex < ownCells.length - 1 && closedPricedLeaderCell(cell.trim()));
+      if (closedCell >= 0) own = ownCells.slice(closedCell + 1).join(CELL_SEPARATOR);
       // After a threshold, a fresh name ("Up to $29 Rush Card Replacement $25") starts
       // the next fee; otherwise the threshold stays part of this fee's name
       // ("for balances below $2,500 ..... $10").

@@ -2723,6 +2723,20 @@ holds. Darwin's verify refuses the same reads (`service_maintenance_heading`) an
 is live (`SERVICE_MAINTENANCE_TAKEDOWN_LIVE`, off). The shared check is unchanged. The stale-read floor stays at
 v97.
 
+v186 (cohort Knox misses, Nov 7; v185 is the open tier-column branch, #2993): two-column PDF schedules whose cells
+are whole dot-leader rows. A leader cell pairs as its name and price for the column headings ("Mobile Banking
+.....FREE | Incoming (each) ..... $15.00" pairs as an HTML row's four cells do), so a right column's own heading
+names its bare rows (`columnHeadingRows`, table pass v14): Austin Bank's incoming and outgoing wires, Utility District
+FCU's domestic and foreign outgoing wires. A leader cell priced in words in brackets ("Check printing……(varies by
+style)") is a closed row (`closedLeaderCell`): the rules pass reads each side of it on its own (`closedLeaderSplit`;
+a free row keeps its v76 reading) and the table pass never gives its name the next cell's price, so Utility District's
+$20 domestic wire is no longer read as check printing. A box size written with the times sign ("3×10") is a usable
+name. The shared source check reads "3×10" as the size it is and a one-word leader row in the right column ("|
+Domestic......$20.00") as that column's cell; both only add traces. Austin's "International (each)" under a bare
+"Wire Transfer" heading stays undecided by #2278's direction review. Dry runs (stored texts, SELECT only): the
+eight-bank cohort 5 fees gained, 0 lost, 0 wrong; the Nov 3 slice (180 texts, 66 banks) 8 gained, 0 lost. The
+stale-read floor stays at v97.
+
 v184 (built on its branch as v182; Knox slice dry run and cross-category scan, Nov 3; the live slice's 671 changed
 rows at v180 held 10 wrong fees and 9 wrong names, and 5 live fees were re-read into a wrong category, each against
 the bank's own line): every read gets a last name review (`withReviewedNames`, `read-name-review.ts`) for words
@@ -3601,8 +3615,8 @@ fails a PR that changes one of these constants without updating its line here (#
 | `KNOX_SECOND_READER_STRATEGY` | `extract.second_reader` | v1 | `knox/second-reader.ts` |
 | `NEVER_READ_LESSONS_VERSION` | — | v1 | `knox/never-read-lessons.ts` |
 | `TWO_READ_AGREEMENT_STRATEGY` | `knox.two_read_agreement` | v2 | `knox/two-read-agreement.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v184 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v186 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
-| `KNOX_TABLE_STRATEGY` | `extract.table` | v13 | `knox/table-rows.ts` |
+| `KNOX_TABLE_STRATEGY` | `extract.table` | v14 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v2 | `knox/takedown-lessons.ts` |
 | `UNTRACED_READ_ERROR_EVIDENCE_VERSION` | `knox.untraced_held` read-error report | v1 | `knox/untraced-read-error.ts` |
