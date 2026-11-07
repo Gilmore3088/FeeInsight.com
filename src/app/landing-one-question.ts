@@ -6,6 +6,7 @@ import type { MarketBranchFootprint } from "@/lib/data-store/branches";
 import { lineName } from "@/app/for-institutions/board-math";
 import { placeLabel } from "./market-report/report-body";
 import { cardMoney } from "./landing-index-view";
+import { amountsOf, comparedAt } from "./market-report/report-view";
 
 /**
  * The "One question" section's figures (James's brief, Oct 19): one question about the demo
@@ -47,7 +48,12 @@ export interface OneQuestionFee {
   short: string;
   /** The fee as a sentence names it: "outgoing domestic wire", "overdraft", "monthly maintenance". */
   name: string;
+  /** The compared value (charts and "vs." figures): one price, or the shared rule's value for several. */
   amountLabel: string;
+  /** What the bank publishes: "$7.95" or "$7.95 to $8.95". Sentences quote this, never a midpoint. */
+  priceLabel: string;
+  /** "Compared at $8.45, the middle of its prices" when it publishes several; else null. */
+  comparedNote: string | null;
   /** The bank's own schedule: when it was read, and where it is. */
   readOn: string | null;
   local: {
@@ -249,6 +255,13 @@ export function buildAsks(report: MarketReport, first: ReportLine | null, fee: O
   return asks;
 }
 
+/** "$7.95", or "$7.95 to $8.95" when the bank's accounts are priced differently. */
+export function priceLabelOf(amounts: number[]): string {
+  const low = Math.min(...amounts);
+  const high = Math.max(...amounts);
+  return low === high ? cardMoney(low) : `${cardMoney(low)} to ${cardMoney(high)}`;
+}
+
 function feeView(report: MarketReport, line: ReportLine, peers: ReportPeerContext | null): OneQuestionFee {
   const own = line.own!;
   const local =
@@ -278,6 +291,8 @@ function feeView(report: MarketReport, line: ReportLine, peers: ReportPeerContex
     short: shortFeeName(line),
     name: line.key.startsWith("wire_") ? lineName(line.label).toLowerCase() : shortFeeName(line),
     amountLabel: cardMoney(own.amount),
+    priceLabel: priceLabelOf(amountsOf(own)),
+    comparedNote: comparedAt(line.key, own),
     readOn: dateLabel(own.schedule_read_on ?? own.updated_at),
     local,
     sizePeers,
