@@ -55,7 +55,10 @@ only when no other line of the page prints it (v100's split lines are Knox's rew
 stored text). The review of #2993 found the first cut matched by name and amount alone, so a business
 section's own "Stop Payment $25 per item" below the tier table would have been taken down; its re-review
 found a business "Courtesy Pay $20" (a prefix of the tier row) and a printed "Stop Payment | $25" still
-matched. What cannot be proved is refused: state:7450's allowance excerpts ("Debit/Credit Card
+matched; a third round found "Stop Payment|$25" printed in other services matched because only spaces were
+flattened, so the page's lines and the excerpt are now compared in one canonical form (lower case, any run of
+spaces, pipes, colons, dot leaders or dashes one separator, "$25.00" the same as "$25"). What cannot be
+proved is refused: state:7450's allowance excerpts ("Debit/Credit Card
 Replacement* 1 Free → $5") stop at the first cell, so the report-only `allowance_name` kind does not count
 them; its split excerpts ("Courtesy Pay | $20", "Stop Payment | $25") still match. A name two tier rows carry with different cells is refused as ambiguous, by this check and
 by the shared source check. It acts only while `TIER_COLUMN_FEES_LIVE` is on too, because a takedown

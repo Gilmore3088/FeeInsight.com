@@ -1806,7 +1806,9 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   v100's "<row name> | <price>" split at a price the row charges, either only when no other line of the
   page prints it), and never when two tier rows carry its name with different cells (review and
   re-review of #2993: a business section's "Stop Payment $25 per item", "Courtesy Pay $20" or printed
-  "Stop Payment | $25" would otherwise match). What cannot be proved is refused. Its read clamps to 20,000 rows; the step's detail says when it stopped at its cap (`capped`,
+  "Stop Payment | $25" would otherwise match; the page's lines and the excerpt are compared in one canonical
+  form, so "Stop Payment|$25" or "STOP PAYMENT ..... $25.00" counts as the same line). What cannot be
+  proved is refused. Its read clamps to 20,000 rows; the step's detail says when it stopped at its cap (`capped`,
   `row_cap`). The switch (`TIER_COLUMN_TAKEDOWN_LIVE`)
   is off, and acts only while `TIER_COLUMN_FEES_LIVE` is on too, because a takedown adds no fee: Knox
   v185's re-read writes the scoped tier fees. On, a match goes through the second look

@@ -246,15 +246,20 @@ export function isTierRowLine(row: TierRow, line: string | null | undefined, tex
   if (!line) return false;
   const flat = (value: string) => value.replace(/\s+/g, " ").trim();
   const own = flat(line);
-  if (own === flat(row.line)) return true;
+  const canon = canonicalLine(line);
+  if (!canon) return false;
+  if (canon === canonicalLine(row.line)) return true;
   // Re-review of #2993: a cut or split form proves the row only when no other line of the page prints it
   // (v100's split lines are Knox's rewrite, never stored text): "Courtesy Pay $20" or "Stop Payment | $25"
-  // printed in a business section is that section's own row. What cannot be proved is refused.
-  const elsewhere = text.split("\n").some((other, index) => index !== row.lineIndex && flat(other).length > 0 && flat(other).startsWith(own));
+  // printed in a business section is that section's own row, in whatever case, spacing, pipes, colons,
+  // leaders or price form the page prints it ("Stop Payment|$25", "STOP PAYMENT ..... $25.00"). Both sides
+  // are compared in one canonical form. What cannot be proved is refused.
+  const startsWith = (whole: string) => whole === canon || whole.startsWith(`${canon} `);
+  const elsewhere = text.split("\n").some((other, index) => index !== row.lineIndex && startsWith(canonicalLine(other)));
   if (elsewhere) return false;
   // A cut of the row's own line from its start must reach past its first cell: a cut that stops there
   // reads the same as a one-price line of its own.
-  if (flat(row.line).startsWith(own)) return labelKey(line).startsWith(labelKey(row.name)) && cutPassesFirstCell(row, own);
+  if (startsWith(canonicalLine(row.line))) return labelKey(line).startsWith(labelKey(row.name)) && cutPassesFirstCell(row, own);
   const split = own.match(/^(.*\S)\s*\|\s*(\$\s?\d[\d,]*(?:\.\d{1,2})?|free)$/i);
   if (!split || labelKey(split[1]) !== labelKey(row.name)) return false;
   const amount = /^free$/i.test(split[2]) ? 0 : Number(split[2].replace(/[$,\s]/g, ""));
@@ -262,6 +267,15 @@ export function isTierRowLine(row: TierRow, line: string | null | undefined, tex
     const charged = tierCellAmount(cell);
     return charged != null && Math.abs(charged - amount) < 0.005;
   });
+}
+
+/**
+ * One canonical form of a line for comparing a stored excerpt with the page's lines: each price as its
+ * cents ("$25.00" and "$25" are both `p2500`), then `labelKey` (lower case, every run of anything but
+ * letters, digits and "+" — spaces, pipes, colons, dot leaders, dashes — one space).
+ */
+function canonicalLine(value: string): string {
+  return labelKey(value.replace(/\$\s?(\d[\d,]*(?:\.\d{1,2})?)/g, (_, figure: string) => ` p${Math.round(Number(figure.replace(/,/g, "")) * 100)} `));
 }
 
 /** True when a cut of the row's line has more tokens than the row's name and its first cell. */

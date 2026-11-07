@@ -84,8 +84,9 @@ describe("Darwin's tier column re-check (#1092)", () => {
       "Copy of Paid Check $2 $2 $2 $2 $2", "", "BUSINESS ACCOUNTS", "Stop Payment $25 per item"].join("\n");
     expect(findTierColumnFees([{ ...row("Stop Payment", 25, text), excerpt: "Stop Payment $25 per item" }]).matches).toEqual([]);
     expect(findTierColumnFees([{ ...row("Stop Payment", 25, text), excerpt: null }]).matches).toEqual([]);
-    // v100's split line and the stored tier row itself are the tier row's.
-    expect(findTierColumnFees([{ ...row("Stop Payment", 25, text), excerpt: "Stop Payment | $25" }]).matches).toHaveLength(1);
+    // The stored tier row itself is the tier row's. v100's split line is not provable here: in canonical form
+    // the business line "Stop Payment $25 per item" starts with it (round 3), so it is refused.
+    expect(findTierColumnFees([{ ...row("Stop Payment", 25, text), excerpt: "Stop Payment | $25" }]).matches).toEqual([]);
     expect(findTierColumnFees([{ ...row("Stop Payment", 25, text), excerpt: "Stop Payment FREE $25 $25 $25 $25" }]).matches).toHaveLength(1);
     // A split line at a price the row does not print is not the row's.
     expect(findTierColumnFees([{ ...row("Stop Payment", 25, text), excerpt: "Stop Payment | $40" }]).matches).toEqual([]);
@@ -104,6 +105,15 @@ describe("Darwin's tier column re-check (#1092)", () => {
     it("should_not_match_a_pipe_line_the_page_prints", () => {
       expect(findTierColumnFees([{ ...row("Stop Payment", 25, text), excerpt: "Stop Payment | $25" }]).matches).toEqual([]);
     });
+
+    // Re-review of #2993 (B1, round 3): the page prints the other row in its own spacing, case and leaders.
+    it.each([["Stop Payment|$25"], ["Stop Payment : $25"], ["STOP PAYMENT ..... $25.00"], ["Stop Payment – $25"]])(
+      "should_not_match_a_split_excerpt_the_page_prints_as_%j", (printed) => {
+        const page = ["PLATINUM GOLD SILVER+ SILVER COLLEGE", "Stop Payment FREE $25 $25 $25 $25", "Courtesy Pay $20 $30 $30 $30 $30",
+          "Copy of Paid Check $2 $2 $2 $2 $2", "Notary Service FREE $10 $10 $10 FREE", "", "OTHER SERVICES", "COURTESY PAY $20", printed].join("\n");
+        expect(findTierColumnFees([{ ...row("Stop Payment", 25, page), excerpt: "Stop Payment | $25" }]).matches).toEqual([]);
+        expect(findTierColumnFees([{ ...row("Courtesy Pay", 20, page), excerpt: "Courtesy Pay | $20" }]).matches).toEqual([]);
+      });
 
     it("should_not_match_a_cut_that_stops_at_the_row's_first_cell", () => {
       expect(findTierColumnFees([{ ...row("Courtesy Pay", 20), excerpt: "Courtesy Pay $20" }]).matches).toEqual([]);
