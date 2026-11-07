@@ -30,12 +30,15 @@
       "implementation": [
         ".github/workflows/test.yml",
         "scripts/ci-guards.sh",
-        "src/lib/engineering-verification/scope.mjs"
+        "src/lib/engineering-verification/scope.mjs",
+        "src/lib/engineering-verification/required-database-tests.mjs"
       ],
       "tests": [
         "scripts/ci-guards.test.ts",
         "src/lib/engineering-verification/policy-pilot.test.ts",
-        "src/lib/engineering-verification/scope.test.ts"
+        "src/lib/engineering-verification/scope.test.ts",
+        "src/lib/engineering-verification/required-database-tests.test.ts",
+        "src/lib/engineering-verification/workflows.test.ts"
       ]
     },
     "runner": {
@@ -211,7 +214,8 @@
         "proof",
         "workflow",
         "summary",
-        "source-security"
+        "source-security",
+        "policy"
       ],
       "activation_gates": [
         "trusted-actions-proof"
@@ -327,7 +331,8 @@
       "references": [
         "runner",
         "proof",
-        "github"
+        "github",
+        "policy"
       ],
       "implementation_state": "MECHANISM_PRESENT",
       "activation_gates": [
@@ -495,7 +500,8 @@
         "contract",
         "proof",
         "review",
-        "operational"
+        "operational",
+        "policy"
       ],
       "implementation_state": "MECHANISM_PRESENT",
       "activation_gates": []

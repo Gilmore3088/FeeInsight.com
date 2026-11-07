@@ -21,25 +21,43 @@ describe('engineering verification workflow trust boundary', () => {
     expect(ci.env?.E2E_TESTS.split(/\s+/)).not.toContain(fixtureTest);
     const directory = mkdtempSync(join(tmpdir(), 'feeinsight-ci-fixture-'));
     const log = join(directory, 'commands.jsonl');
-    type Command = { command: string; args: string[]; database: string | null };
+    type Command = { command: string; args: string[]; fixtureDatabaseName: string | null; appDatabaseMatchesFixture: boolean };
     // Exercise the actual workflow shell and variable expansion; intercept all database/test executables.
-    const stub = '#!/usr/bin/env node\nconst {appendFileSync}=require("node:fs"); const {basename}=require("node:path"); appendFileSync(process.env.CI_FIXTURE_COMMAND_LOG,JSON.stringify({command:basename(process.argv[1]),args:process.argv.slice(2),database:process.env.E2E_DATABASE_URL??null})+"\\n");\n';
+    const stub = '#!' + process.execPath + '\nconst {appendFileSync}=require("node:fs"); const {basename}=require("node:path"); const fixture=process.env.E2E_DATABASE_URL; let fixtureDatabaseName=null; try { fixtureDatabaseName=new URL(fixture).pathname.slice(1); } catch {} appendFileSync(process.env.CI_FIXTURE_COMMAND_LOG,JSON.stringify({command:basename(process.argv[1]),args:process.argv.slice(2),fixtureDatabaseName,appDatabaseMatchesFixture:!!fixture&&process.env.DATABASE_URL===fixture})+"\\n");\n';
     try {
-      for (const command of ['sudo', 'psql', 'npx']) { const file = join(directory, command); writeFileSync(file, stub); chmodSync(file, 0o755); }
+      for (const command of ['sudo', 'psql', 'npx', 'node']) { const file = join(directory, command); writeFileSync(file, stub); chmodSync(file, 0o755); }
       const run = (script: string) => {
         writeFileSync(log, '');
-        const result = spawnSync('bash', ['-e', '-o', 'pipefail', '-c', script], { cwd: directory, encoding: 'utf8', env: { ...process.env, ...ci.env, PATH: directory + delimiter + process.env.PATH, CI_FIXTURE_COMMAND_LOG: log } });
+        const result = spawnSync('bash', ['-e', '-o', 'pipefail', '-c', script], { cwd: directory, encoding: 'utf8', env: { ...process.env, ...ci.env, DATABASE_URL: '', E2E_DATABASE_URL: '', PATH: directory + delimiter + process.env.PATH, CI_FIXTURE_COMMAND_LOG: log } });
         expect(result.status, result.stderr).toBe(0);
         return readFileSync(log, 'utf8').trim().split('\n').map(line => JSON.parse(line) as Command);
       };
       const e2e = ci.jobs.e2e.steps.find(step => step.name === 'End-to-end pipeline test');
       const commands = run(e2e?.run ?? 'exit 90');
       const fixtureRun = commands.findIndex(row => row.command === 'npx' && row.args.includes(fixtureTest));
-      const sharedRun = commands.findIndex(row => row.command === 'npx' && row.database?.endsWith('/e2e'));
+      const sharedRun = commands.findIndex(row => row.command === 'npx' && row.fixtureDatabaseName === 'e2e');
       expect(fixtureRun).toBeGreaterThan(-1);
       expect(sharedRun).toBeGreaterThan(fixtureRun);
       expect(commands.filter(row => row.command === 'npx' && row.args.includes(fixtureTest))).toHaveLength(1);
-      expect(commands[fixtureRun].database).toBe('postgres://postgres:postgres@localhost:5432/e2e_fixture_schema');
+      expect(commands[fixtureRun].fixtureDatabaseName).toBe('e2e_fixture_schema');
+      expect(commands[fixtureRun].appDatabaseMatchesFixture).toBe(true);
+      expect(commands[sharedRun].appDatabaseMatchesFixture).toBe(true);
+      const guard = 'src/lib/engineering-verification/required-database-tests.mjs';
+      const preflights = commands.flatMap((row, i) => row.command === 'node' && row.args.join(' ') === guard + ' check-env' ? [i] : []);
+      expect(preflights).toHaveLength(2);
+      expect(preflights[0]).toBeLessThan(fixtureRun);
+      expect(preflights[1]).toBeGreaterThan(fixtureRun);
+      expect(preflights[1]).toBeLessThan(sharedRun);
+      for (const [runIndex, report, required] of [
+        [fixtureRun, 'test-results/engineering-verification/required-db-fixture.json', [fixtureTest]],
+        [sharedRun, 'test-results/engineering-verification/required-db-pipeline.json', ['E2E_TESTS', 'PUBLIC_FEE_APPLICABILITY_TEST', 'DARWIN_RECHECK_TEST', 'ROSETTA_BYTE_IDENTITY_TEST', 'PAID_RETURNED_EVENT_TEST'].flatMap(key => ci.env?.[key]?.trim().split(/\s+/) ?? [])],
+      ] as const) {
+        expect(commands[runIndex].args).toEqual(expect.arrayContaining(['--reporter=default', '--reporter=json', '--outputFile=' + report]));
+        const postflight = commands.findIndex(row => row.command === 'node' && row.args[0] === guard && row.args[1] === 'check-results' && row.args.includes(report));
+        expect(postflight).toBeGreaterThan(runIndex);
+        expect(commands[postflight].args).toEqual([guard, 'check-results', '--report', report, '--files', ...required]);
+        expect(commands[postflight].appDatabaseMatchesFixture).toBe(true);
+      }
       const creation = commands.findIndex(row => row.command === 'sudo' && row.args.join(' ') === '-u postgres createdb e2e_fixture_schema');
       const snapshot = commands.findIndex(row => row.command === 'psql' && row.args.includes('e2e_fixture_schema') && row.args.includes('tests/e2e/production-schema.sql') && row.args.includes('ON_ERROR_STOP=1'));
       expect(creation).toBeGreaterThan(-1);
@@ -78,6 +96,20 @@ describe('engineering verification workflow trust boundary', () => {
       expect(result.status, result.stderr).toBe(0);
       expect(readFileSync(output, 'utf8')).toBe('code=true\n');
     } finally { rmSync(directory, { recursive: true, force: true }); }
+  });
+  it('retains both native required-database reports on failure with run-attempt identity', () => {
+    const steps = workflow('test.yml').jobs.e2e.steps;
+    const artifact = steps.find(step => step.name === 'Retain required database execution reports');
+    expect(artifact?.if).toBe('always()');
+    expect(artifact?.uses).toMatch(/^actions\/upload-artifact@[a-f0-9]{40}$/);
+    expect(artifact?.with?.name).toBe('required-database-tests-${{ github.run_id }}-attempt-${{ github.run_attempt }}');
+    expect(artifact?.with?.['retention-days']).toBe(90);
+    expect(artifact?.with?.['if-no-files-found']).toBe('error');
+    const retained = String(artifact?.with?.path).trim().split(/\s+/);
+    const script = steps.find(step => step.name === 'End-to-end pipeline test')?.run ?? '';
+    const generated = [...script.matchAll(/--outputFile=(\S+)/g)].map(match => match[1]);
+    expect(retained.sort()).toEqual(generated.sort());
+    expect(retained).toHaveLength(2);
   });
   it('keeps the proof adapter on explicit main dispatch with immutable actions and read-only permissions', () => {
     const proof = workflow('engineering-verification.yml');

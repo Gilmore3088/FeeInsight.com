@@ -231,12 +231,17 @@ jobs:
         # One real state-lane run against the production schema in a throwaway database.
         # The runner's PostgreSQL has SSL on, which the app's connection requires.
         run: |
+          mkdir -p test-results/engineering-verification
           sudo systemctl start postgresql.service
           sudo -u postgres psql -q -c "ALTER USER postgres PASSWORD 'postgres'"
           # Catch-up repairs the captured schema before other tests insert append-only fixture data.
           sudo -u postgres createdb e2e_fixture_schema
           PGPASSWORD=postgres psql -h localhost -U postgres -d e2e_fixture_schema -q -v ON_ERROR_STOP=1 -f tests/e2e/production-schema.sql
-          E2E_DATABASE_URL=postgres://postgres:postgres@localhost:5432/e2e_fixture_schema npx vitest run $FIXTURE_SCHEMA_TEST --maxWorkers=1
+          export E2E_DATABASE_URL=postgres://postgres:postgres@localhost:5432/e2e_fixture_schema
+          export DATABASE_URL="$E2E_DATABASE_URL"
+          node src/lib/engineering-verification/required-database-tests.mjs check-env
+          npx vitest run $FIXTURE_SCHEMA_TEST --maxWorkers=1 --reporter=default --reporter=json --outputFile=test-results/engineering-verification/required-db-fixture.json
+          node src/lib/engineering-verification/required-database-tests.mjs check-results --report test-results/engineering-verification/required-db-fixture.json --files $FIXTURE_SCHEMA_TEST
           sudo -u postgres createdb e2e
           PGPASSWORD=postgres psql -h localhost -U postgres -d e2e -q -v ON_ERROR_STOP=1 -f tests/e2e/production-schema.sql
           # Deming corrective replay uses the existing canonical case-store schema.
@@ -245,7 +250,21 @@ jobs:
           # HMDA fixtures share the real year-lock namespace across isolated schemas, so files run serially.
           # These shared-schema suites use transactional DDL/failure triggers;
           # serialize files so another reader cannot observe a temporary fixture.
-          E2E_DATABASE_URL=postgres://postgres:postgres@localhost:5432/e2e npx vitest run $E2E_TESTS $PUBLIC_FEE_APPLICABILITY_TEST $DARWIN_RECHECK_TEST $ROSETTA_BYTE_IDENTITY_TEST $PAID_RETURNED_EVENT_TEST --maxWorkers=1
+          export E2E_DATABASE_URL=postgres://postgres:postgres@localhost:5432/e2e
+          export DATABASE_URL="$E2E_DATABASE_URL"
+          node src/lib/engineering-verification/required-database-tests.mjs check-env
+          npx vitest run $E2E_TESTS $PUBLIC_FEE_APPLICABILITY_TEST $DARWIN_RECHECK_TEST $ROSETTA_BYTE_IDENTITY_TEST $PAID_RETURNED_EVENT_TEST --maxWorkers=1 --reporter=default --reporter=json --outputFile=test-results/engineering-verification/required-db-pipeline.json
+          node src/lib/engineering-verification/required-database-tests.mjs check-results --report test-results/engineering-verification/required-db-pipeline.json --files $E2E_TESTS $PUBLIC_FEE_APPLICABILITY_TEST $DARWIN_RECHECK_TEST $ROSETTA_BYTE_IDENTITY_TEST $PAID_RETURNED_EVENT_TEST
+      - name: Retain required database execution reports
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: required-database-tests-${{ github.run_id }}-attempt-${{ github.run_attempt }}
+          path: |
+            test-results/engineering-verification/required-db-fixture.json
+            test-results/engineering-verification/required-db-pipeline.json
+          if-no-files-found: error
+          retention-days: 90
 
   app-tests:
     # The one required check: green only when every job above passed.

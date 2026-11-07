@@ -49,6 +49,8 @@ The manual workflow is `.github/workflows/engineering-verification.yml`, job `hi
 
 Existing `test.yml` suites run once. The read-only audit workflow checks out trusted `main` and reads PR metadata; it never executes PR code. On proof completion, its authenticated `resolve-run` path resolves the artifact's PR and contract, then rechecks the actual current PR head and contract marker. The audit is not a new prerequisite of `app-tests` during bootstrap. Check publication and separately controlled GitHub ruleset/reviewer activation remain disabled until authorized; [activation-proposal.md](activation-proposal.md) records the concrete proposal.
 
+For each required database group, CI points both database clients at the same loopback fixture and checks that configuration before testing. The `required-database-tests.mjs` guard checks Vitest's actual JSON assertion inventory against every selected file; missing files, empty inventories and skipped, pending, todo or nonpassing assertions block the job. Fixture catch-up and the pipeline use separate databases and reports. Actions retains those reports for ninety days, bound to the native run and attempt. This applies to the required database groups and does not certify optional unit cases or replace historical proof and review.
+
 A human may include this marker in an actual GitHub review/comment, replacing every value with the frozen identity and listing **all actual changed files**:
 
 ```html
