@@ -14,7 +14,8 @@
  * whose node_modules is a symlink, which Turbopack refuses).
  */
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 
 const url = process.env.E2E_DATABASE_URL;
 if (!url) {
@@ -35,6 +36,8 @@ for (const key of Object.keys(env)) {
 // Names .env files commonly set: blank them even when absent here, so a file cannot supply them.
 for (const key of [
   "ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY_HAMILTON", "ANTHROPIC_API_KEY_GROWTH", "STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET",
+  "ANTHROPIC_API_KEY_ATLAS", "ANTHROPIC_API_KEY_MAGELLAN", "ANTHROPIC_API_KEY_ROSETTA", "ANTHROPIC_API_KEY_KNOX", "ANTHROPIC_API_KEY_DARWIN",
+  "OPENAI_API_KEY", "SUPABASE_SERVICE_ROLE_KEY", "SUPABASE_SERVICE_KEY", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN",
   "RESEND_API_KEY", "MAILERLITE_API_KEY", "CRON_SECRET", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY",
 ]) env[key] = "";
 env.DATABASE_URL = url;
@@ -50,10 +53,31 @@ env.NEXT_PUBLIC_SITE_URL = `http://localhost:${port}`;
 env.BFI_APP_URL = `http://localhost:${port}`;
 
 const mode = process.env.HAMILTON_E2E_SERVER === "dev" ? "dev" : "start";
+const verification = process.env.ENGINEERING_VERIFICATION === "1";
+if (verification && mode !== "start") throw new Error("Verification journeys require a fresh production build.");
+const gitValue = args => {
+  const result = spawnSync("git", args, { encoding: "utf8" });
+  if (result.status !== 0) throw new Error("Candidate identity unavailable.");
+  return result.stdout.trim();
+};
+if (verification && gitValue(["status", "--porcelain", "--untracked-files=normal"])) throw new Error("Commit the exact clean candidate before verification journeys.");
+const candidate = verification ? { headSha: gitValue(["rev-parse", "HEAD"]), treeSha: gitValue(["rev-parse", "HEAD^{tree}"]) } : null;
 const extra = (process.env.HAMILTON_E2E_NEXT_ARGS ?? "").split(/\s+/).filter(Boolean);
-if (mode === "start" && (process.env.HAMILTON_E2E_BUILD === "1" || !existsSync(".next/BUILD_ID"))) {
+if (mode === "start" && (verification || process.env.HAMILTON_E2E_BUILD === "1" || !existsSync(".next/BUILD_ID"))) {
   const build = spawnSync("npx", ["next", "build", ...extra], { env: { ...env, NODE_ENV: "production" }, stdio: "inherit" });
   if (build.status !== 0) process.exit(build.status ?? 1);
+}
+if (verification) {
+  if (gitValue(["rev-parse", "HEAD"]) !== candidate.headSha || gitValue(["rev-parse", "HEAD^{tree}"]) !== candidate.treeSha
+    || gitValue(["status", "--porcelain", "--untracked-files=normal"])) throw new Error("Candidate changed while building; browser evidence is invalid.");
+  const paths = ["tests/e2e/hamilton/fixtures.ts", "tests/e2e/hamilton/ccb-fixture.ts", "tests/e2e/hamilton/research-journey.pw.ts", "tests/e2e/hamilton/reports-journey.pw.ts", "tests/e2e/hamilton/command-center-journey.pw.ts", "tests/e2e/hamilton/board-brief-journey.pw.ts"];
+  mkdirSync("test-results/engineering-verification/browser", { recursive: true });
+  writeFileSync("test-results/engineering-verification/browser/build.json", JSON.stringify({
+    ...candidate,
+    buildId: readFileSync(".next/BUILD_ID", "utf8").trim(), builtAt: new Date().toISOString(), node: process.version,
+    clean: !gitValue(["status", "--porcelain", "--untracked-files=normal"]),
+    files: paths.map(path => ({ path, sha256: createHash("sha256").update(readFileSync(path)).digest("hex") })),
+  }, null, 2) + "\n");
 }
 const child = spawn("npx", ["next", mode, "-p", port, ...(mode === "dev" ? extra : [])], { env, stdio: "inherit" });
 const stop = () => child.kill("SIGTERM");

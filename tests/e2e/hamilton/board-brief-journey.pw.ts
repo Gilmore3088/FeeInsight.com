@@ -13,7 +13,7 @@
 import path from "node:path";
 import { readFileSync } from "node:fs";
 import { extractText } from "unpdf";
-import { expect, test, type Page } from "playwright/test";
+import { expect, test, withJourneyCapture, type Page } from "./evidence";
 import { FIXTURE_USERS, HOME, connectFixtureDb, type FixtureDb } from "./fixtures";
 import { ask, signIn } from "./helpers";
 
@@ -51,7 +51,7 @@ test.afterAll(async () => {
 });
 
 for (const width of [1440, 390]) {
-  test(`#1899 at ${width}: added findings carry their evidence into an edited, sourced board brief whose PDF matches the data`, async ({ page }) => {
+  test(`#1899 at ${width}: added findings carry their evidence into an edited, sourced board brief whose PDF matches the data`, async ({ page, browser }) => {
     await page.setViewportSize({ width, height: width > 500 ? 900 : 844 });
     await signIn(page, FIXTURE_USERS.pro.email, `/pro/analyze?instId=${HOME.id}`);
     // A fresh report list for this run.
@@ -139,5 +139,25 @@ for (const width of [1440, 390]) {
     expect(text).toContain("Dates: Read from published fee schedules on");
     expect(text).toContain("Answer saved");
     expect(text).not.toMatch(/—/);
+
+    if (width === 1440) {
+      // Reopen the same desktop-created artifact after a new phone login and a different research selection.
+      const phone = await browser.newContext({ viewport: { width: 390, height: 844 } });
+      try {
+        const mobile = await phone.newPage();
+        await withJourneyCapture(mobile, test.info(), async () => {
+        await signIn(mobile, FIXTURE_USERS.pro.email, "/pro/analyze?instId=9701002");
+        await mobile.goto("/pro/analyze?instId=9701002");
+        await expect(mobile.getByText(/Researching: Indian River Test CU/)).toBeVisible();
+        await mobile.goto(`/pro/reports?report_id=${encodeURIComponent(reportId)}`);
+        await expect(mobile.getByRole("heading", { name: "Board brief", exact: true })).toBeVisible();
+        await expect(mobile.getByLabel("Title")).toHaveValue(title);
+        await expect(mobile.getByLabel("Team note")).toHaveValue("Prepared for the October committee.");
+        await expect(mobile.getByRole("region", { name: "Findings you added" })).toContainText(`test of $${TESTED}.00`);
+        await expect(mobile.getByRole("region", { name: "Findings you added" })).toContainText(ownFee);
+        await noSideScroll(mobile);
+        }, "same-saved-report-phone");
+      } finally { await phone.close(); }
+    }
   });
 }

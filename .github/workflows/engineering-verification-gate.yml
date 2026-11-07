@@ -1,0 +1,83 @@
+name: engineering-verification-gate
+# Trusted metadata only: never checkout, import, build or execute PR code.
+# Read-only audit only. Check publication and protected enforcement remain separately gated.
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, ready_for_review, edited]
+    branches: [main]
+  issue_comment:
+    types: [created]
+  workflow_run:
+    workflows: [tests, engineering-verification-proof]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        required: true
+        type: string
+permissions:
+  contents: read
+  pull-requests: read
+  actions: read
+  checks: read
+jobs:
+  engineering-audit:
+    if: github.event_name != 'issue_comment' || github.event.issue.pull_request != null
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: refs/heads/main
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Resolve an authenticated PR and contract from event metadata
+        id: target
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          WORKFLOW_RUN_ID: ${{ github.event.workflow_run.id }}
+          PR_NUMBER: ${{ github.event.pull_request.number || github.event.issue.number || inputs.pr_number }}
+        run: |
+          if [ "$EVENT_NAME" = workflow_run ]; then
+            node src/lib/engineering-verification/cli.mjs resolve-run --run "$WORKFLOW_RUN_ID" --output test-results/engineering-verification/event
+          else
+          node --input-type=module <<'NODE'
+          import {appendFileSync} from 'node:fs';
+          const pr=process.env.PR_NUMBER;
+          const resolved=/^[1-9][0-9]*$/.test(pr ?? '');
+          appendFileSync(process.env.GITHUB_OUTPUT,'resolved='+resolved+'\n'+(resolved?'pr_number='+pr+'\n':''));
+          NODE
+          fi
+      - name: Audit authenticated evidence without publishing checks
+        if: steps.target.outputs.resolved == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ steps.target.outputs.pr_number }}
+          CONTRACT_NUMBER: ${{ steps.target.outputs.contract_number }}
+        run: |
+          if [ -n "$CONTRACT_NUMBER" ]; then
+            node src/lib/engineering-verification/cli.mjs audit --pr "$PR_NUMBER" --contract "$CONTRACT_NUMBER" --output test-results/engineering-verification/audit
+          else
+            node src/lib/engineering-verification/cli.mjs audit --pr "$PR_NUMBER" --output test-results/engineering-verification/audit
+          fi
+      - name: Show the audit and remaining authorization boundary
+        if: always()
+        run: |
+          if [ -f test-results/engineering-verification/audit/summary.md ]; then
+            cat test-results/engineering-verification/audit/summary.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "No authenticated current-head PR and approved contract audit was produced. Unrelated workflow events are ignored." >> "$GITHUB_STEP_SUMMARY"
+          fi
+          echo "Read-only audit: no check or repository setting was written. Enforcement still requires separate owner authorization." >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always() && steps.target.outputs.resolved == 'true'
+        with:
+          name: engineering-audit-${{ steps.target.outputs.pr_number }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: test-results/engineering-verification/
+          if-no-files-found: error
+          retention-days: 90

@@ -5,7 +5,7 @@
  * sideways scroll on the phone. HAMILTON_SCREENS_DIR=<dir> also saves desktop and phone screenshots.
  */
 import path from "node:path";
-import { expect, test, type Page } from "playwright/test";
+import { expect, test, type Page } from "./evidence";
 import { CCB_ID, lendFixtureAccount, returnFixtureAccount, seedCcbFixture, teardownCcbFixture } from "./ccb-fixture";
 import { FIXTURE_USERS, connectFixtureDb } from "./fixtures";
 import { signIn } from "./helpers";

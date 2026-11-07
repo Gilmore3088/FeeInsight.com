@@ -4,9 +4,11 @@ import {
   classifyChange,
   classifyPath,
   routeSkills,
+  routeSkillRequirements,
   validateContract,
   contractDigest,
   assessProofPair,
+  assessProofBundle,
   assessProductionEvidence,
   mayUseDocsOnlyFastPath,
 } from './contract.mjs';
@@ -15,11 +17,12 @@ const SHA = 'a'.repeat(40);
 const HEAD = 'b'.repeat(40);
 const HASH = 'c'.repeat(64);
 const fixture = {
-  schema_version: '1.0',
+  schema_version: '1.1',
   contract_id: 'EV-KNOX-2285',
   issue: '#2285',
   risk_tier: 'R2',
   base_sha: SHA,
+  execution_files: [{ path: 'src/lib/engineering-verification/pilot.mjs', sha256: HASH }],
   scope: ['src/lib/agents/knox/**'],
   required_skills: ['tdd', 'adversarial-document-testing', 'error-to-test'],
   requirements: [{
@@ -29,6 +32,14 @@ const fixture = {
     test_id: 'knox-2285-own-direction',
     test_path: 'src/lib/agents/knox/wire-clause-prices.test.ts',
     failure_signature: 'incoming wire at the outgoing price',
+    baseline_expectation: 'FAIL',
+    baseline_failure_assertion_ids: ['own-price'],
+    assertion_ids: ['own-price', 'business-audience'],
+    test_sha256: HASH,
+    fixture_sha256: HASH,
+    adapter_sha256: HASH,
+    fixture_path: 'src/lib/engineering-verification/__fixtures__/knox-2285.json',
+    adapter_path: 'src/lib/engineering-verification/pilot.mjs',
   }],
   production_boundary: 'NO_PROD_MUTATION',
   human_approval_required: false,
@@ -38,17 +49,24 @@ const validPair = () => ({
   red: {
     base_sha: SHA, contract_sha256: HASH, test_sha256: HASH,
     fixture_sha256: HASH, test_id: 'knox-2285-own-direction',
+    adapter_sha256: HASH, requirement_id: 'KNOX-2285-01',
+    execution_sha256: contractDigest(JSON.stringify(fixture.execution_files)),
     command: 'vitest run wire-clause-prices.test.ts -t own-direction',
     artifact_url: 'https://github.com/example/runs/1', exit_code: 1,
     failure_kind: 'ASSERTION_FAILURE',
+    status: 'FAILED',
     failure_log_excerpt: 'AssertionError: incoming wire at the outgoing price',
+    assertions: [{ id: 'own-price', status: 'FAILED' }, { id: 'business-audience', status: 'PASSED' }],
   },
   green: {
     head_sha: HEAD, contract_sha256: HASH, test_sha256: HASH,
     fixture_sha256: HASH, test_id: 'knox-2285-own-direction',
+    adapter_sha256: HASH, requirement_id: 'KNOX-2285-01',
+    execution_sha256: contractDigest(JSON.stringify(fixture.execution_files)),
     command: 'vitest run wire-clause-prices.test.ts -t own-direction',
     artifact_url: 'https://github.com/example/runs/2', exit_code: 0,
     status: 'PASSED', required_checks: [{ name: 'app-tests', conclusion: 'success' }],
+    assertions: [{ id: 'own-price', status: 'PASSED' }, { id: 'business-audience', status: 'PASSED' }],
   },
 });
 
@@ -57,6 +75,40 @@ describe('M0/M1 engineering verification contract', () => {
     expect(validateContract(fixture)).toEqual({ ok: true, errors: [] });
     expect(routeSkills(fixture.scope)).toEqual([...fixture.required_skills].sort());
     expect(contractDigest('abc')).toBe('ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad');
+  });
+
+  it('requires frozen executable identities and assertion IDs in proof-capable contracts', () => {
+    for (const field of ['assertion_ids', 'baseline_expectation', 'baseline_failure_assertion_ids', 'test_sha256', 'fixture_sha256', 'adapter_sha256', 'fixture_path', 'adapter_path']) {
+      const requirement: Record<string, unknown> = { ...fixture.requirements[0] };
+      delete requirement[field];
+      expect(validateContract({ ...fixture, requirements: [requirement] }).ok).toBe(false);
+    }
+    expect(validateContract({ ...fixture, schema_version: '8.0' }).ok).toBe(false);
+  });
+
+  it('does not coerce JSON arrays into valid contract or proof identities', () => {
+    for (const field of ['contract_id', 'issue', 'base_sha'] as const) {
+      expect(validateContract({ ...fixture, [field]: [fixture[field]] }).ok).toBe(false);
+    }
+    for (const field of ['id', 'test_sha256', 'fixture_sha256', 'adapter_sha256']) {
+      const requirement: Record<string, unknown> = { ...fixture.requirements[0] };
+      requirement[field] = [requirement[field]];
+      expect(validateContract({ ...fixture, requirements: [requirement] }).ok).toBe(false);
+    }
+    expect(assessProofPair(fixture, validPair(), [HEAD], HASH).status).toBe('BLOCKED');
+    expect(assessProofPair(fixture, validPair(), HEAD, [HASH]).status).toBe('BLOCKED');
+  });
+
+  it('freezes every trusted execution file in a canonical manifest', () => {
+    for (const execution_files of [undefined, [], [{ path: '../runner.mjs', sha256: HASH }],
+      [{ path: 'runner.mjs', sha256: [HASH] }],
+      [{ path: 'z.mjs', sha256: HASH }, { path: 'a.mjs', sha256: HASH }],
+      [{ path: 'runner.mjs', sha256: HASH }, { path: 'runner.mjs', sha256: HASH }]]) {
+      expect(validateContract({ ...fixture, execution_files }).ok).toBe(false);
+    }
+    const pair = validPair();
+    pair.green.execution_sha256 = 'd'.repeat(64);
+    expect(assessProofPair(fixture, pair, HEAD, HASH).status).toBe('BLOCKED');
   });
 
   it('blocks nonexistent authority, duplicated IDs, invalid baseline and incomplete skills', () => {
@@ -86,6 +138,60 @@ describe('M0/M1 engineering verification contract', () => {
     expect(validateContract(invalid).errors.join(' ')).toContain('Risk down-classification');
     expect(validateContract({ ...invalid, risk_tier: 'R3', human_approval_required: false }).errors.join(' ')).toContain('human approval');
   });
+
+  it('keeps payment, spending, executable documentation and unsafe paths out of the docs shortcut', () => {
+    for (const path of [
+      'src/app/api/webhooks/stripe/route.ts', 'src/lib/ai-provider.ts',
+      'src/lib/automation-control.ts', 'src/lib/agents/provider-budget.ts',
+      'vercel.json', 'next.config.ts', 'package.json', 'package-lock.json',
+      'Dockerfile', 'scripts/ci-golden-gate.mjs',
+      '.claude/settings.json', '.codex/config.toml', '.npmrc',
+      'vitest.config.ts', 'tsconfig.json', 'pnpm-lock.yaml',
+    ]) expect(classifyPath(path)).toBe('R3');
+    expect(classifyChange(['vercel.json']).policy_sensitive).toBe(true);
+    for (const path of ['docs/run.sh', 'docs/example.ts', 'docs/diagram.svg', 'docs/../src/lib/auth.ts', 'docs\\run.md']) {
+      expect(classifyPath(path)).not.toBe('R0');
+      expect(mayUseDocsOnlyFastPath([path])).toBe(false);
+    }
+    for (const path of [null, {}, 4, ['docs/readme.md']]) {
+      expect(() => classifyChange([path])).not.toThrow();
+      expect(classifyChange([path]).risk_tier).toBe('R3');
+    }
+  });
+
+  it('rejects malformed requirements and unsafe test paths without throwing', () => {
+    for (const changes of [
+      { scope: [{}] },
+      { scope: ['docs/../src/lib/auth.ts'] },
+      { scope: ['docs\\readme.md'] },
+      { requirements: 'forged' },
+      { requirements: [null] },
+      { requirements: [{ ...fixture.requirements[0], test_path: '../outside.test.ts' }] },
+      { requirements: [{ ...fixture.requirements[0], test_path: '/tmp/outside.test.ts' }] },
+      { requirements: [{ ...fixture.requirements[0], fixture_path: '../outside.json' }] },
+      { requirements: [{ ...fixture.requirements[0], adapter_path: '/tmp/executable.mjs' }] },
+    ]) {
+      expect(() => validateContract({ ...fixture, ...changes })).not.toThrow();
+      expect(validateContract({ ...fixture, ...changes }).ok).toBe(false);
+    }
+  });
+
+  it('routes Hoovie and every Hamilton surface and reports unavailable browser skills explicitly', () => {
+    expect(routeSkills(['src/lib/agents/hoovie/sources.ts'])).toEqual(['audit-data', 'data-quality-audit', 'supabase', 'supabase-postgres-best-practices']);
+    for (const path of ['src/lib/hamilton/request-contract.ts', 'src/lib/custom-report/report.ts', 'src/app/api/hamilton/chat/route.ts']) {
+      expect(routeSkills([path])).toEqual(['fee-evaluation', 'report-reconciliation']);
+    }
+    const requirements = routeSkillRequirements(['src/app/pro/analyze/page.tsx'], ['fee-evaluation', 'report-reconciliation']);
+    expect(requirements.required_skills).toEqual(['buyer-journey-mapper', 'fee-evaluation', 'playwright-ux-simulator', 'report-reconciliation', 'ux-ui-auditor']);
+    expect(requirements.unavailable_skills).toEqual(['buyer-journey-mapper', 'playwright-ux-simulator', 'ux-ui-auditor']);
+    expect(requirements.available_skills).toEqual(['fee-evaluation', 'report-reconciliation']);
+    expect(routeSkillRequirements(['src/app/pro/analyze/page.tsx']).unavailable_skills).toEqual([]);
+    expect(routeSkillRequirements(null).required_skills).toEqual([]);
+    expect(routeSkills(['src/lib/agents/magellan/registry/fdic.ts'])).toEqual([
+      'audit-data', 'data-quality-audit', 'diagnosing-bugs', 'source-evidence-audit',
+      'supabase', 'supabase-postgres-best-practices', 'tdd',
+    ]);
+  });
 });
 
 describe('M2 failure-first receipt assessor (not a trusted verdict)', () => {
@@ -101,21 +207,86 @@ describe('M2 failure-first receipt assessor (not a trusted verdict)', () => {
     }
   );
 
-  it('rejects same-code GREEN on old baseline, wrong signature, drift and skip', () => {
+  it('rejects same-code GREEN on old baseline, missing assertions and identity drift', () => {
     const pair = validPair();
     pair.green.head_sha = SHA;
     pair.green.test_sha256 = 'd'.repeat(64);
     pair.green.required_checks = [{ name: 'app-tests', conclusion: 'skipped' }];
     pair.red.failure_log_excerpt = 'Module not found';
+    pair.red.assertions = [];
     expect(assessProofPair(fixture, pair, HEAD, HASH).problems.length).toBeGreaterThanOrEqual(4);
   });
 
-  it('never accepts no aggregate check or unverifiable requirement/test ID', () => {
+  it('assesses behavioral proof independently of external app-tests checks', () => {
+    const pair = validPair();
+    pair.green.required_checks = [];
+    expect(assessProofPair(fixture, pair, HEAD, HASH).status).toBe('STRUCTURALLY_VALID_UNTRUSTED');
+  });
+
+  it('never accepts an unverifiable requirement/test ID', () => {
     const pair = validPair();
     pair.red.test_id = 'invented';
     pair.green.test_id = 'invented';
     pair.green.required_checks = [];
     expect(assessProofPair(fixture, pair, HEAD, HASH).status).toBe('BLOCKED');
+  });
+
+  it('rejects copied assertion-title text when the structured outcome did not fail', () => {
+    const pair = validPair();
+    pair.red.assertions[0].status = 'PASSED';
+    pair.red.assertions[1].status = 'FAILED';
+    expect(assessProofPair(fixture, pair, HEAD, HASH).status).toBe('BLOCKED');
+    pair.red.assertions[0].status = 'FAILED';
+    pair.green.fixture_sha256 = 'd'.repeat(64);
+    pair.red.fixture_sha256 = 'd'.repeat(64);
+    expect(assessProofPair(fixture, pair, HEAD, HASH).problems.join(' ')).toMatch(/fixture.*frozen/i);
+  });
+
+  it('rejects contradictory run status or infrastructure failure even with assertion-looking text', () => {
+    const pair = validPair();
+    pair.red.status = 'PASSED';
+    expect(assessProofPair(fixture, pair, HEAD, HASH).status).toBe('BLOCKED');
+    const malformed = { ...validPair(), green: { ...validPair().green, failure_kind: 'SETUP_FAILURE' } };
+    expect(assessProofPair(fixture, malformed, HEAD, HASH).status).toBe('BLOCKED');
+  });
+
+  it('requires a repaired target to differ from its historical defective baseline', () => {
+    const pair = validPair();
+    pair.green.head_sha = SHA;
+    expect(assessProofPair(fixture, pair, SHA, HASH).status).toBe('BLOCKED');
+  });
+
+  it('requires every contract requirement and every assertion, including passing baseline controls', () => {
+    const contract = structuredClone(fixture);
+    contract.requirements.push({
+      ...contract.requirements[0], id: 'KNOX-2285-02', test_id: 'knox-2285-no-heading-leak',
+      assertion_ids: ['heading-boundary'], baseline_expectation: 'PASS',
+      baseline_failure_assertion_ids: [],
+    });
+    expect(assessProofPair(contract, validPair(), HEAD, HASH).status).toBe('BLOCKED');
+    const controls = validPair();
+    for (const side of [controls.red, controls.green]) {
+      side.requirement_id = 'KNOX-2285-02';
+      side.test_id = 'knox-2285-no-heading-leak';
+      side.assertions = [{ id: 'heading-boundary', status: 'PASSED' }];
+    }
+    controls.red.exit_code = 0;
+    controls.red.failure_kind = 'NONE';
+    controls.red.status = 'PASSED';
+    const bundle = { pairs: [validPair(), controls] };
+    expect(assessProofBundle(contract, bundle, HEAD, HASH).status).toBe('STRUCTURALLY_VALID_UNTRUSTED');
+    bundle.pairs[1].green.assertions = [];
+    expect(assessProofBundle(contract, bundle, HEAD, HASH).status).toBe('BLOCKED');
+    expect(assessProofBundle(contract, { pairs: [validPair(), validPair()] }, HEAD, HASH).status).toBe('BLOCKED');
+  });
+
+  it('rejects missing, malformed or duplicate assertion receipts without throwing', () => {
+    for (const assertions of [null, {}, ['own-price'], [{ id: 'own-price', status: 'SKIPPED' }], [null]]) {
+      const pair = { ...validPair(), red: { ...validPair().red, assertions } };
+      expect(() => assessProofPair(fixture, pair, HEAD, HASH)).not.toThrow();
+      expect(assessProofPair(fixture, pair, HEAD, HASH).status).toBe('BLOCKED');
+    }
+    expect(() => assessProofBundle({ ...fixture, requirements: null }, { pairs: [validPair()] }, HEAD, HASH)).not.toThrow();
   });
 });
 

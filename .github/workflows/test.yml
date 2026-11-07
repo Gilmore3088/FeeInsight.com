@@ -17,10 +17,12 @@ on:
   pull_request:
   push:
     branches: [main]
-    paths-ignore:
-      - "**/*.md"
-      - "docs/**"
   workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+  actions: read
 
 concurrency:
   group: tests-${{ github.event.pull_request.number || github.sha }}
@@ -53,13 +55,36 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Does this change anything but Markdown and docs/?
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: "22"
+      - name: Classify changed paths with the trusted base policy
         id: diff
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          DIFF_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          DIFF_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
-          if [ "${{ github.event_name }}" != pull_request ]; then echo "code=true" >> "$GITHUB_OUTPUT"; exit 0; fi
-          changed=$(git diff --name-only "${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }}" | grep -v -E '\.md$|^docs/' || true)
-          if [ -n "$changed" ]; then echo "code=true" >> "$GITHUB_OUTPUT"; else echo "code=false" >> "$GITHUB_OUTPUT"; fi
-          echo "Changed outside Markdown and docs/:"; echo "${changed:-(nothing)}"
+          node --input-type=module <<'NODE'
+          import {execFileSync,spawnSync} from 'node:child_process';
+          import {appendFileSync,writeFileSync} from 'node:fs';
+          import {join} from 'node:path';
+          import {pathToFileURL} from 'node:url';
+          let code=true;
+          const {DIFF_BASE:base,DIFF_HEAD:head,EVENT_NAME:event}=process.env;
+          if (event !== 'workflow_dispatch' && /^[a-f0-9]{40}$/.test(base ?? '') && /^[a-f0-9]{40}$/.test(head ?? '')) {
+            const paths=execFileSync('git',['diff','--name-only','-z',base+'...'+head],{encoding:'utf8'}).split('\0').filter(Boolean);
+            const policy=spawnSync('git',['show',base+':src/lib/engineering-verification/contract.mjs'],{encoding:'utf8'});
+            if (policy.status === 0) {
+              const file=join(process.env.RUNNER_TEMP,'trusted-verification-policy.mjs');
+              writeFileSync(file,policy.stdout);
+              const {mayUseDocsOnlyFastPath}=await import(pathToFileURL(file).href);
+              code=!mayUseDocsOnlyFastPath(paths);
+            }
+          }
+          appendFileSync(process.env.GITHUB_OUTPUT,'code='+code+'\n');
+          console.log('Full checks required:',code);
+          NODE
       # A findings-only PR skips `checks`, so the one guard that reads docs/ runs here (#1108).
       - name: New findings name their guard
         if: steps.diff.outputs.code == 'false'
@@ -91,6 +116,8 @@ jobs:
         run: npx tsc --noEmit
       - name: Lint
         run: npm run lint
+      - name: Validate verification plan and frozen acceptance identities
+        run: node src/lib/engineering-verification/cli.mjs validate
 
   unit:
     needs: changes
@@ -215,7 +242,7 @@ jobs:
   app-tests:
     # The one required check: green only when every job above passed.
     if: always()
-    needs: [changes, checks, unit, knox-gates, e2e]
+    needs: [changes, checks, unit, knox-gates, e2e, fee-audience-sql]
     runs-on: ubuntu-latest
     steps:
       - name: Every job passed
@@ -227,6 +254,7 @@ jobs:
           test "${{ needs.unit.result }}" = success
           test "${{ needs.knox-gates.result }}" = success
           test "${{ needs.e2e.result }}" = success
+          test "${{ needs.fee-audience-sql.result }}" = success
 
   fee-audience-sql:
     needs: changes

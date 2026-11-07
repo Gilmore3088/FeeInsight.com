@@ -1,0 +1,34 @@
+{
+  "schema_version": "1.0",
+  "authority": "Engineering Verification PRD SEC-04 and FR-02: payment/provider/automation controls require R3 routing; executable and protected policy files must never use the documentation shortcut. These are synthetic repository-policy examples, not bank-fee accuracy evidence.",
+  "cases": [
+    { "id": "stripe-webhook", "text": "{\"operation\":\"risk\",\"paths\":[\"src/app/api/webhooks/stripe/route.ts\"]}", "value": "R3" },
+    { "id": "provider-access", "text": "{\"operation\":\"risk\",\"paths\":[\"src/lib/ai-provider.ts\"]}", "value": "R3" },
+    { "id": "automation-control", "text": "{\"operation\":\"risk\",\"paths\":[\"src/lib/automation-control.ts\"]}", "value": "R3" },
+    { "id": "executable-doc", "text": "{\"operation\":\"docs\",\"paths\":[\"docs/schema.sql\"]}", "value": false },
+    { "id": "agent-policy", "text": "{\"operation\":\"docs\",\"paths\":[\"AGENTS.md\"]}", "value": false },
+    { "id": "skill-policy", "text": "{\"operation\":\"docs\",\"paths\":[\".claude/skills/tdd/SKILL.md\"]}", "value": false },
+    { "id": "inert-doc", "text": "{\"operation\":\"docs\",\"paths\":[\"docs/changelog.md\"]}", "value": true }
+  ],
+  "requirements": [
+    {
+      "id": "FOUNDATION-1048-01",
+      "test_id": "engineering-policy-risk",
+      "assertions": [
+        { "id": "stripe-webhook-risk", "case_id": "stripe-webhook", "failure_signature": "Stripe webhook code must route to R3" },
+        { "id": "provider-access-risk", "case_id": "provider-access", "failure_signature": "Provider access code must route to R3" },
+        { "id": "automation-control-risk", "case_id": "automation-control", "failure_signature": "Automation stop controls must route to R3" }
+      ]
+    },
+    {
+      "id": "FOUNDATION-1048-02",
+      "test_id": "engineering-policy-fast-path",
+      "assertions": [
+        { "id": "executable-doc-no-shortcut", "case_id": "executable-doc", "failure_signature": "Executable SQL under docs must not use the documentation shortcut" },
+        { "id": "agent-policy-no-shortcut", "case_id": "agent-policy", "failure_signature": "AGENTS instructions must not use the documentation shortcut" },
+        { "id": "skill-policy-no-shortcut", "case_id": "skill-policy", "failure_signature": "Protected skill instructions must not use the documentation shortcut" },
+        { "id": "inert-doc-shortcut", "case_id": "inert-doc", "failure_signature": "An inert unprotected Markdown document may retain the documentation shortcut" }
+      ]
+    }
+  ]
+}

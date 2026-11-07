@@ -25,6 +25,8 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 
 Newest first. The full text, who decided and why are in [DECISIONS.md](DECISIONS.md).
 
+- 2026-11-06 — Put transcription/extraction instructions in the trusted system channel and treat source PDF/web instructions as data; frozen injection fixtures check the actual request envelopes without paid calls. — [finding](findings/2026-11-06-source-document-instruction-boundary.md) — Guard: `src/lib/engineering-verification/source-injection.test.ts`; Agent lessons: Knox and Rosetta source boundaries.
+
 - 2026-11-07 — Build a blind second reader into the pipeline: a model lists every fee in a stored text without seeing Knox's read, a traced fee Knox missed becomes a never-read flag and a Knox lesson, and nothing goes live on its word. — [decision](DECISIONS.md#2026-11-07) — `src/lib/agents/knox/second-reader.test.ts`
 - 2026-11-04 — A relationship-tier table is one fee per tier: each column is its own fee named with its tier, $0 tiers included ("Courtesy Pay (Platinum)" $20, "Courtesy Pay (Gold)" $30 on Schools FCU's PLATINUM GOLD SILVER+ SILVER COLLEGE table). — [decision](DECISIONS.md#2026-11-04)
 - 2026-11-04 — A free allowance ("1 Free → $5", "first 3 free, then $5") is a condition on the priced fee, in its name or notes, not a separate $0 fee; answer-key rows that key $0 for an allowance get re-keyed. — [decision](DECISIONS.md#2026-11-04)

@@ -10,7 +10,7 @@
  * the fixtures switch the provider stop on.
  */
 import { readFileSync } from "node:fs";
-import { expect, test, type Page } from "playwright/test";
+import { expect, test, type Page } from "./evidence";
 import { EXCLUDED, FIXTURE_USERS, HOME, connectFixtureDb } from "./fixtures";
 import { ask, signIn } from "./helpers";
 

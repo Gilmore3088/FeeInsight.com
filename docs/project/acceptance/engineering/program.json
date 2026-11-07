@@ -1,0 +1,1026 @@
+{
+  "schema_version": 1,
+  "program_id": "FEEINSIGHT-ENGINEERING-VERIFICATION",
+  "status_semantics": "PLAN_TRACEABLE proves complete source-to-file traceability only; it never certifies tests, deployment, enforcement or completion.",
+  "sources": [
+    {
+      "id": "prd-v1",
+      "path": "docs/project/acceptance/engineering/design-v1/prd-v1.md",
+      "sha256": "6ec2ff3c9a5005dfd783cdfc94652148613cec77c493d712f228601da71f7dcc"
+    },
+    {
+      "id": "technical-design-v1",
+      "path": "docs/project/acceptance/engineering/design-v1/technical-design-v1.md",
+      "sha256": "40acbb05266c300fc5dbb2b690d3fd89eb368310c3ccdeeb7580ccdf3c042c35"
+    }
+  ],
+  "references": {
+    "contract": {
+      "implementation": [
+        "src/lib/engineering-verification/contract.mjs",
+        "src/lib/engineering-verification/policy.json",
+        "docs/project/acceptance/engineering/2285.json",
+        "docs/project/acceptance/engineering/1048.json"
+      ],
+      "tests": [
+        "src/lib/engineering-verification/contract.test.ts"
+      ]
+    },
+    "policy": {
+      "implementation": [
+        ".github/workflows/test.yml",
+        "scripts/ci-guards.sh",
+        "src/lib/engineering-verification/scope.mjs"
+      ],
+      "tests": [
+        "scripts/ci-guards.test.ts",
+        "src/lib/engineering-verification/policy-pilot.test.ts",
+        "src/lib/engineering-verification/scope.test.ts"
+      ]
+    },
+    "runner": {
+      "implementation": [
+        "src/lib/engineering-verification/runner.mjs",
+        "src/lib/engineering-verification/child.mjs",
+        "src/lib/engineering-verification/loader.mjs",
+        "src/lib/engineering-verification/pilot.mjs",
+        "src/lib/engineering-verification/policy-pilot.mjs"
+      ],
+      "tests": [
+        "src/lib/engineering-verification/runner.test.ts",
+        "src/lib/engineering-verification/pilot.test.ts",
+        "src/lib/engineering-verification/policy-pilot.test.ts"
+      ]
+    },
+    "proof": {
+      "implementation": [
+        "src/lib/engineering-verification/proof.mjs"
+      ],
+      "tests": [
+        "src/lib/engineering-verification/proof.test.ts"
+      ]
+    },
+    "github": {
+      "implementation": [
+        "src/lib/engineering-verification/github.mjs"
+      ],
+      "tests": [
+        "src/lib/engineering-verification/github.test.ts"
+      ]
+    },
+    "review": {
+      "implementation": [
+        "src/lib/engineering-verification/evidence.mjs"
+      ],
+      "tests": [
+        "src/lib/engineering-verification/github.test.ts",
+        "src/lib/engineering-verification/evidence.test.ts"
+      ]
+    },
+    "operational": {
+      "implementation": [
+        "src/lib/engineering-verification/runtime.ts",
+        "src/lib/engineering-verification/evidence.mjs",
+        "src/lib/agents/run-store.ts",
+        "src/app/api/admin/engineering-verification/route.ts"
+      ],
+      "tests": [
+        "src/lib/engineering-verification/runtime.test.ts",
+        "src/lib/engineering-verification/evidence.test.ts",
+        "src/lib/agents/run-store.test.ts",
+        "src/app/api/admin/engineering-verification/route.test.ts"
+      ]
+    },
+    "summary": {
+      "implementation": [
+        "src/lib/engineering-verification/cli.mjs",
+        "src/lib/engineering-verification/evidence.mjs",
+        "src/lib/engineering-verification/events.mjs"
+      ],
+      "tests": [
+        "src/lib/engineering-verification/evidence.test.ts",
+        "src/lib/engineering-verification/events.test.ts"
+      ]
+    },
+    "metrics": {
+      "implementation": [
+        "src/lib/engineering-verification/evidence.mjs",
+        "docs/project/acceptance/engineering/baseline.json",
+        "src/lib/engineering-verification/scorecard.mjs"
+      ],
+      "tests": [
+        "src/lib/engineering-verification/evidence.test.ts",
+        "src/lib/engineering-verification/scorecard.test.ts"
+      ]
+    },
+    "learning": {
+      "implementation": [
+        "src/lib/agents/learning/lesson-reader.ts",
+        "src/lib/agents/deming/golden-gate.ts",
+        "scripts/ci-guards.sh"
+      ],
+      "tests": [
+        "src/lib/agents/learning/lesson-reader.test.ts",
+        "src/lib/agents/deming/golden-gate.test.ts",
+        "scripts/ci-guards.test.ts"
+      ]
+    },
+    "ui": {
+      "implementation": [
+        "src/lib/engineering-verification/contract.mjs",
+        ".claude/skills/buyer-journey-mapper/SKILL.md",
+        ".claude/skills/buyer-journey-mapper/skill.json",
+        ".claude/skills/ux-ui-auditor/SKILL.md",
+        ".claude/skills/ux-ui-auditor/skill.json",
+        ".claude/skills/playwright-ux-simulator/SKILL.md",
+        ".claude/skills/playwright-ux-simulator/skill.json",
+        "src/lib/engineering-verification/browser-evidence.mjs",
+        "tests/e2e/hamilton/evidence.ts",
+        "tests/e2e/hamilton/serve.mjs",
+        "tests/e2e/hamilton/playwright.config.ts",
+        "docs/plans/hamilton-h07-acceptance-matrix.md",
+        "src/lib/skills/manifest.ts"
+      ],
+      "tests": [
+        "src/lib/engineering-verification/contract.test.ts",
+        "src/lib/engineering-verification/browser-evidence.test.ts",
+        "tests/e2e/hamilton/research-journey.pw.ts",
+        "tests/e2e/hamilton/reports-journey.pw.ts",
+        "tests/e2e/hamilton/command-center-journey.pw.ts",
+        "tests/e2e/hamilton/board-brief-journey.pw.ts",
+        "src/lib/skills/manifest.test.ts"
+      ]
+    },
+    "workflow": {
+      "implementation": [
+        ".github/workflows/engineering-verification.yml",
+        ".github/workflows/engineering-verification-gate.yml",
+        "docs/project/acceptance/engineering/activation-proposal.md"
+      ],
+      "tests": [
+        "src/lib/engineering-verification/proof.test.ts",
+        "src/lib/engineering-verification/runner.test.ts",
+        "src/lib/engineering-verification/workflows.test.ts",
+        "src/lib/engineering-verification/events.test.ts"
+      ]
+    },
+    "source-security": {
+      "implementation": [
+        "src/lib/agents/source-data-boundary.ts",
+        "src/lib/agents/knox/paid-extract.ts",
+        "src/lib/agents/rosetta/paid-read.ts",
+        "src/lib/agents/knox/role-lessons.ts",
+        "src/lib/agents/rosetta/role-lessons.ts",
+        "src/lib/agents/bayes/manifests.ts",
+        "src/lib/engineering-verification/__fixtures__/source-injection/fee-schedule.pdf",
+        "src/lib/engineering-verification/__fixtures__/source-injection/fee-schedule.html",
+        "src/lib/engineering-verification/__fixtures__/source-injection/fee-schedule.txt",
+        "src/lib/engineering-verification/__fixtures__/source-injection/manifest.json"
+      ],
+      "tests": [
+        "src/lib/engineering-verification/source-injection.test.ts",
+        "src/lib/agents/knox/paid-extract.test.ts",
+        "src/lib/agents/rosetta/paid-read.test.ts"
+      ]
+    }
+  },
+  "stages": [
+    {
+      "id": "M0",
+      "behavior": "Inventory baseline, existing skills and source constraints",
+      "references": [
+        "contract",
+        "metrics"
+      ],
+      "activation_gates": []
+    },
+    {
+      "id": "M1",
+      "behavior": "Version contracts, risk and skill routes; close protected-document shortcuts",
+      "references": [
+        "contract",
+        "policy"
+      ],
+      "activation_gates": []
+    },
+    {
+      "id": "M2",
+      "behavior": "Run parent-owned frozen assertions against isolated baseline and exact head; corroborate actual GitHub artifacts",
+      "references": [
+        "runner",
+        "proof",
+        "workflow",
+        "summary",
+        "source-security"
+      ],
+      "activation_gates": [
+        "trusted-actions-proof"
+      ]
+    },
+    {
+      "id": "M3",
+      "behavior": "Validate exact-head independent review and preserve sensitive activation boundaries",
+      "references": [
+        "github",
+        "review",
+        "workflow"
+      ],
+      "activation_gates": [
+        "owner-security-approval",
+        "independent-reviewer-identity"
+      ]
+    },
+    {
+      "id": "M4",
+      "behavior": "Join authenticated deployments to actual Atlas execution, Deming fixed cohort and Bayes reconciliation",
+      "references": [
+        "operational",
+        "github"
+      ],
+      "activation_gates": [
+        "operational-observation",
+        "authorized-runtime-reruns"
+      ]
+    },
+    {
+      "id": "M5",
+      "behavior": "Expand independent pipeline/Hamilton/UI adoption and measure verified multi-change outcomes",
+      "references": [
+        "learning",
+        "metrics",
+        "ui"
+      ],
+      "activation_gates": [
+        "ui-specialist-adoption",
+        "holdout-and-scorecard-adoption"
+      ]
+    }
+  ],
+  "requirements": [
+    {
+      "id": "FR-01",
+      "source": "prd-v1",
+      "stage": "M1",
+      "behavior": "Versioned JSON associates GitHub issue, scope, risk and source authority; invalid/missing fields fail validation.",
+      "references": [
+        "contract"
+      ],
+      "implementation_state": "MECHANISM_PRESENT",
+      "activation_gates": []
+    },
+    {
+      "id": "FR-02",
+      "source": "prd-v1",
+      "stage": "M1",
+      "behavior": "Highest applicable changed-path/behavior tier wins; policy files and financial/security changes cannot be down-classified.",
+      "references": [
+        "contract",
+        "policy"
+      ],
+      "implementation_state": "MECHANISM_PRESENT",
+      "activation_gates": []
+    },
+    {
+      "id": "FR-03",
+      "source": "prd-v1",
+      "stage": "M1",
+      "behavior": "Contract records skills; Knox/Rosetta/Darwin and Hamilton cases route to their documented skill/checks.",
+      "references": [
+        "contract"
+      ],
+      "implementation_state": "PARTIAL",
+      "activation_gates": [
+        "ui-specialist-adoption"
+      ],
+      "remaining_work": "All three UI specialist skills now exist and have routing coverage; independent specialist use and frozen pipeline/Hamilton/UI contract adoption remain pending."
+    },
+    {
+      "id": "FR-04",
+      "source": "prd-v1",
+      "stage": "M1",
+      "behavior": "Each R2/R3 requirement has unique ID, expected behavior, authority and at least one stable test ID.",
+      "references": [
+        "contract"
+      ],
+      "implementation_state": "MECHANISM_PRESENT",
+      "activation_gates": []
+    },
+    {
+      "id": "FR-05",
+      "source": "prd-v1",
+      "stage": "M2",
+      "behavior": "Detached old-code run fails on expected assertion; setup failure, timeout or missing dependency is rejected.",
+      "references": [
+        "runner",
+        "proof"
+      ],
+      "implementation_state": "MECHANISM_PRESENT",
+      "activation_gates": [
+        "trusted-actions-proof"
+      ]
+    },
+    {
+      "id": "FR-06",
+      "source": "prd-v1",
+      "stage": "M2",
+      "behavior": "Same test identity passes at current SHA and required existing tests pass without unauthorized skips.",
+      "references": [
+        "runner",
+        "proof",
+        "github"
+      ],
+      "implementation_state": "MECHANISM_PRESENT",
+      "activation_gates": [
+        "trusted-actions-proof"
+      ]
+    },
+    {
+      "id": "FR-07",
+      "source": "prd-v1",
+      "stage": "M2",
+      "behavior": "New evidence check composes with app-tests, while unit, DB and quality suites still execute once.",
+      "references": [
+        "workflow",
+        "github",
+        "policy"
+      ],
+      "implementation_state": "MECHANISM_PRESENT",
+      "activation_gates": [
+        "trusted-actions-proof"
+      ]
+    },
+    {
+      "id": "FR-08",
+      "source": "prd-v1",
+      "stage": "M2",
+      "behavior": "Trusted workflow reads GitHub run evidence; hand-written PASS in PR body does not count.",
+      "references": [
+        "proof",
+        "github"
+      ],
+      "implementation_state": "MECHANISM_PRESENT",
+      "activation_gates": [
+        "trusted-actions-proof"
+      ]
+    },
+    {
+      "id": "FR-09",
+      "source": "prd-v1",
+      "stage": "M3",
+      "behavior": "Distinct reviewer identity; reviewed SHA equals head; new push invalidates prior approval.",
+      "references": [
+        "review",
+        "github",
+        "workflow"
+      ],
+      "implementation_state": "MECHANISM_PRESENT",
+      "activation_gates": [
+        "independent-reviewer-identity",
+        "owner-security-approval"
+      ]
+    },
+    {
+      "id": "FR-10",
+      "source": "prd-v1",
+      "stage": "M3",
+      "behavior": "Changes in AGENTS.md, CLAUDE.md, skills, CI/security files require policy review and cannot use docs-only shortcut.",
+      "references": [
+        "policy",
+        "workflow",
+        "review"
+      ],
+      "implementation_state": "MECHANISM_PRESENT",
+      "activation_gates": [
+        "owner-security-approval"
+      ]
+    },
+    {
+      "id": "FR-11",
+      "source": "prd-v1",
+      "stage": "M3",
+      "behavior": "Review finding includes severity, file/line or reproducible artifact, disposition and root-cause issue/owner.",
+      "references": [
+        "review"
+      ],
+      "implementation_state": "MECHANISM_PRESENT",
+      "activation_gates": []
+    },
+    {
+      "id": "FR-12",
+      "source": "prd-v1",
+      "stage": "M1",
+      "behavior": "Migration, production-data mutation, new permission, paid-provider activation or outreach cannot proceed under routine merge authority.",
+      "references": [
+        "contract"
+      ],
+      "implementation_state": "MECHANISM_PRESENT",
+      "activation_gates": []
+    },
+    {
+      "id": "FR-13",
+      "source": "prd-v1",
+      "stage": "M2",
+      "behavior": "PR displays links to contract, red/green, CI, review, release and live evidence with explicit missing statuses.",
+      "references": [
+        "summary",
+        "workflow"
+      ],
+      "implementation_state": "MECHANISM_PRESENT",
+      "activation_gates": [
+        "trusted-actions-proof"
+      ]
+    },
+    {
+      "id": "FR-14",
+      "source": "prd-v1",
+      "stage": "M4",
+      "behavior": "Release has deploy SHA/environment; absence prevents production-verification claim.",
+      "references": [
+        "operational",
+        "github"
+      ],
+      "implementation_state": "MECHANISM_PRESENT",
+      "activation_gates": [
+        "operational-observation"
+      ]
+    },
+    {
+      "id": "FR-15",
+      "source": "prd-v1",
+      "stage": "M4",
+      "behavior": "Quality output references fixed cohort/version, evidence and timestamp; self-scoring implementation changes have separate test review.",
+      "references": [
+        "operational"
+      ],
+      "implementation_state": "MECHANISM_PRESENT",
+      "activation_gates": [
+        "operational-observation"
+      ]
+    },
+    {
+      "id": "FR-16",
+      "source": "prd-v1",
+      "stage": "M4",
+      "behavior": "Affected/done/queued/excluded/not-counted disclosed; partial replay remains visible until settled.",
+      "references": [
+        "operational"
+      ],
+      "implementation_state": "MECHANISM_PRESENT",
+      "activation_gates": [
+        "operational-observation",
+        "authorized-runtime-reruns"
+      ]
+    },
+    {
+      "id": "FR-17",
+      "source": "prd-v1",
+      "stage": "M5",
+      "behavior": "Root-cause bug fix adds permanent test and role-lessons.ts update; holdouts remain excluded from tuning.",
+      "references": [
+        "learning",
+        "runner"
+      ],
+      "implementation_state": "PARTIAL",
+      "activation_gates": [
+        "holdout-and-scorecard-adoption"
+      ],
+      "remaining_work": "Permanent synthetic regressions, source-boundary role lessons and lesson/golden guards are present; independently enrolled private holdouts and per-change adoption remain pending."
+    },
+    {
+      "id": "FR-18",
+      "source": "prd-v1",
+      "stage": "M2",
+      "behavior": "Required tests skipped, proof missing or environment unavailable must not be reported as PASS.",
+      "references": [
+        "contract",
+        "proof",
+        "review",
+        "operational"
+      ],
+      "implementation_state": "MECHANISM_PRESENT",
+      "activation_gates": []
+    },
+    {
+      "id": "FR-19",
+      "source": "prd-v1",
+      "stage": "M5",
+      "behavior": "Trend independently verified coverage, recurrence, review latency, proof failures and CI cost.",
+      "references": [
+        "metrics"
+      ],
+      "implementation_state": "PARTIAL",
+      "activation_gates": [
+        "holdout-and-scorecard-adoption"
+      ],
+      "remaining_work": "The native read-only scorecard collects authenticated sampled GitHub proof/review/job evidence with explicit denominators and unknown metrics; trusted post-bootstrap multi-change collection and before/after trend acceptance remain pending."
+    },
+    {
+      "id": "FR-20",
+      "source": "prd-v1",
+      "stage": "M5",
+      "behavior": "For UI work use buyer-journey-mapper, UX/UI auditor and Playwright with screenshots/console/request evidence.",
+      "references": [
+        "ui"
+      ],
+      "implementation_state": "PARTIAL",
+      "activation_gates": [
+        "ui-specialist-adoption"
+      ],
+      "remaining_work": "The three named skills, exact-build browser capture and identity/redaction assessment exist; actual desktop/mobile journey execution, independent artifact review and broader UI pilot adoption remain pending."
+    },
+    {
+      "id": "FR-21",
+      "source": "prd-v1",
+      "stage": "M1",
+      "behavior": "Record accepted contract versions and review events; modifications invalidate affected proofs.",
+      "references": [
+        "contract",
+        "proof",
+        "review"
+      ],
+      "implementation_state": "MECHANISM_PRESENT",
+      "activation_gates": []
+    },
+    {
+      "id": "FR-22",
+      "source": "prd-v1",
+      "stage": "M5",
+      "behavior": "On observed regression, show SHA, owning agent, affected units and reopen/rollback decision; no auto-mutation.",
+      "references": [
+        "metrics",
+        "operational"
+      ],
+      "implementation_state": "PARTIAL",
+      "activation_gates": [
+        "holdout-and-scorecard-adoption"
+      ],
+      "remaining_work": "Regression metadata validation and a native sampled scorecard are present; corroborated production regressions, affected-unit evidence and owner disposition decisions require real observations."
+    },
+    {
+      "id": "SEC-01",
+      "source": "prd-v1",
+      "stage": "M0",
+      "behavior": "No NMHP runtime, unreviewed GitHub App or paid monitoring vendor in MVP.",
+      "references": [
+        "contract",
+        "workflow"
+      ],
+      "implementation_state": "MECHANISM_PRESENT",
+      "activation_gates": []
+    },
+    {
+      "id": "SEC-02",
+      "source": "prd-v1",
+      "stage": "M2",
+      "behavior": "Read-only minimal token and isolated database; CI blocks use of prod secrets/fork code together.",
+      "references": [
+        "runner",
+        "workflow"
+      ],
+      "implementation_state": "MECHANISM_PRESENT",
+      "activation_gates": [
+        "trusted-actions-proof",
+        "owner-security-approval"
+      ]
+    },
+    {
+      "id": "SEC-03",
+      "source": "prd-v1",
+      "stage": "M3",
+      "behavior": "Builder gets scoped branch capability; reviewer read-only or separate review identity; no shared self-approval.",
+      "references": [
+        "review",
+        "github"
+      ],
+      "implementation_state": "MECHANISM_PRESENT",
+      "activation_gates": [
+        "independent-reviewer-identity"
+      ]
+    },
+    {
+      "id": "SEC-04",
+      "source": "prd-v1",
+      "stage": "M3",
+      "behavior": "Independent authorized review for workflow, CODEOWNERS, skill, permission, prompt and security changes.",
+      "references": [
+        "policy",
+        "review"
+      ],
+      "implementation_state": "MECHANISM_PRESENT",
+      "activation_gates": [
+        "owner-security-approval"
+      ]
+    },
+    {
+      "id": "SEC-05",
+      "source": "prd-v1",
+      "stage": "M2",
+      "behavior": "Bank PDF and web text cannot override prompts or execute shell commands; injection fixtures must pass.",
+      "references": [
+        "runner",
+        "source-security"
+      ],
+      "implementation_state": "PARTIAL",
+      "activation_gates": [
+        "trusted-actions-proof",
+        "source-injection-coverage"
+      ],
+      "remaining_work": "Frozen synthetic PDF, HTML and plain-text fixtures exercise actual source normalization and actual Knox/Rosetta paid-request paths with stubbed providers and side-effect assertions. Trusted exact-head Actions execution and independent acceptance remain pending; no live-model obedience score or universal injection immunity is claimed."
+    },
+    {
+      "id": "SEC-06",
+      "source": "prd-v1",
+      "stage": "M2",
+      "behavior": "Official source/confirmed human/answer key; no model-generated truth labels or holdout leakage.",
+      "references": [
+        "runner",
+        "learning"
+      ],
+      "implementation_state": "PARTIAL",
+      "activation_gates": [
+        "holdout-and-scorecard-adoption"
+      ],
+      "remaining_work": "The two public synthetic pilots and injection fixtures disclose their fixed synthetic authority. Independent private holdout isolation, source-backed enrollment and broader adoption remain pending."
+    },
+    {
+      "id": "SEC-07",
+      "source": "prd-v1",
+      "stage": "M3",
+      "behavior": "SQL migrations, production data, auth, permissions, spending and outreach retain current explicit authorization.",
+      "references": [
+        "contract",
+        "review"
+      ],
+      "implementation_state": "MECHANISM_PRESENT",
+      "activation_gates": [
+        "owner-security-approval"
+      ]
+    },
+    {
+      "id": "SEC-08",
+      "source": "prd-v1",
+      "stage": "M3",
+      "behavior": "Exact SHA, actor, timestamp, artifact hash, reason for exception; stale sign-off invalidated.",
+      "references": [
+        "proof",
+        "review"
+      ],
+      "implementation_state": "MECHANISM_PRESENT",
+      "activation_gates": [
+        "trusted-actions-proof",
+        "independent-reviewer-identity"
+      ]
+    },
+    {
+      "id": "AT-01",
+      "source": "technical-design-v1",
+      "stage": "M2",
+      "behavior": "REJECT: not meaningful RED",
+      "references": [
+        "contract",
+        "runner"
+      ],
+      "implementation_state": "MECHANISM_PRESENT",
+      "activation_gates": []
+    },
+    {
+      "id": "AT-02",
+      "source": "technical-design-v1",
+      "stage": "M2",
+      "behavior": "ACCEPT evidence, subject to rest of checks",
+      "references": [
+        "runner",
+        "proof"
+      ],
+      "implementation_state": "MECHANISM_PRESENT",
+      "activation_gates": [
+        "trusted-actions-proof"
+      ]
+    },
+    {
+      "id": "AT-03",
+      "source": "technical-design-v1",
+      "stage": "M2",
+      "behavior": "BLOCK until authorized version change and independent review",
+      "references": [
+        "contract",
+        "proof"
+      ],
+      "implementation_state": "MECHANISM_PRESENT",
+      "activation_gates": []
+    },
+    {
+      "id": "AT-04",
+      "source": "technical-design-v1",
+      "stage": "M3",
+      "behavior": "REJECT stale attestation",
+      "references": [
+        "review"
+      ],
+      "implementation_state": "MECHANISM_PRESENT",
+      "activation_gates": [
+        "owner-security-approval",
+        "independent-reviewer-identity"
+      ]
+    },
+    {
+      "id": "AT-05",
+      "source": "technical-design-v1",
+      "stage": "M1",
+      "behavior": "Runs policy checks; must not take Markdown-only fast path",
+      "references": [
+        "contract",
+        "policy"
+      ],
+      "implementation_state": "MECHANISM_PRESENT",
+      "activation_gates": []
+    },
+    {
+      "id": "AT-06",
+      "source": "technical-design-v1",
+      "stage": "M2",
+      "behavior": "BLOCK/NOT_TESTED, never PASS",
+      "references": [
+        "policy",
+        "github"
+      ],
+      "implementation_state": "MECHANISM_PRESENT",
+      "activation_gates": [
+        "trusted-actions-proof"
+      ]
+    },
+    {
+      "id": "AT-07",
+      "source": "technical-design-v1",
+      "stage": "M4",
+      "behavior": "DEPLOYED but PRODUCTION_UNVERIFIED",
+      "references": [
+        "operational"
+      ],
+      "implementation_state": "MECHANISM_PRESENT",
+      "activation_gates": [
+        "operational-observation",
+        "authorized-runtime-reruns"
+      ]
+    },
+    {
+      "id": "AT-08",
+      "source": "technical-design-v1",
+      "stage": "M2",
+      "behavior": "Treated as content; no shell/network/agent instruction executed",
+      "references": [
+        "runner",
+        "source-security"
+      ],
+      "implementation_state": "MECHANISM_PRESENT",
+      "activation_gates": [
+        "trusted-actions-proof"
+      ]
+    },
+    {
+      "id": "AT-09",
+      "source": "technical-design-v1",
+      "stage": "M3",
+      "behavior": "AI assessment advisory; not valid independent approval",
+      "references": [
+        "review"
+      ],
+      "implementation_state": "MECHANISM_PRESENT",
+      "activation_gates": [
+        "independent-reviewer-identity"
+      ]
+    },
+    {
+      "id": "AT-10",
+      "source": "technical-design-v1",
+      "stage": "M3",
+      "behavior": "Explicit owner authorization remains required",
+      "references": [
+        "contract",
+        "review"
+      ],
+      "implementation_state": "MECHANISM_PRESENT",
+      "activation_gates": [
+        "owner-security-approval"
+      ]
+    },
+    {
+      "id": "UAT-01",
+      "source": "prd-v1",
+      "stage": "M4",
+      "behavior": "Independent RED correctly rejects bad output, GREEN confirms fix, Deming measures later",
+      "references": [
+        "runner",
+        "operational"
+      ],
+      "implementation_state": "MECHANISM_PRESENT",
+      "activation_gates": [
+        "trusted-actions-proof",
+        "operational-observation"
+      ]
+    },
+    {
+      "id": "UAT-02",
+      "source": "prd-v1",
+      "stage": "M2",
+      "behavior": "Gate rejects missing module/timeout as invalid proof",
+      "references": [
+        "runner",
+        "contract"
+      ],
+      "implementation_state": "MECHANISM_PRESENT",
+      "activation_gates": []
+    },
+    {
+      "id": "UAT-03",
+      "source": "prd-v1",
+      "stage": "M3",
+      "behavior": "New commit after review revokes mergeability until reviewed again",
+      "references": [
+        "review"
+      ],
+      "implementation_state": "MECHANISM_PRESENT",
+      "activation_gates": [
+        "owner-security-approval",
+        "independent-reviewer-identity"
+      ]
+    },
+    {
+      "id": "UAT-04",
+      "source": "prd-v1",
+      "stage": "M1",
+      "behavior": "Edited .claude/skills/... or AGENTS.md triggers policy gate despite Markdown",
+      "references": [
+        "policy",
+        "contract"
+      ],
+      "implementation_state": "MECHANISM_PRESENT",
+      "activation_gates": []
+    },
+    {
+      "id": "UAT-05",
+      "source": "prd-v1",
+      "stage": "M2",
+      "behavior": "Required DB test is NOT_TESTED/BLOCKED, not a green success",
+      "references": [
+        "policy",
+        "github"
+      ],
+      "implementation_state": "MECHANISM_PRESENT",
+      "activation_gates": [
+        "trusted-actions-proof"
+      ]
+    },
+    {
+      "id": "UAT-06",
+      "source": "prd-v1",
+      "stage": "M4",
+      "behavior": "Bayes shows queued/not-counted; release cannot claim operational verified",
+      "references": [
+        "operational"
+      ],
+      "implementation_state": "MECHANISM_PRESENT",
+      "activation_gates": [
+        "operational-observation",
+        "authorized-runtime-reruns"
+      ]
+    },
+    {
+      "id": "UAT-07",
+      "source": "prd-v1",
+      "stage": "M2",
+      "behavior": "Input treated only as source content; agent cannot execute embedded directions",
+      "references": [
+        "runner",
+        "source-security"
+      ],
+      "implementation_state": "MECHANISM_PRESENT",
+      "activation_gates": [
+        "trusted-actions-proof"
+      ]
+    },
+    {
+      "id": "UAT-08",
+      "source": "prd-v1",
+      "stage": "M3",
+      "behavior": "New SQL migration or permission change requires explicit owner authorization",
+      "references": [
+        "contract",
+        "review"
+      ],
+      "implementation_state": "MECHANISM_PRESENT",
+      "activation_gates": [
+        "owner-security-approval"
+      ]
+    },
+    {
+      "id": "UAT-09",
+      "source": "prd-v1",
+      "stage": "M5",
+      "behavior": "Risk escalates to highest tier and both relevant specialist skill groups run",
+      "references": [
+        "contract",
+        "ui"
+      ],
+      "implementation_state": "PARTIAL",
+      "activation_gates": [
+        "ui-specialist-adoption"
+      ],
+      "remaining_work": "Highest-risk and mixed specialist routing are covered and all three UI skills exist; running both specialist groups against an independently frozen journey contract and reviewing actual artifacts remain pending."
+    },
+    {
+      "id": "UAT-10",
+      "source": "prd-v1",
+      "stage": "M3",
+      "behavior": "AI assessment recorded but cannot satisfy separate-identity approval",
+      "references": [
+        "review"
+      ],
+      "implementation_state": "MECHANISM_PRESENT",
+      "activation_gates": [
+        "independent-reviewer-identity"
+      ]
+    }
+  ],
+  "activation_gates": [
+    {
+      "id": "owner-security-approval",
+      "state": "PENDING_AUTHORIZATION",
+      "reason": "James must authorize the concrete R3 bootstrap workflow/prompt/policy changes and any later proposed check-publication, permission or GitHub protection activation."
+    },
+    {
+      "id": "independent-reviewer-identity",
+      "state": "PENDING_IDENTITY",
+      "reason": "Claude or Codex is selected for the independent engineering-agent review role; no distinct authorized GitHub reviewer principal is configured. Same-account sign-off remains owner sign-off and cross-model review alone cannot grant GitHub approval."
+    },
+    {
+      "id": "trusted-actions-proof",
+      "state": "PENDING_EXECUTION",
+      "reason": "Land approved orchestration on main, then collect authentic historical-proof run artifacts for exact heads and both contracts."
+    },
+    {
+      "id": "operational-observation",
+      "state": "PENDING_EXECUTION",
+      "reason": "Obtain a deployment receipt and sufficient fixed-cohort observations under the frozen operational window and sample policy."
+    },
+    {
+      "id": "authorized-runtime-reruns",
+      "state": "PENDING_AUTHORIZATION",
+      "reason": "Any production replay or data mutation retains separate authorization; read-only Bayes counts cannot execute a rerun."
+    },
+    {
+      "id": "ui-specialist-adoption",
+      "state": "PENDING_ADOPTION",
+      "reason": "The three named specialist skills and browser evidence mechanisms exist; execute frozen desktop/mobile Hamilton/UI journeys and independently review their exact-build artifacts before adoption acceptance."
+    },
+    {
+      "id": "holdout-and-scorecard-adoption",
+      "state": "PENDING_ADOPTION",
+      "reason": "The native sampled scorecard is implemented, but trusted post-bootstrap collection across real changes, independent private holdout enrollment and measured before/after outcomes remain pending."
+    },
+    {
+      "id": "source-injection-coverage",
+      "state": "PENDING_EXECUTION",
+      "reason": "Offline synthetic PDF/HTML/plain fixtures cover actual normalization, Knox/Rosetta request boundaries and unintended side effects with stubbed providers. Trusted Actions execution and independent acceptance remain pending; live-model obedience has not been scored."
+    }
+  ],
+  "remaining_requirements": [
+    "FR-03",
+    "FR-05",
+    "FR-06",
+    "FR-07",
+    "FR-08",
+    "FR-09",
+    "FR-10",
+    "FR-13",
+    "FR-14",
+    "FR-15",
+    "FR-16",
+    "FR-17",
+    "FR-19",
+    "FR-20",
+    "FR-22",
+    "SEC-02",
+    "SEC-03",
+    "SEC-04",
+    "SEC-05",
+    "SEC-06",
+    "SEC-07",
+    "SEC-08",
+    "AT-02",
+    "AT-04",
+    "AT-06",
+    "AT-07",
+    "AT-08",
+    "AT-09",
+    "AT-10",
+    "UAT-01",
+    "UAT-03",
+    "UAT-05",
+    "UAT-06",
+    "UAT-07",
+    "UAT-08",
+    "UAT-09",
+    "UAT-10"
+  ]
+}

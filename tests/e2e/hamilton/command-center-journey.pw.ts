@@ -11,7 +11,7 @@
  * confirmed change. HAMILTON_SCREENS_DIR=<dir> also saves desktop and phone screenshots.
  */
 import path from "node:path";
-import { expect, test, type Page } from "playwright/test";
+import { expect, test, type Page } from "./evidence";
 import { FIXTURE_USERS, HOME, PEERS, connectFixtureDb, type FixtureDb } from "./fixtures";
 import { signIn } from "./helpers";
 

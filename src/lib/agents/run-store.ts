@@ -4034,6 +4034,21 @@ async function prepareNextAgenticStep(runId: number, { pauseExemptOnly = false, 
          ${JSON.stringify({ step_key: step.stepKey, agent: step.agent })}::jsonb)
     `;
 
+    // Captured by the executor from its own deployment, never from caller-controlled run params.
+    // The same transaction claims the step, so a receipt failure cannot leave unrecorded work running.
+    const deploymentSha = process.env.VERCEL_GIT_COMMIT_SHA;
+    const deploymentEnvironment = process.env.VERCEL_ENV;
+    if (/^[a-f0-9]{40}$/i.test(deploymentSha ?? "") && ["production", "preview", "development"].includes(deploymentEnvironment ?? "")) {
+      await tx`
+        INSERT INTO agent_run_events
+          (agent_run_id, step_id, event_type, status, message, detail)
+        VALUES
+          (${runId}, ${step.id}, 'step.execution', 'running',
+           'Executor deployment identity captured before execution.',
+           ${JSON.stringify({ protocol: 1, deployment_sha: deploymentSha, environment: deploymentEnvironment })}::jsonb)
+      `;
+    }
+
     return { kind: "ready", prepared: { run, step } };
   });
 }

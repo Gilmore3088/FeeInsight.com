@@ -1,0 +1,553 @@
+{
+  "schema_version": 1,
+  "measured_at": "2026-11-07T06:23:22.484Z",
+  "repository": "Gilmore3088/FeeInsight.com",
+  "selection": "Latest ten successful pull_request runs; include only runs with successful unit jobs, excluding docs-only/skipped suites.",
+  "sample_count": 7,
+  "median_elapsed_seconds": 969,
+  "median_runner_seconds": 2220,
+  "currency_cost": "NOT_MEASURED; job duration is runner consumption, not an invoice",
+  "verification_overhead": "NOT_MEASURED until comparable trusted CI runs exist",
+  "overhead_target": 0.15,
+  "excluded_runs": [
+    {
+      "run_id": 41799141477,
+      "reason": "unit jobs skipped"
+    },
+    {
+      "run_id": 41798456975,
+      "reason": "unit jobs skipped"
+    },
+    {
+      "run_id": 41796392015,
+      "reason": "unit jobs skipped"
+    }
+  ],
+  "runs": [
+    {
+      "run_id": 42343678103,
+      "url": "https://github.com/Gilmore3088/FeeInsight.com/actions/runs/42343678103",
+      "head_sha": "9bc227628ca0f8ba059ba7e48f9ed2cc6531ba4a",
+      "started_at": "2026-11-07T05:39:50Z",
+      "updated_at": "2026-11-07T05:55:13Z",
+      "elapsed_seconds": 923,
+      "jobs": [
+        {
+          "id": 128316676523,
+          "name": "changes",
+          "conclusion": "success",
+          "started_at": "2026-11-07T05:39:53Z",
+          "completed_at": "2026-11-07T05:40:05Z",
+          "url": "https://github.com/Gilmore3088/FeeInsight.com/actions/runs/42343678103/job/128316676523"
+        },
+        {
+          "id": 128316728709,
+          "name": "checks",
+          "conclusion": "success",
+          "started_at": "2026-11-07T05:40:07Z",
+          "completed_at": "2026-11-07T05:44:45Z",
+          "url": "https://github.com/Gilmore3088/FeeInsight.com/actions/runs/42343678103/job/128316728709"
+        },
+        {
+          "id": 128316728729,
+          "name": "unit (2)",
+          "conclusion": "success",
+          "started_at": "2026-11-07T05:40:08Z",
+          "completed_at": "2026-11-07T05:55:08Z",
+          "url": "https://github.com/Gilmore3088/FeeInsight.com/actions/runs/42343678103/job/128316728729"
+        },
+        {
+          "id": 128316728747,
+          "name": "e2e",
+          "conclusion": "success",
+          "started_at": "2026-11-07T05:40:08Z",
+          "completed_at": "2026-11-07T05:45:59Z",
+          "url": "https://github.com/Gilmore3088/FeeInsight.com/actions/runs/42343678103/job/128316728747"
+        },
+        {
+          "id": 128316728782,
+          "name": "unit (1)",
+          "conclusion": "success",
+          "started_at": "2026-11-07T05:40:07Z",
+          "completed_at": "2026-11-07T05:45:55Z",
+          "url": "https://github.com/Gilmore3088/FeeInsight.com/actions/runs/42343678103/job/128316728782"
+        },
+        {
+          "id": 128316728790,
+          "name": "fee-audience-sql",
+          "conclusion": "success",
+          "started_at": "2026-11-07T05:40:08Z",
+          "completed_at": "2026-11-07T05:40:27Z",
+          "url": "https://github.com/Gilmore3088/FeeInsight.com/actions/runs/42343678103/job/128316728790"
+        },
+        {
+          "id": 128316728879,
+          "name": "knox-gates",
+          "conclusion": "success",
+          "started_at": "2026-11-07T05:40:08Z",
+          "completed_at": "2026-11-07T05:41:54Z",
+          "url": "https://github.com/Gilmore3088/FeeInsight.com/actions/runs/42343678103/job/128316728879"
+        },
+        {
+          "id": 128319865324,
+          "name": "app-tests",
+          "conclusion": "success",
+          "started_at": "2026-11-07T05:55:10Z",
+          "completed_at": "2026-11-07T05:55:12Z",
+          "url": "https://github.com/Gilmore3088/FeeInsight.com/actions/runs/42343678103/job/128319865324"
+        }
+      ],
+      "runner_seconds": 2016
+    },
+    {
+      "run_id": 42341372322,
+      "url": "https://github.com/Gilmore3088/FeeInsight.com/actions/runs/42341372322",
+      "head_sha": "4ebd26ce257765f3a83936809cbb81b0d5d25edd",
+      "started_at": "2026-11-07T05:07:29Z",
+      "updated_at": "2026-11-07T05:16:54Z",
+      "elapsed_seconds": 565,
+      "jobs": [
+        {
+          "id": 128309649955,
+          "name": "changes",
+          "conclusion": "success",
+          "started_at": "2026-11-07T05:07:54Z",
+          "completed_at": "2026-11-07T05:08:05Z",
+          "url": "https://github.com/Gilmore3088/FeeInsight.com/actions/runs/42341372322/job/128309649955"
+        },
+        {
+          "id": 128309703787,
+          "name": "unit (2)",
+          "conclusion": "success",
+          "started_at": "2026-11-07T05:08:08Z",
+          "completed_at": "2026-11-07T05:16:49Z",
+          "url": "https://github.com/Gilmore3088/FeeInsight.com/actions/runs/42341372322/job/128309703787"
+        },
+        {
+          "id": 128309703788,
+          "name": "checks",
+          "conclusion": "success",
+          "started_at": "2026-11-07T05:08:08Z",
+          "completed_at": "2026-11-07T05:11:18Z",
+          "url": "https://github.com/Gilmore3088/FeeInsight.com/actions/runs/42341372322/job/128309703788"
+        },
+        {
+          "id": 128309703818,
+          "name": "knox-gates",
+          "conclusion": "success",
+          "started_at": "2026-11-07T05:08:08Z",
+          "completed_at": "2026-11-07T05:09:37Z",
+          "url": "https://github.com/Gilmore3088/FeeInsight.com/actions/runs/42341372322/job/128309703818"
+        },
+        {
+          "id": 128309703820,
+          "name": "unit (1)",
+          "conclusion": "success",
+          "started_at": "2026-11-07T05:08:08Z",
+          "completed_at": "2026-11-07T05:13:51Z",
+          "url": "https://github.com/Gilmore3088/FeeInsight.com/actions/runs/42341372322/job/128309703820"
+        },
+        {
+          "id": 128309703824,
+          "name": "e2e",
+          "conclusion": "success",
+          "started_at": "2026-11-07T05:08:08Z",
+          "completed_at": "2026-11-07T05:12:51Z",
+          "url": "https://github.com/Gilmore3088/FeeInsight.com/actions/runs/42341372322/job/128309703824"
+        },
+        {
+          "id": 128309703938,
+          "name": "fee-audience-sql",
+          "conclusion": "success",
+          "started_at": "2026-11-07T05:08:09Z",
+          "completed_at": "2026-11-07T05:08:24Z",
+          "url": "https://github.com/Gilmore3088/FeeInsight.com/actions/runs/42341372322/job/128309703938"
+        },
+        {
+          "id": 128311638993,
+          "name": "app-tests",
+          "conclusion": "success",
+          "started_at": "2026-11-07T05:16:51Z",
+          "completed_at": "2026-11-07T05:16:54Z",
+          "url": "https://github.com/Gilmore3088/FeeInsight.com/actions/runs/42341372322/job/128311638993"
+        }
+      ],
+      "runner_seconds": 1455
+    },
+    {
+      "run_id": 42340273168,
+      "url": "https://github.com/Gilmore3088/FeeInsight.com/actions/runs/42340273168",
+      "head_sha": "b36e81840e0bc91707d94b04021cbcea803a795b",
+      "started_at": "2026-11-07T04:51:52Z",
+      "updated_at": "2026-11-07T05:05:30Z",
+      "elapsed_seconds": 818,
+      "jobs": [
+        {
+          "id": 128306182362,
+          "name": "changes",
+          "conclusion": "success",
+          "started_at": "2026-11-07T04:51:56Z",
+          "completed_at": "2026-11-07T04:52:07Z",
+          "url": "https://github.com/Gilmore3088/FeeInsight.com/actions/runs/42340273168/job/128306182362"
+        },
+        {
+          "id": 128306233984,
+          "name": "e2e",
+          "conclusion": "success",
+          "started_at": "2026-11-07T04:52:10Z",
+          "completed_at": "2026-11-07T04:56:32Z",
+          "url": "https://github.com/Gilmore3088/FeeInsight.com/actions/runs/42340273168/job/128306233984"
+        },
+        {
+          "id": 128306233985,
+          "name": "checks",
+          "conclusion": "success",
+          "started_at": "2026-11-07T04:52:09Z",
+          "completed_at": "2026-11-07T04:56:13Z",
+          "url": "https://github.com/Gilmore3088/FeeInsight.com/actions/runs/42340273168/job/128306233985"
+        },
+        {
+          "id": 128306233991,
+          "name": "knox-gates",
+          "conclusion": "success",
+          "started_at": "2026-11-07T04:52:10Z",
+          "completed_at": "2026-11-07T04:53:42Z",
+          "url": "https://github.com/Gilmore3088/FeeInsight.com/actions/runs/42340273168/job/128306233991"
+        },
+        {
+          "id": 128306233997,
+          "name": "fee-audience-sql",
+          "conclusion": "success",
+          "started_at": "2026-11-07T04:52:10Z",
+          "completed_at": "2026-11-07T04:52:28Z",
+          "url": "https://github.com/Gilmore3088/FeeInsight.com/actions/runs/42340273168/job/128306233997"
+        },
+        {
+          "id": 128306234081,
+          "name": "unit (1)",
+          "conclusion": "success",
+          "started_at": "2026-11-07T04:52:10Z",
+          "completed_at": "2026-11-07T05:00:08Z",
+          "url": "https://github.com/Gilmore3088/FeeInsight.com/actions/runs/42340273168/job/128306234081"
+        },
+        {
+          "id": 128306234088,
+          "name": "unit (2)",
+          "conclusion": "success",
+          "started_at": "2026-11-07T04:52:10Z",
+          "completed_at": "2026-11-07T05:05:24Z",
+          "url": "https://github.com/Gilmore3088/FeeInsight.com/actions/runs/42340273168/job/128306234088"
+        },
+        {
+          "id": 128309097032,
+          "name": "app-tests",
+          "conclusion": "success",
+          "started_at": "2026-11-07T05:05:26Z",
+          "completed_at": "2026-11-07T05:05:29Z",
+          "url": "https://github.com/Gilmore3088/FeeInsight.com/actions/runs/42340273168/job/128309097032"
+        }
+      ],
+      "runner_seconds": 1902
+    },
+    {
+      "run_id": 42132209552,
+      "url": "https://github.com/Gilmore3088/FeeInsight.com/actions/runs/42132209552",
+      "head_sha": "89b0b2c2dbcbc30c933a1308e03fd60a6759bdfc",
+      "started_at": "2026-11-05T23:48:41Z",
+      "updated_at": "2026-11-06T00:06:15Z",
+      "elapsed_seconds": 1054,
+      "jobs": [
+        {
+          "id": 127611348464,
+          "name": "changes",
+          "conclusion": "success",
+          "started_at": "2026-11-05T23:48:44Z",
+          "completed_at": "2026-11-05T23:48:55Z",
+          "url": "https://github.com/Gilmore3088/FeeInsight.com/actions/runs/42132209552/job/127611348464"
+        },
+        {
+          "id": 127611442544,
+          "name": "checks",
+          "conclusion": "success",
+          "started_at": "2026-11-05T23:48:58Z",
+          "completed_at": "2026-11-05T23:53:41Z",
+          "url": "https://github.com/Gilmore3088/FeeInsight.com/actions/runs/42132209552/job/127611442544"
+        },
+        {
+          "id": 127611442593,
+          "name": "unit (1)",
+          "conclusion": "success",
+          "started_at": "2026-11-05T23:48:58Z",
+          "completed_at": "2026-11-05T23:59:29Z",
+          "url": "https://github.com/Gilmore3088/FeeInsight.com/actions/runs/42132209552/job/127611442593"
+        },
+        {
+          "id": 127611442611,
+          "name": "knox-gates",
+          "conclusion": "success",
+          "started_at": "2026-11-05T23:48:58Z",
+          "completed_at": "2026-11-05T23:50:42Z",
+          "url": "https://github.com/Gilmore3088/FeeInsight.com/actions/runs/42132209552/job/127611442611"
+        },
+        {
+          "id": 127611442630,
+          "name": "e2e",
+          "conclusion": "success",
+          "started_at": "2026-11-05T23:48:58Z",
+          "completed_at": "2026-11-05T23:55:19Z",
+          "url": "https://github.com/Gilmore3088/FeeInsight.com/actions/runs/42132209552/job/127611442630"
+        },
+        {
+          "id": 127611442654,
+          "name": "unit (2)",
+          "conclusion": "success",
+          "started_at": "2026-11-05T23:48:58Z",
+          "completed_at": "2026-11-06T00:06:07Z",
+          "url": "https://github.com/Gilmore3088/FeeInsight.com/actions/runs/42132209552/job/127611442654"
+        },
+        {
+          "id": 127611442722,
+          "name": "fee-audience-sql",
+          "conclusion": "success",
+          "started_at": "2026-11-05T23:48:58Z",
+          "completed_at": "2026-11-05T23:49:15Z",
+          "url": "https://github.com/Gilmore3088/FeeInsight.com/actions/runs/42132209552/job/127611442722"
+        },
+        {
+          "id": 127618521694,
+          "name": "app-tests",
+          "conclusion": "success",
+          "started_at": "2026-11-06T00:06:11Z",
+          "completed_at": "2026-11-06T00:06:14Z",
+          "url": "https://github.com/Gilmore3088/FeeInsight.com/actions/runs/42132209552/job/127618521694"
+        }
+      ],
+      "runner_seconds": 2459
+    },
+    {
+      "run_id": 41999717674,
+      "url": "https://github.com/Gilmore3088/FeeInsight.com/actions/runs/41999717674",
+      "head_sha": "517db7e721d2f4070dde005b11e16c46a4d2f8da",
+      "started_at": "2026-11-05T09:06:58Z",
+      "updated_at": "2026-11-05T09:30:39Z",
+      "elapsed_seconds": 1421,
+      "jobs": [
+        {
+          "id": 127151581639,
+          "name": "changes",
+          "conclusion": "success",
+          "started_at": "2026-11-05T09:07:01Z",
+          "completed_at": "2026-11-05T09:07:11Z",
+          "url": "https://github.com/Gilmore3088/FeeInsight.com/actions/runs/41999717674/job/127151581639"
+        },
+        {
+          "id": 127151683983,
+          "name": "knox-gates",
+          "conclusion": "success",
+          "started_at": "2026-11-05T09:07:14Z",
+          "completed_at": "2026-11-05T09:08:39Z",
+          "url": "https://github.com/Gilmore3088/FeeInsight.com/actions/runs/41999717674/job/127151683983"
+        },
+        {
+          "id": 127151683995,
+          "name": "e2e",
+          "conclusion": "success",
+          "started_at": "2026-11-05T09:07:14Z",
+          "completed_at": "2026-11-05T09:13:42Z",
+          "url": "https://github.com/Gilmore3088/FeeInsight.com/actions/runs/41999717674/job/127151683995"
+        },
+        {
+          "id": 127151684149,
+          "name": "unit (1)",
+          "conclusion": "success",
+          "started_at": "2026-11-05T09:07:14Z",
+          "completed_at": "2026-11-05T09:13:25Z",
+          "url": "https://github.com/Gilmore3088/FeeInsight.com/actions/runs/41999717674/job/127151684149"
+        },
+        {
+          "id": 127151684195,
+          "name": "unit (2)",
+          "conclusion": "success",
+          "started_at": "2026-11-05T09:07:14Z",
+          "completed_at": "2026-11-05T09:25:30Z",
+          "url": "https://github.com/Gilmore3088/FeeInsight.com/actions/runs/41999717674/job/127151684195"
+        },
+        {
+          "id": 127151684233,
+          "name": "checks",
+          "conclusion": "success",
+          "started_at": "2026-11-05T09:07:15Z",
+          "completed_at": "2026-11-05T09:11:28Z",
+          "url": "https://github.com/Gilmore3088/FeeInsight.com/actions/runs/41999717674/job/127151684233"
+        },
+        {
+          "id": 127151684375,
+          "name": "fee-audience-sql",
+          "conclusion": "success",
+          "started_at": "2026-11-05T09:07:14Z",
+          "completed_at": "2026-11-05T09:07:27Z",
+          "url": "https://github.com/Gilmore3088/FeeInsight.com/actions/runs/41999717674/job/127151684375"
+        },
+        {
+          "id": 127160124439,
+          "name": "app-tests",
+          "conclusion": "success",
+          "started_at": "2026-11-05T09:30:34Z",
+          "completed_at": "2026-11-05T09:30:38Z",
+          "url": "https://github.com/Gilmore3088/FeeInsight.com/actions/runs/41999717674/job/127160124439"
+        }
+      ],
+      "runner_seconds": 2220
+    },
+    {
+      "run_id": 41992491527,
+      "url": "https://github.com/Gilmore3088/FeeInsight.com/actions/runs/41992491527",
+      "head_sha": "019bb64e3975a93261991817c0175c15a8a4e135",
+      "started_at": "2026-11-05T08:10:51Z",
+      "updated_at": "2026-11-05T08:28:45Z",
+      "elapsed_seconds": 1074,
+      "jobs": [
+        {
+          "id": 127127765474,
+          "name": "changes",
+          "conclusion": "success",
+          "started_at": "2026-11-05T08:10:55Z",
+          "completed_at": "2026-11-05T08:11:05Z",
+          "url": "https://github.com/Gilmore3088/FeeInsight.com/actions/runs/41992491527/job/127127765474"
+        },
+        {
+          "id": 127127853072,
+          "name": "unit (2)",
+          "conclusion": "success",
+          "started_at": "2026-11-05T08:11:07Z",
+          "completed_at": "2026-11-05T08:28:38Z",
+          "url": "https://github.com/Gilmore3088/FeeInsight.com/actions/runs/41992491527/job/127127853072"
+        },
+        {
+          "id": 127127853102,
+          "name": "knox-gates",
+          "conclusion": "success",
+          "started_at": "2026-11-05T08:11:07Z",
+          "completed_at": "2026-11-05T08:12:55Z",
+          "url": "https://github.com/Gilmore3088/FeeInsight.com/actions/runs/41992491527/job/127127853102"
+        },
+        {
+          "id": 127127853120,
+          "name": "unit (1)",
+          "conclusion": "success",
+          "started_at": "2026-11-05T08:11:08Z",
+          "completed_at": "2026-11-05T08:21:58Z",
+          "url": "https://github.com/Gilmore3088/FeeInsight.com/actions/runs/41992491527/job/127127853120"
+        },
+        {
+          "id": 127127853211,
+          "name": "e2e",
+          "conclusion": "success",
+          "started_at": "2026-11-05T08:11:08Z",
+          "completed_at": "2026-11-05T08:17:42Z",
+          "url": "https://github.com/Gilmore3088/FeeInsight.com/actions/runs/41992491527/job/127127853211"
+        },
+        {
+          "id": 127127853317,
+          "name": "fee-audience-sql",
+          "conclusion": "success",
+          "started_at": "2026-11-05T08:11:08Z",
+          "completed_at": "2026-11-05T08:11:26Z",
+          "url": "https://github.com/Gilmore3088/FeeInsight.com/actions/runs/41992491527/job/127127853317"
+        },
+        {
+          "id": 127127853879,
+          "name": "checks",
+          "conclusion": "success",
+          "started_at": "2026-11-05T08:11:08Z",
+          "completed_at": "2026-11-05T08:16:05Z",
+          "url": "https://github.com/Gilmore3088/FeeInsight.com/actions/runs/41992491527/job/127127853879"
+        },
+        {
+          "id": 127135126627,
+          "name": "app-tests",
+          "conclusion": "success",
+          "started_at": "2026-11-05T08:28:41Z",
+          "completed_at": "2026-11-05T08:28:45Z",
+          "url": "https://github.com/Gilmore3088/FeeInsight.com/actions/runs/41992491527/job/127135126627"
+        }
+      ],
+      "runner_seconds": 2532
+    },
+    {
+      "run_id": 41792992806,
+      "url": "https://github.com/Gilmore3088/FeeInsight.com/actions/runs/41792992806",
+      "head_sha": "c202d98607ae0f3a139cca260651ea186181f8de",
+      "started_at": "2026-11-04T07:32:38Z",
+      "updated_at": "2026-11-04T07:48:47Z",
+      "elapsed_seconds": 969,
+      "jobs": [
+        {
+          "id": 126450454164,
+          "name": "changes",
+          "conclusion": "success",
+          "started_at": "2026-11-04T07:32:42Z",
+          "completed_at": "2026-11-04T07:32:56Z",
+          "url": "https://github.com/Gilmore3088/FeeInsight.com/actions/runs/41792992806/job/126450454164"
+        },
+        {
+          "id": 126450560955,
+          "name": "fee-audience-sql",
+          "conclusion": "success",
+          "started_at": "2026-11-04T07:32:59Z",
+          "completed_at": "2026-11-04T07:33:14Z",
+          "url": "https://github.com/Gilmore3088/FeeInsight.com/actions/runs/41792992806/job/126450560955"
+        },
+        {
+          "id": 126450560986,
+          "name": "e2e",
+          "conclusion": "success",
+          "started_at": "2026-11-04T07:32:59Z",
+          "completed_at": "2026-11-04T07:39:45Z",
+          "url": "https://github.com/Gilmore3088/FeeInsight.com/actions/runs/41792992806/job/126450560986"
+        },
+        {
+          "id": 126450561044,
+          "name": "unit (2)",
+          "conclusion": "success",
+          "started_at": "2026-11-04T07:32:59Z",
+          "completed_at": "2026-11-04T07:48:40Z",
+          "url": "https://github.com/Gilmore3088/FeeInsight.com/actions/runs/41792992806/job/126450561044"
+        },
+        {
+          "id": 126450561066,
+          "name": "checks",
+          "conclusion": "success",
+          "started_at": "2026-11-04T07:33:04Z",
+          "completed_at": "2026-11-04T07:37:52Z",
+          "url": "https://github.com/Gilmore3088/FeeInsight.com/actions/runs/41792992806/job/126450561066"
+        },
+        {
+          "id": 126450561121,
+          "name": "unit (1)",
+          "conclusion": "success",
+          "started_at": "2026-11-04T07:32:59Z",
+          "completed_at": "2026-11-04T07:42:34Z",
+          "url": "https://github.com/Gilmore3088/FeeInsight.com/actions/runs/41792992806/job/126450561121"
+        },
+        {
+          "id": 126450561131,
+          "name": "knox-gates",
+          "conclusion": "success",
+          "started_at": "2026-11-04T07:32:59Z",
+          "completed_at": "2026-11-04T07:34:29Z",
+          "url": "https://github.com/Gilmore3088/FeeInsight.com/actions/runs/41792992806/job/126450561131"
+        },
+        {
+          "id": 126456406646,
+          "name": "app-tests",
+          "conclusion": "success",
+          "started_at": "2026-11-04T07:48:43Z",
+          "completed_at": "2026-11-04T07:48:46Z",
+          "url": "https://github.com/Gilmore3088/FeeInsight.com/actions/runs/41792992806/job/126456406646"
+        }
+      ],
+      "runner_seconds": 2332
+    }
+  ]
+}

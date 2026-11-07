@@ -88,13 +88,14 @@ describe("Rosetta paid read (pass 3)", () => {
 
     expect(result).toMatchObject({ selected: 1, processed: 1, succeeded: 1, failed: 0, budgetStopped: false });
     expect(result.costMicrousd).toBeGreaterThan(0);
-    const params = create.mock.calls[0][0] as { model: string; messages: Array<{ content: Array<Record<string, unknown>> }> };
+    const params = create.mock.calls[0][0] as { model: string; system: Array<{ text: string }>; messages: Array<{ content: Array<Record<string, unknown>> }> };
     expect(params.model).toBe(PAID_PASS_MODELS.read());
     expect(params.messages[0].content[0]).toMatchObject({
       type: "document",
       source: { type: "base64", media_type: "application/pdf", data: Buffer.from(pdfBytes).toString("base64") },
     });
-    expect(params.messages[0].content[1]).toEqual({ type: "text", text: PAID_READ_PROMPT });
+    expect(params.messages[0].content).toHaveLength(1);
+    expect(params.system[0].text).toContain(PAID_READ_PROMPT);
     expect(trackAnthropicRequest).toHaveBeenCalledWith(expect.objectContaining({ agent: "rosetta", operation: "paid_read", agentRunId: 900 }), expect.any(Function), expect.any(Function));
 
     const insert = db.mock.calls.find((call) => templateText(call[0]).includes("INSERT INTO agent_source_texts"));

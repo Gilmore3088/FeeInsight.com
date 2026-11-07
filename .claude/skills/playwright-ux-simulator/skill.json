@@ -1,0 +1,41 @@
+{
+  "id": "playwright-ux-simulator",
+  "version": 1,
+  "maintainer": "atlas",
+  "owning_agent": "hamilton",
+  "inputs": [
+    "frozen journey contract and exact candidate",
+    "isolated local fixture database"
+  ],
+  "outputs": [
+    "executed browser results",
+    "screenshots, console/request evidence and identity manifest"
+  ],
+  "data_access": [],
+  "external_endpoints": [],
+  "provider_inference": false,
+  "budget": "local deterministic browser tests; no paid calls",
+  "triggering_workflows": [
+    "UI journey acceptance or Hamilton flow change"
+  ],
+  "evaluation_suite": [
+    "tests/e2e/hamilton/research-journey.pw.ts",
+    "tests/e2e/hamilton/reports-journey.pw.ts",
+    "tests/e2e/hamilton/command-center-journey.pw.ts"
+  ],
+  "failure_behavior": "Missing build identity, skipped tests, browser failure or incomplete capture stays unverified.",
+  "approval_requirements": "No production mutation or provider activation is authorized by running a journey.",
+  "dependencies": [
+    {
+      "path": "tests/e2e/hamilton/playwright.config.ts"
+    },
+    {
+      "path": "tests/e2e/hamilton/serve.mjs"
+    }
+  ],
+  "abstain_when": [
+    "the database is not loopback-only",
+    "required browser or frozen source is unavailable"
+  ],
+  "last_validated": "2026-11-06"
+}

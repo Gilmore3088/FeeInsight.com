@@ -1,0 +1,203 @@
+{
+  "schema_version": "1.1",
+  "contract_id": "EV-FOUNDATION-1048",
+  "issue": "#1048",
+  "risk_tier": "R3",
+  "base_sha": "a08add872f0e56a9926ed157a387eb6491389da7",
+  "execution_files": [
+    {
+      "path": "src/lib/engineering-verification/__fixtures__/knox-2285.json",
+      "sha256": "457232128d20222e6826d415320c01ab723a2b0d83f578f996ffa660ce3c5225"
+    },
+    {
+      "path": "src/lib/engineering-verification/__fixtures__/policy-1048.json",
+      "sha256": "30d208d57556c25fd55fe02f9f3b780afe999c07425078bf4cc6e150a87ed4b1"
+    },
+    {
+      "path": "src/lib/engineering-verification/child.mjs",
+      "sha256": "768b1c10b5d6d55190118a6df403476f3da710ce5a4a40ce72f5d4192b65f7b2"
+    },
+    {
+      "path": "src/lib/engineering-verification/contract.mjs",
+      "sha256": "18772308ea183fe5566e5f8a9b4a26dc9180576e5348f4b27ba3e071f9d5154e"
+    },
+    {
+      "path": "src/lib/engineering-verification/loader.mjs",
+      "sha256": "93a9c271089e47092dff1b168cc60f79c5b39f39b048d64b0f9d54d9c1cb0ba5"
+    },
+    {
+      "path": "src/lib/engineering-verification/pilot.mjs",
+      "sha256": "9d0dda8b99705c31b0fc8c81160ad11cf26d7b47be9b25929df4f4563a7267d3"
+    },
+    {
+      "path": "src/lib/engineering-verification/policy-pilot.mjs",
+      "sha256": "e91c76facc740efda15ea99f18716ce6108d889d20df7e2d05ac7d093b1d19fd"
+    },
+    {
+      "path": "src/lib/engineering-verification/runner.mjs",
+      "sha256": "602b58d4fdfecf34aa78b4c8553e2396a5d3ec95c7a0336228b5370f755ba552"
+    },
+    {
+      "path": "src/lib/engineering-verification/runtime.json",
+      "sha256": "10d1b652ad69c2d5ebedcdd33b85914f92c24ebbf428d2ad0aaf8ee0d0f160a2"
+    }
+  ],
+  "scope": [
+    ".claude/skills/buyer-journey-mapper/SKILL.md",
+    ".claude/skills/buyer-journey-mapper/skill.json",
+    ".claude/skills/playwright-ux-simulator/SKILL.md",
+    ".claude/skills/playwright-ux-simulator/skill.json",
+    ".claude/skills/ux-ui-auditor/SKILL.md",
+    ".claude/skills/ux-ui-auditor/skill.json",
+    ".github/PULL_REQUEST_TEMPLATE.md",
+    ".github/workflows/engineering-verification-gate.yml",
+    ".github/workflows/engineering-verification.yml",
+    ".github/workflows/test.yml",
+    "docs/project/LESSONS.md",
+    "docs/project/acceptance/engineering/1048.json",
+    "docs/project/acceptance/engineering/2285.json",
+    "docs/project/acceptance/engineering/README.md",
+    "docs/project/acceptance/engineering/activation-proposal.md",
+    "docs/project/acceptance/engineering/baseline.json",
+    "docs/project/acceptance/engineering/design-v1/prd-v1.md",
+    "docs/project/acceptance/engineering/design-v1/technical-design-v1.md",
+    "docs/project/acceptance/engineering/plan-validation.md",
+    "docs/project/acceptance/engineering/program.json",
+    "docs/project/findings/2026-11-06-source-document-instruction-boundary.md",
+    "src/app/api/admin/engineering-verification/route.test.ts",
+    "src/app/api/admin/engineering-verification/route.ts",
+    "src/lib/agents/atlas/AGENTS.md",
+    "src/lib/agents/bayes/manifests.ts",
+    "src/lib/agents/knox/AGENTS.md",
+    "src/lib/agents/knox/paid-extract.test.ts",
+    "src/lib/agents/knox/paid-extract.ts",
+    "src/lib/agents/knox/role-lessons.ts",
+    "src/lib/agents/rosetta/AGENTS.md",
+    "src/lib/agents/rosetta/paid-read.test.ts",
+    "src/lib/agents/rosetta/paid-read.ts",
+    "src/lib/agents/rosetta/role-lessons.ts",
+    "src/lib/agents/run-store.test.ts",
+    "src/lib/agents/run-store.ts",
+    "src/lib/agents/source-data-boundary.ts",
+    "src/lib/api-hardening/policies.ts",
+    "src/lib/engineering-verification/__fixtures__/knox-2285.json",
+    "src/lib/engineering-verification/__fixtures__/policy-1048.json",
+    "src/lib/engineering-verification/__fixtures__/source-injection/fee-schedule.html",
+    "src/lib/engineering-verification/__fixtures__/source-injection/fee-schedule.pdf",
+    "src/lib/engineering-verification/__fixtures__/source-injection/fee-schedule.txt",
+    "src/lib/engineering-verification/__fixtures__/source-injection/manifest.json",
+    "src/lib/engineering-verification/browser-evidence.d.mts",
+    "src/lib/engineering-verification/browser-evidence.mjs",
+    "src/lib/engineering-verification/browser-evidence.test.ts",
+    "src/lib/engineering-verification/child.mjs",
+    "src/lib/engineering-verification/cli.mjs",
+    "src/lib/engineering-verification/contract.d.mts",
+    "src/lib/engineering-verification/contract.mjs",
+    "src/lib/engineering-verification/contract.test.ts",
+    "src/lib/engineering-verification/events.mjs",
+    "src/lib/engineering-verification/events.test.ts",
+    "src/lib/engineering-verification/evidence.d.mts",
+    "src/lib/engineering-verification/evidence.mjs",
+    "src/lib/engineering-verification/evidence.test.ts",
+    "src/lib/engineering-verification/github.mjs",
+    "src/lib/engineering-verification/github.test.ts",
+    "src/lib/engineering-verification/loader.mjs",
+    "src/lib/engineering-verification/pilot.d.mts",
+    "src/lib/engineering-verification/pilot.mjs",
+    "src/lib/engineering-verification/pilot.test.ts",
+    "src/lib/engineering-verification/policy-pilot.mjs",
+    "src/lib/engineering-verification/policy-pilot.test.ts",
+    "src/lib/engineering-verification/policy.json",
+    "src/lib/engineering-verification/program.mjs",
+    "src/lib/engineering-verification/program.test.ts",
+    "src/lib/engineering-verification/proof.d.mts",
+    "src/lib/engineering-verification/proof.mjs",
+    "src/lib/engineering-verification/proof.test.ts",
+    "src/lib/engineering-verification/runner.d.mts",
+    "src/lib/engineering-verification/runner.mjs",
+    "src/lib/engineering-verification/runner.test.ts",
+    "src/lib/engineering-verification/runtime.json",
+    "src/lib/engineering-verification/runtime.test.ts",
+    "src/lib/engineering-verification/runtime.ts",
+    "src/lib/engineering-verification/scope.mjs",
+    "src/lib/engineering-verification/scope.test.ts",
+    "src/lib/engineering-verification/scorecard.d.mts",
+    "src/lib/engineering-verification/scorecard.mjs",
+    "src/lib/engineering-verification/scorecard.test.ts",
+    "src/lib/engineering-verification/source-injection.test.ts",
+    "src/lib/engineering-verification/workflows.test.ts",
+    "src/lib/skills/manifest.test.ts",
+    "src/lib/skills/manifest.ts",
+    "tests/e2e/hamilton/board-brief-journey.pw.ts",
+    "tests/e2e/hamilton/command-center-journey.pw.ts",
+    "tests/e2e/hamilton/evidence.ts",
+    "tests/e2e/hamilton/playwright.config.ts",
+    "tests/e2e/hamilton/reports-journey.pw.ts",
+    "tests/e2e/hamilton/research-journey.pw.ts",
+    "tests/e2e/hamilton/serve.mjs"
+  ],
+  "required_skills": [
+    "adversarial-document-testing",
+    "audit-data",
+    "buyer-journey-mapper",
+    "diagnosing-bugs",
+    "error-to-test",
+    "fee-evaluation",
+    "playwright-ux-simulator",
+    "recover",
+    "report-reconciliation",
+    "tdd",
+    "ux-ui-auditor"
+  ],
+  "requirements": [
+    {
+      "id": "FOUNDATION-1048-01",
+      "behavior": "Payment webhooks, provider access and automation stop controls route to R3 regardless of an author risk label.",
+      "authority": "Engineering Verification PRD SEC-04 and FR-02: payment/provider/automation controls require R3 routing; executable and protected policy files must never use the documentation shortcut. These are synthetic repository-policy examples, not bank-fee accuracy evidence.",
+      "test_id": "engineering-policy-risk",
+      "test_path": "src/lib/engineering-verification/policy-pilot.test.ts",
+      "fixture_path": "src/lib/engineering-verification/__fixtures__/policy-1048.json",
+      "adapter_path": "src/lib/engineering-verification/policy-pilot.mjs",
+      "fixture_sha256": "30d208d57556c25fd55fe02f9f3b780afe999c07425078bf4cc6e150a87ed4b1",
+      "test_sha256": "8608e5bee538a650bb35acb4d40904a37b9fb27cdf7fee384395b8f36cc5c27b",
+      "adapter_sha256": "e91c76facc740efda15ea99f18716ce6108d889d20df7e2d05ac7d093b1d19fd",
+      "baseline_expectation": "FAIL",
+      "baseline_failure_assertion_ids": [
+        "stripe-webhook-risk",
+        "provider-access-risk",
+        "automation-control-risk"
+      ],
+      "assertion_ids": [
+        "stripe-webhook-risk",
+        "provider-access-risk",
+        "automation-control-risk"
+      ],
+      "failure_signature": "Stripe webhook code must route to R3"
+    },
+    {
+      "id": "FOUNDATION-1048-02",
+      "behavior": "Executable SQL and protected agent or skill instructions cannot take the documentation shortcut; an inert unprotected Markdown document keeps the shortcut.",
+      "authority": "Engineering Verification PRD SEC-04 and FR-02: payment/provider/automation controls require R3 routing; executable and protected policy files must never use the documentation shortcut. These are synthetic repository-policy examples, not bank-fee accuracy evidence.",
+      "test_id": "engineering-policy-fast-path",
+      "test_path": "src/lib/engineering-verification/policy-pilot.test.ts",
+      "fixture_path": "src/lib/engineering-verification/__fixtures__/policy-1048.json",
+      "adapter_path": "src/lib/engineering-verification/policy-pilot.mjs",
+      "fixture_sha256": "30d208d57556c25fd55fe02f9f3b780afe999c07425078bf4cc6e150a87ed4b1",
+      "test_sha256": "8608e5bee538a650bb35acb4d40904a37b9fb27cdf7fee384395b8f36cc5c27b",
+      "adapter_sha256": "e91c76facc740efda15ea99f18716ce6108d889d20df7e2d05ac7d093b1d19fd",
+      "baseline_expectation": "FAIL",
+      "baseline_failure_assertion_ids": [
+        "executable-doc-no-shortcut"
+      ],
+      "assertion_ids": [
+        "executable-doc-no-shortcut",
+        "agent-policy-no-shortcut",
+        "skill-policy-no-shortcut",
+        "inert-doc-shortcut"
+      ],
+      "failure_signature": "Executable SQL under docs must not use the documentation shortcut"
+    }
+  ],
+  "production_boundary": "NO_PROD_MUTATION",
+  "human_approval_required": true
+}
