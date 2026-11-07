@@ -1532,6 +1532,14 @@ function Matrix({ set, fee, selectedId, highlight, onSelect, onFee }: ViewProps 
   );
 }
 
+/** A fee's own price, or its published range when its accounts are priced differently. */
+function priceSpan(f: { amount: number; prices?: { amount: number }[] }): string {
+  const amounts = f.prices && f.prices.length > 1 ? f.prices.map((p) => p.amount) : [f.amount];
+  const low = Math.min(...amounts);
+  const high = Math.max(...amounts);
+  return low === high ? money(f.amount) : `${money(low)} to ${money(high)}`;
+}
+
 /** One institution's evidence for every fee, the clicked fee first: amounts, account prices, conditions, the schedule and its date. */
 function Evidence({ inst, focus, set, onClose }: { inst: ExplorerInstitution; focus: ExplorerFeeKey; set: PeerExplorerSet; onClose: () => void }) {
   const keys = [focus, ...EXPLORER_FEE_KEYS.filter((key) => key !== focus)];
@@ -1553,7 +1561,7 @@ function Evidence({ inst, focus, set, onClose }: { inst: ExplorerInstitution; fo
             <li key={key} className={`rounded-md border bg-surface-0 px-3 py-2 ${key === focus ? "border-ink" : "border-border"}`}>
               <p className="flex items-baseline justify-between gap-2">
                 <span className="font-medium text-ink">{EXPLORER_FEE_LABELS[key]}</span>
-                <span className="tabular-nums font-semibold text-ink">{f ? money(f.amount) : <span className="font-normal text-ink-muted">Not published</span>}</span>
+                <span className="tabular-nums font-semibold text-ink">{f ? priceSpan(f) : <span className="font-normal text-ink-muted">Not published</span>}</span>
               </p>
               {f && (
                 <p className="text-[12px] text-ink-muted">
