@@ -133,6 +133,9 @@ const REPORT_GAP_MISREAD = "report-ready gap: schedule on file but fees misread 
  * its request (`requested` tier), and after that it runs directly only on another tier. Until Oct 15 a request re-ran every PRIORITY_RETRY_HOURS with no end (506 re-runs
  * of 71 banks since Oct 7; 28 of the banks had no new or taken-down fee from any re-run).
  */
+/** James's 8-bank daily review cohort, re-read under Knox v186 (Nov 7, #1026). */
+const COHORT_V186_REREAD: ReadonlySet<number> = new Set([395, 2267, 4888, 5410, 6109, 7229, 7723, 7815]);
+
 export const PRIORITY_INSTITUTION_REQUESTS: readonly PriorityInstitutionRequest[] = [
   // $10B+ banks whose current page Knox v57 reads correctly (Arvest's $17 overdraft row, Old
   // National's monthly fee names), still unread at v57 while AR and IN lanes queue (2026-10-09).
@@ -370,7 +373,16 @@ export const PRIORITY_INSTITUTION_REQUESTS: readonly PriorityInstitutionRequest[
     [8569, "Rally Federal Credit Union"],
     [8594, "Ithink Financial Federal Credit Union"],
     [8625, "St. Cloud Financial Federal Credit Union"],
-  ] as const).map(([institutionId, institutionName]) => ({
+  ] as const).map(([institutionId, institutionName]) => (COHORT_V186_REREAD.has(institutionId) ? {
+    // Nov 7: Knox v186 (#2997) reads the leader-column rows James's review found missing on his 8
+    // banks (Austin's and Utility District's wires, Rabun's 3x10 box); the request ends only on a
+    // read under v186 (findings/2026-11-07-cohort-knox-misses-leader-columns.md).
+    institutionId,
+    institutionName,
+    reason: "Daily review cohort: Knox v186 leader-column rows reach this bank's live fees",
+    requestedAt: "2026-11-07T07:00:00Z",
+    minExtractVersion: 186,
+  } : {
     institutionId,
     institutionName,
     reason: "Bounded live slice: today's Knox v184 fixes reach this bank's live fees",

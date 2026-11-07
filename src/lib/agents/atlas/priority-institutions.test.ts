@@ -59,6 +59,15 @@ describe("priority institutions", () => {
     expect(ids).toContain(8109);
   });
 
+  it("asks for a Knox v186 read of James's 8 review banks and keeps the rest of the slice at v184", () => {
+    const byId = new Map(PRIORITY_INSTITUTION_REQUESTS.map((request) => [request.institutionId, request]));
+    for (const id of [395, 2267, 4888, 5410, 6109, 7229, 7723, 7815]) {
+      expect(byId.get(id)?.minExtractVersion, String(id)).toBe(186);
+      expect(byId.get(id)?.requestedAt, String(id)).toBe("2026-11-07T07:00:00Z");
+    }
+    expect(byId.get(3457)?.minExtractVersion).toBe(184);
+  });
+
   it("ranks hand-found schedules, then requests, then large banks with no live overdraft fee", async () => {
     const { db, calls } = createDb(() => [
       { id: "1", institution_name: "JPMorgan Chase Bank, N.A.", state_code: "oh ", tier: "1", hand_link_id: "2070" },
