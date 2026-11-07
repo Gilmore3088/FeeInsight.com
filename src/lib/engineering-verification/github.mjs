@@ -62,8 +62,9 @@ export async function collectGithubEvidence({ repository, prNumber, token, requi
     }),
   ]);
   const runs = workflow ? await capture('CI runs', () => pages(`/actions/workflows/${workflow.id}/runs?head_sha=${headSha}`, 'workflow_runs')) : [];
-  const run = runs.filter(row => row.workflow_id === workflow?.id && row.head_sha === headSha && row.event === 'pull_request' && row.pull_requests?.some(item => item.number === prNumber))
+  const latestRun = rows => rows.filter(row => row.workflow_id === workflow?.id && row.head_sha === headSha && row.event === 'pull_request' && row.pull_requests?.some(item => item.number === prNumber))
     .sort((a, b) => b.id - a.id || b.run_attempt - a.run_attempt)[0];
+  const run = latestRun(runs);
   const trustedWorkflow = await capture('trusted workflow identity', async () => {
     const repo = await get('');
     const branch = await get(`/commits/${encodeURIComponent(repo.default_branch)}`);
@@ -71,21 +72,37 @@ export async function collectGithubEvidence({ repository, prNumber, token, requi
     const digest = item => { if (item.encoding !== 'base64' || typeof item.content !== 'string') throw new Error('Workflow source unavailable'); return createHash('sha256').update(Buffer.from(item.content, 'base64')).digest('hex'); };
     return { trustedSha: branch.sha, trustedDigest: digest(trusted), candidateDigest: digest(candidate) };
   }, null);
-  const [jobs, artifacts] = run ? await Promise.all([
-    capture('CI jobs', () => pages(`/actions/runs/${run.id}/jobs?filter=latest`, 'jobs')),
+  const validRunIdentity = Number.isSafeInteger(run?.id) && run.id > 0 && Number.isSafeInteger(run?.run_attempt) && run.run_attempt > 0;
+  const [jobs, artifacts] = validRunIdentity ? await Promise.all([
+    capture('CI jobs', () => pages(`/actions/runs/${run.id}/attempts/${run.run_attempt}/jobs`, 'jobs')),
     capture('CI artifacts', () => pages(`/actions/runs/${run.id}/artifacts`, 'artifacts')),
   ]) : [[], []];
   const ciProblems = [];
   if (!trustedWorkflow || trustedWorkflow.trustedDigest !== trustedWorkflow.candidateDigest) ciProblems.push('CI workflow differs from trusted default-branch workflow or its identity is unavailable');
   if (run?.repository?.full_name !== repository) ciProblems.push('CI workflow run repository identity missing or mismatched');
+  if (!validRunIdentity) ciProblems.push('CI workflow run or attempt identity missing');
   if (workflow?.path !== '.github/workflows/test.yml' || !run) ciProblems.push('Current-head test.yml workflow run unavailable');
   if (run?.status !== 'completed' || run?.conclusion !== 'success') ciProblems.push('Current-head CI workflow has not completed successfully');
   for (const name of requiredChecks) {
     const job = jobs.find(row => row.name === name);
     const check = checks.find(row => row.name === name && row.head_sha === headSha && row.app?.slug === 'github-actions' && row.details_url === job?.html_url);
-    if (!job || job.status !== 'completed' || job.conclusion !== 'success' || !check || check.status !== 'completed' || check.conclusion !== 'success') ciProblems.push(`Required ${name} is not a successful check bound to the expected workflow job`);
+    if (!job || job.run_id !== run?.id || job.run_attempt !== run?.run_attempt || job.head_sha !== headSha
+      || job.status !== 'completed' || job.conclusion !== 'success' || !check || check.status !== 'completed' || check.conclusion !== 'success') ciProblems.push(`Required ${name} is not a successful check bound to the expected workflow job`);
   }
   const deploymentStatuses = await Promise.all(deployments.map(async deployment => ({ ...deployment, statuses: await capture(`deployment ${deployment.id} statuses`, () => pages(`/deployments/${deployment.id}/statuses`)) })));
+  if (validRunIdentity) {
+    const [currentRun, currentRuns] = await Promise.all([
+      capture('current CI run', () => get(`/actions/runs/${run.id}`), null),
+      capture('current CI selection', () => pages(`/actions/workflows/${workflow.id}/runs?head_sha=${headSha}`, 'workflow_runs')),
+    ]);
+    const selected = latestRun(currentRuns);
+    if (!currentRun || currentRun.id !== run.id || currentRun.run_attempt !== run.run_attempt
+      || currentRun.workflow_id !== workflow.id || currentRun.head_sha !== headSha || currentRun.event !== 'pull_request'
+      || currentRun.repository?.full_name !== repository || !currentRun.pull_requests?.some(item => item.number === prNumber)
+      || currentRun.status !== 'completed' || currentRun.conclusion !== 'success'
+      || selected?.id !== run.id || selected?.run_attempt !== run.run_attempt
+      || selected?.status !== 'completed' || selected?.conclusion !== 'success') ciProblems.push('CI run or attempt changed while collecting evidence');
+  }
   const current = await get(`/pulls/${prNumber}`);
   if (current.head?.sha !== headSha) problems.push('Pull request head changed while collecting evidence');
   const snapshot = freeze({ schemaVersion: 1, provenance: { kind: testTransport ? 'test-transport-untrusted' : 'authenticated-github-api' }, repository, prNumber, observedAt: now.toISOString(), pullRequest: { number: prNumber, headSha, body: typeof pr.body === 'string' ? pr.body : '', openedAt: pr.created_at ?? null, author: pr.user, mergeSha: pr.merge_commit_sha ?? null, merged: pr.merged === true, mergedAt: pr.merged_at ?? null, state: pr.state, draft: pr.draft === true, mergeable: current.mergeable, url: pr.html_url }, files, reviews, comments, threads, checks, deploymentsIncluded: includeDeployments, deployments: deploymentStatuses, ci: { status: ciProblems.length || problems.length ? 'BLOCKED' : 'PASSED', runId: run?.id ?? null, runAttempt: run?.run_attempt ?? null, workflowId: workflow?.id ?? null, runHeadSha: run?.head_sha ?? null, actualCheckoutSha: null, checkoutRef: run?.event === 'pull_request' ? 'pull_request_merge_or_explicit_ref' : 'unknown', trustedWorkflow, run, jobs, artifacts, problems: ciProblems }, problems });

@@ -19,7 +19,7 @@
     },
     {
       "path": "src/lib/engineering-verification/contract.mjs",
-      "sha256": "0483efc0f45b04ab7fc82c18771e93b5172ac976b46e3e1e0e6ed9f70109abb9"
+      "sha256": "340b036f8befd116e3e075f4deefc85d2258a4cb28ddaf6a0c14011b7722d1e1"
     },
     {
       "path": "src/lib/engineering-verification/loader.mjs",
@@ -63,8 +63,11 @@
     "docs/project/acceptance/engineering/design-v1/technical-design-v1.md",
     "docs/project/acceptance/engineering/plan-validation.md",
     "docs/project/acceptance/engineering/program.json",
+    "docs/project/findings/2026-11-06-hamilton-fixture-partition-restoration.md",
     "docs/project/findings/2026-11-06-source-document-instruction-boundary.md",
     "docs/project/findings/2026-11-07-blind-second-reader.md",
+    "docs/project/findings/2026-11-07-verification-access-control-routing.md",
+    "docs/project/findings/2026-11-07-verification-ci-attempt-freshness.md",
     "src/app/api/admin/engineering-verification/route.test.ts",
     "src/app/api/admin/engineering-verification/route.ts",
     "src/lib/agents/atlas/AGENTS.md",
@@ -138,6 +141,8 @@
     "tests/e2e/hamilton/playwright.config.ts",
     "tests/e2e/hamilton/reports-journey.pw.ts",
     "tests/e2e/hamilton/research-journey.pw.ts",
+    "tests/e2e/hamilton/schema-catch-up.test.ts",
+    "tests/e2e/hamilton/schema-catch-up.ts",
     "tests/e2e/hamilton/serve.mjs"
   ],
   "required_skills": [

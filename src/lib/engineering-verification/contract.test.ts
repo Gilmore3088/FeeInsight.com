@@ -165,6 +165,22 @@ describe('M0/M1 engineering verification contract', () => {
     expect(validateContract({ ...invalid, risk_tier: 'R3', human_approval_required: false }).errors.join(' ')).toContain('human approval');
   });
 
+  it.each([
+    'src/lib/passwords.ts', 'src/lib/password-reset.ts', 'src/lib/session-cookie.ts',
+    'src/lib/api-auth.ts', 'src/lib/api-v1-auth.ts', 'src/lib/api-keys.ts',
+    'src/lib/access.ts', 'src/lib/report-access.ts', 'src/lib/api-subscriber-access.ts',
+    'src/lib/hamilton/institution-membership.ts', 'src/lib/hamilton/workspace-invite-link.ts',
+    'src/lib/hamilton/workspace-seats.ts', 'src/lib/custom-report/link-access.ts',
+    'src/lib/custom-report/link.ts', 'src/proxy.ts', 'src/app/api/session/route.ts',
+    'src/app/(auth)/reset-password/actions.ts', 'src/app/workspace-invite/page.tsx',
+    'src/app/pro/(hamilton)/settings/actions.ts', 'src/app/admin/quality/actions.ts',
+  ])('requires R3 and owner approval for the real authentication or permission surface %s', path => {
+    expect(classifyPath(path)).toBe('R3');
+    const underdeclared = { ...fixture, scope: [path], risk_tier: 'R2', human_approval_required: false };
+    expect(validateContract(underdeclared).errors.join(' ')).toContain('Risk down-classification');
+    expect(validateContract({ ...underdeclared, risk_tier: 'R3' }).errors.join(' ')).toContain('human approval');
+  });
+
   it('keeps payment, spending, executable documentation and unsafe paths out of the docs shortcut', () => {
     for (const path of [
       'src/app/api/webhooks/stripe/route.ts', 'src/lib/ai-provider.ts',

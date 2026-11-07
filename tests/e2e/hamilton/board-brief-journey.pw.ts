@@ -146,8 +146,11 @@ for (const width of [1440, 390]) {
       try {
         const mobile = await phone.newPage();
         await withJourneyCapture(mobile, test.info(), async () => {
-        await signIn(mobile, FIXTURE_USERS.pro.email, "/pro/analyze?instId=9701002");
-        await mobile.goto("/pro/analyze?instId=9701002");
+        await signIn(mobile, FIXTURE_USERS.pro.email, `/pro/analyze?instId=${HOME.id}`);
+        await mobile.getByRole("button", { name: "Research another institution", exact: true }).click();
+        await mobile.getByLabel("Institution", { exact: true }).fill("Indian River Test CU");
+        await mobile.getByRole("button", { name: /Indian River Test CU/ }).click();
+        await expect(mobile).toHaveURL(/instId=9701002(?:&|$)/);
         await expect(mobile.getByText(/Researching: Indian River Test CU/)).toBeVisible();
         await mobile.goto(`/pro/reports?report_id=${encodeURIComponent(reportId)}`);
         await expect(mobile.getByRole("heading", { name: "Board brief", exact: true })).toBeVisible();

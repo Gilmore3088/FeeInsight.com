@@ -19,6 +19,8 @@ const SAFE_PATH = value => NONEMPTY(value)
   && !value.split('/').some(segment => segment === '' || segment === '.' || segment === '..');
 const INERT_DOCUMENT = value => SAFE_PATH(value) && /\.(md|txt|rst|png|jpe?g|gif|webp|pdf)$/i.test(value);
 const EXECUTION_POLICY = /^(vercel\.json|(?:next|vite|vitest|playwright)\.config\.[^/]+|tsconfig(?:\.[^/]+)?\.json|package(?:-lock)?\.json|(?:pnpm-lock\.yaml|yarn\.lock|bun\.lockb?)|\.npmrc|\.claude\/settings(?:\.[^/]+)?\.json|\.codex\/config\.toml|(?:[^/]*\/)?Dockerfile(?:\.[^/]*)?|scripts\/ci-[^/]+)$/;
+// Repository authentication and authority ownership includes modules outside lib/auth and api/auth.
+const ACCESS_CONTROL = /^src\/(?:proxy\.[^/]+$|lib\/(?:password[^/]*|session-cookie|api-auth|api-v1-auth|api-keys|api-subscriber-access|access|report-access)(?:\.|\/)|lib\/(?:hamilton\/(?:institution-membership|workspace-invite-link|workspace-seats)|custom-report\/link(?:-access)?)(?:\.|\/)|app\/(?:\(auth\)\/|workspace-invite\/|api\/session\/|pro\/\(hamilton\)\/settings\/actions\.|admin\/quality\/actions\.))/;
 
 export function contractDigest(rawText) {
   return createHash('sha256').update(rawText, 'utf8').digest('hex');
@@ -59,7 +61,8 @@ export function isPolicySensitive(path) {
 
 export function classifyPath(path) {
   if (!SAFE_PATH(path)) return 'R3'; // An unknown path cannot safely be assumed inert.
-  if (/^(supabase\/migrations\/|src\/app\/api\/auth\/|src\/lib\/auth|src\/lib\/payment|src\/lib\/stripe|src\/lib\/billing|src\/lib\/api-hardening\/)/.test(path)
+  if (ACCESS_CONTROL.test(path)
+    || /^(supabase\/migrations\/|src\/app\/api\/auth\/|src\/lib\/auth|src\/lib\/payment|src\/lib\/stripe|src\/lib\/billing|src\/lib\/api-hardening\/)/.test(path)
     || /(^|\/)(\.env[^/]*|secrets?[^/]*|permissions?[^/]*|CODEOWNERS)$/.test(path)
     || path.startsWith('.github/workflows/')
     || EXECUTION_POLICY.test(path)

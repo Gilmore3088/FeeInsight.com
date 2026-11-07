@@ -25,8 +25,6 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 
 Newest first. The full text, who decided and why are in [DECISIONS.md](DECISIONS.md).
 
-- 2026-11-06 — Put transcription/extraction instructions in the trusted system channel and treat source PDF/web instructions as data; frozen injection fixtures check the actual request envelopes without paid calls. — [finding](findings/2026-11-06-source-document-instruction-boundary.md) — Guard: `src/lib/engineering-verification/source-injection.test.ts`; Agent lessons: Knox and Rosetta source boundaries.
-
 - 2026-11-07 — Build a blind second reader into the pipeline: a model lists every fee in a stored text without seeing Knox's read, a traced fee Knox missed becomes a never-read flag and a Knox lesson, and nothing goes live on its word. — [decision](DECISIONS.md#2026-11-07) — `src/lib/agents/knox/second-reader.test.ts`
 - 2026-11-04 — A relationship-tier table is one fee per tier: each column is its own fee named with its tier, $0 tiers included ("Courtesy Pay (Platinum)" $20, "Courtesy Pay (Gold)" $30 on Schools FCU's PLATINUM GOLD SILVER+ SILVER COLLEGE table). — [decision](DECISIONS.md#2026-11-04)
 - 2026-11-04 — A free allowance ("1 Free → $5", "first 3 free, then $5") is a condition on the priced fee, in its name or notes, not a separate $0 fee; answer-key rows that key $0 for an allowance get re-keyed. — [decision](DECISIONS.md#2026-11-04)
@@ -326,6 +324,8 @@ Every finding in `findings/`, grouped by where the problem was, newest first in 
 - 2026-10-09 — Box rents lose their period when "annual" is only in the column header. — [finding](findings/2026-10-09-box-rent-annual-header.md) — Agent lesson: knox/pr-880-table-header-period
 
 ### Provider calls and paid reads
+
+- 2026-11-06 — Put transcription/extraction instructions in the trusted system channel and treat source PDF/web instructions as data; frozen injection fixtures check the actual request envelopes without paid calls. — [finding](findings/2026-11-06-source-document-instruction-boundary.md) — Guard: `src/lib/engineering-verification/source-injection.test.ts`; Agent lessons: Knox and Rosetta source boundaries.
 
 - 2026-11-07 — A fee Knox never reads is found only by reading the text a second, independent way: a blind model read, traced line by line with `checkFeeAgainstSource`, files each miss as a `never_read` lesson row (KNOX_SECOND_READER_LIVE, off). — [finding](findings/2026-11-07-blind-second-reader.md) — Guard: `src/lib/agents/knox/second-reader.test.ts`
 - 2026-10-20 — A refusal that describes the account (billing, quota) must never be recorded as a fact about the item. — [finding](findings/2026-10-20-billing-refusal-settled-paid-items.md) — Agent lesson: rosetta/issue-1056-billing-refusal-is-not-the-scan
@@ -671,6 +671,11 @@ Every finding in `findings/`, grouped by where the problem was, newest first in 
 - 2026-10-09 — An outgoing side effect needs its own record in Postgres; don't rely on a provider's read API that needs broader credentials than sending. — [finding](findings/2026-10-09-no-sent-email-log.md) — Guard: `src/lib/email/resend.test.ts` (+1 more)
 
 ### CI, tests, tooling and PR workflow
+
+- 2026-11-07 — Recheck the current CI run and attempt at the same commit; an earlier green job cannot survive a rerun or a newer selected workflow run. — [finding](findings/2026-11-07-verification-ci-attempt-freshness.md) — Guard: `src/lib/engineering-verification/github.test.ts`.
+- 2026-11-07 — Route the actual password, session, API access and workspace-authority owners to R3, including server-action entry points outside the auth directory. — [finding](findings/2026-11-07-verification-access-control-routing.md) — Guard: `src/lib/engineering-verification/contract.test.ts`.
+
+- 2026-11-06 — A schema-only fixture snapshot can flatten partition trees and omit migration history; restore only known empty structures transactionally, then replay unchanged SQL instead of inventing applied history. — [finding](findings/2026-11-06-hamilton-fixture-partition-restoration.md) — Guard: `tests/e2e/hamilton/schema-catch-up.test.ts`
 
 - 2026-11-02 — Never commit a table the code can compute: the committed switch inventory made every switch PR conflict and main go red on stale counts, so `npm run switch-inventory` prints it, the test checks its invariants against the code, and only hand-kept facts are committed, one line per switch. — [finding](findings/2026-11-02-switch-inventory-doc-conflicts.md) — Guard: `src/lib/agents/deming/switch-inventory.test.ts`; Agent lesson: deming/derived-tables-are-printed-not-committed
 - 2026-11-01 — Never hand-keep a total in a file parallel PRs append to: LESSONS.md's counts made PRs conflict and drifted, so the guard computes them and each finding has exactly one line. — [finding](findings/2026-11-01-lessons-index-counts-conflict.md) — Guard: `scripts/ci-guards.sh lessons-index-kill`

@@ -3,6 +3,7 @@ import { assessReviewEvidence } from './evidence.mjs';
 const { sourceFetch } = vi.hoisted(() => { const sourceFetch = vi.fn(); vi.stubGlobal('fetch', sourceFetch); return { sourceFetch }; });
 import { collectGithubEvidence, isGithubEvidence } from './github.mjs';
 const sha = 'a'.repeat(40);
+const ciRun = { id: 9, repository: { full_name: 'o/r' }, workflow_id: 7, head_sha: sha, event: 'pull_request', status: 'completed', conclusion: 'success', run_attempt: 1, pull_requests: [{ number: 1 }] };
 function api(overrides: Record<string, unknown> = {}) {
   const values: Record<string, unknown> = {
     '': { default_branch: 'main' }, '/commits/main': { sha: 'c'.repeat(40) }, '/contents/.github/workflows/test.yml': { encoding: 'base64', content: btoa('trusted workflow') },
@@ -11,8 +12,10 @@ function api(overrides: Record<string, unknown> = {}) {
     '/pulls/1/reviews': [], '/issues/1/comments': [],
     [`/commits/${sha}/check-runs`]: { check_runs: [{ id: 8, name: 'app-tests', head_sha: sha, status: 'completed', conclusion: 'success', app: { slug: 'github-actions' }, details_url: 'https://github.com/o/r/actions/runs/9/job/10' }] },
     '/actions/workflows/test.yml': { id: 7, path: '.github/workflows/test.yml' },
-    '/actions/workflows/7/runs': { workflow_runs: [{ id: 9, repository: { full_name: 'o/r' }, workflow_id: 7, head_sha: sha, event: 'pull_request', status: 'completed', conclusion: 'success', run_attempt: 1, pull_requests: [{ number: 1 }] }] },
-    '/actions/runs/9/jobs': { jobs: [{ id: 10, name: 'app-tests', status: 'completed', conclusion: 'success', html_url: 'https://github.com/o/r/actions/runs/9/job/10' }] },
+    '/actions/workflows/7/runs': { workflow_runs: [ciRun] },
+    '/actions/runs/9': ciRun,
+    '/actions/runs/9/jobs': { jobs: [{ id: 10, run_id: 9, run_attempt: 1, head_sha: sha, name: 'app-tests', status: 'completed', conclusion: 'success', html_url: 'https://github.com/o/r/actions/runs/9/job/10' }] },
+    '/actions/runs/9/attempts/1/jobs': { jobs: [{ id: 10, run_id: 9, run_attempt: 1, head_sha: sha, name: 'app-tests', status: 'completed', conclusion: 'success', html_url: 'https://github.com/o/r/actions/runs/9/job/10' }] },
     '/actions/runs/9/artifacts': { artifacts: [] }, '/deployments': [],
     ...overrides,
   };
@@ -46,7 +49,33 @@ describe('authenticated GitHub engineering collector', () => {
     expect(evidence.deployments).toEqual([]);
   });
   it('rejects a green check from a different workflow job', async () => {
-    const evidence = await collectGithubEvidence({ repository: 'o/r', prNumber: 1, token: 'secret', fetchImpl: api({ '/actions/runs/9/jobs': { jobs: [{ id: 11, name: 'app-tests', conclusion: 'success', status: 'completed' }] } }) });
+    const wrongJob = { jobs: [{ id: 11, name: 'app-tests', conclusion: 'success', status: 'completed' }] };
+    const evidence = await collectGithubEvidence({ repository: 'o/r', prNumber: 1, token: 'secret', fetchImpl: api({ '/actions/runs/9/jobs': wrongJob, '/actions/runs/9/attempts/1/jobs': wrongJob }) });
+    expect(evidence.ci.status).toBe('BLOCKED');
+  });
+  it.each(['in_progress', 'completed'])('invalidates cached success when the same-SHA run is rerun (%s)', async status => {
+    const evidence = await collectGithubEvidence({ repository: 'o/r', prNumber: 1, token: 'secret', fetchImpl: api({
+      '/actions/runs/9': { ...ciRun, run_attempt: 2, status, conclusion: status === 'completed' ? 'failure' : null },
+    }) });
+    expect(evidence.ci.status).toBe('BLOCKED');
+    expect(evidence.ci.problems.join(' ')).toContain('changed while collecting');
+  });
+  it('rejects a newer same-head workflow run selected during collection', async () => {
+    const original = api(); let runCollections = 0;
+    const fetchImpl = async (input: string | URL | Request, options: RequestInit = {}) => {
+      if (new URL(String(input)).pathname.endsWith('/actions/workflows/7/runs') && ++runCollections > 1) {
+        return Response.json({ workflow_runs: [{ ...ciRun, id: 19, status: 'in_progress', conclusion: null }, ciRun] });
+      }
+      return original(input, options);
+    };
+    const evidence = await collectGithubEvidence({ repository: 'o/r', prNumber: 1, token: 'secret', fetchImpl });
+    expect(evidence.ci.status).toBe('BLOCKED');
+    expect(evidence.ci.problems.join(' ')).toContain('changed while collecting');
+  });
+  it.each([{ run_id: 19 }, { run_attempt: 2 }, { head_sha: 'b'.repeat(40) }])('rejects a green job with mismatched run lineage: %j', async changes => {
+    const evidence = await collectGithubEvidence({ repository: 'o/r', prNumber: 1, token: 'secret', fetchImpl: api({
+      '/actions/runs/9/attempts/1/jobs': { jobs: [{ id: 10, run_id: 9, run_attempt: 1, head_sha: sha, name: 'app-tests', status: 'completed', conclusion: 'success', html_url: 'https://github.com/o/r/actions/runs/9/job/10', ...changes }] },
+    }) });
     expect(evidence.ci.status).toBe('BLOCKED');
   });
   it('rejects head movement during evidence collection', async () => {
