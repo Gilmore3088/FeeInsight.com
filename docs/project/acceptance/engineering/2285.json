@@ -1,0 +1,29 @@
+{
+  "schema_version": "1.0",
+  "contract_id": "EV-KNOX-2285",
+  "issue": "#2285",
+  "risk_tier": "R2",
+  "base_sha": "eee142d7c8289aad52f977e489e6b6d00ef2a07b",
+  "scope": ["src/lib/agents/knox/**"],
+  "required_skills": ["tdd", "adversarial-document-testing", "error-to-test"],
+  "requirements": [
+    {
+      "id": "KNOX-2285-01",
+      "behavior": "Under an explicit business or commercial wire-fee heading, an incoming wire cannot take the outgoing amount. Declined restricted lines remain held with their own direction, amount and source audience; never publish the synthetic source as a consumer fee.",
+      "authority": "GitHub issue #2285, reproducible historical synthetic failure on baseline eee142d7; not an independent current-bank accuracy claim",
+      "test_id": "knox-2285-business-heading-own-price",
+      "test_path": "src/lib/agents/knox/wire-clause-prices.test.ts",
+      "failure_signature": "never reads the incoming wire at the outgoing price under a business or commercial heading"
+    },
+    {
+      "id": "KNOX-2285-02",
+      "behavior": "Adjacent headings must not leak commercial eligibility across a boundary, and unqualified restricted sections must not invent an audience.",
+      "authority": "GitHub issue #2285 and existing wire-clause-prices.test.ts negative controls; synthetic fixture",
+      "test_id": "knox-2285-restricted-heading-no-leak",
+      "test_path": "src/lib/agents/knox/wire-clause-prices.test.ts",
+      "failure_signature": "keeps a business heading's audience only on the rows it heads"
+    }
+  ],
+  "production_boundary": "NO_PROD_MUTATION",
+  "human_approval_required": false
+}
