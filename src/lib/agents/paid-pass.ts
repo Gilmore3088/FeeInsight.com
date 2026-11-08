@@ -68,6 +68,11 @@ interface PaidCallOptions {
   /** Test seam; defaults to the Anthropic Messages API. */
   create?: PaidMessageCreator;
   metadata?: Record<string, unknown>;
+  /**
+   * The whole call's deadline, its retries and their waits included; defaults to RAW_PROVIDER_TIMEOUT_MS.
+   * A step with a tighter time budget passes one that ends inside it.
+   */
+  timeoutMs?: number;
 }
 
 /**
@@ -102,13 +107,13 @@ export function providerRefusalSql(alias: string): string {
 export function paidModelCall(options: PaidCallOptions & { responsePolicy: PaidResponsePolicy }): Promise<AssessedPaidCallResult>;
 export function paidModelCall(options: PaidCallOptions): Promise<PaidCallResult>;
 export async function paidModelCall({
-  agent, operation, runId, params, create, metadata, keyAgent, responsePolicy,
+  agent, operation, runId, params, create, metadata, keyAgent, responsePolicy, timeoutMs = RAW_PROVIDER_TIMEOUT_MS,
 }: PaidCallOptions & { responsePolicy?: PaidResponsePolicy }): Promise<PaidCallResult | AssessedPaidCallResult> {
   const billTo: ProviderAgent | undefined = keyAgent ?? (agent === "wire" ? "magellan" : agent === "answer_key_rekey" ? "knox" : agent);
   const searchSettings = webSearchSettings(params.tools);
   const message = await trackAnthropicRequest(
     { model: params.model, agent, operation, agentRunId: runId, metadata: searchSettings ? { ...metadata, ...searchSettings } : metadata },
-    () => withRawProviderResponseOperation(RAW_PROVIDER_TIMEOUT_MS, (scope) => {
+    () => withRawProviderResponseOperation(timeoutMs, (scope) => {
       const client = create ? null : getAnthropicMessagesClient(`${agent} ${operation}`, billTo, scope);
       return (attempt) => create ? create(params) : client!.messages.create(params, attempt);
     }),

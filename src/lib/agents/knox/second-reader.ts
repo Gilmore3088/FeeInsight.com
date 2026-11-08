@@ -7,7 +7,7 @@ import type { AttemptOutcome } from "@/lib/agents/learning/outcomes";
 import { recordFeedback, type FeedbackRow } from "@/lib/agents/learning/feedback";
 import { PAID_PASS_MODELS, paidModelCall, paidResponseJson, type PaidMessageCreator } from "@/lib/agents/paid-pass";
 import { KNOX_RULES_STRATEGY, runFreeSpecialists } from "@/lib/agents/knox/specialists";
-import { groundPaidRow, paidExtractInstructions, paidExtractPrompt, type AcceptedPaidFee, type PaidFeeRow, type PaidRowRejection } from "@/lib/agents/knox/paid-extract";
+import { groundPaidRow, MAX_TEXT_CHARS, paidExtractInstructions, paidExtractPrompt, type AcceptedPaidFee, type PaidFeeRow, type PaidRowRejection } from "@/lib/agents/knox/paid-extract";
 import { summarizePaidFindMisses, type FreeTeamRead, type PaidFindMiss, type PaidFindMissKind, type PaidFindMissSummary } from "@/lib/agents/knox/paid-find-misses";
 import { loadNeverReadLessonDrafts, neverReadLessonsMessage, type NeverReadLessonDraft } from "@/lib/agents/knox/never-read-lessons";
 
@@ -74,6 +74,13 @@ export const SECOND_READER_TEXTS_PER_STEP = 5;
  * step's writes stays under the tick's 270 s finish budget (STEP_FINISH_BUDGET_MS) and the route's 300 s.
  */
 export const SECOND_READER_STOP_STARTING_AFTER_MS = 120_000;
+/**
+ * One read's whole deadline, its retries' waits included (the raw paid-call default is 600 s). A read
+ * started just before SECOND_READER_STOP_STARTING_AFTER_MS ends by 200 s, the step's expected runtime
+ * (run-store STEP_EXPECTED_MS), and the slowest paid_extract read of the 4,110 above, 74.5 s, fits.
+ * A read cut off here is a `timeout` attempt, which a later run retries.
+ */
+export const SECOND_READER_CALL_TIMEOUT_MS = 80_000;
 /** Outcomes a later run may retry: nothing about the text caused them. */
 const TRANSIENT_OUTCOMES = ["timeout", "network_error", "http_429", "http_5xx", "budget_blocked"] as const;
 const STOP_ERRORS = new Set(["ProviderBudgetBlockedError", "EmergencyStopActiveError", "ProviderCircuitOpenError"]);
@@ -137,6 +144,11 @@ export function secondReaderRequest(model: string, text: string): Anthropic.Mess
 /** The characters one read sends: the instructions plus the (cut) document prompt. */
 export function secondReaderRequestChars(text: string): number {
   return paidExtractInstructions().length + paidExtractPrompt(text).length;
+}
+
+/** The same count from the text's length alone (the scheduler reads `length(normalized_text)`, not the text). */
+export function secondReaderRequestCharsForLength(textChars: number): number {
+  return paidExtractInstructions().length + paidExtractPrompt("").length + Math.min(Math.max(0, textChars), MAX_TEXT_CHARS);
 }
 
 function comparable(value: string): string {
@@ -320,7 +332,12 @@ export function batchRefusal(batch: SecondReaderBatch | undefined, model: string
 
 /** One text's worst case: every output token used, 3 characters a token, no cache. */
 export function textCeilingMicrousd(text: string, model: string): number {
-  const inputTokens = Math.ceil(secondReaderRequestChars(text) / 3);
+  return textCeilingMicrousdForChars(text.length, model);
+}
+
+/** `textCeilingMicrousd` from the text's length alone. */
+export function textCeilingMicrousdForChars(textChars: number, model: string): number {
+  const inputTokens = Math.ceil(secondReaderRequestCharsForLength(textChars) / 3);
   return (
     estimateAnthropicCostMicrousd(model, { inputTokens, outputTokens: SECOND_READER_MAX_OUTPUT_TOKENS, cacheReadInputTokens: 0, cacheCreationInputTokens: 0, webSearchRequests: 0 }) ??
     inputTokens * 15 + SECOND_READER_MAX_OUTPUT_TOKENS * 75
@@ -344,12 +361,30 @@ export interface SecondReaderTextRow {
  * text hash in this batch. Read-only.
  */
 export async function selectSecondReaderTexts(db: SqlTag, batch: SecondReaderBatch, limit: number): Promise<SecondReaderTextRow[]> {
-  if (batch.institutionIds.length === 0) return [];
-  const rows = await db.unsafe<SecondReaderTextRow[]>(
-    `
-      SELECT adt.id AS document_text_id, adt.source_document_id, adt.institution_id, adt.source_url,
+  return selectLeftTexts<SecondReaderTextRow>(db, batch, limit, `
+      adt.id AS document_text_id, adt.source_document_id, adt.institution_id, adt.source_url,
              adt.normalized_text, adt.text_hash, inst.institution_name,
-             COALESCE(NULLIF(btrim(profile.platform), ''), NULLIF(btrim(inst.cms_platform), '')) AS platform
+             COALESCE(NULLIF(btrim(profile.platform), ''), NULLIF(btrim(inst.cms_platform), '')) AS platform`);
+}
+
+export interface SecondReaderTextSize {
+  document_text_id: number | string;
+  institution_id: number | string;
+  /** `length(normalized_text)`: the scheduler prices each text's worst case without reading it. */
+  text_chars: number | string;
+}
+
+/** The same texts as `selectSecondReaderTexts`, with each one's length instead of its text. Read-only. */
+export async function selectSecondReaderTextSizes(db: SqlTag, batch: SecondReaderBatch, limit: number): Promise<SecondReaderTextSize[]> {
+  return selectLeftTexts<SecondReaderTextSize>(db, batch, limit, `
+      adt.id AS document_text_id, adt.institution_id, length(adt.normalized_text) AS text_chars`);
+}
+
+async function selectLeftTexts<Row extends { institution_id: number | string }>(db: SqlTag, batch: SecondReaderBatch, limit: number, columns: string): Promise<Row[]> {
+  if (batch.institutionIds.length === 0) return [];
+  const rows = await db.unsafe<Row[]>(
+    `
+      SELECT ${columns}
         FROM agent_source_texts adt
         JOIN source_documents doc ON doc.id = adt.source_document_id
         JOIN institution_sources inst ON inst.id = adt.institution_id
@@ -509,6 +544,7 @@ export async function runKnoxSecondReader(options: {
         agent: "knox",
         operation: SECOND_READER_OPERATION,
         runId: options.runId,
+        timeoutMs: SECOND_READER_CALL_TIMEOUT_MS,
         params: secondReaderRequest(model, row.normalized_text),
         create: options.create,
         metadata: { batch_id: batch.id, institution_id: institutionId, document_text_id: documentTextId, text_hash: row.text_hash },

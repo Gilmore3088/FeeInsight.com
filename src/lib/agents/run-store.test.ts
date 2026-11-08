@@ -564,6 +564,46 @@ describe("agentic run store", () => {
     expect(combinedSql).not.toContain("ops_jobs");
   });
 
+  it("creates a scheduler's run on the scheduler's own transaction, with no second connection", async () => {
+    getExecutionBackendMock.mockReturnValue("agentic_v1");
+    installTxMocks(queuedStepRows.slice(0, 1));
+    const txRows = txMock.getMockImplementation() as (...args: unknown[]) => Promise<unknown[]>;
+    // No run holds this bucket's key yet.
+    txMock.mockImplementation((strings: TemplateStringsArray, ...values: unknown[]) =>
+      templateText(strings).includes("WHERE idempotency_key") ? Promise.resolve([]) : txRows(strings, ...values));
+    const input = {
+      agent: "knox" as const,
+      kind: "workflow" as const,
+      title: "Knox: blind second reader",
+      params: { source: "knox.second_reader", batch_id: "b1" },
+      triggeredBy: "knox.second_reader",
+      triggerSource: "schedule" as const,
+      idempotencyKey: "knox:second-reader:b1:1",
+      reuseTerminal: true,
+      steps: [{ key: "knox-second-reader", agent: "knox" as const, title: "Read" }],
+    };
+    const tx = txMock as unknown as Parameters<typeof startAgentRun>[1];
+    const result = await startAgentRun(input, tx);
+    expect(result.reused).toBe(false);
+    expect(combinedTransactionSql()).toContain("INSERT INTO agent_runs");
+    // The paid step's provider stop is read on the same transaction; nothing goes to the pool.
+    expect(assertAutomationEnabledMock).toHaveBeenCalledWith("agent run launch", txMock);
+    expect(sqlMock).not.toHaveBeenCalled();
+    expect(withTransactionMock).not.toHaveBeenCalled();
+
+    // Under the provider stop it refuses before any insert, so the caller's transaction rolls back clean.
+    txMock.mockClear();
+    assertAutomationEnabledMock.mockRejectedValueOnce(new Error("Emergency stop is active"));
+    await expect(startAgentRun(input, tx)).rejects.toThrow("Emergency stop is active");
+    expect(combinedTransactionSql()).not.toContain("INSERT INTO agent_runs");
+    expect(sqlMock).not.toHaveBeenCalled();
+
+    // Any other source, or a step outside the source's list, may not create on a caller's transaction.
+    await expect(startAgentRun({ ...input, params: { source: "knox.other" } }, tx)).rejects.toThrow("Invalid transaction run scope");
+    await expect(startAgentRun({ ...input, steps: [{ key: "extract", agent: "knox", title: "x" }] }, tx)).rejects.toThrow("Invalid transaction run scope");
+    await expect(startAgentRun({ ...input, reuseTerminal: false }, tx)).rejects.toThrow("Invalid transaction run scope");
+  });
+
   it("accepts deterministic runs while the provider automation stop is active", async () => {
     // Regression: the provider stop used to block every run at launch, freezing
     // deterministic fee ingestion when only provider billing was the problem.

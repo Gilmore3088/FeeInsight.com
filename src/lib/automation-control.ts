@@ -55,8 +55,9 @@ export class PipelinePausedError extends Error {
   }
 }
 
-export async function getAutomationControl(): Promise<AutomationControlState> {
-  const [row] = await sql`
+/** `db` lets a caller holding a transaction read the control on that same connection. */
+export async function getAutomationControl(db: typeof sql = sql): Promise<AutomationControlState> {
+  const [row] = await db`
     SELECT enabled, reason, changed_by, changed_at, revision
       FROM automation_control
      WHERE control_key = 'global'
@@ -67,8 +68,8 @@ export async function getAutomationControl(): Promise<AutomationControlState> {
   return mapControl(row);
 }
 
-export async function assertAutomationEnabled(context: string): Promise<AutomationControlState> {
-  const control = await getAutomationControl();
+export async function assertAutomationEnabled(context: string, db: typeof sql = sql): Promise<AutomationControlState> {
+  const control = await getAutomationControl(db);
   if (!control.enabled) {
     throw new EmergencyStopActiveError(control, context);
   }
