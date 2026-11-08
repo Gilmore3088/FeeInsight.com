@@ -524,7 +524,7 @@ for (const width of [1440, 390]) {
       await expect(target.getByText("Pick up where you left off", { exact: true })).toBeVisible();
       expect([...new URL(target.url()).searchParams.keys()].sort()).toEqual(["conversation"]);
       expect(new URL(target.url()).searchParams.get("conversation")).toBe(forkId);
-      await expect(target.getByRole("region", { name: "Institution context" })).toContainText(`Researching: ${HOME.name}`);
+      await expect(target.getByText(`Conversation · ${HOME.name}`, { exact: true })).toBeVisible();
       await expect(target.getByRole("region", { name: "Earlier in this conversation" })).toContainText(SAVED_QUESTION);
       await expect(target.getByRole("region", { name: "Earlier in this conversation" })).toContainText(FORK);
       await expect(target.getByRole("region", { name: "Earlier in this conversation" }).getByText(LIST, { exact: true })).toHaveCount(0);
