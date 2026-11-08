@@ -6,6 +6,15 @@ export interface ReviewPolicy {
   ownerLogins?: string[];
   now?: Date;
 }
+export interface RequiredExecutionPolicy {
+  agentName: string;
+  stepKey: string;
+  strategy: string;
+  strategyVersion: number;
+  affectedUnits: readonly { institutionId: number; sourceDocumentId: number }[];
+  outputWitness: string;
+}
+export function normalizeRequiredExecution(value: unknown): RequiredExecutionPolicy | null;
 export interface OperationalPolicy {
   headSha: string;
   deployedSha: string;
@@ -22,6 +31,7 @@ export interface OperationalPolicy {
   observationDays?: number;
   maxSampleGapHours?: number;
   replayChangeKeys: string[];
+  requiredExecution: RequiredExecutionPolicy;
 }
 export function assessReviewEvidence(snapshot: unknown, policy: ReviewPolicy): {
   status: string;
@@ -33,7 +43,8 @@ export function assessReviewEvidence(snapshot: unknown, policy: ReviewPolicy): {
 export function assessOperationalEvidence(runtime: unknown, policy: OperationalPolicy, options?: { github?: unknown; now?: Date }): {
   status: string;
   deployment: { id: number; sha: string; environment: string; rawEnvironment: string; rawStatusEnvironment: string | null; deployedAt: string } | null;
-  observation: { requiredDays: number; sampleDays: number; sampleCount: number };
+  owningExecution: { completedAt: string | null; requiredUnits: number; witnessedUnits: number; limit: string };
+  observation: { requiredDays: number; anchorAt: string | null; sampleDays: number; sampleCount: number; eligibleSampleCount: number; ineligibleSamples: Array<{ eventId: number; reason: string }> };
   blockers: string[];
 };
 export function collectRuntimeEvidence(options: {
@@ -43,6 +54,7 @@ export function collectRuntimeEvidence(options: {
   since: string;
   until: string;
   changeKeys?: string[];
+  requiredExecution?: RequiredExecutionPolicy | null;
   now?: Date;
   fetchImpl?: typeof fetch;
 }): Promise<unknown>;

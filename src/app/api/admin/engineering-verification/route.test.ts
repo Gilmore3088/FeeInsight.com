@@ -29,4 +29,19 @@ describe('admin engineering runtime evidence endpoint', () => {
     expect(unavailable.status).toBe(503);
     expect(JSON.stringify(await unavailable.json())).not.toContain('private database detail');
   });
+  it('passes the exact validated owning-execution scope to the bounded authenticated ledger read', async () => {
+    const requiredExecution = { agentName: 'knox', stepKey: 'extract', strategy: 'extract.rules', strategyVersion: 186,
+      affectedUnits: [{ institutionId: 1, sourceDocumentId: 101 }], outputWitness: 'knox-extraction-attempt-v1' };
+    const target = new URL(url()); target.searchParams.set('requiredExecution', JSON.stringify(requiredExecution));
+    expect((await GET(new Request(target))).status).toBe(200);
+    expect(read).toHaveBeenCalledWith(expect.objectContaining({ requiredExecution }), undefined);
+  });
+  it('rejects unknown output selectors before ledger access without reflecting private input', async () => {
+    const target = new URL(url()); target.searchParams.set('requiredExecution', JSON.stringify({ outputSelector: 'private-scope-canary' }));
+    const response = await GET(new Request(target));
+    expect(response.status).toBe(400);
+    expect(read).not.toHaveBeenCalled();
+    expect(JSON.stringify(await response.json())).not.toContain('private-scope-canary');
+  });
+
 });

@@ -141,7 +141,7 @@ export async function main(args = process.argv.slice(2), root = process.cwd()) {
     if (!contract.operational_policy_sha256 || hash(operationalRaw) !== contract.operational_policy_sha256) throw new Error('Operational policy is not frozen by the reviewed contract');
     if (!process.env.ENGINEERING_ADMIN_COOKIE) throw new Error('Authenticated admin cookie required in ENGINEERING_ADMIN_COOKIE');
     const runtime = await collectRuntimeEvidence({ adminCookie: process.env.ENGINEERING_ADMIN_COOKIE, deployedSha: operationalPolicy.deployedSha,
-      since: operationalPolicy.since, until: operationalPolicy.until, changeKeys: operationalPolicy.replayChangeKeys });
+      since: operationalPolicy.since, until: operationalPolicy.until, changeKeys: operationalPolicy.replayChangeKeys, requiredExecution: operationalPolicy.requiredExecution });
     operational = assessOperationalEvidence(runtime, operationalPolicy, { github });
   }
   // A runtime read can take time: independently reread exact PR identity before publishing a result.
