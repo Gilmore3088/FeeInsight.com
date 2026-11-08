@@ -470,14 +470,15 @@ for (const width of [1440, 390]) {
         const open = earlier.getByRole("link", { name: "Open this answer", exact: true });
         const href = new URL((await open.getAttribute("href"))!, String(test.info().project.use.baseURL));
         expect(href.pathname).toBe("/pro/analyze");
-        expect([...href.searchParams.keys()].sort()).toEqual(["analysis", "instId"]);
+        // Saved history resolves its own authorized subject; never attach today's institution.
+        expect([...href.searchParams.keys()].sort()).toEqual(["analysis"]);
         expect(href.searchParams.get("analysis")).toBe(savedId);
-        expect(href.searchParams.get("instId")).toBe(SUBJECT.institutionId);
         await open.click();
         await expect(target.getByText(SAVED_LEAD, { exact: true }).first()).toBeVisible();
         await target.waitForLoadState("networkidle");
         expect(new URL(target.url()).searchParams.get("analysis")).toBe(savedId);
-        expect([...new URL(target.url()).searchParams.keys()].sort()).toEqual(["analysis", "instId"]);
+        expect([...new URL(target.url()).searchParams.keys()].sort()).toEqual(["analysis"]);
+        await expect(target.getByRole("region", { name: "Institution context" })).toContainText(`Researching: ${HOME.name}`);
         await expect(target.getByRole("region", { name: "Earlier in this conversation" })).toHaveCount(0);
         await expect(target.getByText(LIST, { exact: true })).toHaveCount(0);
         await expect(target.getByRole("table", { name: "Peer table" })).toHaveCount(0);
@@ -498,8 +499,8 @@ for (const width of [1440, 390]) {
         assertState(fork, forkId, [SAVED_QUESTION, FORK], ["written", "peer_list"], [SAVED_LEAD, LEAD], FORK);
         expect(fork.turns[0].savedAnalysisId).toBe(savedId);
         await observer.settled();
-        expect([...new URL(target.url()).searchParams.keys()].sort()).toEqual(["conversation", "instId"]);
-        expect(new URL(target.url()).searchParams.get("instId")).toBe(SUBJECT.institutionId);
+        expect([...new URL(target.url()).searchParams.keys()].sort()).toEqual(["conversation"]);
+        await expect(target.getByRole("region", { name: "Institution context" })).toContainText(`Researching: ${HOME.name}`);
         const settledFork = await state(reader, forkId);
         assertState(settledFork, forkId, [SAVED_QUESTION, FORK], ["written", "peer_list"], [SAVED_LEAD, LEAD], FORK);
         expect(settledFork.turns[0].savedAnalysisId).toBe(savedId);
@@ -517,10 +518,13 @@ for (const width of [1440, 390]) {
     assertState(fork, forkId, [SAVED_QUESTION, FORK], ["written", "peer_list"], [SAVED_LEAD, LEAD], FORK);
     expect(fork.turns[0].savedAnalysisId).toBe(savedId);
     await fresh(async target => {
-      const href = `/pro/analyze?conversation=${forkId}&instId=${HOME.id}`;
+      const href = `/pro/analyze?conversation=${forkId}`;
       await signIn(target, FIXTURE_USERS.pro.email, href);
       await navigate(target, href);
       await expect(target.getByText("Pick up where you left off", { exact: true })).toBeVisible();
+      expect([...new URL(target.url()).searchParams.keys()].sort()).toEqual(["conversation"]);
+      expect(new URL(target.url()).searchParams.get("conversation")).toBe(forkId);
+      await expect(target.getByRole("region", { name: "Institution context" })).toContainText(`Researching: ${HOME.name}`);
       await expect(target.getByRole("region", { name: "Earlier in this conversation" })).toContainText(SAVED_QUESTION);
       await expect(target.getByRole("region", { name: "Earlier in this conversation" })).toContainText(FORK);
       await expect(target.getByRole("region", { name: "Earlier in this conversation" }).getByText(LIST, { exact: true })).toHaveCount(0);
