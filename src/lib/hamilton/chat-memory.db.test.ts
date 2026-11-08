@@ -9,6 +9,7 @@ import {
   createConversation, loadConversationHistory, loadConversationState, loadConversationStateForSavedAnswer, saveConversationState,
 } from "./chat-memory";
 import { conversationReducer, emptyConversation, serializeConversationState, type ConversationAction, type HamiltonConversationState } from "./conversation-state";
+import { peerListReferencesUnchanged, type PeerListRow } from "./peer-list";
 
 const connection = process.env.E2E_DATABASE_URL;
 const OWNER = 900001;
@@ -225,6 +226,25 @@ describe.skipIf(!connection)("Analyze conversation store in isolated PostgreSQL"
       expect(await persistedRows(id, reader)).toEqual(original);
       expect(await loadConversationState(id, OWNER, asDb(reader))).toEqual({ ...later, conversationId: id });
       expect((await loadConversationState(forkId, OWNER, asDb(reader)))?.turns.at(-1)?.question).toBe("A follow-up in the reopened answer?");
+    });
+  });
+
+  it("preserves peer reference identity through an actual JSONB save and fresh owner read", async () => {
+    const rows: PeerListRow[] = [
+      { institutionId: 203, name: "Synthetic Peer 203", charterType: "credit_union", city: "Orlando", stateCode: "FL", totalAssetsUsd: 1_000_000_000, recordId: 4203, reportDate: "2026-09-30", source: "ncua", sourceUrl: null, feeCoverage: "not_found", inclusionReason: "Synthetic fixture." },
+      { institutionId: 202, name: "Synthetic Peer 202", charterType: "credit_union", city: "Orlando", stateCode: "FL", totalAssetsUsd: 1_000_000_000, recordId: 4202, reportDate: "2026-06-30", source: "ncua", sourceUrl: null, feeCoverage: "not_found", inclusionReason: "Synthetic fixture." },
+    ];
+    const id = await createConversation(OWNER, asDb());
+    expect(await saveConversationState(id, OWNER, peerHistory, asDb())).toBe(true);
+    await freshConnection(async (reader) => {
+      const back = await loadConversationState(id, OWNER, asDb(reader));
+      expect(back).toEqual({ ...peerHistory, conversationId: id });
+      if (!back?.peerSet) throw new Error("The exact fixture peer history was not restored");
+      expect(back.peerSet.snapshot.originRows).toEqual([
+        { institutionId: 203, recordId: 4203, reportDate: "2026-09-30", source: "ncua" },
+        { institutionId: 202, recordId: 4202, reportDate: "2026-06-30", source: "ncua" },
+      ]);
+      expect(peerListReferencesUnchanged(rows, back.peerSet.snapshot)).toBe(true);
     });
   });
 

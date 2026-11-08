@@ -30,6 +30,8 @@ The browser work exposed a separate persistence boundary: Analyze published a ne
 
 The conversation slice keeps allocation private until acknowledgement, serializes immutable snapshots, reuses the allocation on retry and rejects late publication or navigation after a reset or route handoff. Independent component baseline failures, real owner-scoped database checks and prospective desktop/phone partial-write recovery and fresh-owner read-back provide different evidence. Preserve strict transport failures and the remaining native market-brief and saved-answer-fork acceptance gaps; local semantic checks cannot complete M5.
 
+The first corrected browser run restored exact saved history but rejected its unchanged peers during a follow-up. Independent service and real PostgreSQL round-trip regressions reproduced the comparison's sensitivity to JSONB object-key order. Fix the source-reference comparison while preserving exact dated IDs and row order, then run a fresh committed build; the retained failed browser attempts cannot be relabeled as accepted.
+
 The protected classifier/runner proposal remains [PR #3006](https://github.com/Gilmore3088/FeeInsight.com/pull/3006), frozen at `baed699f71104afdce8a952264c6844b7f0b2498`, awaiting its separate exact-head owner authorization. The earlier #2995 bootstrap approval does not authorize it. Enforcement remains disabled, and the selected Claude/Codex reviewer role still needs an authenticated independent principal and provenance.
 
 ## Milestone status and exit evidence

@@ -10,6 +10,8 @@ Analyze now keeps the allocation private until an affirmative snapshot acknowled
 
 The existing server can insert a snapshot and then fail its separate parent metadata update. An unacknowledged result therefore does not establish absence. Retry wire revisions advance even after refusal, while content revisions remain separate; the existing parser limit remains enforced. The client never converts a refused acknowledgement into success.
 
+Fresh-history validation also exposed a peer-reference comparison that treated object-key order as source identity. An actual PostgreSQL JSONB round trip preserved the exact stored values but failed that comparison. The continuation check now compares the four explicit own fields at each original row position. Institution ID, record ID, reporting date, source, row order, row count and extra-field rejection remain strict; object-key insertion order alone cannot invalidate the saved peer set.
+
 After every asynchronous boundary, the client checks its conversation epoch, queue identity, liveness and current route. A reset, unmount or URL subject handoff invalidates older publication and navigation. Market-brief navigation requires the acknowledged current conversation; a failed save leaves its recoverable state on Analyze. Retrying a save does not revive an obsolete navigation intent.
 
 The change uses the existing authenticated actions, owner-scoped loader and semantic tables. It introduces no migration, endpoint, provider execution or production mutation. It does not establish cross-tab write idempotency.
@@ -18,7 +20,7 @@ The change uses the existing authenticated actions, owner-scoped loader and sema
 
 The original independent design contains eleven acceptance cases. Its component baseline on unchanged main produced three behavioral failures and one successful control. A later real-URL handoff case also failed before its correction. Original source, inputs, reports and failed receipts remain retained outside the candidate source; passing candidate assertions do not erase them.
 
-At this plan's source freeze, the browser portions below are prospective and unexecuted. Their later execution status must come from the exact-candidate delivery receipt; completed component and database checks do not supply those browser observations.
+At this candidate's plan freeze, a fresh final-candidate browser run is pending. Earlier failed attempts remain retained. The browser entries below are required checks whose executed status must come from the exact-candidate delivery receipt; completed component and database checks do not supply those browser observations.
 
 | Cases | Candidate checks | Remaining boundary |
 | --- | --- | --- |
@@ -31,7 +33,7 @@ At this plan's source freeze, the browser portions below are prospective and une
 | CP-10: foreign, malformed and empty-shell access | Existing authenticated action controls, real owner-scoped database checks and fresh other-owner browser denial | Browser denial follows the current empty-Analyze contract; it does not invent a new 404 contract |
 | CP-11: unchanged opening and saved-answer fork | Existing conversation/action/state controls and real database fork immutability | Native unchanged-open and saved-answer-fork journeys are not added by this slice |
 
-The component test is `src/components/hamilton/analyze/AnalyzeWorkspace.persistence.test.tsx`. Schema-backed checks extend the already mandatory `src/lib/hamilton/chat-memory.db.test.ts` lane. Its cleanup requires both a permitted loopback URL and the native database identity; ordinary-suite skipped database cases are not executed evidence.
+The component test is `src/components/hamilton/analyze/AnalyzeWorkspace.persistence.test.tsx`. Schema-backed checks extend the already mandatory `src/lib/hamilton/chat-memory.db.test.ts` lane. Its cleanup requires both a permitted loopback URL and the native database identity; ordinary-suite skipped database cases are not executed evidence. The frozen peer-reference regressions in `peer-list-service.test.ts` and the real database lane separately reproduced the key-order false mismatch before its correction, with unchanged-identity positive controls and changed-identity rejection controls retained.
 
 ## Prospective native browser procedure
 
