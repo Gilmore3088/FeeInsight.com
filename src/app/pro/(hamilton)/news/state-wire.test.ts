@@ -9,7 +9,7 @@ describe("States wire empty messages", () => {
   it("promise no press coverage while it is held", () => {
     const all = emptyMessage(base, "any state", "this month");
     expect(all).toContain("no fee bills or regulator posts");
-    expect(all).toContain("The regulator posts shown are read once a day.");
+    expect(all).toContain("New Jersey's regulator posts are read once a day.");
     expect(all.toLowerCase()).not.toContain("press");
     expect(emptyMessage({ ...base, kind: "press" }, "any state", "this month")).toBe("Press coverage is paused while we confirm its license.");
   });
@@ -33,7 +33,7 @@ describe("States wire empty messages", () => {
   it("should_name_struck_states_and_keep_the_schedule_when_my_states_is_mixed", () => {
     const message = emptyMessage({ ...base, mine: true, kind: "regulators" }, "your watched states", "this month", ["FL", "NJ", "NY"]);
     expect(message).toContain("Florida and New York regulator posts are not shown");
-    expect(message).toContain("The regulator posts shown are read once a day.");
+    expect(message).toContain("New Jersey's regulator posts are read once a day.");
   });
 
   it("should_say_nothing_of_struck_states_when_my_states_holds_none", () => {
@@ -45,8 +45,8 @@ describe("States wire empty messages", () => {
   it("should_name_every_struck_state_on_all_states", () => {
     const message = emptyMessage({ ...base, kind: "regulators" }, "any state", "this month");
     expect(message).toContain("New York, North Carolina and Florida regulator posts are not shown");
-    expect(message).toContain("Apart from New Jersey, other states' regulator posts are not shown because we have not confirmed");
-    expect(message).toContain("The regulator posts shown are read once a day.");
+    expect(message).toContain("Of the remaining states, only New Jersey's regulator posts are shown: we have not confirmed that the others' website terms allow commercial use.");
+    expect(message).toContain("New Jersey's regulator posts are read once a day.");
   });
 
   it("should_say_why_a_state_with_unconfirmed_terms_shows_no_regulator_posts (#2226)", () => {
@@ -55,7 +55,7 @@ describe("States wire empty messages", () => {
     expect(message).not.toContain("read once a day");
     const mixed = emptyMessage({ ...base, mine: true, kind: "regulators" }, "your watched states", "this month", ["CA", "NJ", "TX"]);
     expect(mixed).toContain("California and Texas regulator posts are not shown because we have not confirmed");
-    expect(mixed).toContain("The regulator posts shown are read once a day.");
+    expect(mixed).toContain("New Jersey's regulator posts are read once a day.");
   });
 });
 

@@ -638,6 +638,8 @@ export async function loadWire(
   now = new Date(),
 ): Promise<WireRows & { posts: WirePostRow[] }> {
   const today = now.toISOString().slice(0, 10);
+  // States whose terms are unconfirmed are not shown in Hamilton (hamilton-sources.ts, #2226); null = every non-struck state.
+  const stateAgencies = hamiltonStateAgencies();
   // A state code is upper-cased once here and compared upper case in SQL (party_state too).
   const state = stateCode ? stateCode.toUpperCase() : null;
   const federal = enforcementCode(primaryRegulator);
@@ -679,8 +681,8 @@ export async function loadWire(
              -- Struck states' orders (DECISIONS.md "No non-commercial data") are never read.
              AND agency <> ALL(${[...STRUCK_ENFORCEMENT_AGENCIES]}::text[])
              -- States whose terms are unconfirmed are not shown in Hamilton (hamilton-sources.ts, #2226).
-             AND (${hamiltonStateAgencies() !== null}::boolean IS NOT TRUE OR agency NOT LIKE 'STATE!_%' ESCAPE '!'
-                  OR agency = ANY(${hamiltonStateAgencies() ?? []}::text[]))
+             AND (${stateAgencies !== null}::boolean IS NOT TRUE OR agency NOT LIKE 'STATE!_%' ESCAPE '!'
+                  OR agency = ANY(${stateAgencies ?? []}::text[]))
              AND subject ~* ${CONSUMER_LAW_PG}
              -- Rows the reader would drop for having no link must not use up the LIMIT (#1359).
              AND (document_url IS NOT NULL OR agency = 'OCC')

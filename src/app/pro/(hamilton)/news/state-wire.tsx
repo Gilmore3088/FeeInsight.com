@@ -66,12 +66,26 @@ export function unconfirmedStatesInView(params: WireParams, watched: readonly st
 export function unconfirmedRegulatorNote(states: readonly string[] | "all"): string | null {
   if (states === "all") {
     const shown = REUSE_CONFIRMED_REGULATOR_STATES.map(stateName);
-    const which = shown.length === 0 ? "No other state's" : `Apart from ${listNames(shown)}, other states'`;
-    return `${which} regulator posts are not shown because we have not confirmed that those regulators' website terms allow commercial use.`;
+    if (shown.length === 0) return "No other state's regulator posts are shown, because we have not confirmed that their website terms allow commercial use.";
+    const possessive = shown.length === 1 ? `${shown[0]}'s` : `${listNames(shown)}'`;
+    return `Of the remaining states, only ${possessive} regulator posts are shown: we have not confirmed that the others' website terms allow commercial use.`;
   }
   if (states.length === 0) return null;
   const whose = states.length === 1 ? "the regulator's" : "those regulators'";
   return `${listNames(states.map(stateName))} regulator posts are not shown because we have not confirmed that ${whose} website terms allow commercial use.`;
+}
+
+/** "New Jersey's regulator posts are" (or "Other states' regulator posts are"), for the states in view that can show posts. */
+function shownStatesClause(params: WireParams, watched: readonly string[], struck: readonly string[], unconfirmed: readonly string[] | "all"): string {
+  const shown =
+    unconfirmed === "all"
+      ? [...REUSE_CONFIRMED_REGULATOR_STATES]
+      : params.mine && watched.length > 0
+        ? watched.filter((s) => !struck.includes(s) && !unconfirmed.includes(s))
+        : null;
+  if (!shown || shown.length === 0) return "Other states' regulator posts are";
+  const names = shown.map(stateName);
+  return `${names.length === 1 ? `${names[0]}'s` : `${listNames(names)}'`} regulator posts are`;
 }
 
 function listNames(names: readonly string[]): string {
@@ -312,7 +326,7 @@ export function emptyMessage(params: WireParams, where: string, phrase: string, 
     ? "Regulator posts are read once a day."
     : everyStateHidden(params, watched, hidden)
       ? note
-      : `${note} The regulator posts shown are read once a day.`;
+      : `${note} ${shownStatesClause(params, watched, struck, unconfirmed)} read once a day.`;
   if (params.kind === "bills") return `No fee bills are stored for ${where} ${phrase}${searched}. ${bills}`;
   if (params.kind === "regulators") return `No regulator posts are stored for ${where} ${phrase}${searched}. Only the state banking and credit union regulators' posts about banking are kept. ${news}`;
   if (params.kind === "press") return "Press coverage is paused while we confirm its license.";
