@@ -154,7 +154,8 @@ export function createBrowserActionsCapture(configuration = {}) {
     for (const request of native.requests) if (request.method === 'POST' && request.transport !== 'finished') reasons.add('unsettled_post');
     const projected = actions.map(action => {
       const localReasons = new Set(action.reasons);
-      const candidates = action.postIds.map(id => native.requests.find(row => row.requestId === id)).filter(Boolean);
+      const candidates = action.postIds.map(id => native.requests.find(row => row.requestId === id))
+        .filter(request => request && sameScope(request, action.scope) && request.routeTemplate === action.expected.route && request.sameOrigin);
       const request = candidates.length === 1 ? candidates[0] : null;
       const association = request && sameScope(request, action.scope) && request.hop === 0 && request.sameOrigin && request.method === 'POST'
         && request.resourceType === 'fetch' && request.routeTemplate === action.expected.route && starts.get(request.requestId) > action.beginOrdinal

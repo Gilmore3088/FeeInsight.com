@@ -271,3 +271,55 @@ describe("bounded privacy and passive observer", () => {
     for (const name of ["Network.requestWillBeSent", "Network.responseReceived", "Network.loadingFinished", "Network.loadingFailed", "Page.frameNavigated", "Page.navigatedWithinDocument", "Page.frameDetached"]) expect(session.listenerCount(name)).toBe(0);
   });
 });
+
+describe("native matching-route action window regression", () => {
+  // The frozen API requires exactly one MATCHING scoped POST, not exactly one
+  // POST of every operation in the session. Other requests retain their own transport.
+  const otherRoute = { url: ORIGIN + "/pro/analyze", mimeType: "text/x-component", headers: { "Next-Action": PRIVATE } };
+
+  it("associates only the expected route when two completed other-route POSTs share its window", () => {
+    const value = capture(), id = begin(value);
+    transport(value, "other-action-before", otherRoute);
+    transport(value, "expected-peer-save");
+    transport(value, "other-action-after", otherRoute);
+    ui(value, id); persistence(value, id); reopen(value, id);
+    const { result, row } = action(value);
+    expect(result.protocol.requests).toHaveLength(3);
+    expect(result.protocol.requests.every(request => request.transport === "finished" && request.responseStatus === 200)).toBe(true);
+    const expectedRequest = result.protocol.requests.find(request => request.routeTemplate === "/api/hamilton/ask");
+    expect(row).toMatchObject({ requestId: expectedRequest?.requestId, association: "exactly_one", transport: "finished", actionSettlement: "observed", complete: true });
+    expect(result.status).toBe("LOCAL_ACTIONS_UNTRUSTED");
+  });
+
+  it("keeps association unknown when only a completed other-route POST exists", () => {
+    const value = capture(), id = begin(value);
+    transport(value, "unrelated-only", otherRoute);
+    ui(value, id); persistence(value, id); reopen(value, id);
+    const { result, row } = action(value);
+    expect(result.protocol.requests[0]).toMatchObject({ routeTemplate: "/pro/analyze", transport: "finished", responseStatus: 200 });
+    expect(row).toMatchObject({ requestId: null, association: "unknown", actionSettlement: "unknown", complete: false });
+    expect(result.status).toBe("BLOCKED");
+  });
+
+  it("keeps two completed matching-route POSTs ambiguous", () => {
+    const value = capture(), id = begin(value);
+    transport(value, "peer-save-a"); transport(value, "peer-save-b");
+    ui(value, id); persistence(value, id); reopen(value, id);
+    const { result, row } = action(value);
+    expect(result.protocol.requests.every(request => request.routeTemplate === "/api/hamilton/ask" && request.transport === "finished")).toBe(true);
+    expect(row).toMatchObject({ requestId: null, association: "unknown", actionSettlement: "unknown", complete: false });
+    expect(result.status).toBe("BLOCKED");
+  });
+
+  it("retains a global blocker for an unfinished other-route POST without borrowing it into the expected action", () => {
+    const value = capture(), id = begin(value);
+    transport(value, "expected-peer-save");
+    request(value, "other-unfinished", otherRoute); response(value, "other-unfinished", otherRoute);
+    ui(value, id); persistence(value, id); reopen(value, id);
+    const { result, row } = action(value);
+    expect(row).toMatchObject({ association: "exactly_one", transport: "finished", actionSettlement: "observed" });
+    expect(result.protocol.requests.find(request => request.routeTemplate === "/pro/analyze")).toMatchObject({ transport: "unknown", responseStatus: 200 });
+    expect(result.incompleteReasons).toContain("unsettled_post");
+    expect(result.status).toBe("BLOCKED"); expect(result.complete).toBe(false);
+  });
+});
