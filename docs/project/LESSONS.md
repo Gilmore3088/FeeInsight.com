@@ -672,6 +672,8 @@ Every finding in `findings/`, grouped by where the problem was, newest first in 
 
 ### CI, tests, tooling and PR workflow
 
+- 2026-11-08 — Route financial and access owners from actual source responsibility; select a frozen explicit revision and preserve historical proof separately from current authority. — [finding](findings/2026-11-08-financial-risk-contract-revisions.md) — Guards: `src/lib/engineering-verification/financial-routing.test.ts`, `src/lib/engineering-verification/contract-registry.test.ts`.
+
 - 2026-11-07 — A selected DB suite can still skip cases; align both database clients and require its actual assertion inventory before accepting a green job. — [finding](findings/2026-11-07-required-database-test-execution.md) — Guards: `src/lib/engineering-verification/required-database-tests.test.ts`, `src/lib/engineering-verification/workflows.test.ts`.
 - 2026-11-07 — Serial tests still inherit fixture writes; restore research's baseline and confine temporary database suites to their own lookup path before asserting literal fees or lineage counts. — [finding](findings/2026-11-07-hamilton-journey-fixture-isolation.md) — Guards: `tests/e2e/hamilton/research-journey.pw.ts`, `src/lib/agents/atlas/vault-retention.db.test.ts`.
 - 2026-11-07 — Budget the complete growing lessons audit separately from short unit cases; keep the real command and exit-zero assertion. — [finding](findings/2026-11-07-lessons-audit-test-budget.md) — Guard: `scripts/ci-guards.test.ts`.

@@ -58,10 +58,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ steps.target.outputs.pr_number }}
-          CONTRACT_NUMBER: ${{ steps.target.outputs.contract_number }}
+          CONTRACT_KEY: ${{ steps.target.outputs.contract_key }}
         run: |
-          if [ -n "$CONTRACT_NUMBER" ]; then
-            node src/lib/engineering-verification/cli.mjs audit --pr "$PR_NUMBER" --contract "$CONTRACT_NUMBER" --output test-results/engineering-verification/audit
+          if [ -n "$CONTRACT_KEY" ]; then
+            node src/lib/engineering-verification/cli.mjs audit --pr "$PR_NUMBER" --contract "$CONTRACT_KEY" --output test-results/engineering-verification/audit
           else
             node src/lib/engineering-verification/cli.mjs audit --pr "$PR_NUMBER" --output test-results/engineering-verification/audit
           fi

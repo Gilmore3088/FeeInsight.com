@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { Unzip, UnzipInflate } from 'fflate';
 import { assessProofBundle, contractDigest, validateContract } from './contract.mjs';
 import { isGithubEvidence } from './github.mjs';
+import { resolveContractRevision, parseContractMarker } from './contract-registry.mjs';
 
 const NATIVE_FETCH = globalThis.fetch;
 const collected = new WeakSet();
@@ -25,6 +26,104 @@ const fresh = (observedAt, now) => Number.isFinite(at(observedAt)) && at(observe
 // GitHub's artifact expiry can be anchored to workflow creation, before upload
 // and before a later attempt. Never extend either that run age or the API expiry.
 const artifactExpiry = (run, artifact) => Math.min(at(run?.created_at) + 90 * DAY, at(artifact?.expires_at));
+const HISTORICAL_CONTRACT_DIGESTS = Object.freeze({
+  '1048': '433742496a19144f88c326faadae79562540f85a99cf9ed3201089f3db98349b',
+  '2285': 'e7b47a13b62ba06fe75b77480f2dc68f4d53dcf1820f499a4e2a18791a6d9cc5',
+});
+
+/** Workflow IDs survive edits. Only reviewed immutable bytes can originate proof for a revision. */
+export function expectedWorkflowDigest(revision, contract) {
+  const registered = resolveContractRevision(revision?.key);
+  let digest;
+  if (registered.executionStatus === 'HISTORICAL_ONLY') digest = registered.historicalWorkflowSha256;
+  else {
+    const entries = Array.isArray(contract?.execution_files) ? contract.execution_files.filter(file => file?.path === WORKFLOW) : [];
+    if (entries.length !== 1) throw new Error('Current proof workflow requires exactly one frozen execution_files digest');
+    digest = entries[0].sha256;
+  }
+  if (typeof digest !== 'string' || !/^[a-f0-9]{64}$/i.test(digest)) throw new Error('Revision-authorized proof workflow digest is missing or invalid');
+  return digest.toLowerCase();
+}
+
+// Nonrecursive immutable tree reads are shared across all closure paths at this source ref.
+async function nativeTreeEntry(path, ref, get, cache, allowMissing = false) {
+  if (typeof path !== 'string' || !path.length || path.length > 1024 || path.startsWith('/')
+    || /[\\\x00-\x20\x7f:%*?]/.test(path) || path.split('/').length > 32
+    || path.split('/').some(part => !part || part === '.' || part === '..')) throw new Error('Safe exact native source path required');
+  if (!sha(ref) || typeof get !== 'function' || !(cache instanceof Map)) throw new Error('Immutable native source tree identity required');
+  const read = (key, path) => {
+    if (!cache.has(key)) cache.set(key, Promise.resolve().then(() => get(path)));
+    return cache.get(key);
+  };
+  const commit = await read('commit:' + ref, '/git/commits/' + ref);
+  if (commit?.sha !== ref || !sha(commit?.tree?.sha)) throw new Error('Authenticated contract commit tree identity is malformed');
+  let treeSha = commit.tree.sha;
+  const segments = path.split('/');
+  for (const [index, segment] of segments.entries()) {
+    const tree = await read('tree:' + treeSha, '/git/trees/' + treeSha);
+    if (tree?.sha !== treeSha || tree?.truncated !== false || !Array.isArray(tree?.tree) || tree.tree.length > 5000) throw new Error('Native contract tree is malformed, truncated or exceeds its bound');
+    const names = new Set();
+    for (const entry of tree.tree) {
+      if (!entry || typeof entry.path !== 'string' || !entry.path || entry.path === '.' || entry.path === '..' || /[\\/\x00-\x1f\x7f]/.test(entry.path)
+        || names.has(entry.path) || !sha(entry.sha) || !['tree', 'blob', 'commit'].includes(entry.type) || !/^[0-7]{6}$/.test(entry.mode ?? '')) throw new Error('Native contract tree entry is malformed');
+      names.add(entry.path);
+    }
+    const entry = tree.tree.find(row => row.path === segment);
+    if (!entry && allowMissing) return null;
+    if (index < segments.length - 1) {
+      if (entry?.type !== 'tree' || entry.mode !== '040000') throw new Error('Native source directory is missing or is not a canonical tree: ' + path);
+      treeSha = entry.sha;
+    } else return entry ?? null;
+  }
+}
+
+/** Contents may dereference symlinks; immutable regular-file modes precede every approved source read. */
+export async function assertNativeSourcePath(path, ref, get, cache = new Map()) {
+  const entry = await nativeTreeEntry(path, ref, get, cache);
+  if (entry?.type !== 'blob' || !['100644', '100755'].includes(entry.mode)) throw new Error('Native source must be a regular canonical Git blob, never a symlink or submodule: ' + path);
+  return entry.sha;
+}
+
+/** Callers cannot substitute a same-issue path for the canonical registered declaration. */
+export async function assertNativeContractPath(revision, ref, get, cache = new Map()) {
+  return assertNativeSourcePath(resolveContractRevision(revision?.key).path, ref, get, cache);
+}
+
+/** Parent source eligibility only; neither a registered revision nor an allowed historical source grants code acceptance. */
+export async function assertNativeProofSource(revision, ref, get, cache = new Map()) {
+  const registered = resolveContractRevision(revision?.key);
+  if (!sha(ref)) throw new Error('Immutable proof source commit required');
+  if (registered.executionStatus === 'HISTORICAL_ONLY') {
+    if (!registered.historicalTrustedSourceRefs.includes(ref)) throw new Error('Historical proof source commit is not explicitly approved');
+    return;
+  }
+  for (const path of registered.requiredProofInputs) await assertNativeSourcePath(path, ref, get, cache);
+  for (const path of registered.forbiddenProofInputs) {
+    if (await nativeTreeEntry(path, ref, get, cache, true)) throw new Error('Forbidden proof source input is present: ' + path);
+  }
+}
+
+/** Historical declarations retain their exact original bytes, not today's executable chain. */
+export function validateRevisionContract(revision, contract, contractRaw) {
+  const errors = [...validateContract(contract).errors];
+  let registered;
+  try { registered = resolveContractRevision(revision?.key); }
+  catch { errors.push('Registered contract revision required'); }
+  if (registered && (contract?.contract_id !== registered.contractId || contract?.issue !== '#' + registered.issueNumber)) errors.push('Contract identity differs from the explicit registered revision');
+  if (registered?.executionStatus === 'CURRENT') {
+    const files = Array.isArray(contract?.execution_files) ? contract.execution_files : [];
+    for (const path of registered.requiredProofInputs) {
+      if (files.filter(file => file?.path === path).length !== 1) errors.push('Current proof execution closure input ' + path + ' requires exactly one frozen digest');
+    }
+  }
+  if (typeof contractRaw !== 'string') errors.push('Exact frozen contract bytes required');
+  else {
+    try { if (!same(JSON.parse(contractRaw), contract)) errors.push('Frozen contract bytes differ from supplied declaration'); }
+    catch { errors.push('Frozen contract bytes are not valid JSON'); }
+    if (registered?.executionStatus === 'HISTORICAL_ONLY' && hash(contractRaw) !== HISTORICAL_CONTRACT_DIGESTS[registered.key]) errors.push('Historical contract raw identity changed');
+  }
+  return { ok: errors.length === 0, errors };
+}
 
 async function bytes(response, limit) {
   const declared = response.headers.get('content-length');
@@ -68,7 +167,7 @@ function readReceipt(archive) {
 
 export const isCollectedProof = value => value != null && collected.has(value);
 
-/** Authority exists only on this live, authenticated, immutable in-process object. */
+/** Behavioral corroboration only. Historical proof never establishes approval, at-time authorization or current code acceptance. */
 export function assessCollectedProof(snapshot, { now = new Date() } = {}) {
   const blockers = [...(snapshot?.validation?.problems ?? [])];
   if (!isCollectedProof(snapshot)) blockers.push('Proof artifact provenance is not authenticated in this process');
@@ -76,33 +175,41 @@ export function assessCollectedProof(snapshot, { now = new Date() } = {}) {
   if (!fresh(snapshot?.observedAt, now)) blockers.push('Proof collection is stale or has no valid observation time');
   const expiry = artifactExpiry(snapshot?.run, snapshot?.artifact);
   if (!Number.isFinite(expiry) || now.getTime() >= expiry || snapshot?.artifact?.expired !== false) blockers.push('Proof artifact expired or retention evidence is missing');
-  return { status: blockers.length ? 'BLOCKED' : 'VERIFIED', blockers: [...new Set(blockers)],
+  const currentCodeVerified = blockers.length === 0 && snapshot?.executionStatus === 'CURRENT';
+  return { status: blockers.length ? 'BLOCKED' : currentCodeVerified ? 'VERIFIED' : 'HISTORICAL_VERIFIED', currentCodeVerified, contractKey: snapshot?.contractKey ?? null, blockers: [...new Set(blockers)],
     runId: snapshot?.run?.id ?? null, runAttempt: snapshot?.run?.run_attempt ?? null,
     artifactId: snapshot?.artifact?.id ?? null, artifactDigest: snapshot?.artifact?.digest ?? null };
 }
 
-export async function collectProofEvidence({ github, contract, contractRaw, token, now = new Date(), fetchImpl = NATIVE_FETCH }) {
+export async function collectProofEvidence({ github, contract, contractRaw, contractKey, token, now = new Date(), fetchImpl = NATIVE_FETCH }) {
   if (typeof token !== 'string' || !token.trim()) throw new Error('Authenticated GitHub read token required');
   const problems = [], testTransport = fetchImpl !== NATIVE_FETCH;
   const authenticGithub = isGithubEvidence(github) && github.provenance?.kind === 'authenticated-github-api';
   if (!authenticGithub) problems.push('GitHub snapshot provenance is not authenticated in this process');
   if (!fresh(github?.observedAt, now)) problems.push('GitHub snapshot is stale or missing observation time');
   problems.push(...(github?.problems ?? []));
-  const validation = validateContract(contract);
-  problems.push(...validation.errors);
-  if (typeof contractRaw !== 'string') problems.push('Exact frozen contract bytes required');
-  else {
-    try { if (!same(JSON.parse(contractRaw), contract)) problems.push('Frozen contract bytes differ from supplied declaration'); }
-    catch { problems.push('Frozen contract bytes are not valid JSON'); }
-  }
+  let revision;
+  try {
+    const marked = parseContractMarker(github?.pullRequest?.body);
+    revision = contractKey == null ? marked : resolveContractRevision(contractKey);
+    if (marked.key !== revision.key) problems.push('Explicit contract revision differs from the authenticated PR marker');
+  } catch (error) { problems.push(error instanceof Error ? error.message : 'Explicit registered contract revision required'); }
+  problems.push(...validateRevisionContract(revision, contract, contractRaw).errors);
+  let workflowDigest;
+  try { workflowDigest = expectedWorkflowDigest(revision, contract); }
+  catch (error) { problems.push(error instanceof Error ? error.message : 'Revision-authorized proof workflow digest unavailable'); }
   const repository = github?.repository, prNumber = github?.prNumber, headSha = github?.pullRequest?.headSha;
   if (typeof repository !== 'string' || !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository) || !positive(prNumber) || !sha(headSha)) problems.push('Authenticated repository, PR and current head identity required');
-  const snapshot = { schemaVersion: 1, repository, prNumber, headSha, observedAt: now.toISOString(),
+  const snapshot = { schemaVersion: 1, repository, prNumber, headSha, contractKey: revision?.key ?? null, executionStatus: revision?.executionStatus ?? null, currentCodeVerified: false, observedAt: now.toISOString(),
     provenance: { kind: testTransport ? 'test-transport-untrusted' : 'authenticated-github-proof-artifact' },
     run: null, artifact: null, receipt: null, validation: null, status: 'BLOCKED' };
   const finish = () => {
     snapshot.validation = { status: problems.length ? 'BLOCKED' : 'PASSED', problems: [...new Set(problems)] };
-    if (!problems.length && !testTransport && authenticGithub) { snapshot.status = 'VERIFIED'; collected.add(snapshot); }
+    if (!problems.length && !testTransport && authenticGithub) {
+      snapshot.currentCodeVerified = revision.executionStatus === 'CURRENT';
+      snapshot.status = snapshot.currentCodeVerified ? 'VERIFIED' : 'HISTORICAL_VERIFIED';
+      collected.add(snapshot);
+    }
     return freeze(snapshot);
   };
   // Read-only fixture collection may exercise the parser; it can never mint authority.
@@ -116,9 +223,11 @@ export async function collectProofEvidence({ github, contract, contractRaw, toke
     if (!response.ok) throw new Error(`GitHub ${path.split('?')[0]} returned ${response.status}`);
     return JSON.parse((await bytes(response, JSON_LIMIT)).toString('utf8'));
   };
+  const nativeTrees = new Map();
   const content = async (path, ref) => {
+    const blobSha = path === revision.path ? await assertNativeContractPath(revision, ref, get, nativeTrees) : await assertNativeSourcePath(path, ref, get, nativeTrees);
     const result = await get(`/contents/${path.split('/').map(encodeURIComponent).join('/')}?ref=${ref}`);
-    if (result.type !== 'file' || result.path !== path || result.encoding !== 'base64' || typeof result.content !== 'string') throw new Error(`Trusted source file unavailable: ${path}`);
+    if (result.type !== 'file' || result.path !== path || result.encoding !== 'base64' || typeof result.content !== 'string' || (blobSha && result.sha !== blobSha)) throw new Error(`Trusted source file unavailable or differs from its canonical Git blob: ${path}`);
     const value = Buffer.from(result.content, 'base64');
     if (value.length > JSON_LIMIT) throw new Error('Trusted source file exceeds byte limit');
     return value;
@@ -132,7 +241,7 @@ export async function collectProofEvidence({ github, contract, contractRaw, toke
     if (!positive(workflow.id) || workflow.path !== WORKFLOW || workflow.state !== 'active') throw new Error('Registered engineering verification workflow unavailable');
     const inventory = await get(`/actions/workflows/${workflow.id}/runs?event=workflow_dispatch&branch=main&per_page=20&page=1`);
     if (!Array.isArray(inventory.workflow_runs) || inventory.workflow_runs.length > 20) throw new Error('Bounded workflow-run inventory unavailable');
-    const artifactPrefix = `engineering-verification-${prNumber}-${headSha}-${contract.issue.slice(1)}-attempt-`;
+    const artifactPrefix = `engineering-verification-${prNumber}-${headSha}-${revision.key}-attempt-`;
     let selected;
     for (const run of [...inventory.workflow_runs].sort((a, b) => b.id - a.id)) {
       if (!positive(run.id)) continue;
@@ -154,8 +263,11 @@ export async function collectProofEvidence({ github, contract, contractRaw, toke
       && typeof row.path === 'string' && row.path.split('@')[0] === WORKFLOW
       && row.html_url === `https://github.com/${repository}/actions/runs/${row.id}`;
     if (!validRun(run)) throw new Error('Proof workflow identity, event, repository, branch or conclusion mismatched');
+    await assertNativeProofSource(revision, run.head_sha, get, nativeTrees);
     const attempt = await get(`/actions/runs/${run.id}/attempts/${run.run_attempt}`);
     if (!validRun(attempt) || attempt.head_sha !== run.head_sha || attempt.run_attempt !== run.run_attempt) throw new Error('Proof run attempt identity mismatch');
+    await assertNativeProofSource(revision, attempt.head_sha, get, nativeTrees);
+    if (revision.executionStatus === 'CURRENT') await assertNativeProofSource(revision, branch.sha, get, nativeTrees);
     snapshot.run = attempt;
     const jobs = await get(`/actions/runs/${run.id}/attempts/${run.run_attempt}/jobs?per_page=100&page=1`);
     const proofJobs = Array.isArray(jobs.jobs) ? jobs.jobs.filter(job => job.name === 'historical-proof') : [];
@@ -187,6 +299,7 @@ export async function collectProofEvidence({ github, contract, contractRaw, toke
     if (archive.length !== artifact.size_in_bytes || `sha256:${hash(archive)}` !== artifact.digest.toLowerCase()) throw new Error('Downloaded proof artifact digest or size mismatch');
     const receipt = readReceipt(archive);
     snapshot.receipt = receipt;
+    if ((revision.executionStatus === 'CURRENT' || receipt.contract_key != null) && receipt.contract_key !== revision.key) throw new Error('Proof receipt contract revision key mismatch');
     if (receipt.schema_version !== '1.0' || receipt.contract_id !== contract.contract_id || receipt.base_sha !== contract.base_sha
       || receipt.head_sha !== headSha || receipt.contract_sha256 !== contractDigest(contractRaw) || !same(receipt.execution_files, contract.execution_files)
       || receipt.provenance?.claimed_origin !== 'GITHUB_ACTIONS_UNCORROBORATED' || receipt.provenance?.workflow_sha !== run.head_sha
@@ -200,22 +313,29 @@ export async function collectProofEvidence({ github, contract, contractRaw, toke
     if (receipt.pairs.some(pair => pair.red.artifact_url !== run.html_url || pair.green.artifact_url !== run.html_url)) problems.push('Proof pair log reference is not the authenticated run');
     const requiredFiles = new Map(contract.execution_files.map(file => [file.path, file.sha256]));
     for (const requirement of contract.requirements) for (const kind of ['test', 'fixture', 'adapter']) requiredFiles.set(requirement[`${kind}_path`], requirement[`${kind}_sha256`]);
-    requiredFiles.set(`docs/project/acceptance/engineering/${contract.issue.slice(1)}.json`, contractDigest(contractRaw));
+    requiredFiles.set(revision.path, contractDigest(contractRaw));
+    if (hash(await content(revision.path, branch.sha)) !== contractDigest(contractRaw)) problems.push('Registered contract raw identity differs on trusted current default branch');
     const workflowBytes = await content(WORKFLOW, run.head_sha), currentWorkflow = await content(WORKFLOW, branch.sha);
-    if (hash(workflowBytes) !== hash(currentWorkflow)) problems.push('Proof workflow differs from trusted current default-branch source');
+    if (hash(workflowBytes) !== workflowDigest) problems.push('Proof workflow differs from the revision-authorized frozen workflow digest');
+    if (revision.executionStatus === 'CURRENT' && hash(workflowBytes) !== hash(currentWorkflow)) problems.push('Proof workflow differs from trusted current default-branch source');
     for (const [path, expected] of requiredFiles) {
-      const historical = await content(path, run.head_sha), current = run.head_sha === branch.sha ? historical : await content(path, branch.sha);
-      if (hash(historical) !== expected || hash(current) !== expected) problems.push(`Trusted source identity changed or is not bootstrapped: ${path}`);
+      const historical = await content(path, run.head_sha);
+      if (hash(historical) !== expected) problems.push(`Trusted historical source identity differs from frozen execution: ${path}`);
+      if (revision.executionStatus === 'CURRENT') {
+        const current = run.head_sha === branch.sha ? historical : await content(path, branch.sha);
+        if (hash(current) !== expected) problems.push(`Trusted source identity changed or is not bootstrapped: ${path}`);
+      }
     }
     const lock = await content('package-lock.json', run.head_sha);
     const currentLock = run.head_sha === branch.sha ? lock : await content('package-lock.json', branch.sha);
-    if (receipt.runtime?.dependency_lock_sha256 !== hash(lock) || hash(lock) !== hash(currentLock)) problems.push('Proof dependency lock identity changed or mismatched current default branch');
+    if (receipt.runtime?.dependency_lock_sha256 !== hash(lock) || (revision.executionStatus === 'CURRENT' && hash(lock) !== hash(currentLock))) problems.push('Proof dependency lock identity changed or mismatched current default branch');
     const packageJson = await content('package.json', run.head_sha), currentPackage = run.head_sha === branch.sha ? packageJson : await content('package.json', branch.sha);
-    if (hash(packageJson) !== hash(currentPackage)) problems.push('Proof package configuration changed on current default branch');
+    if (revision.executionStatus === 'CURRENT' && hash(packageJson) !== hash(currentPackage)) problems.push('Proof package configuration changed on current default branch');
     const runtimePath = contract.execution_files.find(file => file.path.endsWith('/runtime.json'))?.path;
     if (!runtimePath || receipt.runtime?.image !== JSON.parse((await content(runtimePath, run.head_sha)).toString('utf8')).image) problems.push('Proof runtime image identity mismatch');
     const current = await get(`/pulls/${prNumber}`), latestBranch = await get('/commits/main'), latestRun = await get(`/actions/runs/${run.id}`);
     if (current.head?.sha !== headSha) problems.push('Pull request head changed while collecting proof');
+    if (parseContractMarker(current.body).key !== revision.key) problems.push('Pull request contract revision changed while collecting proof');
     if (latestBranch.sha !== branch.sha) problems.push('Trusted default branch changed while collecting proof');
     if (!validRun(latestRun) || latestRun.run_attempt !== run.run_attempt || latestRun.head_sha !== run.head_sha) problems.push('Proof run changed or a newer attempt began while collecting proof');
   } catch (error) { problems.push(error instanceof Error ? error.message.split(token).join('[redacted]') : 'Proof collection failed'); }

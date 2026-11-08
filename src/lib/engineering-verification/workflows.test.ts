@@ -143,7 +143,7 @@ describe('engineering verification workflow trust boundary', () => {
     expect(execute?.env).not.toHaveProperty('GH_TOKEN');
     expect(execute?.env).not.toHaveProperty('GITHUB_TOKEN');
     const artifact = steps.find(step => step.uses?.startsWith('actions/upload-artifact@'));
-    expect(artifact?.with?.name).toBe('engineering-verification-${{ inputs.pr_number }}-${{ steps.prepare.outputs.head_sha }}-${{ inputs.contract }}-attempt-${{ github.run_attempt }}');
+    expect(artifact?.with?.name).toBe('engineering-verification-${{ inputs.pr_number }}-${{ steps.prepare.outputs.head_sha }}-${{ steps.prepare.outputs.contract_key }}-attempt-${{ github.run_attempt }}');
     expect(artifact?.with?.['retention-days']).toBe(90);
   });
   it('refreshes audit evidence on empty workflow-run PR associations without writing checks', () => {
