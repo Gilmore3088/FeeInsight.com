@@ -116,6 +116,16 @@ export const ATLAS_LESSONS: AgentLesson[] = [
     since: "2026-11-01",
   },
   {
+    id: "new-paid-batch-joins-tick-order-in-its-own-pr",
+    agent: "atlas",
+    stage: "scheduling",
+    lesson: "A new approved paid batch adds its run source to ONE_OFF_PAID_BATCH_SOURCES in the PR that adds its scheduler, and the order test imports that source, so the batch never ships without its place at the front of the tick.",
+    why: "James approved $1.50 for Knox's blind second reader on Nov 8; its first run (22802) was queued at 17:40 behind about 20 lane runs and was never reached, with no deferral logged, because its source was missing from the list that the Nov 1 lesson created.",
+    evidence: { issues: [], prs: [2994, 3011], files: ["src/lib/agents/run-store.ts", "src/lib/agents/one-off-batch-order.test.ts"] },
+    appliesTo: "all",
+    since: "2026-11-08",
+  },
+  {
     id: "issue-2199-publication-gets-a-bounded-share-of-lane-slots",
     agent: "atlas",
     stage: "scheduling",
