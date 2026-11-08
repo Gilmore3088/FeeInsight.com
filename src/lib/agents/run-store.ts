@@ -5160,10 +5160,16 @@ export async function executeAgentRun(
 /**
  * Sources of the one-off paid batches James approved, each queued one run at a time by its own
  * scheduler and capped there: the answer-key re-key (deming/answer-key-rekey-schedule.ts) and the
- * Darwin release-review sample (darwin/release-review-sample.ts). They rank ahead of state lanes
- * once queued 30 minutes, so an approved batch actually runs (Nov 1: both sat queued for hours).
+ * Darwin release-review sample (darwin/release-review-sample.ts), and Knox's blind second reader
+ * (knox/second-reader.ts). They rank ahead of state lanes once queued 30 minutes, so an approved
+ * batch actually runs (Nov 1: both sat queued for hours; Nov 8: the second reader's first run sat
+ * queued behind 20 lane runs and was never reached).
  */
-export const ONE_OFF_PAID_BATCH_SOURCES: readonly string[] = ["deming.answer_key_rekey", "darwin.release_review_sample"];
+export const ONE_OFF_PAID_BATCH_SOURCES: readonly string[] = [
+  "deming.answer_key_rekey",
+  "darwin.release_review_sample",
+  "knox.second_reader",
+];
 
 /**
  * A run that is not a lane, a report or a direct run (LANE_ROOM_SOURCES), has finished no step for
