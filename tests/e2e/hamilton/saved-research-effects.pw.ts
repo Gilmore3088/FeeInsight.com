@@ -60,6 +60,7 @@ async function assertRetainedSavedHistory(page: Page, artifactId: string, expect
   let uiAssertionsCompleted = false;
   let timeOriginUnchanged = false;
   let sameDocument = false;
+  const checkpoints: Array<{ from: number; started: number; to: number; route: string; frameLoaderUnchanged: boolean; timeOriginUnchanged: boolean }> = [];
   try {
     await expect(page).toHaveURL(savedUrl);
     session = await page.context().newCDPSession(page);
@@ -68,33 +69,49 @@ async function assertRetainedSavedHistory(page: Page, artifactId: string, expect
       routeTemplates: ["/pro/reports", "/pro/peer-research/[id]"], protocolVersion: version.protocolVersion });
     observer = await attachBrowserProtocolObserver(session, capture, { sessionKey: session, contextKey: page.context() });
     const timeOrigin = await page.evaluate(() => performance.timeOrigin);
+    const initialFrame = (await session.send("Page.getFrameTree")).frameTree.frame;
+    const checkpoint = async (route: string, action: () => Promise<unknown>, assertions: () => Promise<void>) => {
+      // One action may emit traversal and framework replaceState notifications. Reuse none.
+      const from = checkpoints.at(-1)?.to ?? 0;
+      const started = capture!.snapshot().navigations.length;
+      await action();
+      await assertions();
+      const frame = (await session!.send("Page.getFrameTree")).frameTree.frame;
+      const sameTimeOrigin = await page.evaluate(() => performance.timeOrigin) === timeOrigin;
+      await expect.poll(() => capture!.snapshot().navigations.length).toBeGreaterThan(started);
+      checkpoints.push({ from, started, to: capture!.snapshot().navigations.length, route,
+        frameLoaderUnchanged: frame.id === initialFrame.id && frame.loaderId === initialFrame.loaderId,
+        timeOriginUnchanged: sameTimeOrigin });
+    };
     await page.getByRole("button", { name: "Open navigation", exact: true }).click();
     const reports = page.getByRole("navigation", { name: "Hamilton workspace" }).getByRole("link", { name: "Reports", exact: true });
     await expect(reports).toHaveAttribute("href", `/pro/reports?instId=${HOME.id}`);
-    await reports.click();
     const assertReportsA = async () => {
       await expect(page).toHaveURL(reportsA);
       await expect(page.getByRole("region", { name: "Institution context" })).toContainText(`Researching: ${HOME.name}`);
     };
-    await assertReportsA();
-    await page.getByRole("button", { name: "Research another institution", exact: true }).click();
-    await page.getByLabel("Institution", { exact: true }).fill("Indian River Test CU");
-    await page.getByRole("button", { name: /Indian River Test CU/ }).click();
-    await expect(page).toHaveURL(reportsB);
-    await expect(page.getByRole("region", { name: "Institution context" })).toContainText("Researching: Indian River Test CU");
-    await page.goBack();
-    await assertReportsA();
-    await page.goBack();
-    await expect(page).toHaveURL(savedUrl);
-    await assertSavedPage(page, expectedOrder);
-    await page.goForward();
-    await assertReportsA();
-    await page.goBack();
-    await expect(page).toHaveURL(savedUrl);
-    await assertSavedPage(page, expectedOrder);
-    timeOriginUnchanged = await page.evaluate(() => performance.timeOrigin) === timeOrigin;
+    const assertSavedA = async () => {
+      await expect(page).toHaveURL(savedUrl);
+      await assertSavedPage(page, expectedOrder);
+    };
+    await checkpoint("/pro/reports", () => reports.click(), assertReportsA);
+    await checkpoint("/pro/reports", async () => {
+      await page.getByRole("button", { name: "Research another institution", exact: true }).click();
+      await page.getByLabel("Institution", { exact: true }).fill("Indian River Test CU");
+      await page.getByRole("button", { name: /Indian River Test CU/ }).click();
+    }, async () => {
+      await expect(page).toHaveURL(reportsB);
+      await expect(page.getByRole("region", { name: "Institution context" })).toContainText("Researching: Indian River Test CU");
+    });
+    await checkpoint("/pro/reports", () => page.goBack(), assertReportsA);
+    await checkpoint("/pro/peer-research/[id]", () => page.goBack(), assertSavedA);
+    await checkpoint("/pro/reports", () => page.goForward(), assertReportsA);
+    await checkpoint("/pro/peer-research/[id]", () => page.goBack(), async () => {
+      await assertSavedA();
+      await snapshot(page, `retained-saved-peer-history-${width}`);
+    });
+    timeOriginUnchanged = checkpoints.every(point => point.timeOriginUnchanged);
     uiAssertionsCompleted = true;
-    await snapshot(page, `retained-saved-peer-history-${width}`);
   } catch (error) { failed = true; primaryError = error; }
   finally {
     try { await observer?.stop(); } catch { cleanupFailed = true; }
@@ -104,15 +121,18 @@ async function assertRetainedSavedHistory(page: Page, artifactId: string, expect
     const initial = documents[0];
     const expectedRoutes = ["/pro/reports", "/pro/reports", "/pro/reports", "/pro/peer-research/[id]", "/pro/reports", "/pro/peer-research/[id]"];
     sameDocument = Boolean(receipt?.closed && !receipt.truncated && receipt.protocolVersion === "1.3"
-      && documents.length === 1 && initial && receipt.navigations.length === expectedRoutes.length
-      && receipt.navigations.every((navigation, index) => navigation.kind === "same_document" && navigation.sameOrigin
-        && navigation.routeTemplate === expectedRoutes[index] && navigation.frameId === initial.frameId
+      && documents.length === 1 && initial && checkpoints.length === expectedRoutes.length
+      && checkpoints.at(-1)?.to === receipt.navigations.length
+      && checkpoints.every((point, index) => point.from === (checkpoints[index - 1]?.to ?? 0)
+        && point.started >= point.from && point.to > point.started && point.route === expectedRoutes[index] && point.frameLoaderUnchanged
+        && point.timeOriginUnchanged && receipt!.navigations.slice(point.from, point.to).every(navigation => navigation.routeTemplate === point.route))
+      && receipt.navigations.every(navigation => navigation.kind === "same_document" && navigation.sameOrigin && navigation.frameId === initial.frameId
         && navigation.documentId === initial.documentId && navigation.sessionId === initial.sessionId
         && navigation.contextId === initial.contextId)
       && !receipt.events.some(event => ["frame_lost", "session_lost", "incomplete"].includes(event.kind)));
     try { await test.info().attach(`retained-saved-peer-history-${width}-evidence`, { contentType: "application/json", body: JSON.stringify({
       schemaVersion: 1, provenance: "LOCAL_BROWSER_HISTORY_UNTRUSTED", uiAssertionsCompleted,
-      sameDocument, timeOriginUnchanged, cleanupFailed,
+      sameDocument, timeOriginUnchanged, cleanupFailed, checkpoints,
       complete: !failed && uiAssertionsCompleted && sameDocument && timeOriginUnchanged && !cleanupFailed,
       strictBrowserAcceptance: "NOT_ASSESSED", capture: receipt,
     }, null, 2) }); } catch { attachmentFailed = true; }
