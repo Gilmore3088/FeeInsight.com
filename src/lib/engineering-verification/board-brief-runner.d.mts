@@ -1,0 +1,15 @@
+import type { Outcome } from './board-brief-draft.mjs';
+export type Phase = 'component' | 'pdf-render' | 'pdf-parse';
+export type ProcessResult = { status: number | null; signal?: string | null; error?: { code?: string; message?: string }; stdout?: string | Uint8Array; stderr?: string | Uint8Array };
+export type StageResult = { status: 'OBSERVED_UNTRUSTED' | 'SETUP_FAILURE' | 'TIMEOUT'; values: unknown[]; execution_exit_code: number | null; phase?: Phase; error?: string };
+export const DRAFT_HARNESS_FILES: readonly string[];
+export type DraftSourcePlan = { selected: { path: string; mode: string; blob: string; bytes: number }[]; excluded: Record<string, { count: number; bytes: number }>; entries: number; totalBytes: number };
+export function planDraftSourceInventory(listing: string | Uint8Array): DraftSourcePlan;
+export function validateDraftOutputDirectory(root: string, path: string): string;
+export function draftSandboxArguments(options: { name: string; image: string; source: string; harness: string; toolchain: string; phase: Phase }): string[];
+export function classifyDraftExecution(result: ProcessResult, phase: Phase): StageResult;
+export function ownedCleanupAssessment(removeResult: ProcessResult, listResult: ProcessResult): { ok: boolean; problems: string[] };
+export type DraftAssessment = { status: 'BLOCKED'; codePairStatus: 'BLOCKED' | 'MATCHES_FROZEN_EXPECTATIONS_UNTRUSTED'; currentCodeVerified: false; registered: false; nativeStatus: 'BLOCKED'; requiredNative: readonly unknown[]; problems: string[] };
+export function assessDraftResults(input: { baselineOutcomes: Outcome[]; targetOutcomes: Outcome[]; executionComplete: boolean; cleanupVerified: boolean }): DraftAssessment;
+export type DraftReceipt = { schema_version: 'draft-1'; pilot_id: string; adapter: string; status: 'BLOCKED'; registered: false; currentCodeVerified: false; origin: 'LOCAL_SANDBOXED_UNTRUSTED'; assessment: DraftAssessment; requiredNative: readonly unknown[]; [key: string]: unknown };
+export function runBoardBriefDraft(options: { repositoryRoot: string; outputDirectory: string; baselineSha: string; headSha: string; toolchainDirectory?: string }): DraftReceipt;

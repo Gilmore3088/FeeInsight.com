@@ -1,0 +1,2630 @@
+{
+  "schemaVersion": 1,
+  "id": "EV-HAMILTON-975-BOARD-BRIEF-V1",
+  "adapter": "hamilton.board-brief.v1",
+  "clockIso": "2026-11-08T12:00:00.000Z",
+  "sourceBindings": {
+    "componentTest": {
+      "path": "src/components/hamilton/reports/BoardBriefEditor.save.test.tsx",
+      "sha256": "602b96140fd44e074cce1f6c5c8ff28432abba2be4362cf1f3f57592bbedbc03"
+    },
+    "pdfTest": {
+      "path": "src/components/hamilton/reports/PdfDocument.pagination.test.tsx",
+      "sha256": "38fb2fdc2753e34d1f5e0b9842586447ae59d86b370f849db4a03487282350c3"
+    }
+  },
+  "literals": {
+    "A": "00000000-0000-4000-8000-000009701411",
+    "B": "00000000-0000-4000-8000-000009701412",
+    "ANALYSIS": "00000000-0000-4000-8000-000009701311",
+    "report": {
+      "title": "Lakeshore board brief A",
+      "executiveSummary": [
+        "Synthetic saved wire fee $35; peer value $30; difference $5."
+      ],
+      "snapshot": [
+        {
+          "label": "Saved wire fee",
+          "current": "$35",
+          "proposed": "$30"
+        }
+      ],
+      "strategicRationale": "Frozen synthetic source evidence.",
+      "tradeoffs": [],
+      "recommendation": "Stored fixture; no current live-source claim.",
+      "implementationNotes": [
+        "Frozen reporting date Jun 30, 2026."
+      ],
+      "exportControls": {
+        "pdfEnabled": true,
+        "shareEnabled": false
+      },
+      "boardBrief": {
+        "sourceAnalysisId": "00000000-0000-4000-8000-000009701311",
+        "teamNote": "Original synthetic committee note.",
+        "includeEvidence": true
+      }
+    },
+    "otherReport": {
+      "title": "Indian River board brief B",
+      "executiveSummary": [
+        "Synthetic saved wire fee $35; peer value $30; difference $5."
+      ],
+      "snapshot": [
+        {
+          "label": "Saved wire fee",
+          "current": "$35",
+          "proposed": "$30"
+        }
+      ],
+      "strategicRationale": "Frozen synthetic source evidence.",
+      "tradeoffs": [],
+      "recommendation": "Stored fixture; no current live-source claim.",
+      "implementationNotes": [
+        "Frozen reporting date Jun 30, 2026."
+      ],
+      "exportControls": {
+        "pdfEnabled": true,
+        "shareEnabled": false
+      },
+      "boardBrief": {
+        "sourceAnalysisId": "00000000-0000-4000-8000-000009701311",
+        "teamNote": "Unchanged B note.",
+        "includeEvidence": true
+      }
+    },
+    "analysis": {
+      "title": "Synthetic saved answer",
+      "confidence": {
+        "level": "medium",
+        "basis": [
+          "Synthetic fixture."
+        ]
+      },
+      "hamiltonView": "Frozen source answer.",
+      "whatThisMeans": "",
+      "whyItMatters": [],
+      "evidence": {
+        "metrics": []
+      },
+      "exploreFurther": []
+    },
+    "blobUrl": "blob:synthetic-board-brief"
+  },
+  "defaults": {
+    "initialUrl": "/pro/reports?report_id=00000000-0000-4000-8000-000009701411",
+    "replaceCommitsHistory": false,
+    "saveOutcome": {
+      "kind": "success",
+      "reportId": "00000000-0000-4000-8000-000009701411"
+    }
+  },
+  "componentCases": [
+    {
+      "id": "HBB-COMP-01",
+      "kind": "component",
+      "baselineExpected": "PASS",
+      "steps": [
+        {
+          "op": "mount-reportA"
+        },
+        {
+          "op": "checkpoint",
+          "name": "initial"
+        }
+      ],
+      "checkpoints": [
+        "initial"
+      ],
+      "checks": [
+        {
+          "checkpoint": "initial",
+          "path": "statusText",
+          "operator": "contains",
+          "value": "Saved. The PDF uses this version."
+        },
+        {
+          "checkpoint": "initial",
+          "path": "saveDisabled",
+          "operator": "equals",
+          "value": true
+        },
+        {
+          "checkpoint": "initial",
+          "path": "downloadDisabled",
+          "operator": "equals",
+          "value": false
+        },
+        {
+          "checkpoint": "initial",
+          "path": "saveArgs",
+          "operator": "equals",
+          "value": []
+        },
+        {
+          "checkpoint": "initial",
+          "path": "fetchArgs",
+          "operator": "equals",
+          "value": []
+        },
+        {
+          "checkpoint": "initial",
+          "path": "replaceArgs",
+          "operator": "equals",
+          "value": []
+        }
+      ]
+    },
+    {
+      "id": "HBB-COMP-02",
+      "kind": "component",
+      "baselineExpected": "PASS",
+      "steps": [
+        {
+          "op": "save-mode",
+          "deferred": true,
+          "outcomes": []
+        },
+        {
+          "op": "mount-reportA"
+        },
+        {
+          "op": "edit",
+          "title": "Lakeshore board brief A: reviewed",
+          "teamNote": "Reviewed for the synthetic November committee."
+        },
+        {
+          "op": "click-save",
+          "settle": false
+        },
+        {
+          "op": "checkpoint",
+          "name": "pending"
+        },
+        {
+          "op": "resolve-save",
+          "outcome": {
+            "kind": "success",
+            "reportId": "00000000-0000-4000-8000-000009701411"
+          }
+        },
+        {
+          "op": "checkpoint",
+          "name": "settled"
+        }
+      ],
+      "checkpoints": [
+        "pending",
+        "settled"
+      ],
+      "checks": [
+        {
+          "checkpoint": "pending",
+          "path": "saveArgs",
+          "operator": "equals",
+          "value": [
+            [
+              {
+                "reportId": "00000000-0000-4000-8000-000009701411",
+                "edits": {
+                  "title": "Lakeshore board brief A: reviewed",
+                  "teamNote": "Reviewed for the synthetic November committee.",
+                  "includeEvidence": true
+                }
+              }
+            ]
+          ]
+        },
+        {
+          "checkpoint": "pending",
+          "path": "titleDisabled",
+          "operator": "equals",
+          "value": true
+        },
+        {
+          "checkpoint": "pending",
+          "path": "downloadDisabled",
+          "operator": "equals",
+          "value": true
+        },
+        {
+          "checkpoint": "pending",
+          "path": "statusText",
+          "operator": "contains",
+          "value": "Unsaved changes."
+        },
+        {
+          "checkpoint": "pending",
+          "path": "replaceArgs",
+          "operator": "equals",
+          "value": []
+        },
+        {
+          "checkpoint": "settled",
+          "path": "replaceArgs",
+          "operator": "equals",
+          "value": [
+            [
+              "/pro/reports?report_id=00000000-0000-4000-8000-000009701411"
+            ]
+          ]
+        },
+        {
+          "checkpoint": "settled",
+          "path": "statusText",
+          "operator": "contains",
+          "value": "Saved. The PDF uses this version."
+        },
+        {
+          "checkpoint": "settled",
+          "path": "downloadDisabled",
+          "operator": "equals",
+          "value": false
+        }
+      ]
+    },
+    {
+      "id": "HBB-COMP-03",
+      "kind": "component",
+      "baselineExpected": "PASS",
+      "steps": [
+        {
+          "op": "save-mode",
+          "deferred": false,
+          "outcomes": [
+            {
+              "kind": "refused",
+              "error": "Synthetic update refused."
+            }
+          ]
+        },
+        {
+          "op": "mount-reportA"
+        },
+        {
+          "op": "edit",
+          "title": "Lakeshore board brief A: reviewed",
+          "teamNote": "Reviewed for the synthetic November committee."
+        },
+        {
+          "op": "click-save",
+          "settle": true
+        },
+        {
+          "op": "checkpoint",
+          "name": "settled"
+        }
+      ],
+      "checkpoints": [
+        "settled"
+      ],
+      "checks": [
+        {
+          "checkpoint": "settled",
+          "path": "alertText",
+          "operator": "contains",
+          "value": "Synthetic update refused."
+        },
+        {
+          "checkpoint": "settled",
+          "path": "titleValue",
+          "operator": "equals",
+          "value": "Lakeshore board brief A: reviewed"
+        },
+        {
+          "checkpoint": "settled",
+          "path": "noteValue",
+          "operator": "equals",
+          "value": "Reviewed for the synthetic November committee."
+        },
+        {
+          "checkpoint": "settled",
+          "path": "downloadDisabled",
+          "operator": "equals",
+          "value": true
+        },
+        {
+          "checkpoint": "settled",
+          "path": "replaceArgs",
+          "operator": "equals",
+          "value": []
+        }
+      ]
+    },
+    {
+      "id": "HBB-COMP-04",
+      "kind": "component",
+      "baselineExpected": "PASS",
+      "steps": [
+        {
+          "op": "save-mode",
+          "deferred": false,
+          "outcomes": [
+            {
+              "kind": "rejected",
+              "message": "Synthetic rejection"
+            },
+            {
+              "kind": "success",
+              "reportId": "00000000-0000-4000-8000-000009701411"
+            }
+          ]
+        },
+        {
+          "op": "mount-reportA"
+        },
+        {
+          "op": "edit",
+          "title": "Lakeshore board brief A: reviewed",
+          "teamNote": "Reviewed for the synthetic November committee."
+        },
+        {
+          "op": "click-save",
+          "settle": true
+        },
+        {
+          "op": "checkpoint",
+          "name": "rejected"
+        },
+        {
+          "op": "click-save",
+          "settle": true
+        },
+        {
+          "op": "checkpoint",
+          "name": "settled"
+        }
+      ],
+      "checkpoints": [
+        "rejected",
+        "settled"
+      ],
+      "checks": [
+        {
+          "checkpoint": "rejected",
+          "path": "alertText",
+          "operator": "contains",
+          "value": "The brief could not be saved. Your edits remain here; retry."
+        },
+        {
+          "checkpoint": "settled",
+          "path": "saveArgs",
+          "operator": "lengthEquals",
+          "value": 2
+        },
+        {
+          "checkpoint": "settled",
+          "path": "saveArgs.1",
+          "operator": "equals",
+          "value": [
+            {
+              "reportId": "00000000-0000-4000-8000-000009701411",
+              "edits": {
+                "title": "Lakeshore board brief A: reviewed",
+                "teamNote": "Reviewed for the synthetic November committee.",
+                "includeEvidence": true
+              }
+            }
+          ]
+        },
+        {
+          "checkpoint": "settled",
+          "path": "replaceArgs",
+          "operator": "equals",
+          "value": [
+            [
+              "/pro/reports?report_id=00000000-0000-4000-8000-000009701411"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "HBB-COMP-05",
+      "kind": "component",
+      "baselineExpected": "PASS",
+      "steps": [
+        {
+          "op": "save-mode",
+          "deferred": true,
+          "outcomes": []
+        },
+        {
+          "op": "mount-reportA"
+        },
+        {
+          "op": "edit",
+          "title": "Lakeshore board brief A: reviewed",
+          "teamNote": "Reviewed for the synthetic November committee."
+        },
+        {
+          "op": "dispatch-double-save"
+        },
+        {
+          "op": "checkpoint",
+          "name": "pending"
+        },
+        {
+          "op": "resolve-save",
+          "outcome": {
+            "kind": "success",
+            "reportId": "00000000-0000-4000-8000-000009701411"
+          }
+        }
+      ],
+      "checkpoints": [
+        "pending"
+      ],
+      "checks": [
+        {
+          "checkpoint": "pending",
+          "path": "saveArgs",
+          "operator": "lengthEquals",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "id": "HBB-COMP-06",
+      "kind": "component",
+      "baselineExpected": "FAIL",
+      "steps": [
+        {
+          "op": "save-mode",
+          "deferred": true,
+          "outcomes": []
+        },
+        {
+          "op": "mount-reportA"
+        },
+        {
+          "op": "edit",
+          "title": "Lakeshore board brief A: reviewed",
+          "teamNote": "Reviewed for the synthetic November committee."
+        },
+        {
+          "op": "click-save",
+          "settle": false
+        },
+        {
+          "op": "unmount"
+        },
+        {
+          "op": "resolve-save",
+          "outcome": {
+            "kind": "success",
+            "reportId": "00000000-0000-4000-8000-000009701411"
+          }
+        },
+        {
+          "op": "checkpoint",
+          "name": "settled"
+        }
+      ],
+      "checkpoints": [
+        "settled"
+      ],
+      "checks": [
+        {
+          "checkpoint": "settled",
+          "path": "replaceArgs",
+          "operator": "equals",
+          "value": []
+        }
+      ]
+    },
+    {
+      "id": "HBB-COMP-07",
+      "kind": "component",
+      "baselineExpected": "FAIL",
+      "steps": [
+        {
+          "op": "save-mode",
+          "deferred": true,
+          "outcomes": []
+        },
+        {
+          "op": "mount-reportA"
+        },
+        {
+          "op": "edit",
+          "title": "Lakeshore board brief A: reviewed",
+          "teamNote": "Reviewed for the synthetic November committee."
+        },
+        {
+          "op": "click-save",
+          "settle": false
+        },
+        {
+          "op": "history",
+          "url": "/pro/reports?report_id=00000000-0000-4000-8000-000009701412"
+        },
+        {
+          "op": "keyed-reportB"
+        },
+        {
+          "op": "resolve-save",
+          "outcome": {
+            "kind": "success",
+            "reportId": "00000000-0000-4000-8000-000009701411"
+          }
+        },
+        {
+          "op": "checkpoint",
+          "name": "settled"
+        }
+      ],
+      "checkpoints": [
+        "settled"
+      ],
+      "checks": [
+        {
+          "checkpoint": "settled",
+          "path": "replaceArgs",
+          "operator": "equals",
+          "value": []
+        },
+        {
+          "checkpoint": "settled",
+          "path": "titleValue",
+          "operator": "equals",
+          "value": "Indian River board brief B"
+        },
+        {
+          "checkpoint": "settled",
+          "path": "noteValue",
+          "operator": "equals",
+          "value": "Unchanged B note."
+        }
+      ]
+    },
+    {
+      "id": "HBB-COMP-08",
+      "kind": "component",
+      "baselineExpected": "FAIL",
+      "steps": [
+        {
+          "op": "save-mode",
+          "deferred": true,
+          "outcomes": []
+        },
+        {
+          "op": "mount-reportA"
+        },
+        {
+          "op": "edit",
+          "title": "Lakeshore board brief A: reviewed",
+          "teamNote": "Reviewed for the synthetic November committee."
+        },
+        {
+          "op": "click-save",
+          "settle": false
+        },
+        {
+          "op": "history",
+          "url": "/pro/reports?report_id=00000000-0000-4000-8000-000009701412"
+        },
+        {
+          "op": "resolve-save",
+          "outcome": {
+            "kind": "success",
+            "reportId": "00000000-0000-4000-8000-000009701411"
+          }
+        },
+        {
+          "op": "checkpoint",
+          "name": "settled"
+        }
+      ],
+      "checkpoints": [
+        "settled"
+      ],
+      "checks": [
+        {
+          "checkpoint": "settled",
+          "path": "pathnameSearch",
+          "operator": "equals",
+          "value": "/pro/reports?report_id=00000000-0000-4000-8000-000009701412"
+        },
+        {
+          "checkpoint": "settled",
+          "path": "replaceArgs",
+          "operator": "equals",
+          "value": []
+        },
+        {
+          "checkpoint": "settled",
+          "path": "statusText",
+          "operator": "contains",
+          "value": "Unsaved changes."
+        }
+      ]
+    },
+    {
+      "id": "HBB-COMP-09",
+      "kind": "component",
+      "baselineExpected": "FAIL",
+      "steps": [
+        {
+          "op": "save-mode",
+          "deferred": true,
+          "outcomes": []
+        },
+        {
+          "op": "mount-reportA"
+        },
+        {
+          "op": "edit",
+          "title": "Lakeshore board brief A: reviewed",
+          "teamNote": "Reviewed for the synthetic November committee."
+        },
+        {
+          "op": "click-save",
+          "settle": false
+        },
+        {
+          "op": "history",
+          "url": "/pro/analyze?instId=9701002"
+        },
+        {
+          "op": "resolve-save",
+          "outcome": {
+            "kind": "success",
+            "reportId": "00000000-0000-4000-8000-000009701411"
+          }
+        },
+        {
+          "op": "checkpoint",
+          "name": "settled"
+        }
+      ],
+      "checkpoints": [
+        "settled"
+      ],
+      "checks": [
+        {
+          "checkpoint": "settled",
+          "path": "pathnameSearch",
+          "operator": "equals",
+          "value": "/pro/analyze?instId=9701002"
+        },
+        {
+          "checkpoint": "settled",
+          "path": "replaceArgs",
+          "operator": "equals",
+          "value": []
+        },
+        {
+          "checkpoint": "settled",
+          "path": "statusText",
+          "operator": "contains",
+          "value": "Unsaved changes."
+        }
+      ]
+    },
+    {
+      "id": "HBB-COMP-10",
+      "kind": "component",
+      "baselineExpected": "PASS",
+      "steps": [
+        {
+          "op": "save-mode",
+          "deferred": true,
+          "outcomes": []
+        },
+        {
+          "op": "mount-reportA"
+        },
+        {
+          "op": "edit",
+          "title": "Lakeshore board brief A: reviewed",
+          "teamNote": "Reviewed for the synthetic November committee."
+        },
+        {
+          "op": "click-save",
+          "settle": false
+        },
+        {
+          "op": "history",
+          "url": "/pro/reports?report_id=00000000-0000-4000-8000-000009701411#evidence"
+        },
+        {
+          "op": "resolve-save",
+          "outcome": {
+            "kind": "success",
+            "reportId": "00000000-0000-4000-8000-000009701411"
+          }
+        },
+        {
+          "op": "checkpoint",
+          "name": "settled"
+        }
+      ],
+      "checkpoints": [
+        "settled"
+      ],
+      "checks": [
+        {
+          "checkpoint": "settled",
+          "path": "replaceArgs",
+          "operator": "equals",
+          "value": [
+            [
+              "/pro/reports?report_id=00000000-0000-4000-8000-000009701411"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "HBB-COMP-11",
+      "kind": "component",
+      "baselineExpected": "PASS",
+      "steps": [
+        {
+          "op": "history",
+          "url": "/pro/reports?report_id=00000000-0000-4000-8000-000009701411&instId=9701001"
+        },
+        {
+          "op": "replace-mode",
+          "commitHistory": true
+        },
+        {
+          "op": "save-mode",
+          "deferred": true,
+          "outcomes": []
+        },
+        {
+          "op": "mount-reportA"
+        },
+        {
+          "op": "edit",
+          "title": "Lakeshore board brief A: reviewed",
+          "teamNote": "Reviewed for the synthetic November committee."
+        },
+        {
+          "op": "click-save",
+          "settle": false
+        },
+        {
+          "op": "resolve-save",
+          "outcome": {
+            "kind": "success",
+            "reportId": "00000000-0000-4000-8000-000009701411"
+          }
+        },
+        {
+          "op": "checkpoint",
+          "name": "settled"
+        }
+      ],
+      "checkpoints": [
+        "settled"
+      ],
+      "checks": [
+        {
+          "checkpoint": "settled",
+          "path": "pathnameSearch",
+          "operator": "equals",
+          "value": "/pro/reports?report_id=00000000-0000-4000-8000-000009701411"
+        },
+        {
+          "checkpoint": "settled",
+          "path": "replaceArgs",
+          "operator": "equals",
+          "value": [
+            [
+              "/pro/reports?report_id=00000000-0000-4000-8000-000009701411"
+            ]
+          ]
+        },
+        {
+          "checkpoint": "settled",
+          "path": "titleDisabled",
+          "operator": "equals",
+          "value": false
+        },
+        {
+          "checkpoint": "settled",
+          "path": "downloadDisabled",
+          "operator": "equals",
+          "value": false
+        },
+        {
+          "checkpoint": "settled",
+          "path": "statusText",
+          "operator": "contains",
+          "value": "Saved. The PDF uses this version."
+        }
+      ]
+    },
+    {
+      "id": "HBB-COMP-12",
+      "kind": "component",
+      "baselineExpected": "PASS",
+      "steps": [
+        {
+          "op": "save-mode",
+          "deferred": true,
+          "outcomes": []
+        },
+        {
+          "op": "mount-reportA"
+        },
+        {
+          "op": "edit",
+          "title": "Lakeshore board brief A: reviewed",
+          "teamNote": "Reviewed for the synthetic November committee."
+        },
+        {
+          "op": "click-save",
+          "settle": false
+        },
+        {
+          "op": "history",
+          "url": "/pro/reports?report_id=00000000-0000-4000-8000-000009701412"
+        },
+        {
+          "op": "keyed-reportB"
+        },
+        {
+          "op": "resolve-save",
+          "outcome": {
+            "kind": "refused",
+            "error": "Old A refusal"
+          }
+        },
+        {
+          "op": "checkpoint",
+          "name": "settled"
+        }
+      ],
+      "checkpoints": [
+        "settled"
+      ],
+      "checks": [
+        {
+          "checkpoint": "settled",
+          "path": "alertPresent",
+          "operator": "equals",
+          "value": false
+        },
+        {
+          "checkpoint": "settled",
+          "path": "titleValue",
+          "operator": "equals",
+          "value": "Indian River board brief B"
+        }
+      ]
+    },
+    {
+      "id": "HBB-COMP-13",
+      "kind": "component",
+      "baselineExpected": "PASS",
+      "steps": [
+        {
+          "op": "save-mode",
+          "deferred": true,
+          "outcomes": []
+        },
+        {
+          "op": "mount-reportA"
+        },
+        {
+          "op": "edit",
+          "title": "Lakeshore board brief A: reviewed",
+          "teamNote": "Reviewed for the synthetic November committee."
+        },
+        {
+          "op": "click-save",
+          "settle": false
+        },
+        {
+          "op": "history",
+          "url": "/pro/reports?report_id=00000000-0000-4000-8000-000009701412"
+        },
+        {
+          "op": "keyed-reportB"
+        },
+        {
+          "op": "resolve-save",
+          "outcome": {
+            "kind": "rejected",
+            "message": "Old A rejection"
+          }
+        },
+        {
+          "op": "checkpoint",
+          "name": "settled"
+        }
+      ],
+      "checkpoints": [
+        "settled"
+      ],
+      "checks": [
+        {
+          "checkpoint": "settled",
+          "path": "alertPresent",
+          "operator": "equals",
+          "value": false
+        },
+        {
+          "checkpoint": "settled",
+          "path": "titleValue",
+          "operator": "equals",
+          "value": "Indian River board brief B"
+        }
+      ]
+    },
+    {
+      "id": "HBB-COMP-14",
+      "kind": "component",
+      "baselineExpected": "PASS",
+      "steps": [
+        {
+          "op": "history",
+          "url": "/pro/reports?from_analysis=00000000-0000-4000-8000-000009701311"
+        },
+        {
+          "op": "mount-analysis"
+        },
+        {
+          "op": "click-save",
+          "settle": true
+        },
+        {
+          "op": "checkpoint",
+          "name": "settled"
+        }
+      ],
+      "checkpoints": [
+        "settled"
+      ],
+      "checks": [
+        {
+          "checkpoint": "settled",
+          "path": "saveArgs",
+          "operator": "equals",
+          "value": [
+            [
+              {
+                "analysisId": "00000000-0000-4000-8000-000009701311",
+                "addedFindings": [],
+                "edits": {
+                  "title": "Synthetic saved answer",
+                  "teamNote": "",
+                  "includeEvidence": true
+                }
+              }
+            ]
+          ]
+        },
+        {
+          "checkpoint": "settled",
+          "path": "replaceArgs",
+          "operator": "equals",
+          "value": [
+            [
+              "/pro/reports?report_id=00000000-0000-4000-8000-000009701411"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "HBB-COMP-15",
+      "kind": "component",
+      "baselineExpected": "PASS",
+      "steps": [
+        {
+          "op": "mount-reportA"
+        },
+        {
+          "op": "edit",
+          "title": "Lakeshore board brief A: reviewed",
+          "teamNote": "Reviewed for the synthetic November committee."
+        },
+        {
+          "op": "click-download",
+          "settle": false
+        },
+        {
+          "op": "checkpoint",
+          "name": "settled"
+        }
+      ],
+      "checkpoints": [
+        "settled"
+      ],
+      "checks": [
+        {
+          "checkpoint": "settled",
+          "path": "fetchArgs",
+          "operator": "equals",
+          "value": []
+        },
+        {
+          "checkpoint": "settled",
+          "path": "createObjectUrlArgs",
+          "operator": "equals",
+          "value": []
+        },
+        {
+          "checkpoint": "settled",
+          "path": "anchorClickArgs",
+          "operator": "equals",
+          "value": []
+        }
+      ]
+    },
+    {
+      "id": "HBB-COMP-16",
+      "kind": "component",
+      "baselineExpected": "PASS",
+      "steps": [
+        {
+          "op": "fake-timers"
+        },
+        {
+          "op": "fetch-mode",
+          "responses": [
+            {
+              "status": 200,
+              "body": "%PDF-synthetic-handler-control"
+            }
+          ]
+        },
+        {
+          "op": "mount-reportA"
+        },
+        {
+          "op": "click-download",
+          "settle": true
+        },
+        {
+          "op": "checkpoint",
+          "name": "downloaded"
+        },
+        {
+          "op": "advance-timers",
+          "milliseconds": 1000
+        },
+        {
+          "op": "checkpoint",
+          "name": "settled"
+        }
+      ],
+      "checkpoints": [
+        "downloaded",
+        "settled"
+      ],
+      "checks": [
+        {
+          "checkpoint": "downloaded",
+          "path": "fetchArgs",
+          "operator": "equals",
+          "value": [
+            [
+              "/api/pro/report-pdf",
+              {
+                "method": "POST",
+                "headers": {
+                  "Content-Type": "application/json"
+                },
+                "body": "{\"type\":\"report\",\"reportId\":\"00000000-0000-4000-8000-000009701411\"}"
+              }
+            ]
+          ]
+        },
+        {
+          "checkpoint": "downloaded",
+          "path": "createObjectUrlArgs",
+          "operator": "lengthEquals",
+          "value": 1
+        },
+        {
+          "checkpoint": "downloaded",
+          "path": "anchorClickArgs",
+          "operator": "lengthEquals",
+          "value": 1
+        },
+        {
+          "checkpoint": "settled",
+          "path": "revokeArgs",
+          "operator": "equals",
+          "value": [
+            [
+              "blob:synthetic-board-brief"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "HBB-COMP-17",
+      "kind": "component",
+      "baselineExpected": "PASS",
+      "steps": [
+        {
+          "op": "fake-timers"
+        },
+        {
+          "op": "fetch-mode",
+          "responses": [
+            {
+              "status": 500,
+              "body": "refused"
+            },
+            {
+              "status": 200,
+              "body": "%PDF-retry"
+            }
+          ]
+        },
+        {
+          "op": "mount-reportA"
+        },
+        {
+          "op": "click-download",
+          "settle": true
+        },
+        {
+          "op": "checkpoint",
+          "name": "refused"
+        },
+        {
+          "op": "click-download",
+          "settle": true
+        },
+        {
+          "op": "advance-timers",
+          "milliseconds": 1000
+        },
+        {
+          "op": "checkpoint",
+          "name": "settled"
+        }
+      ],
+      "checkpoints": [
+        "refused",
+        "settled"
+      ],
+      "checks": [
+        {
+          "checkpoint": "refused",
+          "path": "alertText",
+          "operator": "contains",
+          "value": "The PDF could not be prepared. Retry the download."
+        },
+        {
+          "checkpoint": "refused",
+          "path": "createObjectUrlArgs",
+          "operator": "lengthEquals",
+          "value": 0
+        },
+        {
+          "checkpoint": "settled",
+          "path": "fetchArgs",
+          "operator": "lengthEquals",
+          "value": 2
+        },
+        {
+          "checkpoint": "settled",
+          "path": "anchorClickArgs",
+          "operator": "lengthEquals",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "id": "HBB-COMP-18",
+      "kind": "component",
+      "baselineExpected": "FAIL",
+      "steps": [
+        {
+          "op": "save-mode",
+          "deferred": true,
+          "outcomes": []
+        },
+        {
+          "op": "mount-reportA"
+        },
+        {
+          "op": "edit",
+          "title": "Lakeshore board brief A: reviewed",
+          "teamNote": "Reviewed for the synthetic November committee."
+        },
+        {
+          "op": "history",
+          "url": "/pro/reports?report_id=00000000-0000-4000-8000-000009701412"
+        },
+        {
+          "op": "click-save",
+          "settle": false
+        },
+        {
+          "op": "resolve-save",
+          "outcome": {
+            "kind": "success",
+            "reportId": "00000000-0000-4000-8000-000009701411"
+          }
+        },
+        {
+          "op": "checkpoint",
+          "name": "settled"
+        }
+      ],
+      "checkpoints": [
+        "settled"
+      ],
+      "checks": [
+        {
+          "checkpoint": "settled",
+          "path": "pathnameSearch",
+          "operator": "equals",
+          "value": "/pro/reports?report_id=00000000-0000-4000-8000-000009701412"
+        },
+        {
+          "checkpoint": "settled",
+          "path": "replaceArgs",
+          "operator": "equals",
+          "value": []
+        },
+        {
+          "checkpoint": "settled",
+          "path": "statusText",
+          "operator": "contains",
+          "value": "Unsaved changes."
+        },
+        {
+          "checkpoint": "settled",
+          "path": "downloadDisabled",
+          "operator": "equals",
+          "value": true
+        }
+      ]
+    },
+    {
+      "id": "HBB-COMP-19",
+      "kind": "component",
+      "baselineExpected": "FAIL",
+      "steps": [
+        {
+          "op": "save-mode",
+          "deferred": true,
+          "outcomes": []
+        },
+        {
+          "op": "mount-reportA"
+        },
+        {
+          "op": "edit",
+          "title": "Lakeshore board brief A: reviewed",
+          "teamNote": "Reviewed for the synthetic November committee."
+        },
+        {
+          "op": "history",
+          "url": "/pro/analyze?instId=9701002"
+        },
+        {
+          "op": "click-save",
+          "settle": false
+        },
+        {
+          "op": "resolve-save",
+          "outcome": {
+            "kind": "success",
+            "reportId": "00000000-0000-4000-8000-000009701411"
+          }
+        },
+        {
+          "op": "checkpoint",
+          "name": "settled"
+        }
+      ],
+      "checkpoints": [
+        "settled"
+      ],
+      "checks": [
+        {
+          "checkpoint": "settled",
+          "path": "pathnameSearch",
+          "operator": "equals",
+          "value": "/pro/analyze?instId=9701002"
+        },
+        {
+          "checkpoint": "settled",
+          "path": "replaceArgs",
+          "operator": "equals",
+          "value": []
+        },
+        {
+          "checkpoint": "settled",
+          "path": "statusText",
+          "operator": "contains",
+          "value": "Unsaved changes."
+        },
+        {
+          "checkpoint": "settled",
+          "path": "downloadDisabled",
+          "operator": "equals",
+          "value": true
+        }
+      ]
+    },
+    {
+      "id": "HBB-COMP-20",
+      "kind": "component",
+      "baselineExpected": "PASS",
+      "steps": [
+        {
+          "op": "history",
+          "url": "/pro/reports?report=00000000-0000-4000-8000-000009701411"
+        },
+        {
+          "op": "replace-mode",
+          "commitHistory": true
+        },
+        {
+          "op": "mount-reportA"
+        },
+        {
+          "op": "edit",
+          "title": "Lakeshore board brief A: reviewed",
+          "teamNote": "Reviewed for the synthetic November committee."
+        },
+        {
+          "op": "click-save",
+          "settle": true
+        },
+        {
+          "op": "checkpoint",
+          "name": "settled"
+        }
+      ],
+      "checkpoints": [
+        "settled"
+      ],
+      "checks": [
+        {
+          "checkpoint": "settled",
+          "path": "saveArgs",
+          "operator": "equals",
+          "value": [
+            [
+              {
+                "reportId": "00000000-0000-4000-8000-000009701411",
+                "edits": {
+                  "title": "Lakeshore board brief A: reviewed",
+                  "teamNote": "Reviewed for the synthetic November committee.",
+                  "includeEvidence": true
+                }
+              }
+            ]
+          ]
+        },
+        {
+          "checkpoint": "settled",
+          "path": "replaceArgs",
+          "operator": "equals",
+          "value": [
+            [
+              "/pro/reports?report_id=00000000-0000-4000-8000-000009701411"
+            ]
+          ]
+        },
+        {
+          "checkpoint": "settled",
+          "path": "pathnameSearch",
+          "operator": "equals",
+          "value": "/pro/reports?report_id=00000000-0000-4000-8000-000009701411"
+        },
+        {
+          "checkpoint": "settled",
+          "path": "statusText",
+          "operator": "contains",
+          "value": "Saved. The PDF uses this version."
+        },
+        {
+          "checkpoint": "settled",
+          "path": "titleDisabled",
+          "operator": "equals",
+          "value": false
+        },
+        {
+          "checkpoint": "settled",
+          "path": "downloadDisabled",
+          "operator": "equals",
+          "value": false
+        }
+      ]
+    },
+    {
+      "id": "HBB-COMP-21",
+      "kind": "component",
+      "baselineExpected": "PASS",
+      "steps": [
+        {
+          "op": "replace-mode",
+          "commitHistory": true
+        },
+        {
+          "op": "mount-reportA"
+        },
+        {
+          "op": "edit",
+          "title": "Lakeshore board brief A: reviewed",
+          "teamNote": "Reviewed for the synthetic November committee."
+        },
+        {
+          "op": "click-save",
+          "settle": true
+        },
+        {
+          "op": "edit",
+          "title": "Lakeshore board brief A: reviewed again",
+          "teamNote": "Second synthetic committee note."
+        },
+        {
+          "op": "click-save",
+          "settle": true
+        },
+        {
+          "op": "checkpoint",
+          "name": "settled"
+        }
+      ],
+      "checkpoints": [
+        "settled"
+      ],
+      "checks": [
+        {
+          "checkpoint": "settled",
+          "path": "saveArgs",
+          "operator": "lengthEquals",
+          "value": 2
+        },
+        {
+          "checkpoint": "settled",
+          "path": "saveArgs.1",
+          "operator": "equals",
+          "value": [
+            {
+              "reportId": "00000000-0000-4000-8000-000009701411",
+              "edits": {
+                "title": "Lakeshore board brief A: reviewed again",
+                "teamNote": "Second synthetic committee note.",
+                "includeEvidence": true
+              }
+            }
+          ]
+        },
+        {
+          "checkpoint": "settled",
+          "path": "replaceArgs",
+          "operator": "equals",
+          "value": [
+            [
+              "/pro/reports?report_id=00000000-0000-4000-8000-000009701411"
+            ],
+            [
+              "/pro/reports?report_id=00000000-0000-4000-8000-000009701411"
+            ]
+          ]
+        },
+        {
+          "checkpoint": "settled",
+          "path": "pathnameSearch",
+          "operator": "equals",
+          "value": "/pro/reports?report_id=00000000-0000-4000-8000-000009701411"
+        },
+        {
+          "checkpoint": "settled",
+          "path": "statusText",
+          "operator": "contains",
+          "value": "Saved. The PDF uses this version."
+        },
+        {
+          "checkpoint": "settled",
+          "path": "titleDisabled",
+          "operator": "equals",
+          "value": false
+        },
+        {
+          "checkpoint": "settled",
+          "path": "downloadDisabled",
+          "operator": "equals",
+          "value": false
+        }
+      ]
+    },
+    {
+      "id": "HBB-COMP-22",
+      "kind": "component",
+      "baselineExpected": "PASS",
+      "steps": [
+        {
+          "op": "history",
+          "url": "/pro/reports?from_analysis=00000000-0000-4000-8000-000009701311"
+        },
+        {
+          "op": "replace-mode",
+          "commitHistory": false
+        },
+        {
+          "op": "mount-analysis"
+        },
+        {
+          "op": "click-save",
+          "settle": true
+        },
+        {
+          "op": "checkpoint",
+          "name": "created"
+        },
+        {
+          "op": "edit",
+          "teamNote": "Acknowledged creation, before canonical URL."
+        },
+        {
+          "op": "click-save",
+          "settle": true
+        },
+        {
+          "op": "checkpoint",
+          "name": "beforeCanonical"
+        },
+        {
+          "op": "history",
+          "url": "/pro/reports?report_id=00000000-0000-4000-8000-000009701411"
+        },
+        {
+          "op": "edit",
+          "teamNote": "Acknowledged creation, after canonical URL."
+        },
+        {
+          "op": "click-save",
+          "settle": true
+        },
+        {
+          "op": "checkpoint",
+          "name": "settled"
+        }
+      ],
+      "checkpoints": [
+        "created",
+        "beforeCanonical",
+        "settled"
+      ],
+      "checks": [
+        {
+          "checkpoint": "created",
+          "path": "saveArgs.0",
+          "operator": "equals",
+          "value": [
+            {
+              "analysisId": "00000000-0000-4000-8000-000009701311",
+              "addedFindings": [],
+              "edits": {
+                "title": "Synthetic saved answer",
+                "teamNote": "",
+                "includeEvidence": true
+              }
+            }
+          ]
+        },
+        {
+          "checkpoint": "created",
+          "path": "pathnameSearch",
+          "operator": "equals",
+          "value": "/pro/reports?from_analysis=00000000-0000-4000-8000-000009701311"
+        },
+        {
+          "checkpoint": "beforeCanonical",
+          "path": "saveArgs.1",
+          "operator": "equals",
+          "value": [
+            {
+              "reportId": "00000000-0000-4000-8000-000009701411",
+              "edits": {
+                "title": "Synthetic saved answer",
+                "teamNote": "Acknowledged creation, before canonical URL.",
+                "includeEvidence": true
+              }
+            }
+          ]
+        },
+        {
+          "checkpoint": "settled",
+          "path": "saveArgs",
+          "operator": "lengthEquals",
+          "value": 3
+        },
+        {
+          "checkpoint": "settled",
+          "path": "saveArgs.2",
+          "operator": "equals",
+          "value": [
+            {
+              "reportId": "00000000-0000-4000-8000-000009701411",
+              "edits": {
+                "title": "Synthetic saved answer",
+                "teamNote": "Acknowledged creation, after canonical URL.",
+                "includeEvidence": true
+              }
+            }
+          ]
+        },
+        {
+          "checkpoint": "settled",
+          "path": "replaceArgs",
+          "operator": "equals",
+          "value": [
+            [
+              "/pro/reports?report_id=00000000-0000-4000-8000-000009701411"
+            ],
+            [
+              "/pro/reports?report_id=00000000-0000-4000-8000-000009701411"
+            ],
+            [
+              "/pro/reports?report_id=00000000-0000-4000-8000-000009701411"
+            ]
+          ]
+        },
+        {
+          "checkpoint": "settled",
+          "path": "statusText",
+          "operator": "contains",
+          "value": "Saved. The PDF uses this version."
+        },
+        {
+          "checkpoint": "settled",
+          "path": "downloadDisabled",
+          "operator": "equals",
+          "value": false
+        }
+      ]
+    },
+    {
+      "id": "HBB-COMP-23",
+      "kind": "component",
+      "baselineExpected": "FAIL",
+      "steps": [
+        {
+          "op": "save-mode",
+          "deferred": true,
+          "outcomes": []
+        },
+        {
+          "op": "mount-reportA"
+        },
+        {
+          "op": "edit",
+          "title": "Lakeshore board brief A: reviewed",
+          "teamNote": "Reviewed for the synthetic November committee."
+        },
+        {
+          "op": "history",
+          "url": "/pro/reports?report_id=00000000-0000-4000-8000-000009701411&research="
+        },
+        {
+          "op": "click-save",
+          "settle": false
+        },
+        {
+          "op": "resolve-save",
+          "outcome": {
+            "kind": "success",
+            "reportId": "00000000-0000-4000-8000-000009701411"
+          }
+        },
+        {
+          "op": "checkpoint",
+          "name": "settled"
+        }
+      ],
+      "checkpoints": [
+        "settled"
+      ],
+      "checks": [
+        {
+          "checkpoint": "settled",
+          "path": "pathnameSearch",
+          "operator": "equals",
+          "value": "/pro/reports?report_id=00000000-0000-4000-8000-000009701411&research="
+        },
+        {
+          "checkpoint": "settled",
+          "path": "replaceArgs",
+          "operator": "equals",
+          "value": []
+        },
+        {
+          "checkpoint": "settled",
+          "path": "statusText",
+          "operator": "contains",
+          "value": "Unsaved changes."
+        },
+        {
+          "checkpoint": "settled",
+          "path": "downloadDisabled",
+          "operator": "equals",
+          "value": true
+        }
+      ]
+    },
+    {
+      "id": "HBB-COMP-24",
+      "kind": "component",
+      "baselineExpected": "FAIL",
+      "steps": [
+        {
+          "op": "save-mode",
+          "deferred": true,
+          "outcomes": []
+        },
+        {
+          "op": "mount-reportA"
+        },
+        {
+          "op": "edit",
+          "title": "Lakeshore board brief A: reviewed",
+          "teamNote": "Reviewed for the synthetic November committee."
+        },
+        {
+          "op": "history",
+          "url": "/pro/reports?report_id=00000000-0000-4000-8000-000009701411&board_error=1"
+        },
+        {
+          "op": "click-save",
+          "settle": false
+        },
+        {
+          "op": "resolve-save",
+          "outcome": {
+            "kind": "success",
+            "reportId": "00000000-0000-4000-8000-000009701411"
+          }
+        },
+        {
+          "op": "checkpoint",
+          "name": "settled"
+        }
+      ],
+      "checkpoints": [
+        "settled"
+      ],
+      "checks": [
+        {
+          "checkpoint": "settled",
+          "path": "pathnameSearch",
+          "operator": "equals",
+          "value": "/pro/reports?report_id=00000000-0000-4000-8000-000009701411&board_error=1"
+        },
+        {
+          "checkpoint": "settled",
+          "path": "replaceArgs",
+          "operator": "equals",
+          "value": []
+        },
+        {
+          "checkpoint": "settled",
+          "path": "statusText",
+          "operator": "contains",
+          "value": "Unsaved changes."
+        },
+        {
+          "checkpoint": "settled",
+          "path": "downloadDisabled",
+          "operator": "equals",
+          "value": true
+        }
+      ]
+    },
+    {
+      "id": "HBB-COMP-25",
+      "kind": "component",
+      "baselineExpected": "PASS",
+      "steps": [
+        {
+          "op": "history",
+          "url": "/pro/reports?report_id=00000000-0000-4000-8000-000009701411&board_error="
+        },
+        {
+          "op": "replace-mode",
+          "commitHistory": true
+        },
+        {
+          "op": "mount-reportA"
+        },
+        {
+          "op": "edit",
+          "title": "Lakeshore board brief A: reviewed",
+          "teamNote": "Reviewed for the synthetic November committee."
+        },
+        {
+          "op": "click-save",
+          "settle": true
+        },
+        {
+          "op": "checkpoint",
+          "name": "settled"
+        }
+      ],
+      "checkpoints": [
+        "settled"
+      ],
+      "checks": [
+        {
+          "checkpoint": "settled",
+          "path": "saveArgs",
+          "operator": "equals",
+          "value": [
+            [
+              {
+                "reportId": "00000000-0000-4000-8000-000009701411",
+                "edits": {
+                  "title": "Lakeshore board brief A: reviewed",
+                  "teamNote": "Reviewed for the synthetic November committee.",
+                  "includeEvidence": true
+                }
+              }
+            ]
+          ]
+        },
+        {
+          "checkpoint": "settled",
+          "path": "replaceArgs",
+          "operator": "equals",
+          "value": [
+            [
+              "/pro/reports?report_id=00000000-0000-4000-8000-000009701411"
+            ]
+          ]
+        },
+        {
+          "checkpoint": "settled",
+          "path": "pathnameSearch",
+          "operator": "equals",
+          "value": "/pro/reports?report_id=00000000-0000-4000-8000-000009701411"
+        },
+        {
+          "checkpoint": "settled",
+          "path": "statusText",
+          "operator": "contains",
+          "value": "Saved. The PDF uses this version."
+        },
+        {
+          "checkpoint": "settled",
+          "path": "titleDisabled",
+          "operator": "equals",
+          "value": false
+        },
+        {
+          "checkpoint": "settled",
+          "path": "downloadDisabled",
+          "operator": "equals",
+          "value": false
+        }
+      ]
+    }
+  ],
+  "pdfCases": [
+    {
+      "id": "HBB-PDF-DENSE",
+      "kind": "pdf",
+      "baselineExpected": "FAIL",
+      "report": {
+        "title": "Saved synthetic evidence pagination",
+        "executiveSummary": [],
+        "snapshot": [],
+        "answer": {
+          "headline": "This saved synthetic table preserves every original figure and source.",
+          "decisions": []
+        },
+        "boardBrief": {
+          "teamNote": "",
+          "includeEvidence": true
+        },
+        "strategicRationale": "AFTER-TABLE-MARKER All original saved rows precede this paragraph.",
+        "tradeoffs": [],
+        "recommendation": "Saved synthetic evidence; no current truth claim.",
+        "implementationNotes": [
+          "Synthetic preservation control."
+        ],
+        "exhibits": [
+          {
+            "id": "evidence_records",
+            "title": "Original saved evidence table",
+            "subtitle": "Frozen synthetic records; reporting date 2026-06-30",
+            "columns": [
+              "Figure",
+              "Value",
+              "Source",
+              "Check"
+            ],
+            "rows": [
+              [
+                "ROW-001",
+                "$35.01",
+                "SRC-001 record fee:published:2001; document 9701201; reporting date 2026-06-30; published source snapshot only; unchanged original fee evidence and calculation; no current official schedule recheck; END-001",
+                "Check-001"
+              ],
+              [
+                "ROW-002",
+                "$35.02",
+                "SRC-002 record fee:published:2002; document 9701202; reporting date 2026-06-30; published source snapshot only; unchanged original fee evidence and calculation; no current official schedule recheck; END-002",
+                "Check-002"
+              ],
+              [
+                "ROW-003",
+                "$35.03",
+                "SRC-003 record fee:published:2003; document 9701203; reporting date 2026-06-30; published source snapshot only; unchanged original fee evidence and calculation; no current official schedule recheck; END-003",
+                "Check-003"
+              ],
+              [
+                "ROW-004",
+                "$35.04",
+                "SRC-004 record fee:published:2004; document 9701204; reporting date 2026-06-30; published source snapshot only; unchanged original fee evidence and calculation; no current official schedule recheck; END-004",
+                "Check-004"
+              ],
+              [
+                "ROW-005",
+                "$35.05",
+                "SRC-005 record fee:published:2005; document 9701205; reporting date 2026-06-30; published source snapshot only; unchanged original fee evidence and calculation; no current official schedule recheck; END-005",
+                "Check-005"
+              ],
+              [
+                "ROW-006",
+                "$35.06",
+                "SRC-006 record fee:published:2006; document 9701206; reporting date 2026-06-30; published source snapshot only; unchanged original fee evidence and calculation; no current official schedule recheck; END-006",
+                "Check-006"
+              ],
+              [
+                "ROW-007",
+                "$35.07",
+                "SRC-007 record fee:published:2007; document 9701207; reporting date 2026-06-30; published source snapshot only; unchanged original fee evidence and calculation; no current official schedule recheck; END-007",
+                "Check-007"
+              ],
+              [
+                "ROW-008",
+                "$35.08",
+                "SRC-008 record fee:published:2008; document 9701208; reporting date 2026-06-30; published source snapshot only; unchanged original fee evidence and calculation; no current official schedule recheck; END-008",
+                "Check-008"
+              ],
+              [
+                "ROW-009",
+                "$35.09",
+                "SRC-009 record fee:published:2009; document 9701209; reporting date 2026-06-30; published source snapshot only; unchanged original fee evidence and calculation; no current official schedule recheck; END-009",
+                "Check-009"
+              ],
+              [
+                "ROW-010",
+                "$35.10",
+                "SRC-010 record fee:published:2010; document 9701210; reporting date 2026-06-30; published source snapshot only; unchanged original fee evidence and calculation; no current official schedule recheck; END-010",
+                "Check-010"
+              ],
+              [
+                "ROW-011",
+                "$35.11",
+                "SRC-011 record fee:published:2011; document 9701211; reporting date 2026-06-30; published source snapshot only; unchanged original fee evidence and calculation; no current official schedule recheck; END-011",
+                "Check-011"
+              ],
+              [
+                "ROW-012",
+                "$35.12",
+                "SRC-012 record fee:published:2012; document 9701212; reporting date 2026-06-30; published source snapshot only; unchanged original fee evidence and calculation; no current official schedule recheck; END-012",
+                "Check-012"
+              ],
+              [
+                "ROW-013",
+                "$35.13",
+                "SRC-013 record fee:published:2013; document 9701213; reporting date 2026-06-30; published source snapshot only; unchanged original fee evidence and calculation; no current official schedule recheck; END-013",
+                "Check-013"
+              ],
+              [
+                "ROW-014",
+                "$35.14",
+                "SRC-014 record fee:published:2014; document 9701214; reporting date 2026-06-30; published source snapshot only; unchanged original fee evidence and calculation; no current official schedule recheck; END-014",
+                "Check-014"
+              ],
+              [
+                "ROW-015",
+                "$35.15",
+                "SRC-015 record fee:published:2015; document 9701215; reporting date 2026-06-30; published source snapshot only; unchanged original fee evidence and calculation; no current official schedule recheck; END-015",
+                "Check-015"
+              ],
+              [
+                "ROW-016",
+                "$35.16",
+                "SRC-016 record fee:published:2016; document 9701216; reporting date 2026-06-30; published source snapshot only; unchanged original fee evidence and calculation; no current official schedule recheck; END-016",
+                "Check-016"
+              ],
+              [
+                "ROW-017",
+                "$35.17",
+                "SRC-017 record fee:published:2017; document 9701217; reporting date 2026-06-30; published source snapshot only; unchanged original fee evidence and calculation; no current official schedule recheck; END-017",
+                "Check-017"
+              ],
+              [
+                "ROW-018",
+                "$35.18",
+                "SRC-018 record fee:published:2018; document 9701218; reporting date 2026-06-30; published source snapshot only; unchanged original fee evidence and calculation; no current official schedule recheck; END-018",
+                "Check-018"
+              ],
+              [
+                "ROW-019",
+                "$35.19",
+                "SRC-019 record fee:published:2019; document 9701219; reporting date 2026-06-30; published source snapshot only; unchanged original fee evidence and calculation; no current official schedule recheck; END-019",
+                "Check-019"
+              ],
+              [
+                "ROW-020",
+                "$35.20",
+                "SRC-020 record fee:published:2020; document 9701220; reporting date 2026-06-30; published source snapshot only; unchanged original fee evidence and calculation; no current official schedule recheck; END-020",
+                "Check-020"
+              ],
+              [
+                "ROW-021",
+                "$35.21",
+                "SRC-021 record fee:published:2021; document 9701221; reporting date 2026-06-30; published source snapshot only; unchanged original fee evidence and calculation; no current official schedule recheck; END-021",
+                "Check-021"
+              ],
+              [
+                "ROW-022",
+                "$35.22",
+                "SRC-022 record fee:published:2022; document 9701222; reporting date 2026-06-30; published source snapshot only; unchanged original fee evidence and calculation; no current official schedule recheck; END-022",
+                "Check-022"
+              ],
+              [
+                "ROW-023",
+                "$35.23",
+                "SRC-023 record fee:published:2023; document 9701223; reporting date 2026-06-30; published source snapshot only; unchanged original fee evidence and calculation; no current official schedule recheck; END-023",
+                "Check-023"
+              ],
+              [
+                "ROW-024",
+                "$35.24",
+                "SRC-024 record fee:published:2024; document 9701224; reporting date 2026-06-30; published source snapshot only; unchanged original fee evidence and calculation; no current official schedule recheck; END-024",
+                "Check-024"
+              ]
+            ],
+            "note": "EVIDENCE-LIMIT Stored synthetic snapshot; no current bank schedule recheck."
+          }
+        ],
+        "sources": [],
+        "exportControls": {
+          "pdfEnabled": true,
+          "shareEnabled": false
+        }
+      },
+      "oracle": {
+        "rows": [
+          [
+            "ROW-001",
+            "$35.01",
+            "SRC-001 record fee:published:2001; document 9701201; reporting date 2026-06-30; published source snapshot only; unchanged original fee evidence and calculation; no current official schedule recheck; END-001",
+            "Check-001"
+          ],
+          [
+            "ROW-002",
+            "$35.02",
+            "SRC-002 record fee:published:2002; document 9701202; reporting date 2026-06-30; published source snapshot only; unchanged original fee evidence and calculation; no current official schedule recheck; END-002",
+            "Check-002"
+          ],
+          [
+            "ROW-003",
+            "$35.03",
+            "SRC-003 record fee:published:2003; document 9701203; reporting date 2026-06-30; published source snapshot only; unchanged original fee evidence and calculation; no current official schedule recheck; END-003",
+            "Check-003"
+          ],
+          [
+            "ROW-004",
+            "$35.04",
+            "SRC-004 record fee:published:2004; document 9701204; reporting date 2026-06-30; published source snapshot only; unchanged original fee evidence and calculation; no current official schedule recheck; END-004",
+            "Check-004"
+          ],
+          [
+            "ROW-005",
+            "$35.05",
+            "SRC-005 record fee:published:2005; document 9701205; reporting date 2026-06-30; published source snapshot only; unchanged original fee evidence and calculation; no current official schedule recheck; END-005",
+            "Check-005"
+          ],
+          [
+            "ROW-006",
+            "$35.06",
+            "SRC-006 record fee:published:2006; document 9701206; reporting date 2026-06-30; published source snapshot only; unchanged original fee evidence and calculation; no current official schedule recheck; END-006",
+            "Check-006"
+          ],
+          [
+            "ROW-007",
+            "$35.07",
+            "SRC-007 record fee:published:2007; document 9701207; reporting date 2026-06-30; published source snapshot only; unchanged original fee evidence and calculation; no current official schedule recheck; END-007",
+            "Check-007"
+          ],
+          [
+            "ROW-008",
+            "$35.08",
+            "SRC-008 record fee:published:2008; document 9701208; reporting date 2026-06-30; published source snapshot only; unchanged original fee evidence and calculation; no current official schedule recheck; END-008",
+            "Check-008"
+          ],
+          [
+            "ROW-009",
+            "$35.09",
+            "SRC-009 record fee:published:2009; document 9701209; reporting date 2026-06-30; published source snapshot only; unchanged original fee evidence and calculation; no current official schedule recheck; END-009",
+            "Check-009"
+          ],
+          [
+            "ROW-010",
+            "$35.10",
+            "SRC-010 record fee:published:2010; document 9701210; reporting date 2026-06-30; published source snapshot only; unchanged original fee evidence and calculation; no current official schedule recheck; END-010",
+            "Check-010"
+          ],
+          [
+            "ROW-011",
+            "$35.11",
+            "SRC-011 record fee:published:2011; document 9701211; reporting date 2026-06-30; published source snapshot only; unchanged original fee evidence and calculation; no current official schedule recheck; END-011",
+            "Check-011"
+          ],
+          [
+            "ROW-012",
+            "$35.12",
+            "SRC-012 record fee:published:2012; document 9701212; reporting date 2026-06-30; published source snapshot only; unchanged original fee evidence and calculation; no current official schedule recheck; END-012",
+            "Check-012"
+          ],
+          [
+            "ROW-013",
+            "$35.13",
+            "SRC-013 record fee:published:2013; document 9701213; reporting date 2026-06-30; published source snapshot only; unchanged original fee evidence and calculation; no current official schedule recheck; END-013",
+            "Check-013"
+          ],
+          [
+            "ROW-014",
+            "$35.14",
+            "SRC-014 record fee:published:2014; document 9701214; reporting date 2026-06-30; published source snapshot only; unchanged original fee evidence and calculation; no current official schedule recheck; END-014",
+            "Check-014"
+          ],
+          [
+            "ROW-015",
+            "$35.15",
+            "SRC-015 record fee:published:2015; document 9701215; reporting date 2026-06-30; published source snapshot only; unchanged original fee evidence and calculation; no current official schedule recheck; END-015",
+            "Check-015"
+          ],
+          [
+            "ROW-016",
+            "$35.16",
+            "SRC-016 record fee:published:2016; document 9701216; reporting date 2026-06-30; published source snapshot only; unchanged original fee evidence and calculation; no current official schedule recheck; END-016",
+            "Check-016"
+          ],
+          [
+            "ROW-017",
+            "$35.17",
+            "SRC-017 record fee:published:2017; document 9701217; reporting date 2026-06-30; published source snapshot only; unchanged original fee evidence and calculation; no current official schedule recheck; END-017",
+            "Check-017"
+          ],
+          [
+            "ROW-018",
+            "$35.18",
+            "SRC-018 record fee:published:2018; document 9701218; reporting date 2026-06-30; published source snapshot only; unchanged original fee evidence and calculation; no current official schedule recheck; END-018",
+            "Check-018"
+          ],
+          [
+            "ROW-019",
+            "$35.19",
+            "SRC-019 record fee:published:2019; document 9701219; reporting date 2026-06-30; published source snapshot only; unchanged original fee evidence and calculation; no current official schedule recheck; END-019",
+            "Check-019"
+          ],
+          [
+            "ROW-020",
+            "$35.20",
+            "SRC-020 record fee:published:2020; document 9701220; reporting date 2026-06-30; published source snapshot only; unchanged original fee evidence and calculation; no current official schedule recheck; END-020",
+            "Check-020"
+          ],
+          [
+            "ROW-021",
+            "$35.21",
+            "SRC-021 record fee:published:2021; document 9701221; reporting date 2026-06-30; published source snapshot only; unchanged original fee evidence and calculation; no current official schedule recheck; END-021",
+            "Check-021"
+          ],
+          [
+            "ROW-022",
+            "$35.22",
+            "SRC-022 record fee:published:2022; document 9701222; reporting date 2026-06-30; published source snapshot only; unchanged original fee evidence and calculation; no current official schedule recheck; END-022",
+            "Check-022"
+          ],
+          [
+            "ROW-023",
+            "$35.23",
+            "SRC-023 record fee:published:2023; document 9701223; reporting date 2026-06-30; published source snapshot only; unchanged original fee evidence and calculation; no current official schedule recheck; END-023",
+            "Check-023"
+          ],
+          [
+            "ROW-024",
+            "$35.24",
+            "SRC-024 record fee:published:2024; document 9701224; reporting date 2026-06-30; published source snapshot only; unchanged original fee evidence and calculation; no current official schedule recheck; END-024",
+            "Check-024"
+          ]
+        ],
+        "dense": true,
+        "title": "Original saved evidence table",
+        "subtitle": "Frozen synthetic records; reporting date 2026-06-30",
+        "limit": "EVIDENCE-LIMIT Stored synthetic snapshot; no current bank schedule recheck.",
+        "after": "AFTER-TABLE-MARKER",
+        "bounds": {
+          "minLeft": 71,
+          "maxRight": 541,
+          "minTop": 63,
+          "maxBottom": 729
+        },
+        "minDenseFontHeight": 7.99,
+        "minDenseRowPages": 2,
+        "orderGap": 0.5,
+        "pageWidth": 612,
+        "pageHeight": 792,
+        "minPages": 1,
+        "maxPages": 12,
+        "footer": {
+          "minTop": 728,
+          "attribution": "Hamilton, from Fee Insight",
+          "date": "November 8, 2026"
+        }
+      }
+    },
+    {
+      "id": "HBB-PDF-COMPACT",
+      "kind": "pdf",
+      "baselineExpected": "PASS",
+      "report": {
+        "title": "Saved synthetic evidence pagination",
+        "executiveSummary": [],
+        "snapshot": [],
+        "answer": {
+          "headline": "This saved synthetic table preserves every original figure and source.",
+          "decisions": []
+        },
+        "boardBrief": {
+          "teamNote": "",
+          "includeEvidence": true
+        },
+        "strategicRationale": "AFTER-TABLE-MARKER All original saved rows precede this paragraph.",
+        "tradeoffs": [],
+        "recommendation": "Saved synthetic evidence; no current truth claim.",
+        "implementationNotes": [
+          "Synthetic preservation control."
+        ],
+        "exhibits": [
+          {
+            "id": "evidence_records",
+            "title": "Original saved evidence table",
+            "subtitle": "Frozen synthetic records; reporting date 2026-06-30",
+            "columns": [
+              "Figure",
+              "Value",
+              "Source",
+              "Check"
+            ],
+            "rows": [
+              [
+                "SMALL-001",
+                "$35",
+                "Compact source one; SMALL-END-001",
+                "Checked"
+              ],
+              [
+                "SMALL-002",
+                "$30",
+                "Compact source two; SMALL-END-002",
+                "Checked"
+              ]
+            ],
+            "note": "EVIDENCE-LIMIT Stored synthetic snapshot; no current bank schedule recheck."
+          }
+        ],
+        "sources": [],
+        "exportControls": {
+          "pdfEnabled": true,
+          "shareEnabled": false
+        }
+      },
+      "oracle": {
+        "rows": [
+          [
+            "SMALL-001",
+            "$35",
+            "Compact source one; SMALL-END-001",
+            "Checked"
+          ],
+          [
+            "SMALL-002",
+            "$30",
+            "Compact source two; SMALL-END-002",
+            "Checked"
+          ]
+        ],
+        "dense": false,
+        "title": "Original saved evidence table",
+        "subtitle": "Frozen synthetic records; reporting date 2026-06-30",
+        "limit": "EVIDENCE-LIMIT Stored synthetic snapshot; no current bank schedule recheck.",
+        "after": "AFTER-TABLE-MARKER",
+        "bounds": {
+          "minLeft": 71,
+          "maxRight": 541,
+          "minTop": 63,
+          "maxBottom": 729
+        },
+        "minDenseFontHeight": 7.99,
+        "minDenseRowPages": 2,
+        "orderGap": 0.5,
+        "pageWidth": 612,
+        "pageHeight": 792,
+        "minPages": 1,
+        "maxPages": 12,
+        "footer": {
+          "minTop": 728,
+          "attribution": "Hamilton, from Fee Insight",
+          "date": "November 8, 2026"
+        }
+      }
+    }
+  ],
+  "requirements": [
+    {
+      "requirement_id": "HBB-SAVE-ROUTE-LIFETIME",
+      "test_id": "hamilton-board-brief-save-route-v1",
+      "baselineExpected": "FAIL",
+      "caseIds": [
+        "HBB-COMP-06",
+        "HBB-COMP-07",
+        "HBB-COMP-08",
+        "HBB-COMP-09",
+        "HBB-COMP-18",
+        "HBB-COMP-19",
+        "HBB-COMP-23",
+        "HBB-COMP-24"
+      ],
+      "assertions": [
+        {
+          "id": "HBB-COMP-06",
+          "caseId": "HBB-COMP-06",
+          "oracle": "component-checks"
+        },
+        {
+          "id": "HBB-COMP-07",
+          "caseId": "HBB-COMP-07",
+          "oracle": "component-checks"
+        },
+        {
+          "id": "HBB-COMP-08",
+          "caseId": "HBB-COMP-08",
+          "oracle": "component-checks"
+        },
+        {
+          "id": "HBB-COMP-09",
+          "caseId": "HBB-COMP-09",
+          "oracle": "component-checks"
+        },
+        {
+          "id": "HBB-COMP-18",
+          "caseId": "HBB-COMP-18",
+          "oracle": "component-checks"
+        },
+        {
+          "id": "HBB-COMP-19",
+          "caseId": "HBB-COMP-19",
+          "oracle": "component-checks"
+        },
+        {
+          "id": "HBB-COMP-23",
+          "caseId": "HBB-COMP-23",
+          "oracle": "component-checks"
+        },
+        {
+          "id": "HBB-COMP-24",
+          "caseId": "HBB-COMP-24",
+          "oracle": "component-checks"
+        }
+      ]
+    },
+    {
+      "requirement_id": "HBB-SAVE-CONTROLS",
+      "test_id": "hamilton-board-brief-save-controls-v1",
+      "baselineExpected": "PASS",
+      "caseIds": [
+        "HBB-COMP-01",
+        "HBB-COMP-02",
+        "HBB-COMP-03",
+        "HBB-COMP-04",
+        "HBB-COMP-05",
+        "HBB-COMP-10",
+        "HBB-COMP-11",
+        "HBB-COMP-12",
+        "HBB-COMP-13",
+        "HBB-COMP-14",
+        "HBB-COMP-15",
+        "HBB-COMP-16",
+        "HBB-COMP-17",
+        "HBB-COMP-20",
+        "HBB-COMP-21",
+        "HBB-COMP-22",
+        "HBB-COMP-25"
+      ],
+      "assertions": [
+        {
+          "id": "HBB-COMP-01",
+          "caseId": "HBB-COMP-01",
+          "oracle": "component-checks"
+        },
+        {
+          "id": "HBB-COMP-02",
+          "caseId": "HBB-COMP-02",
+          "oracle": "component-checks"
+        },
+        {
+          "id": "HBB-COMP-03",
+          "caseId": "HBB-COMP-03",
+          "oracle": "component-checks"
+        },
+        {
+          "id": "HBB-COMP-04",
+          "caseId": "HBB-COMP-04",
+          "oracle": "component-checks"
+        },
+        {
+          "id": "HBB-COMP-05",
+          "caseId": "HBB-COMP-05",
+          "oracle": "component-checks"
+        },
+        {
+          "id": "HBB-COMP-10",
+          "caseId": "HBB-COMP-10",
+          "oracle": "component-checks"
+        },
+        {
+          "id": "HBB-COMP-11",
+          "caseId": "HBB-COMP-11",
+          "oracle": "component-checks"
+        },
+        {
+          "id": "HBB-COMP-12",
+          "caseId": "HBB-COMP-12",
+          "oracle": "component-checks"
+        },
+        {
+          "id": "HBB-COMP-13",
+          "caseId": "HBB-COMP-13",
+          "oracle": "component-checks"
+        },
+        {
+          "id": "HBB-COMP-14",
+          "caseId": "HBB-COMP-14",
+          "oracle": "component-checks"
+        },
+        {
+          "id": "HBB-COMP-15",
+          "caseId": "HBB-COMP-15",
+          "oracle": "component-checks"
+        },
+        {
+          "id": "HBB-COMP-16",
+          "caseId": "HBB-COMP-16",
+          "oracle": "component-checks"
+        },
+        {
+          "id": "HBB-COMP-17",
+          "caseId": "HBB-COMP-17",
+          "oracle": "component-checks"
+        },
+        {
+          "id": "HBB-COMP-20",
+          "caseId": "HBB-COMP-20",
+          "oracle": "component-checks"
+        },
+        {
+          "id": "HBB-COMP-21",
+          "caseId": "HBB-COMP-21",
+          "oracle": "component-checks"
+        },
+        {
+          "id": "HBB-COMP-22",
+          "caseId": "HBB-COMP-22",
+          "oracle": "component-checks"
+        },
+        {
+          "id": "HBB-COMP-25",
+          "caseId": "HBB-COMP-25",
+          "oracle": "component-checks"
+        }
+      ]
+    },
+    {
+      "requirement_id": "HBB-PDF-DENSE-PAGINATION",
+      "test_id": "hamilton-board-brief-dense-pdf-v1",
+      "baselineExpected": "FAIL",
+      "caseIds": [
+        "HBB-PDF-DENSE"
+      ],
+      "assertions": [
+        {
+          "id": "HBB-PDF-DENSE-ALL-LITERALS",
+          "caseId": "HBB-PDF-DENSE",
+          "oracle": "preservation"
+        },
+        {
+          "id": "HBB-PDF-DENSE-ROW-ASSOCIATIONS",
+          "caseId": "HBB-PDF-DENSE",
+          "oracle": "association"
+        },
+        {
+          "id": "HBB-PDF-DENSE-NATIVE-FONT",
+          "caseId": "HBB-PDF-DENSE",
+          "oracle": "native-font"
+        },
+        {
+          "id": "HBB-PDF-DENSE-BOUNDS",
+          "caseId": "HBB-PDF-DENSE",
+          "oracle": "bounds"
+        },
+        {
+          "id": "HBB-PDF-DENSE-ORDER",
+          "caseId": "HBB-PDF-DENSE",
+          "oracle": "order"
+        },
+        {
+          "id": "HBB-PDF-DENSE-PAGINATION",
+          "caseId": "HBB-PDF-DENSE",
+          "oracle": "pagination"
+        }
+      ]
+    },
+    {
+      "requirement_id": "HBB-PDF-COMPACT-CONTROL",
+      "test_id": "hamilton-board-brief-compact-pdf-v1",
+      "baselineExpected": "PASS",
+      "caseIds": [
+        "HBB-PDF-COMPACT"
+      ],
+      "assertions": [
+        {
+          "id": "HBB-PDF-COMPACT-PRESERVATION",
+          "caseId": "HBB-PDF-COMPACT",
+          "oracle": "preservation"
+        },
+        {
+          "id": "HBB-PDF-COMPACT-GEOMETRY",
+          "caseId": "HBB-PDF-COMPACT",
+          "oracle": "compact-geometry"
+        }
+      ]
+    }
+  ],
+  "requiredNative": [
+    {
+      "requirement_id": "HBB-UI-UPDATE-PDF-OWNER",
+      "test_id": "hamilton-board-brief-native-update-owner-v1",
+      "status": "BLOCKED",
+      "reason": "No authorized trusted native baseline/head pair; local strict captures remain blocked."
+    },
+    {
+      "requirement_id": "HBB-UI-LATE-ACK",
+      "test_id": "hamilton-board-brief-native-late-ack-v1",
+      "status": "BLOCKED",
+      "reason": "Native collector/topology and strict complete pair unavailable."
+    }
+  ],
+  "limits": {
+    "observations": 27,
+    "componentCases": 25,
+    "pdfCases": 2,
+    "checkpointsPerCase": 8,
+    "callsPerKind": 16,
+    "argvPerCall": 4,
+    "stringsPerField": 16384,
+    "maxObservationJsonBytes": 1048576,
+    "maxPdfBytes": 2097152,
+    "maxPdfPages": 12,
+    "maxPdfItemsPerPage": 10000,
+    "maxPdfItemsTotal": 50000,
+    "maxPdfTextBytes": 1048576
+  },
+  "withdrawnPolicy": "No cancellation-on-navigation or unmount requirement for a user-initiated PDF; these cases remain absent."
+}
