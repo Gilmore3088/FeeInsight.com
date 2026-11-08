@@ -62,7 +62,12 @@ describe('independent bounded JSON UTF-8 stream decoding', () => {
     // 1024 is an aligned character boundary after the opening JSON quote.
     const chunks = [bytes.subarray(0, 1024), bytes.subarray(1024)], consumed: Buffer[] = [];
     expect(await readChunks(chunks, consumed)).toBe(value);
-    expect(consumed).toEqual(chunks);
+    expect(consumed).toHaveLength(2);
+    for (const [index, chunk] of chunks.entries()) {
+      expect(Buffer.isBuffer(consumed[index])).toBe(true);
+      expect(consumed[index].byteLength).toBe(chunk.byteLength);
+      expect(consumed[index].equals(chunk)).toBe(true);
+    }
   });
 
   it('rejects one byte above the limit even when decoded character count is below it', async () => {
@@ -72,7 +77,12 @@ describe('independent bounded JSON UTF-8 stream decoding', () => {
     expect(value.length).toBeLessThan(2097152);
     const chunks = [bytes.subarray(0, 1024), bytes.subarray(1024)], consumed: Buffer[] = [];
     await expect(readChunks(chunks, consumed)).rejects.toThrow(/Input exceeds bound/);
-    expect(consumed).toEqual(chunks);
+    expect(consumed).toHaveLength(2);
+    for (const [index, chunk] of chunks.entries()) {
+      expect(Buffer.isBuffer(consumed[index])).toBe(true);
+      expect(consumed[index].byteLength).toBe(chunk.byteLength);
+      expect(consumed[index].equals(chunk)).toBe(true);
+    }
   });
 
   it('rejects malformed JSON after consuming the two exact chunks', async () => {

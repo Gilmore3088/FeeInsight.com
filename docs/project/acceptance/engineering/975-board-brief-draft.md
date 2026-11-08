@@ -34,6 +34,20 @@ Both native groups remain required: saved update/PDF/fresh-owner/foreign-denial,
 
 The retained final #3009 browser runs are six FAIL, zero skipped. Canceled requests and missing terminals stay unresolved under strict v1. No earlier head, successful leaf, local JSON report or nonce may substitute for complete current-head native evidence.
 
+### Prospective native implementation order
+
+Prepare a separate Linux build container for literal immutable product source and a pinned dependency runtime. A full Next build can execute subject configuration and plugins; all such execution belongs inside that untrusted, credentialless build boundary. Measure dependency compatibility and build/runtime capacity before proposing resource limits for native journeys. The component collector's current limits do not establish that capacity.
+
+Run the resulting app against a fresh synthetic Postgres database with restricted app privileges. Keep fixture preparation and a read-only database observer separate from the app, browser and their credentials. Use actual login with independent fresh-owner and foreign-owner browser contexts. Saved synthetic artifacts establish continuity and ownership checks; they do not establish upstream generation or current bank truth.
+
+Place a separately trusted transparent HTTP hold controller between the browser and app. Arm and release it through a private control channel that subject code and browser JavaScript cannot reach. Demonstrate unique correlation of the exact old save across native browser, intermediary, app response and database observations before qualifying a baseline. Next request queuing and hold behavior remain unmeasured. A canceled or missing POST terminal still blocks strict v1 acceptance.
+
+Enforce and observe directional network access: the app reaches only its scoped database endpoint; the browser reaches only the intermediary; the intermediary reaches only the owned app. Subject and browser containers cannot reach the host, Internet, Docker socket, private controller or observer credentials. Network membership alone does not establish those restrictions. Downloaded PDFs go to the separate credentialless parser. Retain exact native configurations and negative-control observations for the complete topology.
+
+The next implementation must retain bounded raw stdout/stderr, configuration observations, removal replies and successful exact-name absence queries, with process status, timing and digests. Current local source-pair receipts retain stderr counts/digests and at-time cleanup assessments but omit raw stderr, raw cleanup replies and container configuration snapshots. Later current-absence checks cannot recover those historical observations. Close these retention gaps before trusted registration; preserve the existing receipts with their limits.
+
+Freeze and independently review that complete topology and its assertions before executing a new immutable baseline/target pair. Keep preparation, resource, transport, missing-observation and cleanup failures separate from behavioral failures. After successful local isolation and native pairs, reconcile onto the actual authorized #3006 merge, obtain exact-head R3 review/authorization, then register and exercise trusted-main execution. Each dependency remains open until its own evidence exists.
+
 ## Registration and acceptance still required
 
 Future integration needs an explicit new revision, full preparer/collector/runner closure, independently owned frozen assertions, same-source baseline/target pairs and source/security negative controls. Shared-file changes invalidate older frozen hashes; never refresh old contracts to hide drift. Preserve original contract bytes and reviewed historical source identities.
