@@ -5,6 +5,7 @@ import { anthropicPriceFor, type Anthropic } from "@/lib/ai-provider";
 import { recordAttempt } from "@/lib/agents/learning/attempts";
 import type { AttemptOutcome } from "@/lib/agents/learning/outcomes";
 import { recordFeedback, type FeedbackRow } from "@/lib/agents/learning/feedback";
+import { ProviderResponseBudgetError } from "@/lib/ai-response-budget";
 import { PAID_PASS_MODELS, paidModelCall, paidResponseJson, type PaidMessageCreator } from "@/lib/agents/paid-pass";
 import { KNOX_RULES_STRATEGY, runFreeSpecialists } from "@/lib/agents/knox/specialists";
 import { groundPaidRow, MAX_TEXT_CHARS, paidExtractInstructions, paidExtractPrompt, type AcceptedPaidFee, type PaidFeeRow, type PaidRowRejection } from "@/lib/agents/knox/paid-extract";
@@ -78,11 +79,20 @@ export const SECOND_READER_STOP_STARTING_AFTER_MS = 120_000;
  * One read's whole deadline, its retries' waits included (the raw paid-call default is 600 s). A read
  * started just before SECOND_READER_STOP_STARTING_AFTER_MS ends by 200 s, the step's expected runtime
  * (run-store STEP_EXPECTED_MS), and the slowest paid_extract read of the 4,110 above, 74.5 s, fits.
- * A read cut off here is a `timeout` attempt, which a later run retries.
+ * A read cut off here is a `timeout` attempt: charged its ceiling, and retried at most once.
  */
 export const SECOND_READER_CALL_TIMEOUT_MS = 80_000;
 /** Outcomes a later run may retry: nothing about the text caused them. */
 const TRANSIENT_OUTCOMES = ["timeout", "network_error", "http_429", "http_5xx", "budget_blocked"] as const;
+/**
+ * Failures where the provider may have run, and billed, the request with no usage logged (the call was
+ * cut off or the connection dropped; its usage event records cost unknown, a NULL that sums to $0).
+ * Each one charges the text's worst case to the batch (`charged_ceiling_microusd` on the attempt,
+ * counted by `secondReaderBatchSpend`), so the cap stays conservative.
+ */
+const UNKNOWN_BILLING_OUTCOMES = new Set<AttemptOutcome>(["timeout", "network_error"]);
+/** A text whose read ends in one of those this many times in a batch is not retried again. */
+export const SECOND_READER_MAX_UNKNOWN_BILLING_ATTEMPTS = 2;
 const STOP_ERRORS = new Set(["ProviderBudgetBlockedError", "EmergencyStopActiveError", "ProviderCircuitOpenError"]);
 
 /** The switch reads on for "1" or "true", allowing for stray spaces, quotes and capitals. */
@@ -403,6 +413,15 @@ async function selectLeftTexts<Row extends { institution_id: number | string }>(
               AND done.detail->>'batch_id' = $3
               AND done.outcome NOT IN (${TRANSIENT_OUTCOMES.map((outcome) => `'${outcome}'`).join(", ")})
          )
+         AND (
+           SELECT count(*) FROM pipeline_attempts cut
+            WHERE cut.stage = 'extract'
+              AND cut.strategy = $2
+              AND cut.institution_id = adt.institution_id
+              AND cut.input_fingerprint = adt.text_hash
+              AND cut.detail->>'batch_id' = $3
+              AND cut.outcome IN (${[...UNKNOWN_BILLING_OUTCOMES].map((outcome) => `'${outcome}'`).join(", ")})
+         ) < ${SECOND_READER_MAX_UNKNOWN_BILLING_ATTEMPTS}
        ORDER BY adt.institution_id, adt.id
        LIMIT $4
     `,
@@ -413,13 +432,26 @@ async function selectLeftTexts<Row extends { institution_id: number | string }>(
   return rows.filter((row) => scope.has(Number(row.institution_id)));
 }
 
-/** The batch's logged provider spend so far: every second-reader call tagged with its batch id. */
+/**
+ * The batch's spend so far: every second-reader call tagged with its batch id, at its logged cost,
+ * plus the worst case charged for each read whose billing is unknown (UNKNOWN_BILLING_OUTCOMES).
+ * Such a call's usage event has a NULL cost, so nothing is counted twice.
+ */
 export async function secondReaderBatchSpend(db: SqlTag, batchId: string): Promise<number> {
   const [row] = await db`
-    SELECT COALESCE(SUM(estimated_cost_microusd), 0)::bigint AS spent
-      FROM ai_api_usage_events
-     WHERE operation = ${SECOND_READER_OPERATION}
-       AND metadata->>'batch_id' = ${batchId}
+    SELECT (
+      SELECT COALESCE(SUM(estimated_cost_microusd), 0)::bigint
+        FROM ai_api_usage_events
+       WHERE operation = ${SECOND_READER_OPERATION}
+         AND metadata->>'batch_id' = ${batchId}
+    ) + (
+      SELECT COALESCE(SUM((detail->>'charged_ceiling_microusd')::bigint), 0)::bigint
+        FROM pipeline_attempts
+       WHERE stage = 'extract'
+         AND strategy = ${KNOX_SECOND_READER_STRATEGY.strategy}
+         AND detail->>'batch_id' = ${batchId}
+         AND detail ? 'charged_ceiling_microusd'
+    ) AS spent
   `;
   return Number(row?.spent ?? 0);
 }
@@ -459,6 +491,8 @@ export interface SecondReaderResult {
 }
 
 function failureOutcome(error: unknown): AttemptOutcome {
+  // The call's own deadline ("The AI response took too long"), which the text test below misses.
+  if (error instanceof ProviderResponseBudgetError && (error.reason === "deadline" || error.reason === "idle")) return "timeout";
   const status = Number((error as { status?: unknown })?.status);
   if (status === 429) return "http_429";
   if (status >= 500) return "http_5xx";
@@ -560,7 +594,12 @@ export async function runKnoxSecondReader(options: {
       result.processed += 1;
       result.failed += 1;
       result.texts.push({ institution_id: institutionId, document_text_id: documentTextId, outcome, error: message });
-      await recordAttempt(db, { ...base, outcome, yieldCount: 0, costMicrousd: 0, durationMs: Date.now() - startedAt, detail: { batch_id: batch.id, document_text_id: documentTextId, model, error: message } });
+      // The billed cost is unknown, so cost_microusd stays 0; the cap is charged the worst case.
+      const charged = UNKNOWN_BILLING_OUTCOMES.has(outcome) ? ceiling : 0;
+      spent += charged;
+      await recordAttempt(db, { ...base, outcome, yieldCount: 0, costMicrousd: 0, durationMs: Date.now() - startedAt, detail: {
+        batch_id: batch.id, document_text_id: documentTextId, model, error: message, ...(charged > 0 ? { charged_ceiling_microusd: charged } : {}),
+      } });
       continue;
     }
     // The model is priced (batchRefusal), so the call's cost is its billed usage.

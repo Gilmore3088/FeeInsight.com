@@ -44,6 +44,7 @@ const startAgentRun = vi.fn<(...args: unknown[]) => Promise<{ reused: boolean; r
 vi.mock("@/lib/automation-control", () => ({ getAutomationControl: (...args: unknown[]) => getAutomationControl(...args) }));
 vi.mock("@/lib/agents/run-store", () => ({ startAgentRun: (...args: unknown[]) => startAgentRun(...args) }));
 
+import { ProviderResponseBudgetError } from "@/lib/ai-response-budget";
 import { paidExtractInstructions, paidExtractPrompt } from "./paid-extract";
 import {
   diffSecondRead,
@@ -55,6 +56,7 @@ import {
   runKnoxSecondReader,
   SECOND_READER_BATCHES,
   SECOND_READER_CALL_TIMEOUT_MS,
+  SECOND_READER_MAX_UNKNOWN_BILLING_ATTEMPTS,
   SECOND_READER_STOP_STARTING_AFTER_MS,
   SECOND_READER_MAX_OUTPUT_TOKENS,
   secondReaderLive,
@@ -372,6 +374,58 @@ describe("Knox's blind second reader", () => {
     expect(SECOND_READER_STOP_STARTING_AFTER_MS + SECOND_READER_CALL_TIMEOUT_MS).toBeLessThanOrEqual(200_000);
     await runKnoxSecondReader({ runId: 1, stepId: 2, db: asDb(createDb([textRow()])), create: vi.fn(async () => reply(modelFees)), env: ON, batchId: BATCH });
     expect(rawTimeouts).toEqual([SECOND_READER_CALL_TIMEOUT_MS]);
+  });
+
+  it("charges a read cut off at its deadline its worst case, and reads that text at most twice", async () => {
+    // A stateful stand-in for the two tables: the usage event of a cut-off call has a NULL cost (it adds
+    // nothing), so the batch's spend is what the attempts charged.
+    const attempts: Array<{ outcome: unknown; detail: Record<string, unknown> }> = [];
+    const db = createDb([textRow()]);
+    db.mockImplementation((strings: TemplateStringsArray, ...values: unknown[]) => {
+      const sqlText = templateText(strings);
+      if (sqlText.includes("INSERT INTO pipeline_attempts")) {
+        const detail = values.find((value) => typeof value === "string" && value.startsWith("{")) as string;
+        attempts.push({ outcome: values[6], detail: JSON.parse(detail) as Record<string, unknown> });
+        return Promise.resolve([]);
+      }
+      if (sqlText.includes("FROM ai_api_usage_events")) {
+        expect(sqlText).toContain("charged_ceiling_microusd");
+        return Promise.resolve([{ spent: attempts.reduce((sum, attempt) => sum + Number(attempt.detail.charged_ceiling_microusd ?? 0), 0) }]);
+      }
+      return Promise.resolve([]);
+    });
+    const cutOff = () => attempts.filter((attempt) => attempt.outcome === "timeout" || attempt.outcome === "network_error").length;
+    db.unsafe = vi.fn((query: string) => {
+      expect(query).toContain("cut.outcome IN ('timeout', 'network_error')");
+      expect(query).toContain(`< ${SECOND_READER_MAX_UNKNOWN_BILLING_ATTEMPTS}`);
+      return Promise.resolve(cutOff() < SECOND_READER_MAX_UNKNOWN_BILLING_ATTEMPTS ? [textRow()] : []);
+    });
+    // The request never answers; the call's deadline ends it.
+    const hangs = vi.fn(() => new Promise<never>((_, reject) => {
+      setTimeout(() => reject(new ProviderResponseBudgetError("deadline")), SECOND_READER_CALL_TIMEOUT_MS + 1);
+    }));
+    const ceiling = textCeilingMicrousd(text, "claude-sonnet-5-5");
+
+    vi.useFakeTimers();
+    try {
+      for (const runId of [1, 2]) {
+        const run = runKnoxSecondReader({ runId, stepId: runId, db: asDb(db), create: hangs, env: ON, batchId: BATCH });
+        await vi.advanceTimersByTimeAsync(SECOND_READER_CALL_TIMEOUT_MS + 1);
+        const result = await run;
+        expect(result).toMatchObject({ processed: 1, failed: 1, costMicrousd: 0, spentMicrousd: ceiling * runId });
+        expect(result.texts[0].outcome).toBe("timeout");
+        expect(attempts[runId - 1]).toMatchObject({ outcome: "timeout", detail: { charged_ceiling_microusd: ceiling, batch_id: BATCH } });
+      }
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(hangs).toHaveBeenCalledTimes(2);
+
+    // After the second cut-off the text is final: no third read, and the scheduler sees the batch done.
+    const third = await runKnoxSecondReader({ runId: 3, stepId: 3, db: asDb(db), create: hangs, env: ON, batchId: BATCH });
+    expect(third).toMatchObject({ selected: 0, processed: 0 });
+    expect(hangs).toHaveBeenCalledTimes(2);
+    expect(await scheduleKnoxSecondReaderRun(asDb(db), new Date(0), ON)).toEqual({ scheduled: false, runId: null, reason: "done" });
   });
 
   it("queues nothing while a run is active, when no text is left, at the cap or under the provider stop", async () => {
