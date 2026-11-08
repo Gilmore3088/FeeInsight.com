@@ -94,3 +94,10 @@ Remaining activation includes concrete owner security approval, a distinct revie
 The Hamilton functional diagnostics now run desktop and phone report/research flows, including picker selection and the same saved artifact across contexts. Strict browser acceptance still blocks uncorroborated request cancellations; native same-document/action completion evidence remains M5 work. All failed requests are retained, and only the reviewed, explicitly corroborated prefetch case is classified as expected. The private sample is a separate local diagnostic whose expected values and case results stay outside builder tuning.
 
 No command automatically rolls back, reprocesses live fees, changes GitHub protections, activates a paid provider, sends outreach or creates production tables.
+
+
+## Optional native browser diagnostics
+
+`ENGINEERING_PROTOCOL_CAPTURE=1` adds a separate `journey-browser-protocol` attachment to Hamilton journeys. The observer reads metadata from a caller-owned CDP session; it does not intercept requests, wrap fetch, drain bodies or change the strict v1 classification/gate. It obtains the actual protocol version and retains only generated local identities, explicit route templates, fixed protocol classes and ordered events. Header values, native IDs, action IDs, request/response bodies and raw protocol events remain transient.
+
+These local attachments report `BLOCKED` or `LOCAL_PROTOCOL_UNTRUSTED`, with acceptance `NOT_ASSESSED`. Completeness is confined to registered sessions; workers, out-of-process frames and other unobserved targets remain unknown. Native EOF is transport evidence only. All action settlement and effects remain unknown, and cancellations stay blocking. A setup failure or incomplete capture is recorded with fixed safe codes. Expanded frozen contracts and real exact-build product execution are still required for M5 acceptance; neither the old historical pilot nor a minimal Chromium fixture supplies that acceptance.
