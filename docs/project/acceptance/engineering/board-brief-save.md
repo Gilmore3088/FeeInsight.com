@@ -1,0 +1,28 @@
+# Saved board brief continuity
+
+This outcome extends the original Engineering Verification M5 plan. It does not replace the full 50-requirement program or the broader Hamilton acceptance matrix. FR-03–06, FR-18, FR-20, SEC-06 and UAT-09 supply context; this outcome verifies only the saved board brief behaviors below.
+
+## Problem and intended behavior
+
+The editor awaits `saveBoardBrief` and then replaces the current URL with the saved report URL. A response belonging to an editor the reader has left must not take over a replacement view. The server may legitimately finish storing the requested update after navigation; the client guard does not cancel or roll back that write.
+
+A current editor still saves normally. A refusal or exception retains the edits and allows retry against the same report ID. Only an affirmative acknowledgement may mark the submitted edits saved. A hash-only move within the same report remains compatible with a save. The guard covers component departure and committed pathname/search replacement; it does not claim to detect every pending navigation intent before Next commits it.
+
+An explicitly requested PDF remains bound to the saved report selected at the click. Leaving the editor does not create a new requirement to cancel that download. The original prospective design's proposed download-cancellation cases were withdrawn before execution as a design error. PDF content and ownership checks remain part of this outcome.
+
+## Verification plan
+
+1. Freeze literal inputs and expectations independently, before source changes. Run the real exported editor with deferred actions against unchanged main. Preserve setup failures separately from behavioral failures, including any selector corrections.
+2. Keep affirmative save, refusal, rejection/retry, concurrent-click, canonical URL, hash-only movement and new-from-analysis compatibility controls. Exercise a true unmount, the keyed A-to-B replacement used by the actual page, and committed pathname/search changes while old props remain. Mocked actions establish component behavior only.
+3. Start a clean committed candidate through the existing provider-disabled production-build server against a dedicated TLS loopback fixture database. Run desktop and phone journeys without changing the strict browser policy, capture helper, shared configuration or product code for test access.
+4. Open an already saved synthetic report A. Edit its title and team note, save through the actual UI, and inspect the complete owner-scoped native row through a fresh connection. Require the same UUID, owner, institution, creation time, type, status and metadata. Only the title, team note and corresponding user-authored implementation note may change. Compare original findings, numeric evidence, references and unrelated rows literally; do not derive the expected result with the production editing function.
+5. Download the actual report PDF. Preserve bytes and SHA-256, check the PDF header, exact edited text, institution, stored values ($35, $30 and $5), reporting date, sources and evidence limits, and render pages for visual inspection. These seeded stored values test preservation, not source accuracy or upstream answer generation.
+6. Hold only A's owner-scoped update using an isolated database gate. Observe the actual waiting backend and unique in-flight POST. Navigate through the existing Reports links to saved report B before release. Require B's URL/content and same-document identity before release, then the exact old response's terminal completion and B remaining afterward. A canceled request, missing terminal or serialized navigation leaves this witness incomplete.
+7. In a fresh owner phone context, select B and reopen exact A. Verify edited A and the original evidence. Verify another account is denied the private saved A and has no editor or download control. Keep that browser witness distinct from the existing database isolation tests that actually attempt unauthorized update/export calls. Reading or denying access must leave the scoped artifact/evidence inventory unchanged.
+8. Run focused editor, server-action, ownership and PDF tests plus the repository verification gates. Independently review the exact final source and retained native artifacts. Every strict browser failure remains a browser-acceptance blocker even if its semantic callback completes.
+
+## Evidence boundaries and remaining work
+
+The prospective design, amendments, immutable baseline source/test copies, genuine RED/GREEN results, source/build identity and native receipts are retained under `test-results/engineering-verification/board-brief-save/`. Source copies use inert `.txt` extensions. The associated PR records the current candidate and execution results; this plan does not certify an unexecuted case.
+
+The Reports builder's preview/export live-data reload mismatch is a separate source-backed hypothesis, with no reproduced defect or acceptance claim in this outcome. Saved-analysis deduplication, the remaining Hamilton journeys, registered trusted proof, independent reviewer identity, protected activation, owning pipeline work and its full quality window, independent holdouts and multi-change trends remain separate program work. PRs #3006, #3007 and #3008 retain their own frozen heads and approval/acceptance boundaries. The private holdout is not read or rerun here.

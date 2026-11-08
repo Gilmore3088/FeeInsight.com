@@ -26,6 +26,11 @@ export function BoardBriefEditor({ analysis, analysisId, writtenSources, initial
   const [savedId, setSavedId] = useState(reportId ?? null);
   const [savedFingerprint, setSavedFingerprint] = useState(reportId ? JSON.stringify([title, teamNote, includeEvidence]) : null);
   const saving = useRef(false);
+  const active = useRef(false);
+  useEffect(() => {
+    active.current = true;
+    return () => { active.current = false; };
+  }, []);
   // #1899: a new brief carries the findings the reader added for the answer's institution, each
   // re-read on the server with its chart, sources, method, dates and limits. A saved brief keeps its own.
   const basket = useReportBasket();
@@ -56,15 +61,22 @@ export function BoardBriefEditor({ analysis, analysisId, writtenSources, initial
   const report = built && shownFindings.length ? { ...built, addedFindings: shownFindings } : built;
   async function save() {
     if (saving.current) return;
+    // An ACK may still arrive after navigation. It belongs to this editor and route;
+    // moving within this report's hash does not change that ownership.
+    const route = window.location.pathname + window.location.search;
+    const current = () => active.current && window.location.pathname + window.location.search === route;
     saving.current = true; setBusy(true); setError(null);
     try {
       const result = await saveBoardBrief({ ...(savedId ? { reportId: savedId } : { analysisId, addedFindings: included }), edits });
+      if (!current()) return;
       if (!result.success) { setError(result.error); return; }
       setSavedId(result.reportId); setSavedFingerprint(fingerprint);
+      // Settle before our own canonical URL replacement, which may keep this report mounted.
+      setBusy(false);
       router.replace(`/pro/reports?report_id=${encodeURIComponent(result.reportId)}`);
     } catch {
-      setError("The brief could not be saved. Your edits remain here; retry.");
-    } finally { saving.current = false; setBusy(false); }
+      if (current()) setError("The brief could not be saved. Your edits remain here; retry.");
+    } finally { saving.current = false; if (current()) setBusy(false); }
   }
   async function download() {
     if (!savedId || dirty || downloadBusy) return;
