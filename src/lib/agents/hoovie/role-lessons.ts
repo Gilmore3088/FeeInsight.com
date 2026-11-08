@@ -6,6 +6,16 @@ import type { AgentLesson } from "@/lib/agents/learning/lesson-types";
  */
 export const HOOVIE_LESSONS: AgentLesson[] = [
   {
+    id: "issue-2226-one-terms-rule-at-every-paid-reader",
+    agent: "hoovie",
+    stage: "registry serve",
+    lesson: "A source's licence status decides what every paid reader may show, not only the catalog: a reader that serves Hamilton, its Regulatory Wire or a paid report applies the catalog's servable rule through hamilton-sources.ts. When terms are confirmed part by part (one state's site at a time), record the confirmed parts next to the struck ones and show only those until the whole source is confirmed. A reader shared with public pages takes an audience instead of choosing for every caller.",
+    why: "The catalog refused terms-unconfirmed sources, but the specialized readers hid only struck rows. So Hamilton cited Fed district research and Texas, Washington, Illinois and Maryland orders and posts whose commercial terms nobody had read, against James's rule that unconfirmed sources stay out of Hamilton.",
+    evidence: { issues: [2226, 1872], prs: [], files: ["src/lib/data-catalog/hamilton-sources.ts", "src/lib/hamilton/data-rights.test.ts"] },
+    appliesTo: "all",
+    since: "2026-11-08",
+  },
+  {
     id: "issue-2232-relink-when-identity-improves",
     agent: "hoovie",
     stage: "registry identity",

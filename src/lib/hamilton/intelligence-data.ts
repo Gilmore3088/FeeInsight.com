@@ -7,6 +7,7 @@
  */
 import { getSql } from "@/lib/data-store/connection";
 import { STRUCK_REG_ARTICLE_SOURCES } from "@/lib/data-store/struck-sources";
+import { hamiltonShowsStatePosts } from "@/lib/data-catalog/hamilton-sources";
 import { getPeerFeeValues, getSegmentFeeValues, type PeerFilterSet } from "@/lib/data-store/fee-index";
 import { MIN_INSTITUTIONS_FOR_MEDIAN } from "@/lib/data-store/maturity";
 import { computeStats } from "@/lib/data-store/fees";
@@ -235,6 +236,8 @@ export interface StatePost {
 export async function loadStatePosts(stateCode: string, limit = 6): Promise<StatePost[] | null> {
   // Struck states' posts (non-commercial site terms; DECISIONS.md "No non-commercial data") are never read.
   if (STRUCK_REG_ARTICLE_SOURCES.includes(`state:${stateCode.toUpperCase()}`)) return [];
+  // Unconfirmed states' posts are not shown in Hamilton (hamilton-sources.ts, #2226).
+  if (!hamiltonShowsStatePosts(stateCode)) return [];
   try {
     const rows = await getSql().unsafe(
       `SELECT title, link, published_at

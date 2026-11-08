@@ -1,5 +1,6 @@
 import { sql } from "./connection";
 import { STRUCK_ENFORCEMENT_AGENCIES } from "./struck-sources";
+import { hamiltonStateAgencies, type SourceAudience } from "@/lib/data-catalog/hamilton-sources";
 import { stateAgencyCode } from "@/lib/regulatory/state-enforcement";
 import { buildLocalOfficeMap, localMapBounds, LOCAL_MAP_MAX_STATES, type LocalOfficeMap } from "@/lib/geo/local-office-map";
 import { getLocalMarketMembers } from "./custom-report-market";
@@ -585,15 +586,23 @@ const AGENCY_FOR_REGULATOR: Record<string, "OCC" | "FRB"> = { OCC: "OCC", "Feder
  * loaded (FDIC-supervised banks: FDIC orders aren't loaded), so "none" is only ever said
  * where the list was actually checked.
  */
-export async function getEnforcementRecord(institutionId: number): Promise<EnforcementRecord | null> {
+export async function getEnforcementRecord(
+  institutionId: number,
+  options: { audience?: SourceAudience } = {},
+): Promise<EnforcementRecord | null> {
   const [inst] = await sql<Array<Record<string, unknown>>>`
     SELECT charter_type, primary_regulator, holding_company_name, state_code, charter_agency FROM institution_sources WHERE id = ${institutionId}`;
   if (!inst || inst.charter_type !== "bank") return null;
   const holding = inst.holding_company_name ? String(inst.holding_company_name) : null;
   // Struck states' orders (non-commercial site terms; DECISIONS.md "No non-commercial data") are never read.
+  // Hamilton and paid reports also skip states whose terms are unconfirmed (hamilton-sources.ts, #2226).
+  const allowedStates = options.audience === "hamilton" ? hamiltonStateAgencies() : null;
+  const restrict = allowedStates !== null;
+  const states = allowedStates ?? [];
   const loaded = await sql<Array<Record<string, unknown>>>`
     SELECT agency, MAX(fetched_at) AS fetched_at FROM institution_enforcement_actions
      WHERE agency <> ALL(${[...STRUCK_ENFORCEMENT_AGENCIES]}::text[])
+       AND (${restrict}::boolean IS NOT TRUE OR agency NOT LIKE 'STATE!_%' ESCAPE '!' OR agency = ANY(${states}::text[]))
      GROUP BY agency`;
   const loadedAgencies = new Set(loaded.map((r) => String(r.agency)));
   const rows = await sql<Array<Record<string, unknown>>>`
@@ -603,6 +612,7 @@ export async function getEnforcementRecord(institutionId: number): Promise<Enfor
      WHERE (institution_id = ${institutionId}
             OR (${holding}::text IS NOT NULL AND holding_company = ${holding}))
        AND agency <> ALL(${[...STRUCK_ENFORCEMENT_AGENCIES]}::text[])
+       AND (${restrict}::boolean IS NOT TRUE OR agency NOT LIKE 'STATE!_%' ESCAPE '!' OR agency = ANY(${states}::text[]))
      ORDER BY start_date DESC NULLS LAST, id DESC`;
   const actions: EnforcementActionRow[] = rows.map((r) => ({
     agency: String(r.agency),

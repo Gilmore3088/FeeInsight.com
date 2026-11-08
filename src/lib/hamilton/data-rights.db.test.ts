@@ -5,7 +5,9 @@
  * and from held Google News press (state-bill-news, "news:XX") are stored next to rows from a
  * state whose terms allow reuse (New Jersey). Hamilton's own readers (the Wire behind regulation
  * answers, the state posts panel, the Regulatory Wire and its state picker) return only New
- * Jersey's. The static sweep that every reader applies the filter is data-rights.test.ts.
+ * Jersey's. Texas stands for a state whose site terms are unconfirmed (#2226): Hamilton and paid
+ * reports hide its posts and orders, while the public institution page still shows them. The
+ * static sweep that every reader applies the filter is data-rights.test.ts.
  *
  * Loopback databases only. Synthetic rows keyed "t6-rights-" are removed before and after.
  */
@@ -28,11 +30,14 @@ const env = vi.hoisted(() => {
 
 import { sql } from "@/lib/data-store/connection";
 import { getStateNews, getStatesWithNews, getStateWire } from "@/lib/data-store/state-news";
+import { getEnforcementRecord } from "@/lib/data-store/registry-profile";
 import { loadStatePosts } from "./intelligence-data";
 import { loadWire } from "./workspace/research";
 
 const KEY = "t6-rights-";
-const STATES = ["NY", "NC", "FL", "NJ"];
+const STATES = ["NY", "NC", "FL", "NJ", "TX"];
+/** Synthetic state-chartered banks (one per state), for the enforcement record. */
+const BANK_ID_BASE = 990_000_700;
 const day = (offset: number) => new Date(Date.now() - offset * 86_400_000).toISOString();
 
 describe.skipIf(!env.url)("Hamilton data rights in isolated PostgreSQL (V5 T6, #1872)", () => {
@@ -41,6 +46,7 @@ describe.skipIf(!env.url)("Hamilton data rights in isolated PostgreSQL (V5 T6, #
   const cleanup = async () => {
     await db`DELETE FROM reg_articles WHERE guid LIKE ${`${KEY}%`}`;
     await db`DELETE FROM institution_enforcement_actions WHERE source_key LIKE ${`${KEY}%`}`;
+    await db`DELETE FROM institution_sources WHERE id >= ${BANK_ID_BASE} AND id < ${BANK_ID_BASE + STATES.length}`;
   };
 
   beforeAll(async () => {
@@ -57,8 +63,10 @@ describe.skipIf(!env.url)("Hamilton data rights in isolated PostgreSQL (V5 T6, #
       await db`INSERT INTO reg_articles (guid, source, title, link, topic, published_at)
                VALUES (${`${KEY}press-${state}`}, ${`news:${state}`}, ${`${state} lawmakers weigh bank overdraft fee bill`},
                        ${`https://news.example.test/${state}`}, 'general', ${day(5 + i)})`;
-      await db`INSERT INTO institution_enforcement_actions (agency, source_key, party_name, party_state, action_type, subject, start_date, document_url)
-               VALUES (${`STATE_${state}`}, ${`${KEY}order-${state}`}, ${`Synthetic ${state} Bank`}, ${state}, 'consent order',
+      await db`INSERT INTO institution_sources (id, institution_name, charter_type, source, state_code)
+               VALUES (${BANK_ID_BASE + i}, ${`Synthetic ${state} Bank`}, 'bank', 'test', ${state})`;
+      await db`INSERT INTO institution_enforcement_actions (agency, source_key, party_name, party_state, institution_id, action_type, subject, start_date, document_url)
+               VALUES (${`STATE_${state}`}, ${`${KEY}order-${state}`}, ${`Synthetic ${state} Bank`}, ${state}, ${BANK_ID_BASE + i}, 'consent order',
                        'Unfair overdraft fees', ${day(30).slice(0, 10)}::date, ${`https://regulator.example.test/${state}/order.pdf`})`;
     }
   });
@@ -101,5 +109,26 @@ describe.skipIf(!env.url)("Hamilton data rights in isolated PostgreSQL (V5 T6, #
     const picker = await getStatesWithNews();
     expect(picker).toContain("NJ");
     for (const state of ["NY", "NC", "FL"]) expect(picker).not.toContain(state);
+  });
+
+  it("Hamilton and paid reports hide a state whose terms are unconfirmed (TX); the public profile keeps it (#2226)", async () => {
+    const tx = "https://regulator.example.test/TX/post";
+    expect((await getStateNews({ limit: 200 })).regulator_posts.map((p) => p.link)).not.toContain(tx);
+    const wire = await getStateWire({ stateCodes: STATES });
+    expect(wire.items.map((item) => ("link" in item ? item.link : "url" in item ? item.url : null))).not.toContain(tx);
+    expect(await getStatesWithNews()).not.toContain("TX");
+    expect(await loadStatePosts("TX")).toEqual([]);
+
+    const order = (state: string) => `https://regulator.example.test/${state}/order.pdf`;
+    const urls = (record: Awaited<ReturnType<typeof getEnforcementRecord>>) =>
+      [...(record?.open ?? []), ...(record?.past ?? [])].map((a) => a.document_url);
+    const idOf = (state: string) => BANK_ID_BASE + STATES.indexOf(state);
+    const publicTx = await getEnforcementRecord(idOf("TX"));
+    const hamiltonTx = await getEnforcementRecord(idOf("TX"), { audience: "hamilton" });
+    expect(urls(publicTx)).toContain(order("TX"));
+    expect(urls(hamiltonTx)).not.toContain(order("TX"));
+    expect(hamiltonTx?.agenciesChecked ?? []).not.toContain("STATE_TX");
+    expect(urls(await getEnforcementRecord(idOf("NJ"), { audience: "hamilton" }))).toContain(order("NJ"));
+    expect(urls(await getEnforcementRecord(idOf("NY")))).not.toContain(order("NY"));
   });
 });

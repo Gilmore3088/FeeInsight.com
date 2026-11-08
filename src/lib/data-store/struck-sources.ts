@@ -199,6 +199,15 @@ export function areaRowServedSql(alias = "area_statistics"): string {
  */
 export const STRUCK_REGULATOR_STATES: readonly string[] = ["NY", "NC", "FL"];
 
+/**
+ * States whose regulator site terms are read and allow commercial reuse: New Jersey ("free
+ * reuse"; state-reg-news and state-enforcement contract notes). The other loaded states' terms are
+ * unconfirmed (#1872), so Hamilton and paid reports show only these states' posts and orders while
+ * state-reg-news and state-enforcement are terms-unconfirmed (hamilton-sources.ts, #2226). Add a
+ * state here only once its site's terms are read and allow commercial use.
+ */
+export const REUSE_CONFIRMED_REGULATOR_STATES: readonly string[] = ["NJ"];
+
 /** reg_articles sources of those states' posts (registry-state-reg-news, "state:XX"). */
 export const STRUCK_REG_ARTICLE_SOURCES: readonly string[] = STRUCK_REGULATOR_STATES.map((s) => `state:${s}`);
 
