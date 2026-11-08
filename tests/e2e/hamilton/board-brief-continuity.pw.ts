@@ -6,6 +6,7 @@ import { createHash, randomInt, randomUUID } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { extractText } from "unpdf";
+import type postgres from "postgres";
 import type { Browser, BrowserContext } from "playwright/test";
 import { expect, test, withJourneyCapture, type Page } from "./evidence";
 import { connectFixtureDb, FIXTURE_USERS, HOME, type FixtureDb } from "./fixtures";
@@ -89,7 +90,7 @@ function assertEdited(actual: Row, before: Row) {
   expect(actual.report_json.identityContext).toEqual(report(true).identityContext);
   expect(actual.report_json.boardBrief?.sourceAnalysisId).toBe(ANALYSIS);
 }
-async function seed(db: FixtureDb) {
+async function seed(db: FixtureDb, reader: FixtureDb) {
   // Global setup owns the base fixture. Preserve unrelated artifacts produced by
   // the unchanged creation journey; reset only this continuity case's fixed IDs.
   await db`DELETE FROM hamilton_reports WHERE id IN (${A}::uuid, ${B}::uuid) AND user_id = ${String(OWNER)}`;
@@ -101,13 +102,39 @@ async function seed(db: FixtureDb) {
     VALUES (${ANALYSIS}, ${String(OWNER)}, ${String(HOME.id)}, ${TITLE}, 'pricing', 'Saved synthetic wire review', ${db.json(answer)})`;
   for (const isA of [true, false]) {
     const value = report(isA);
+    // postgres.js must receive an object, not an already serialized JSON string.
+    const json: postgres.JSONValue = JSON.parse(JSON.stringify(value));
     await db`INSERT INTO hamilton_reports
       (id, user_id, institution_id, report_type, report_json, status, evidence_policy, selected_source, selected_source_label,
        peer_baseline_source, peer_baseline_label, peer_fallback_reason, selected_verified_fee_count, selected_provisional_fee_count, selected_fee_delta_count)
-      VALUES (${isA ? A : B}, ${String(OWNER)}, ${isA ? String(HOME.id) : "9701002"}, 'board_brief', ${JSON.stringify(value)}::jsonb, 'generated',
+      VALUES (${isA ? A : B}, ${String(OWNER)}, ${isA ? String(HOME.id) : "9701002"}, 'board_brief', ${db.json(json)}, 'generated',
        'source-diligence', 'manual', 'Original saved analysis', 'saved-peer-set', 'Original synthetic cohort',
        'Saved synthetic evidence; no current cohort lookup.', 0, 0, 0)`;
   }
+  // Read the real persisted fixture independently before any page can consume it.
+  const reports = await reader<{ kind: string; row: Row }[]>`
+    SELECT jsonb_typeof(report_json) AS kind, to_jsonb(r) AS row FROM hamilton_reports r
+    WHERE id IN (${A}::uuid, ${B}::uuid) AND user_id = ${String(OWNER)} ORDER BY id`;
+  expect(reports).toHaveLength(2);
+  for (const [index, saved] of reports.entries()) {
+    const isA = index === 0;
+    expect(saved.kind).toBe("object");
+    expect(saved.row.report_json).toEqual(report(isA));
+    expect(saved.row).toMatchObject({ id: isA ? A : B, user_id: String(OWNER), institution_id: isA ? String(HOME.id) : "9701002",
+      report_type: "board_brief", status: "generated", scenario_id: null, peer_set_id: null,
+      evidence_policy: "source-diligence", selected_source: "manual", selected_source_label: "Original saved analysis",
+      peer_baseline_source: "saved-peer-set", peer_baseline_label: "Original synthetic cohort",
+      peer_fallback_reason: "Saved synthetic evidence; no current cohort lookup.",
+      selected_verified_fee_count: 0, selected_provisional_fee_count: 0, selected_fee_delta_count: 0 });
+  }
+  const analyses = await reader<{ kind: string; row: Record<string, unknown> }[]>`
+    SELECT jsonb_typeof(response_json) AS kind, to_jsonb(a) AS row FROM hamilton_saved_analyses a
+    WHERE id = ${ANALYSIS}::uuid AND user_id = ${String(OWNER)}`;
+  expect(analyses).toHaveLength(1); expect(analyses[0].kind).toBe("object");
+  expect(analyses[0].row.response_json).toEqual(answer);
+  expect(analyses[0].row).toMatchObject({ id: ANALYSIS, user_id: String(OWNER), institution_id: String(HOME.id),
+    title: TITLE, analysis_focus: "pricing", prompt: "Saved synthetic wire review", response_json: answer });
+  return { nativeReportJsonbType: "object", nativeAnalysisJsonbType: "object", reports: 2, analyses: 1, exactFixtureReadback: true };
 }
 function identity(): Record<string, unknown> {
   try {
@@ -171,7 +198,7 @@ async function runCase(page: Page, browser: Browser, width: number, caseId: stri
     await page.setViewportSize({ width, height: width === 1440 ? 900 : 844 });
     db = connectFixtureDb(); reader = connectFixtureDb();
     expect(await guard(reader)).not.toBe(await guard(db));
-    await seed(db); observations.baseline = "SEEDED_EXISTING_REPORT_NOT_UPSTREAM_CREATION_PROOF";
+    observations.seedReadback = await seed(db, reader); observations.baseline = "SEEDED_EXISTING_REPORT_NOT_UPSTREAM_CREATION_PROOF";
     const fresh = async (label: string, callback: (target: Page) => Promise<void>) => {
       const context = await browser.newContext({ viewport: { width: 390, height: 844 } }); contexts.push(context);
       const target = await context.newPage(); let assertionsCompleted = false;

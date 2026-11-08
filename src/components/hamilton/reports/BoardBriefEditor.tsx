@@ -61,9 +61,20 @@ export function BoardBriefEditor({ analysis, analysisId, writtenSources, initial
   const report = built && shownFindings.length ? { ...built, addedFindings: shownFindings } : built;
   async function save() {
     if (saving.current) return;
+    const location = new URL(window.location.href);
+    const fromAnalysis = location.searchParams.get("from_analysis");
+    const selectedReport = location.searchParams.get("report_id") ?? location.searchParams.get("report");
+    // Next can commit a replacement URL before replacing the old editor. That editor
+    // cannot adopt the new route by starting a save under it. Match the page's selectors.
+    const ownsRoute = location.pathname === "/pro/reports"
+      && !location.searchParams.has("research") && !location.searchParams.get("board_error") && (fromAnalysis
+      ? fromAnalysis === analysisId && !location.searchParams.get("report_id")
+        && !location.searchParams.get("report") && !location.searchParams.get("scenario_id")
+      : Boolean(savedId) && selectedReport === savedId);
+    if (!active.current || !ownsRoute) return;
     // An ACK may still arrive after navigation. It belongs to this editor and route;
     // moving within this report's hash does not change that ownership.
-    const route = window.location.pathname + window.location.search;
+    const route = location.pathname + location.search;
     const current = () => active.current && window.location.pathname + window.location.search === route;
     saving.current = true; setBusy(true); setError(null);
     try {

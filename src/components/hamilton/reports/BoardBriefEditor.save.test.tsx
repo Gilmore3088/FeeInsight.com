@@ -173,3 +173,87 @@ describe("BoardBriefEditor download lifetime, prospective BBE-12–17", () => {
     await act(async () => { vi.advanceTimersByTime(1000); });
   });
 });
+
+describe("BoardBriefEditor pre-invocation route ownership, prospective controls", () => {
+  it.each([route(B), "/pro/analyze?instId=9701002"])("does not adopt a different live URL committed before Save: %s", async target => {
+    const pending = deferred<{ success: true; reportId: string }>(); mocks.save.mockReturnValue(pending.promise);
+    mount(); edit(); window.history.replaceState(null, "", target); save();
+    // A server update may finish; only publication into the replacement view is forbidden.
+    await settle(() => pending.resolve({ success: true, reportId: A }));
+    expect(window.location.pathname + window.location.search).toBe(target);
+    expect(mocks.replace).not.toHaveBeenCalled();
+    expect(screen.getByRole("status")).toHaveTextContent("Unsaved changes.");
+    expect(screen.getByRole("button", { name: "Download PDF" })).toBeDisabled();
+  });
+
+  it("accepts the page's report alias and settles after its own canonical publication", async () => {
+    window.history.replaceState(null, "", `/pro/reports?report=${A}`);
+    mocks.replace.mockImplementation((href: string) => window.history.replaceState(null, "", href));
+    mount(); edit(); await settle(save);
+    expect(mocks.save).toHaveBeenCalledExactlyOnceWith({ reportId: A, edits: { title: TITLE, teamNote: NOTE, includeEvidence: true } });
+    expect(mocks.replace).toHaveBeenCalledExactlyOnceWith(route());
+    expect(window.location.pathname + window.location.search).toBe(route());
+    expect(screen.getByRole("status")).toHaveTextContent("Saved. The PDF uses this version.");
+    expect(screen.getByLabelText("Title")).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Download PDF" })).toBeEnabled();
+  });
+
+  it("allows a second same-ID update after its own canonical save", async () => {
+    mocks.replace.mockImplementation((href: string) => window.history.replaceState(null, "", href));
+    mount(); edit(); await settle(save);
+    fireEvent.change(screen.getByLabelText("Title"), { target: { value: "Lakeshore board brief A: reviewed again" } });
+    fireEvent.change(screen.getByLabelText(/^Team note/), { target: { value: "Second synthetic committee note." } });
+    await settle(save);
+    expect(mocks.save).toHaveBeenCalledTimes(2);
+    expect(mocks.save.mock.calls[1][0]).toEqual({ reportId: A, edits: { title: "Lakeshore board brief A: reviewed again", teamNote: "Second synthetic committee note.", includeEvidence: true } });
+    expect(mocks.replace.mock.calls).toEqual([[route()], [route()]]);
+    expect(window.location.pathname + window.location.search).toBe(route());
+    expect(screen.getByRole("status")).toHaveTextContent("Saved. The PDF uses this version.");
+    expect(screen.getByLabelText("Title")).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Download PDF" })).toBeEnabled();
+  });
+
+  it("keeps acknowledged creation editable before and after its own canonical URL commits", async () => {
+    const analysis: AnalyzeResponse = { title: "Synthetic saved answer", confidence: { level: "medium", basis: ["Synthetic fixture."] }, hamiltonView: "Frozen source answer.", whatThisMeans: "", whyItMatters: [], evidence: { metrics: [] }, exploreFurther: [] };
+    const fromAnalysis = `/pro/reports?from_analysis=${ANALYSIS}`;
+    window.history.replaceState(null, "", fromAnalysis);
+    render(<BoardBriefEditor analysis={analysis} analysisId={ANALYSIS} />); await settle(save);
+    expect(mocks.save.mock.calls[0][0]).toEqual({ analysisId: ANALYSIS, addedFindings: [], edits: { title: analysis.title, teamNote: "", includeEvidence: true } });
+    expect(window.location.pathname + window.location.search).toBe(fromAnalysis);
+    fireEvent.change(screen.getByLabelText(/^Team note/), { target: { value: "Acknowledged creation, before canonical URL." } });
+    await settle(save);
+    expect(mocks.save.mock.calls[1][0]).toEqual({ reportId: A, edits: { title: analysis.title, teamNote: "Acknowledged creation, before canonical URL.", includeEvidence: true } });
+    window.history.replaceState(null, "", route());
+    fireEvent.change(screen.getByLabelText(/^Team note/), { target: { value: "Acknowledged creation, after canonical URL." } });
+    await settle(save);
+    expect(mocks.save).toHaveBeenCalledTimes(3);
+    expect(mocks.save.mock.calls[2][0]).toEqual({ reportId: A, edits: { title: analysis.title, teamNote: "Acknowledged creation, after canonical URL.", includeEvidence: true } });
+    expect(mocks.replace.mock.calls).toEqual([[route()], [route()], [route()]]);
+    expect(screen.getByRole("status")).toHaveTextContent("Saved. The PDF uses this version.");
+    expect(screen.getByRole("button", { name: "Download PDF" })).toBeEnabled();
+  });
+});
+
+describe("BoardBriefEditor page-selector precedence, prospective controls", () => {
+  it.each([route() + "&research=", route() + "&board_error=1"])("does not adopt an earlier page branch committed before Save: %s", async target => {
+    const pending = deferred<{ success: true; reportId: string }>(); mocks.save.mockReturnValue(pending.promise);
+    mount(); edit(); window.history.replaceState(null, "", target); save();
+    await settle(() => pending.resolve({ success: true, reportId: A }));
+    expect(window.location.pathname + window.location.search).toBe(target);
+    expect(mocks.replace).not.toHaveBeenCalled();
+    expect(screen.getByRole("status")).toHaveTextContent("Unsaved changes.");
+    expect(screen.getByRole("button", { name: "Download PDF" })).toBeDisabled();
+  });
+
+  it("accepts an empty board_error value because the page does not select its error branch", async () => {
+    window.history.replaceState(null, "", route() + "&board_error=");
+    mocks.replace.mockImplementation((href: string) => window.history.replaceState(null, "", href));
+    mount(); edit(); await settle(save);
+    expect(mocks.save).toHaveBeenCalledExactlyOnceWith({ reportId: A, edits: { title: TITLE, teamNote: NOTE, includeEvidence: true } });
+    expect(mocks.replace).toHaveBeenCalledExactlyOnceWith(route());
+    expect(window.location.pathname + window.location.search).toBe(route());
+    expect(screen.getByRole("status")).toHaveTextContent("Saved. The PDF uses this version.");
+    expect(screen.getByLabelText("Title")).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Download PDF" })).toBeEnabled();
+  });
+});
