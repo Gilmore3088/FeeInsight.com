@@ -12,6 +12,7 @@ const peerTable = (page: Page) => page.getByRole("table", { name: "Peer table" }
 const feeTable = (page: Page) => page.locator("table[aria-label^='Published']").last();
 
 async function snapshot(page: Page, name: string): Promise<void> {
+  await page.evaluate(() => { (document.activeElement as HTMLElement | null)?.blur(); window.scrollTo({ top: 0, left: 0, behavior: "instant" }); });
   const path = test.info().outputPath(`${name}.png`);
   await page.screenshot({ path, fullPage: true });
   await test.info().attach(name, { path, contentType: "image/png" });

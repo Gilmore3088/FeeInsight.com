@@ -61,7 +61,7 @@ export async function withPeerResearchActionEvidence(
     capture = createBrowserActionsCapture({ fixtureOrigin, routeTemplates: ROUTES, protocolVersion: version.protocolVersion });
     observer = await attachBrowserActionsObserver(session, capture, { sessionKey: session, contextKey: page.context() });
     db = connectFixtureDb();
-    const [database] = await db<{ name: string; address: string }[]>`SELECT current_database() AS name, inet_server_addr()::text AS address`;
+    const [database] = await db<{ name: string; address: string }[]>`SELECT current_database() AS name, host(inet_server_addr()) AS address`;
     if (!/^engineering_browser_actions_[0-9]{8}$/.test(database.name) || !["127.0.0.1", "::1"].includes(database.address)) throw new Error("Action witnesses require the dedicated local fixture database");
     // An immutable peer snapshot is a new row. Preexisting IDs cannot supply this save's effect.
     const before = await db<{ id: string }[]>`
