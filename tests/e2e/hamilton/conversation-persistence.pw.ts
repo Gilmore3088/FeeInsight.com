@@ -12,6 +12,8 @@ import type { HamiltonConversationState } from "../../../src/lib/hamilton/conver
 // Traces retain cookies and response bodies; this verification uses sanitized captures instead.
 test.use({ trace: "off" });
 const QUESTION = "List ten similarly sized credit unions";
+const INITIAL_LEAD = "10 of 12 matching institutions for Lakeshore Test Credit Union.";
+const FLORIDA_LEAD = "7 of 10 previously displayed peers are in FL.";
 const TEN = [9701002, 9701003, 9701004, 9701005, 9701006, 9701007, 9701008, 9701009, 9701010, 9701011];
 const FLORIDA = TEN.slice(0, 7);
 const NAMES = ["Indian River Test CU", "Gulf Breeze Test CU", "Suncoast Harbor Test CU", "Palmetto Grove Test CU", "Keystone Bay Test CU", "Lantana Test CU", "Coquina Test CU", "Peachtree Test CU", "Chattahoochee Test CU", "Savannah Marsh Test CU"];
@@ -68,6 +70,7 @@ function assertState(state: HamiltonConversationState | null, id: string, questi
   expect(state!.conversationId).toBe(id);
   expect(state!.subject).toEqual({ institutionId: String(HOME.id), institutionName: HOME.name });
   expect(state!.turns.map(turn => turn.question)).toEqual(questions);
+  expect(state!.turns.map(turn => turn.lead)).toEqual([INITIAL_LEAD, FLORIDA_LEAD].slice(0, questions.length));
   expect(state!.turns.every(turn => turn.status === "answered" && turn.route === "peer_list")).toBe(true);
   expect(state!.peerSet?.snapshot.selectedIds).toEqual(order);
   expect(state!.peerSet?.snapshot).toEqual({
@@ -119,8 +122,16 @@ for (const width of [1440, 390]) {
       }
     };
     const removeFault = async () => {
-      if (createdTrigger) { await db!.unsafe("DROP TRIGGER engineering_conversation_ack_failure ON public.hamilton_conversations"); createdTrigger = false; }
-      if (createdFunction) { await db!.unsafe("DROP FUNCTION public.engineering_conversation_ack_failure()"); createdFunction = false; }
+      let removalFailed = false;
+      if (createdTrigger) {
+        try { await db!.unsafe("DROP TRIGGER engineering_conversation_ack_failure ON public.hamilton_conversations"); createdTrigger = false; }
+        catch { removalFailed = true; }
+      }
+      if (createdFunction) {
+        try { await db!.unsafe("DROP FUNCTION public.engineering_conversation_ack_failure()"); createdFunction = false; }
+        catch { removalFailed = true; }
+      }
+      if (removalFailed) throw new Error("Synthetic conversation fault cleanup failed");
     };
     try {
       db = connectFixtureDb();
@@ -145,7 +156,7 @@ for (const width of [1440, 390]) {
       await ask(page, QUESTION);
       await expect(page.getByRole("heading", { name: `10 of 12 matching institutions for ${HOME.name}.` })).toBeVisible();
       const order = await assertPeers(page, TEN);
-      await expect(page.getByRole("alert")).toContainText("We couldn’t finish saving this conversation. Your answers are still here.");
+      await expect(page.getByRole("form", { name: "Ask Hamilton" }).getByRole("alert")).toContainText("We couldn’t finish saving this conversation. Your answers are still here.");
       expect(new URL(page.url()).searchParams.has("conversation")).toBe(false);
       const allocated = (await db<{ id: string; user_id: string; created_at: string }[]>`SELECT id, user_id, created_at::text FROM hamilton_conversations WHERE user_id = ${String(FIXTURE_USERS.pro.id)} ORDER BY id LIMIT 1001`).filter(row => !oldIds.has(row.id));
       expect(allocated).toHaveLength(1);
@@ -192,8 +203,12 @@ for (const width of [1440, 390]) {
         await navigate(mobile, href);
         await expect(mobile.getByText("Pick up where you left off", { exact: true })).toBeVisible();
         await expect(mobile.getByRole("region", { name: "Earlier in this conversation" })).toContainText(QUESTION);
+        await expect(mobile.getByRole("region", { name: "Earlier in this conversation" })).toContainText(INITIAL_LEAD);
         await expect(mobile.getByRole("region", { name: "Institution context" })).toContainText(`Researching: ${HOME.name}`);
         expect(new URL(mobile.url()).searchParams.get("conversation")).toBe(original.id);
+        expect(await loadConversationState(original.id, FIXTURE_USERS.pro.id, reader as unknown as MemoryDb)).toEqual(acknowledged);
+        const [beforeFollowUp] = await reader!<{ n: number }[]>`SELECT count(*)::int AS n FROM hamilton_messages WHERE conversation_id = ${original.id} AND tool_calls ? ${KEY}`;
+        expect(beforeFollowUp.n).toBe(2);
         await ask(mobile, "Only Florida");
         await expect(mobile.getByRole("heading", { name: "7 of 10 previously displayed peers are in FL." })).toBeVisible();
         const floridaOrder = await assertPeers(mobile, FLORIDA);
