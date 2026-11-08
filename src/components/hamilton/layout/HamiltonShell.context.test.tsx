@@ -2,8 +2,8 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { encodeLandingResearch } from "@/lib/hamilton/landing-research-handoff";
 
-const route = vi.hoisted(() => ({ pathname: "/pro/research", search: "instId=8109", resolve: vi.fn(), push: vi.fn() }));
-vi.mock("@/lib/hamilton/navigation-institution-action", () => ({ loadHamiltonNavigationInstitution: route.resolve }));
+const route = vi.hoisted(() => ({ pathname: "/pro/research", search: "instId=8109", resolve: vi.fn(), artifact: vi.fn(), push: vi.fn() }));
+vi.mock("@/lib/hamilton/navigation-institution-action", () => ({ loadHamiltonNavigationInstitution: route.resolve, loadHamiltonArtifactNavigationInstitution: route.artifact }));
 vi.mock("next/navigation", () => ({ usePathname: () => route.pathname, useSearchParams: () => new URLSearchParams(route.search), useRouter: () => ({ push: route.push }) }));
 vi.mock("@/app/pro/(hamilton)/view-as-actions", () => ({ setViewAsCustomer: vi.fn() }));
 vi.mock("@/components/use-session-chrome", () => ({
@@ -28,6 +28,7 @@ const seed = {
 beforeEach(() => {
   route.pathname = "/pro/research"; route.search = "instId=8109";
   route.resolve.mockReset().mockImplementation(async (id: string) => ({ id, name: id === "1535" ? "Addition Financial Credit Union" : homeName }));
+  route.artifact.mockReset().mockResolvedValue(null);
 });
 
 describe("H01 retained Hamilton shell navigation", () => {

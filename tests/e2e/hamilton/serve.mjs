@@ -71,7 +71,9 @@ if (mode === "start" && (verification || process.env.HAMILTON_E2E_BUILD === "1" 
 if (verification) {
   if (gitValue(["rev-parse", "HEAD"]) !== candidate.headSha || gitValue(["rev-parse", "HEAD^{tree}"]) !== candidate.treeSha
     || gitValue(["status", "--porcelain", "--untracked-files=normal"])) throw new Error("Candidate changed while building; browser evidence is invalid.");
-  const paths = ["tests/e2e/hamilton/fixtures.ts", "tests/e2e/hamilton/ccb-fixture.ts", "tests/e2e/hamilton/research-journey.pw.ts", "tests/e2e/hamilton/reports-journey.pw.ts", "tests/e2e/hamilton/command-center-journey.pw.ts", "tests/e2e/hamilton/board-brief-journey.pw.ts"];
+  const paths = ["tests/e2e/hamilton/fixtures.ts", "tests/e2e/hamilton/ccb-fixture.ts", "tests/e2e/hamilton/research-journey.pw.ts", "tests/e2e/hamilton/reports-journey.pw.ts", "tests/e2e/hamilton/command-center-journey.pw.ts", "tests/e2e/hamilton/board-brief-journey.pw.ts",
+    "tests/e2e/hamilton/saved-research-effects.pw.ts", "tests/e2e/hamilton/action-evidence.ts", "tests/e2e/hamilton/evidence.ts", "tests/e2e/hamilton/helpers.ts", "tests/e2e/hamilton/playwright.config.ts", "tests/e2e/hamilton/serve.mjs",
+    "src/lib/engineering-verification/browser-actions.mjs", "src/lib/engineering-verification/browser-protocol.mjs", "src/lib/engineering-verification/browser-evidence.mjs"];
   mkdirSync("test-results/engineering-verification/browser", { recursive: true });
   writeFileSync("test-results/engineering-verification/browser/build.json", JSON.stringify({
     ...candidate,

@@ -44,7 +44,8 @@ export default defineConfig({
   use: {
     baseURL: `http://localhost:${port}`,
     acceptDownloads: true,
-    trace: "retain-on-failure",
+    // Verification uses bounded sanitized evidence; Playwright traces also retain cookies/bodies.
+    trace: verification ? "off" : "retain-on-failure",
     screenshot: "only-on-failure",
     launchOptions: { executablePath: preinstalledChromium() },
   },

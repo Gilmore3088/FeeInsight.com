@@ -2,6 +2,7 @@ import { normalizeCanonicalInstitutionId } from "@/lib/hamilton/context-link";
 
 export type HamiltonArtifactContextLookup =
   | { kind: "analysis"; artifactId: string }
+  | { kind: "peer-research"; artifactId: string }
   | { kind: "scenario"; artifactId: string }
   | { kind: "report"; artifactId: string };
 
@@ -16,6 +17,11 @@ export function isSavedArtifactId(value: string): boolean {
 function cleanArtifactId(value: string | null): string | null {
   const text = value?.trim();
   return text || null;
+}
+
+/** Even a malformed saved path is artifact intent; it must never borrow a default subject. */
+export function isSavedPeerResearchPath(pathname: string): boolean {
+  return pathname === "/pro/peer-research" || pathname.startsWith("/pro/peer-research/");
 }
 
 export function resolveArtifactContextInstitutionId(params: {
@@ -41,6 +47,9 @@ export function getHamiltonArtifactContextLookup(params: {
   pathname: string;
   searchParams: URLSearchParams;
 }): HamiltonArtifactContextLookup | null {
+  if (isSavedPeerResearchPath(params.pathname)) {
+    return { kind: "peer-research", artifactId: params.pathname.slice("/pro/peer-research/".length) };
+  }
   if (params.pathname === "/pro/analyze") {
     const artifactId = cleanArtifactId(params.searchParams.get("analysis"));
     return artifactId ? { kind: "analysis", artifactId } : null;
