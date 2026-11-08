@@ -1,6 +1,6 @@
 # Hamilton board-brief acceptance adapter draft
 
-This is an unpublished R3 proposal for one Hamilton outcome. It advances the original [M0–M5 plan](plan-validation.md); all 50 source requirements remain in scope. Local component and PDF results cannot complete the program or replace its native, reviewer, production, holdout or multi-change requirements.
+This is an unregistered R3 proposal for one Hamilton outcome. It advances the original [M0–M5 plan](plan-validation.md); all 50 source requirements remain in scope. Local component and PDF results cannot complete the program or replace its native, reviewer, production, holdout or multi-change requirements.
 
 ## Subject and control sources
 
