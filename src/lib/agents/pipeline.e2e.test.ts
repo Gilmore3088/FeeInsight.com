@@ -26,6 +26,7 @@ vi.mock("@/lib/agents/fee-source-fetch", async (importOriginal) => ({
 
 const E2E_DATABASE_URL = process.env.E2E_DATABASE_URL;
 const STATE = "VT";
+const FIXTURE_DEPLOYMENT_SHA = "f".repeat(40);
 
 const FEE_TABLE = `
   <h1>Consumer Fee Schedule</h1>
@@ -240,6 +241,8 @@ describe.skipIf(!E2E_DATABASE_URL)("pipeline end to end (state lane)", () => {
     restoreErrorLog = () => errorLog.mockRestore();
     process.env.DATABASE_URL = E2E_DATABASE_URL;
     process.env.EXECUTION_BACKEND = "agentic_v1";
+    vi.stubEnv("VERCEL_GIT_COMMIT_SHA", FIXTURE_DEPLOYMENT_SHA);
+    vi.stubEnv("VERCEL_ENV", "production");
     vi.stubGlobal("fetch", fetchMock);
     ({ sql } = await import("@/lib/data-store/connection"));
     await sql`DELETE FROM institution_sources WHERE state_code = ${STATE}`;
@@ -339,6 +342,7 @@ describe.skipIf(!E2E_DATABASE_URL)("pipeline end to end (state lane)", () => {
   afterAll(async () => {
     restoreErrorLog?.();
     vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
     await sql?.end({ timeout: 1 });
     expect(schemaErrors, "The pipeline logged missing database objects despite passing its result assertions").toEqual([]);
   });
@@ -508,6 +512,98 @@ describe.skipIf(!E2E_DATABASE_URL)("pipeline end to end (state lane)", () => {
     });
   }, 120_000);
 
+  it("collects actual owning-step output without borrowing an older extraction across retries or broken text lineage", async () => {
+    const { readEngineeringRuntimeEvidence } = await import("@/lib/engineering-verification/runtime");
+    // This receipt was produced by the preceding real Atlas lane's Knox extractor,
+    // not seeded from the requested scope, run parameters or sample_results.
+    const [native] = await sql`
+      SELECT pa.id, pa.agent_run_id, pa.agent_run_step_id, pa.institution_id,
+             pa.source_document_id, pa.input_fingerprint, pa.detail, pa.strategy_version
+        FROM pipeline_attempts pa JOIN institution_sources i ON i.id = pa.institution_id
+       WHERE i.cert_number = 'E2E-1' AND pa.agent_run_id = ${laneRunId}
+         AND pa.strategy = 'extract.rules' AND pa.outcome IN ('ok','ok_partial','low_yield')
+         AND (pa.detail->>'inserted')::integer > 0
+       ORDER BY pa.id LIMIT 1`;
+    expect(native, "The real extractor must produce the native output receipt").toBeDefined();
+    const requiredExecution = { agentName: "knox", stepKey: "extract", strategy: "extract.rules", strategyVersion: 186,
+      affectedUnits: [{ institutionId: Number(native.institution_id), sourceDocumentId: Number(native.source_document_id) }], outputWitness: "knox-extraction-attempt-v1" };
+    const read = () => readEngineeringRuntimeEvidence({ deployedSha: FIXTURE_DEPLOYMENT_SHA, since: new Date(Date.now() - 3_600_000).toISOString(), until: new Date(Date.now() + 1000).toISOString(), changeKeys: [], requiredExecution }, sql);
+    const positive = await read();
+    expect(positive.problems).toEqual([]);
+    expect(positive.owningExecutionInventoryComplete).toBe(true);
+    expect(positive.owningExecutions).toContainEqual(expect.objectContaining({
+      runId: laneRunId, runAgent: "atlas", stepAgent: "knox", stepKey: "extract", status: "completed",
+      execution: expect.objectContaining({ deployedSha: FIXTURE_DEPLOYMENT_SHA, environment: "production" }),
+      completion: expect.objectContaining({ status: "completed", dryRun: false }),
+      output: expect.objectContaining({ kind: "pipeline_attempt", attemptId: Number(native.id), institutionId: Number(native.institution_id), sourceDocumentId: Number(native.source_document_id), strategy: "extract.rules", strategyVersion: 186, insertedCount: Number((native.detail as Record<string, unknown>).inserted), bindsToExecution: true }),
+    }));
+
+    const [otherText] = await sql`SELECT id FROM agent_source_texts WHERE source_document_id <> ${native.source_document_id} ORDER BY id LIMIT 1`;
+    expect(otherText).toBeDefined();
+    try {
+      await sql`UPDATE pipeline_attempts SET detail = jsonb_set(detail, '{document_text_id}', to_jsonb(${Number(otherText.id)}::bigint)) WHERE id = ${native.id}`;
+      const broken = await read();
+      expect(broken.owningExecutions.some(row => row.output?.attemptId === Number(native.id) && row.output.bindsToExecution)).toBe(false);
+    } finally {
+      await sql`UPDATE pipeline_attempts SET detail = ${JSON.stringify(native.detail)}::jsonb WHERE id = ${native.id}`;
+    }
+
+    const eventIds: number[] = [], attemptIds: number[] = [];
+    try {
+      const [retry] = await sql`
+        INSERT INTO agent_run_events (agent_run_id, step_id, event_type, status, message, detail, created_at)
+        VALUES (${native.agent_run_id}, ${native.agent_run_step_id}, 'step.execution', 'info', 'Local fixture retry boundary',
+          ${JSON.stringify({ protocol: 1, deployment_sha: FIXTURE_DEPLOYMENT_SHA, environment: "production" })}::jsonb, clock_timestamp()) RETURNING id`;
+      eventIds.push(Number(retry.id));
+      const retried = await read();
+      expect(retried.owningExecutions.some(row => row.output?.attemptId === Number(native.id) && row.output.bindsToExecution)).toBe(false);
+
+      const [failedAttempt] = await sql`
+        INSERT INTO pipeline_attempts (institution_id, source_document_id, stage, strategy, strategy_version, input_fingerprint, outcome, yield_count, agent_run_id, agent_run_step_id, detail, created_at)
+        VALUES (${native.institution_id}, ${native.source_document_id}, 'extract', 'extract.rules', 186, ${native.input_fingerprint}, 'parse_error', 0,
+          ${native.agent_run_id}, ${native.agent_run_step_id}, ${JSON.stringify({ document_text_id: (native.detail as Record<string, unknown>).document_text_id, inserted: 0 })}::jsonb, clock_timestamp()) RETURNING id`;
+      attemptIds.push(Number(failedAttempt.id));
+      const [failedEvent] = await sql`
+        INSERT INTO agent_run_events (agent_run_id, step_id, event_type, status, message, detail, created_at)
+        VALUES (${native.agent_run_id}, ${native.agent_run_step_id}, 'step.failed', 'failed', 'Local fixture scoped extraction failure', '{}'::jsonb, clock_timestamp()) RETURNING id`;
+      eventIds.push(Number(failedEvent.id));
+      const failed = await read();
+      expect(failed.owningExecutions).toContainEqual(expect.objectContaining({
+        completion: expect.objectContaining({ status: "failed" }),
+        output: expect.objectContaining({ attemptId: Number(failedAttempt.id), outcome: "parse_error", insertedCount: 0 }),
+      }));
+    } finally {
+      if (attemptIds.length) await sql`DELETE FROM pipeline_attempts WHERE id = ANY(${attemptIds}::bigint[])`;
+      if (eventIds.length) await sql`DELETE FROM agent_run_events WHERE id = ANY(${eventIds}::bigint[])`;
+    }
+    expect((await read()).owningExecutions.some(row => row.output?.attemptId === Number(native.id) && row.output.bindsToExecution)).toBe(true);
+
+    // A later owning step can fail before it writes any pipeline_attempt. Such an
+    // unknown-overlap execution must remain visible; an output-only inventory
+    // would silently certify the old success. Intent is never positive coverage.
+    const { startAgentRun } = await import("@/lib/agents/run-store");
+    const [foreignBank] = await sql`SELECT id FROM institution_sources WHERE cert_number = 'E2E-3'`;
+    // Free extraction also has global repair tails: another institution in the
+    // intent cannot disprove overlap with this frozen affected source document.
+    for (const intent of [null, Number(foreignBank.id)]) {
+      const later = await startAgentRun({ agent: "atlas", kind: "workflow", title: "Local fixture incomplete owning work", triggeredBy: "e2e", triggerSource: "admin", idempotencyKey: `e2e:owning-no-output:${intent ?? 'unknown'}:${Date.now()}`, params: intent === null ? {} : { institution_id: intent }, steps: [{ key: "extract", agent: "knox", title: "Owning step failed before output" }] });
+      const [laterStep] = await sql`SELECT id FROM agent_run_steps WHERE agent_run_id = ${later.run.id} AND step_key = 'extract'`;
+      try {
+        await sql`UPDATE agent_run_steps SET status = 'failed', completed_at = clock_timestamp() WHERE id = ${laterStep.id}`;
+        await sql`INSERT INTO agent_run_events (agent_run_id, step_id, event_type, status, message, detail, created_at)
+          VALUES (${later.run.id}, ${laterStep.id}, 'step.execution', 'info', 'Local fixture no-output execution', ${JSON.stringify({ protocol: 1, deployment_sha: FIXTURE_DEPLOYMENT_SHA, environment: "production" })}::jsonb, clock_timestamp())`;
+        await sql`INSERT INTO agent_run_events (agent_run_id, step_id, event_type, status, message, detail, created_at)
+          VALUES (${later.run.id}, ${laterStep.id}, 'step.failed', 'failed', 'Local fixture failure before output', '{}'::jsonb, clock_timestamp())`;
+        const incomplete = await read();
+        expect(incomplete.owningExecutions).toContainEqual(expect.objectContaining({ runId: later.run.id, stepId: Number(laterStep.id), status: "failed", output: null }));
+      } finally {
+        await sql`DELETE FROM agent_run_events WHERE agent_run_id = ${later.run.id}`;
+        await sql`DELETE FROM agent_run_steps WHERE agent_run_id = ${later.run.id}`;
+        await sql`DELETE FROM agent_runs WHERE id = ${later.run.id}`;
+      }
+    }
+  }, 30_000);
+
   it("refreshes the Vermont expert's memory and holds a peer outlier for review", async () => {
     expect(laneRunId).toBeGreaterThan(0);
     const { getAgentRunSteps } = await import("@/lib/agents/run-store");
@@ -644,5 +740,57 @@ describe.skipIf(!E2E_DATABASE_URL)("pipeline end to end (state lane)", () => {
     expect(Number(snapshot.accuracy_recall)).toBe(1);
     expect(Number(snapshot.depth_median_categories)).toBeGreaterThan(0);
     expect(Number(snapshot.knox_yield_sample_size)).toBe(1);
+
+    // A later execution marker at exactly the score event's native DB timestamp
+    // belongs after that event by its immutable ID; it cannot rewrite its lineage.
+    const { readEngineeringRuntimeEvidence } = await import("@/lib/engineering-verification/runtime");
+    const [accuracy] = await sql`SELECT id FROM agent_run_events WHERE agent_run_id = ${started.run.id} AND event_type = 'deming.fixed_cohort_accuracy'`;
+    expect(accuracy).toBeDefined();
+    const [futureExecutor] = await sql`
+      INSERT INTO agent_run_events (agent_run_id, step_id, event_type, status, message, detail, created_at)
+      SELECT agent_run_id, step_id, 'step.execution', 'info', 'Local fixture future executor at same native clock',
+        ${JSON.stringify({ protocol: 1, deployment_sha: "e".repeat(40), environment: "production" })}::jsonb, created_at
+        FROM agent_run_events WHERE id = ${accuracy.id} RETURNING id`;
+    try {
+      const measured = await readEngineeringRuntimeEvidence({ deployedSha: FIXTURE_DEPLOYMENT_SHA, since: new Date(Date.now() - 3_600_000).toISOString(), until: new Date(Date.now() + 1000).toISOString(), changeKeys: [] }, sql);
+      expect(measured.deming.find(row => row.eventId === Number(accuracy.id))?.execution).toMatchObject({ deployedSha: FIXTURE_DEPLOYMENT_SHA, environment: "production" });
+    } finally {
+      await sql`DELETE FROM agent_run_events WHERE id = ${futureExecutor.id}`;
+    }
   }, 60_000);
+  it("collects real rate-only Knox output even when its ordinary candidate counter is zero", async () => {
+    const { startAgentRun, executeAgentRun } = await import("@/lib/agents/run-store");
+    const { readEngineeringRuntimeEvidence } = await import("@/lib/engineering-verification/runtime");
+    const [bank] = await sql`SELECT id FROM institution_sources WHERE cert_number = 'E2E-1'`;
+    const text = "Consumer Debit Card Services\nForeign Transaction Fee | 1% of the transaction amount";
+    const textHash = createHash("sha256").update(text).digest("hex");
+    const sourceUrl = "https://www.greenmountain-test-bank.com/rate-only-fees";
+    const [document] = await sql`
+      INSERT INTO source_documents (institution_id, status, document_url, content_hash)
+      VALUES (${bank.id}, 'success', ${sourceUrl}, ${textHash}) RETURNING id`;
+    await sql`
+      INSERT INTO agent_source_texts (source_document_id, institution_id, source_url, document_type, status, normalized_text, text_hash, char_count)
+      VALUES (${document.id}, ${bank.id}, ${sourceUrl}, 'html', 'completed', ${text}, ${textHash}, ${text.length})`;
+    const started = await startAgentRun({ agent: "atlas", kind: "workflow", title: "Local fixture rate-only extraction", triggeredBy: "e2e", triggerSource: "admin", idempotencyKey: `e2e:owning-rate-only:${Date.now()}`, params: { institution_id: Number(bank.id) }, steps: [{ key: "extract", agent: "knox", title: "Read the actual rate-only source" }] });
+    await executeAgentRun(started.run.id, { maxSteps: 1, allowProviderSteps: false });
+    const [attempt] = await sql`
+      SELECT id, outcome, yield_count, detail->'inserted' AS inserted
+        FROM pipeline_attempts WHERE agent_run_id = ${started.run.id}
+         AND source_document_id = ${document.id} AND strategy = 'extract.rules'`;
+    expect(attempt).toMatchObject({ outcome: "no_candidates", yield_count: 0, inserted: 1 });
+    const [actual] = await sql`
+      SELECT amount_kind, rate_percent FROM raw_fee_observations
+       WHERE source_document_id = ${document.id} AND institution_id = ${bank.id}`;
+    expect(actual).toMatchObject({ amount_kind: "percent", rate_percent: 1 });
+    const evidence = await readEngineeringRuntimeEvidence({ deployedSha: FIXTURE_DEPLOYMENT_SHA, since: new Date(Date.now() - 3_600_000).toISOString(), until: new Date(Date.now() + 1000).toISOString(), changeKeys: [], requiredExecution: {
+      agentName: "knox", stepKey: "extract", strategy: "extract.rules", strategyVersion: 186,
+      affectedUnits: [{ institutionId: Number(bank.id), sourceDocumentId: Number(document.id) }], outputWitness: "knox-extraction-attempt-v1",
+    } }, sql);
+    expect(evidence.problems).toEqual([]);
+    expect(evidence.owningExecutions).toContainEqual(expect.objectContaining({ runId: started.run.id,
+      completion: expect.objectContaining({ status: "completed", dryRun: false, processedCount: 1 }),
+      output: expect.objectContaining({ attemptId: Number(attempt.id), outcome: "no_candidates", yieldCount: 0, insertedCount: 1, bindsToExecution: true }),
+    }));
+  }, 30_000);
+
 });

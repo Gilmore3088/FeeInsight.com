@@ -91,7 +91,8 @@
         "src/lib/engineering-verification/runtime.test.ts",
         "src/lib/engineering-verification/evidence.test.ts",
         "src/lib/agents/run-store.test.ts",
-        "src/app/api/admin/engineering-verification/route.test.ts"
+        "src/app/api/admin/engineering-verification/route.test.ts",
+        "src/lib/agents/pipeline.e2e.test.ts"
       ]
     },
     "summary": {
@@ -207,7 +208,9 @@
         "contract",
         "policy"
       ],
-      "activation_gates": []
+      "activation_gates": [
+        "owner-security-approval"
+      ]
     },
     {
       "id": "M2",
@@ -284,8 +287,11 @@
         "contract",
         "policy"
       ],
-      "implementation_state": "MECHANISM_PRESENT",
-      "activation_gates": []
+      "implementation_state": "PARTIAL",
+      "activation_gates": [
+        "owner-security-approval"
+      ],
+      "remaining_work": "Financial-source regulatory, data-catalog and report-assembler paths still fall to R1 and lack corresponding Hoovie/Hamilton routes. Correct this in a separately reviewed R3 frozen-classifier/execution change with protected owner authorization and new affected proof identities."
     },
     {
       "id": "FR-03",
@@ -450,7 +456,8 @@
       "implementation_state": "MECHANISM_PRESENT",
       "activation_gates": [
         "operational-observation"
-      ]
+      ],
+      "remaining_work": "The read-only mechanism requires scoped native owning output and complete failure/recovery lineage; the first adapter covers Knox only. Freeze an actual policy and collect eligible deployed work and sufficient native-clock outcomes before production acceptance."
     },
     {
       "id": "FR-15",
@@ -463,7 +470,8 @@
       "implementation_state": "MECHANISM_PRESENT",
       "activation_gates": [
         "operational-observation"
-      ]
+      ],
+      "remaining_work": "Collect fixed-cohort quality observations whose native executor starts after all required owning work/recovery; native persisted measurement timestamps govern the frozen window and cadence. Actual production observations remain missing."
     },
     {
       "id": "FR-16",
@@ -477,7 +485,8 @@
       "activation_gates": [
         "operational-observation",
         "authorized-runtime-reruns"
-      ]
+      ],
+      "remaining_work": "Collect native Bayes replay settlement after the required owning work/recovery and reconcile all frozen obligations. Live reruns and exclusions retain separate authorization; incomplete or unsupported work stays unverified."
     },
     {
       "id": "FR-17",
@@ -955,7 +964,7 @@
     {
       "id": "owner-security-approval",
       "state": "PENDING_AUTHORIZATION",
-      "reason": "James must authorize the concrete R3 bootstrap workflow/prompt/policy changes and any later proposed check-publication, permission or GitHub protection activation."
+      "reason": "James authorized the exact bootstrap head merged in PR #2995. New financial-path classifier/execution changes and any later check-publication, permission or GitHub protection activation need their own concrete protected owner authorization."
     },
     {
       "id": "independent-reviewer-identity",
@@ -965,12 +974,12 @@
     {
       "id": "trusted-actions-proof",
       "state": "PENDING_EXECUTION",
-      "reason": "Land approved orchestration on main, then collect authentic historical-proof run artifacts for exact heads and both contracts."
+      "reason": "Both frozen historical pilot artifacts were independently verified from registered-main Actions runs. Changed execution identities and expanded adoption still need their own authentic exact-head proofs; historical pilots cannot certify new behavior."
     },
     {
       "id": "operational-observation",
       "state": "PENDING_EXECUTION",
-      "reason": "Obtain a deployment receipt and sufficient fixed-cohort observations under the frozen operational window and sample policy."
+      "reason": "Freeze the actual owning scope and obtain deployed native output, complete failure/recovery lineage, post-completion fixed-cohort samples and replay settlement over the required native-clock window."
     },
     {
       "id": "authorized-runtime-reruns",
@@ -985,15 +994,16 @@
     {
       "id": "holdout-and-scorecard-adoption",
       "state": "PENDING_ADOPTION",
-      "reason": "The native sampled scorecard is implemented, but trusted post-bootstrap collection across real changes, independent private holdout enrollment and measured before/after outcomes remain pending."
+      "reason": "A native scorecard sampled two merged PRs, with historical proofs verified but no accepted independent native reviewer evidence. Independent private holdout enrollment, broader adoption and measured before/after outcomes remain pending."
     },
     {
       "id": "source-injection-coverage",
       "state": "PENDING_EXECUTION",
-      "reason": "Offline synthetic PDF/HTML/plain fixtures cover actual normalization, Knox/Rosetta request boundaries and unintended side effects with stubbed providers. Trusted Actions execution and independent acceptance remain pending; live-model obedience has not been scored."
+      "reason": "Synthetic PDF/HTML/plain fixtures exercise normalization, Knox/Rosetta request boundaries and unintended side effects with stubbed providers. Bootstrap CI and historical proofs ran, but independent source-security acceptance and live-model obedience scoring remain pending."
     }
   ],
   "remaining_requirements": [
+    "FR-02",
     "FR-03",
     "FR-05",
     "FR-06",
