@@ -597,8 +597,11 @@ export async function runKnoxSecondReader(options: {
       // The billed cost is unknown, so cost_microusd stays 0; the cap is charged the worst case.
       const charged = UNKNOWN_BILLING_OUTCOMES.has(outcome) ? ceiling : 0;
       spent += charged;
+      // attempted_at keeps a re-entered step's second cut-off read from being folded into the first
+      // by recordAttempt's same-step de-duplication, so its charge and its count both land.
       await recordAttempt(db, { ...base, outcome, yieldCount: 0, costMicrousd: 0, durationMs: Date.now() - startedAt, detail: {
-        batch_id: batch.id, document_text_id: documentTextId, model, error: message, ...(charged > 0 ? { charged_ceiling_microusd: charged } : {}),
+        batch_id: batch.id, document_text_id: documentTextId, model, error: message, attempted_at: new Date(startedAt).toISOString(),
+        ...(charged > 0 ? { charged_ceiling_microusd: charged } : {}),
       } });
       continue;
     }
