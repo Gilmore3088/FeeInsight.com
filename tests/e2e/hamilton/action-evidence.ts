@@ -76,7 +76,7 @@ export async function withPeerResearchActionEvidence(
     if (!UUID.test(result.apiArtifactId) || result.apiArtifactId !== result.uiArtifactId) throw new Error("Native save response and UI artifact differ");
     capture.observeUiResult(actionId, { artifactId: result.uiArtifactId, success: true });
     const rows = await db<SavedPeerRow[]>`
-      SELECT id::text, user_id, institution_id, status, response_json FROM hamilton_saved_analyses
+      SELECT id::text, user_id, institution_id, status, created_at, prompt, response_json FROM hamilton_saved_analyses
        WHERE id = ${result.apiArtifactId}::uuid LIMIT 2`;
     if (rows.length !== 1) throw new Error("Saved peer snapshot has no unique persisted row");
     const saved = rows[0];
@@ -86,11 +86,11 @@ export async function withPeerResearchActionEvidence(
       semanticMatches: true, semanticSha256: digest(saved.response_json) });
     const reopened = await reopen(saved.id);
     // Reopening and the denial control must not change the immutable saved snapshot.
-    const afterReopen = await db<{ response_json: unknown }[]>`
-      SELECT response_json FROM hamilton_saved_analyses
+    const afterReopen = await db<SavedPeerRow[]>`
+      SELECT id::text, user_id, institution_id, status, created_at, prompt, response_json FROM hamilton_saved_analyses
        WHERE id = ${saved.id}::uuid AND user_id = ${String(FIXTURE_USERS.pro.id)}
          AND institution_id = ${String(HOME.id)} AND status = 'active' LIMIT 1`;
-    if (afterReopen.length !== 1 || digest(afterReopen[0].response_json) !== digest(saved.response_json)) throw new Error("Reopening changed the saved snapshot");
+    if (afterReopen.length !== 1 || digest(afterReopen[0]) !== digest(saved)) throw new Error("Reopening changed the saved snapshot");
     capture.observeReopen(actionId, { artifactId: saved.id, ...reopened });
     callbackPassed = true;
     resultId = saved.id;

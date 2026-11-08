@@ -4,7 +4,8 @@ import { withPeerResearchActionEvidence } from "./action-evidence";
 import { FIXTURE_USERS, HOME, connectFixtureDb, seedHamiltonFixtures } from "./fixtures";
 import { ask, navigate, signIn } from "./helpers";
 import type { PeerListData } from "../../../src/lib/hamilton/peer-list";
-import type { BrowserContext } from "playwright/test";
+import type { BrowserContext, CDPSession } from "playwright/test";
+import { createBrowserProtocolCapture, attachBrowserProtocolObserver } from "../../../src/lib/engineering-verification/browser-protocol.mjs";
 
 const FLORIDA = [9701002, 9701003, 9701004, 9701005, 9701006, 9701007, 9701008];
 const ALL_TEN_NAMES = ["Indian River Test CU", "Gulf Breeze Test CU", "Suncoast Harbor Test CU", "Palmetto Grove Test CU", "Keystone Bay Test CU", "Lantana Test CU", "Coquina Test CU", "Peachtree Test CU", "Chattahoochee Test CU", "Savannah Marsh Test CU"];
@@ -40,6 +41,84 @@ async function assertSavedPage(page: Page, expectedOrder: number[]): Promise<voi
   await expect(feeTable(page).getByRole("row", { name: /Indian River Test CU/ })).toContainText("1% of the transaction");
   await expect(feeTable(page).getByRole("row", { name: /Indian River Test CU/ })).not.toContainText("$1");
   expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(1);
+}
+
+/** Real NextLink, picker and browser history, with passive document provenance. */
+async function assertRetainedSavedHistory(page: Page, artifactId: string, expectedOrder: number[], width: number): Promise<void> {
+  const base = String(test.info().project.use.baseURL);
+  const savedUrl = new URL(`/pro/peer-research/${artifactId}?instId=9701002`, base).href;
+  const reportsA = new URL(`/pro/reports?instId=${HOME.id}`, base).href;
+  const reportsB = new URL("/pro/reports?instId=9701002", base).href;
+  let session: CDPSession | undefined;
+  let capture: ReturnType<typeof createBrowserProtocolCapture> | undefined;
+  let observer: Awaited<ReturnType<typeof attachBrowserProtocolObserver>> | undefined;
+  let receipt: ReturnType<ReturnType<typeof createBrowserProtocolCapture>["finish"]> | null = null;
+  let primaryError: unknown;
+  let failed = false;
+  let cleanupFailed = false;
+  let attachmentFailed = false;
+  let uiAssertionsCompleted = false;
+  let timeOriginUnchanged = false;
+  let sameDocument = false;
+  try {
+    await expect(page).toHaveURL(savedUrl);
+    session = await page.context().newCDPSession(page);
+    const version = await session.send("Browser.getVersion");
+    capture = createBrowserProtocolCapture({ fixtureOrigin: new URL(base).origin,
+      routeTemplates: ["/pro/reports", "/pro/peer-research/[id]"], protocolVersion: version.protocolVersion });
+    observer = await attachBrowserProtocolObserver(session, capture, { sessionKey: session, contextKey: page.context() });
+    const timeOrigin = await page.evaluate(() => performance.timeOrigin);
+    await page.getByRole("button", { name: "Open navigation", exact: true }).click();
+    const reports = page.getByRole("navigation", { name: "Hamilton workspace" }).getByRole("link", { name: "Reports", exact: true });
+    await expect(reports).toHaveAttribute("href", `/pro/reports?instId=${HOME.id}`);
+    await reports.click();
+    const assertReportsA = async () => {
+      await expect(page).toHaveURL(reportsA);
+      await expect(page.getByRole("region", { name: "Institution context" })).toContainText(`Researching: ${HOME.name}`);
+    };
+    await assertReportsA();
+    await page.getByRole("button", { name: "Research another institution", exact: true }).click();
+    await page.getByLabel("Institution", { exact: true }).fill("Indian River Test CU");
+    await page.getByRole("button", { name: /Indian River Test CU/ }).click();
+    await expect(page).toHaveURL(reportsB);
+    await expect(page.getByRole("region", { name: "Institution context" })).toContainText("Researching: Indian River Test CU");
+    await page.goBack();
+    await assertReportsA();
+    await page.goBack();
+    await expect(page).toHaveURL(savedUrl);
+    await assertSavedPage(page, expectedOrder);
+    await page.goForward();
+    await assertReportsA();
+    await page.goBack();
+    await expect(page).toHaveURL(savedUrl);
+    await assertSavedPage(page, expectedOrder);
+    timeOriginUnchanged = await page.evaluate(() => performance.timeOrigin) === timeOrigin;
+    uiAssertionsCompleted = true;
+    await snapshot(page, `retained-saved-peer-history-${width}`);
+  } catch (error) { failed = true; primaryError = error; }
+  finally {
+    try { await observer?.stop(); } catch { cleanupFailed = true; }
+    try { receipt = capture?.finish() ?? null; } catch { cleanupFailed = true; }
+    try { await session?.detach(); } catch { cleanupFailed = true; }
+    const documents = receipt?.events.filter(event => event.kind === "frame_document") ?? [];
+    const initial = documents[0];
+    const expectedRoutes = ["/pro/reports", "/pro/reports", "/pro/reports", "/pro/peer-research/[id]", "/pro/reports", "/pro/peer-research/[id]"];
+    sameDocument = Boolean(receipt?.closed && !receipt.truncated && receipt.protocolVersion === "1.3"
+      && documents.length === 1 && initial && receipt.navigations.length === expectedRoutes.length
+      && receipt.navigations.every((navigation, index) => navigation.kind === "same_document" && navigation.sameOrigin
+        && navigation.routeTemplate === expectedRoutes[index] && navigation.frameId === initial.frameId
+        && navigation.documentId === initial.documentId && navigation.sessionId === initial.sessionId
+        && navigation.contextId === initial.contextId)
+      && !receipt.events.some(event => ["frame_lost", "session_lost", "incomplete"].includes(event.kind)));
+    try { await test.info().attach(`retained-saved-peer-history-${width}-evidence`, { contentType: "application/json", body: JSON.stringify({
+      schemaVersion: 1, provenance: "LOCAL_BROWSER_HISTORY_UNTRUSTED", uiAssertionsCompleted,
+      sameDocument, timeOriginUnchanged, cleanupFailed,
+      complete: !failed && uiAssertionsCompleted && sameDocument && timeOriginUnchanged && !cleanupFailed,
+      strictBrowserAcceptance: "NOT_ASSESSED", capture: receipt,
+    }, null, 2) }); } catch { attachmentFailed = true; }
+  }
+  if (failed) throw primaryError;
+  if (!uiAssertionsCompleted || !sameDocument || !timeOriginUnchanged || cleanupFailed || attachmentFailed) throw new Error("Retained saved-peer history evidence is incomplete");
 }
 
 test.beforeAll(async () => {
@@ -143,6 +222,7 @@ for (const width of [1440, 390]) {
           await navigate(mobile, `/pro/peer-research/${artifactId}?instId=9701002`);
           await assertSavedPage(mobile, savedPeerOrder);
           await snapshot(mobile, `same-saved-peer-phone-${width}`);
+          await assertRetainedSavedHistory(mobile, artifactId, savedPeerOrder, width);
         }, `same-saved-peer-phone-${width}`);
         const denied = await other.newPage();
         await captureFreshPage(denied, async () => {
