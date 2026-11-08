@@ -24,6 +24,14 @@ The operational reader fix and step 4 are the immediate work; expanded browser a
 
 The original `1048.json` and `2285.json` identities remain frozen. The new observer's added paths are not within the original reviewed 1048 scope, and a historical pilot cannot certify this new behavior. Until a separately reviewed expanded browser contract and trusted execution exist, the new capture remains a local diagnostic and its formal adoption audit remains blocked. Routine R2 merge readiness does not mint contract-bound owner or independent GitHub review evidence.
 
+## Hamilton conversation continuity follow-up
+
+The browser work exposed a separate persistence boundary: Analyze published a newly allocated conversation pointer before its first history snapshot was acknowledged. Follow the [conversation continuity acceptance plan](conversation-persistence.md) under the existing Hamilton #975 and Foundation #1048 finding. Keep the saved peer research outcome in [draft PR #3007](https://github.com/Gilmore3088/FeeInsight.com/pull/3007) separate: a saved analysis does not prove stored conversation turns.
+
+The conversation slice keeps allocation private until acknowledgement, serializes immutable snapshots, reuses the allocation on retry and rejects late publication or navigation after a reset or route handoff. Independent component baseline failures, real owner-scoped database checks and prospective desktop/phone partial-write recovery and fresh-owner read-back provide different evidence. Preserve strict transport failures and the remaining native market-brief and saved-answer-fork acceptance gaps; local semantic checks cannot complete M5.
+
+The protected classifier/runner proposal remains [PR #3006](https://github.com/Gilmore3088/FeeInsight.com/pull/3006), frozen at `baed699f71104afdce8a952264c6844b7f0b2498`, awaiting its separate exact-head owner authorization. The earlier #2995 bootstrap approval does not authorize it. Enforcement remains disabled, and the selected Claude/Codex reviewer role still needs an authenticated independent principal and provenance.
+
 ## Milestone status and exit evidence
 
 | Stage | Current status | Exit evidence |
