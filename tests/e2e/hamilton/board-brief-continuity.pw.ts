@@ -300,7 +300,7 @@ for (const width of [1440, 390]) {
         expect(new URL((await open.getAttribute("href"))!, String(test.info().project.use.baseURL)).searchParams.get("report_id")).toBe(A);
         await open.click(); await editor(target, EDITED); await expect(target.getByLabel(/^Team note/)).toHaveValue(NOTE);
         expect(new URL(target.url()).searchParams.get("report_id")).toBe(A);
-        await expect(target.getByRole("region", { name: "Institution context" })).toContainText(`Researching: ${HOME.name}`);
+        await expect(target.getByRole("region", { name: "Institution context" })).toContainText(`Your institution: ${HOME.name}`);
         await expect(target.getByText(report(true).answer!.headline, { exact: true })).toBeVisible();
         await rendered(target); assertEdited(await saved(reader, A), original); expect(await inventory(reader)).toEqual(updated);
         await shot(target, `existing-board-fresh-owner-${width}`); observations.freshOwner_completed = true;
