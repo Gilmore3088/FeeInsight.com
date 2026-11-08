@@ -27,6 +27,142 @@ function api(overrides: Record<string, unknown> = {}) {
     return key in values ? Response.json(values[key]) : Response.json({ message: key }, { status: 404 });
   };
 }
+
+// Safe identity projection from native PR2995/run42357473949 after its squash merge.
+// GitHub returns empty PR arrays on both that run and check suite after merge.
+const historicalHead = 'e9ec7db32343af691e175f203108e4bfd7ab665d';
+const historicalMerge = 'd28d77a4da9d2fb6edc73d8c264e42a7e380ae77';
+const historicalTree = '4ec1fd24f97de3e3f6a413137624f95c1a7808a2';
+const historicalRepo = { id: 1159701429, full_name: 'Gilmore3088/FeeInsight.com' };
+const historicalPr = { number: 2995, state: 'closed', merged: true, merged_at: '2026-11-08T04:21:18Z', merge_commit_sha: historicalMerge,
+  base: { sha: '75ec21c49aa87dfc5739840bf2af4d89fe5fd97c', ref: 'main', repo: historicalRepo },
+  head: { sha: historicalHead, ref: 'feat/verification-protocol-m0-m1-20261106', repo: historicalRepo },
+  user: { id: 35467558, login: 'Gilmore3088', type: 'User' }, mergeable: null, html_url: 'https://github.com/Gilmore3088/FeeInsight.com/pull/2995' };
+const historicalRun = { id: 42357473949, workflow_id: 262504048, event: 'pull_request', head_sha: historicalHead, head_branch: historicalPr.head.ref,
+  path: '.github/workflows/test.yml', repository: historicalRepo, head_repository: historicalRepo, run_attempt: 1, check_suite_id: 114761315428,
+  status: 'completed', conclusion: 'success', created_at: '2026-11-07T08:54:56Z', updated_at: '2026-11-07T09:07:45Z', pull_requests: [] };
+const historicalJob = { id: 128361345999, run_id: historicalRun.id, run_attempt: 1, head_sha: historicalHead, name: 'app-tests', status: 'completed', conclusion: 'success',
+  completed_at: '2026-11-07T09:07:44Z', html_url: 'https://github.com/Gilmore3088/FeeInsight.com/actions/runs/42357473949/job/128361345999' };
+function historicalApi(overrides: Record<string, unknown> = {}) {
+  const values: Record<string, unknown> = {
+    '': { ...historicalRepo, default_branch: 'main' }, '/commits/main': { sha: historicalMerge },
+    '/contents/.github/workflows/test.yml': { encoding: 'base64', content: btoa('same registered workflow source at head and trusted main') },
+    '/pulls/2995': historicalPr, '/pulls/2995/files': [{ filename: 'src/lib/a.ts', status: 'modified' }], '/pulls/2995/reviews': [], '/issues/2995/comments': [],
+    [`/commits/${historicalHead}/check-runs`]: { check_runs: [{ id: historicalJob.id, name: 'app-tests', head_sha: historicalHead, status: 'completed', conclusion: 'success',
+      check_suite: { id: historicalRun.check_suite_id }, app: { id: 15368, slug: 'github-actions' }, details_url: historicalJob.html_url }] },
+    '/actions/workflows/test.yml': { id: historicalRun.workflow_id, path: '.github/workflows/test.yml' },
+    [`/actions/workflows/${historicalRun.workflow_id}/runs`]: { workflow_runs: [historicalRun] },
+    [`/actions/runs/${historicalRun.id}`]: historicalRun,
+    [`/actions/runs/${historicalRun.id}/attempts/1/jobs`]: { jobs: [historicalJob] },
+    [`/actions/runs/${historicalRun.id}/artifacts`]: { artifacts: [] },
+    [`/commits/${historicalHead}/pulls`]: [historicalPr],
+    [`/git/commits/${historicalHead}`]: { sha: historicalHead, tree: { sha: historicalTree } },
+    [`/git/commits/${historicalMerge}`]: { sha: historicalMerge, tree: { sha: historicalTree }, parents: [{ sha: historicalPr.base.sha }] },
+    '/deployments': [], ...overrides,
+  };
+  return async (input: string | URL | Request, options: RequestInit = {}) => {
+    const url = input instanceof Request ? input.url : String(input);
+    if (url === 'https://api.github.com/graphql') return Response.json({ data: { repository: { pullRequest: { reviewThreads: { nodes: [], pageInfo: { hasNextPage: false } } } } } });
+    expect(options.method ?? 'GET').toBe('GET');
+    const key = new URL(url).pathname.replace('/repos/' + historicalRepo.full_name, '');
+    return key in values ? Response.json(values[key]) : Response.json({ message: 'native read unavailable' }, { status: 404 });
+  };
+}
+const collectHistorical = (fetchImpl = historicalApi()) => collectGithubEvidence({ repository: historicalRepo.full_name, prNumber: 2995, token: 'secret', fetchImpl, now: new Date('2026-11-08T05:00:00Z') });
+
+describe('native historical merged-head CI association', () => {
+  afterEach(() => sourceFetch.mockReset());
+  it('corroborates actual empty postmerge run associations through native commit membership and identical squash trees', async () => {
+    const snapshot = await collectHistorical();
+    expect(snapshot.ci.status).toBe('PASSED');
+    expect(snapshot.ci.association).toMatchObject({ kind: 'historical_head_identity', prNumber: 2995, triggerPrNumber: null, headSha: historicalHead, mergeSha: historicalMerge, treeSha: historicalTree });
+    expect(snapshot.ci.run.pull_requests).toEqual([]);
+    expect(isGithubEvidence(snapshot)).toBe(false);
+    expect(isGithubEvidence(JSON.parse(JSON.stringify(snapshot)))).toBe(false);
+  });
+  it('never treats an open or closed-unmerged PR as historical authority', async () => {
+    for (const changes of [{ state: 'open' }, { merged: false }, { merged_at: null }, { merge_commit_sha: null }]) {
+      expect((await collectHistorical(historicalApi({ '/pulls/2995': { ...historicalPr, ...changes } }))).ci.status).toBe('BLOCKED');
+    }
+  });
+  it('preserves an open-PR missing-association block even if matching native history is available', async () => {
+    const snapshot = await collectGithubEvidence({ repository: 'o/r', prNumber: 1, token: 'secret', fetchImpl: api({
+      '/actions/workflows/7/runs': { workflow_runs: [{ ...ciRun, pull_requests: [] }] }, '/actions/runs/9': { ...ciRun, pull_requests: [] },
+      [`/commits/${sha}/pulls`]: [{ number: 1 }],
+    }) });
+    expect(snapshot.ci.status).toBe('BLOCKED');
+  });
+  it.each([
+    [], [{ ...historicalPr, number: 2996 }], [historicalPr, { ...historicalPr, number: 2996 }],
+    [{ ...historicalPr, head: { ...historicalPr.head, sha: 'b'.repeat(40) } }],
+    [{ ...historicalPr, merge_commit_sha: 'b'.repeat(40) }],
+    [{ ...historicalPr, head: { ...historicalPr.head, repo: { ...historicalRepo, full_name: 'other/repository' } } }],
+  ].map(association => ({ association })))('rejects absent, counter-PR, ambiguous or mismatched native commit associations', async ({ association }) => {
+    expect((await collectHistorical(historicalApi({ [`/commits/${historicalHead}/pulls`]: association }))).ci.status).toBe('BLOCKED');
+  });
+  it.each([
+    { sha: historicalMerge, tree: { sha: 'b'.repeat(40) } },
+    { sha: 'b'.repeat(40), tree: { sha: historicalTree } },
+    { sha: historicalMerge, tree: {} },
+  ])('rejects missing/different immutable merge trees or commit identity', async commit => {
+    expect((await collectHistorical(historicalApi({ [`/git/commits/${historicalMerge}`]: commit }))).ci.status).toBe('BLOCKED');
+  });
+  it.each([
+    { repository: { ...historicalRepo, full_name: 'other/repository' } }, { repository: { ...historicalRepo, id: 1 } },
+    { head_repository: { ...historicalRepo, full_name: 'other/repository' } }, { head_branch: 'other-branch' },
+    { path: '.github/workflows/impostor.yml' }, { pull_requests: [{ number: 2996 }] },
+    { updated_at: '2026-11-08T05:00:00Z' },
+  ])('rejects mismatched historical run repository/ref/workflow association or postmerge completion', async changes => {
+    const run = { ...historicalRun, ...changes };
+    expect((await collectHistorical(historicalApi({ [`/actions/workflows/${historicalRun.workflow_id}/runs`]: { workflow_runs: [run] }, [`/actions/runs/${historicalRun.id}`]: run }))).ci.status).toBe('BLOCKED');
+  });
+  it('fails closed when native commit identity reads are unavailable', async () => {
+    const original = historicalApi();
+    expect((await collectHistorical(async (input, options) => String(input).includes('/git/commits/') ? Response.json({ message: 'denied' }, { status: 403 }) : original(input, options))).ci.status).toBe('BLOCKED');
+  });
+  it('requires the historical check suite, App and premerge job completion to agree', async () => {
+    const checksPath = `/commits/${historicalHead}/check-runs`;
+    for (const changes of [{ app: { id: 1, slug: 'github-actions' } }, { check_suite: { id: 1 } }]) {
+      const native = await historicalApi()('https://api.github.com/repos/' + historicalRepo.full_name + checksPath);
+      const checks = await native.json();
+      expect((await collectHistorical(historicalApi({ [checksPath]: { check_runs: [{ ...checks.check_runs[0], ...changes }] } }))).ci.status).toBe('BLOCKED');
+    }
+    expect((await collectHistorical(historicalApi({ [`/actions/runs/${historicalRun.id}/attempts/1/jobs`]: { jobs: [{ ...historicalJob, completed_at: '2026-11-08T05:00:00Z' }] } }))).ci.status).toBe('BLOCKED');
+  });
+  it('rejects a native association that becomes ambiguous before finalization', async () => {
+    const original = historicalApi(); let reads = 0;
+    const snapshot = await collectHistorical(async (input, options) => new URL(String(input)).pathname.endsWith(`/commits/${historicalHead}/pulls`) && ++reads > 1 ? Response.json([historicalPr, { ...historicalPr, number: 2996 }]) : original(input, options));
+    expect(snapshot.ci.status).toBe('BLOCKED');
+    expect(snapshot.ci.problems).toContain('Historical native commit association changed while collecting evidence');
+  });
+  it('rechecks merged PR identity before finalization', async () => {
+    for (const changes of [{ state: 'open' }, { merged: false }, { merge_commit_sha: 'b'.repeat(40) }, { head: { ...historicalPr.head, ref: 'changed-branch' } }]) {
+      const original = historicalApi(); let reads = 0;
+      const snapshot = await collectHistorical(async (input, options) => new URL(String(input)).pathname.endsWith('/pulls/2995') && ++reads > 1 ? Response.json({ ...historicalPr, ...changes }) : original(input, options));
+      expect(snapshot.ci.status).toBe('BLOCKED');
+    }
+  });
+  it('rejects a new same-head run or changed attempt during historical collection', async () => {
+    for (const mode of ['new-run', 'attempt'] as const) {
+      const original = historicalApi(); let reads = 0;
+      const snapshot = await collectHistorical(async (input, options) => {
+        const path = new URL(String(input)).pathname;
+        if (mode === 'new-run' && path.endsWith(`/actions/workflows/${historicalRun.workflow_id}/runs`) && ++reads > 1) return Response.json({ workflow_runs: [{ ...historicalRun, id: historicalRun.id + 1, conclusion: 'failure' }, historicalRun] });
+        if (mode === 'attempt' && path.endsWith(`/actions/runs/${historicalRun.id}`)) return Response.json({ ...historicalRun, run_attempt: 2 });
+        return original(input, options);
+      });
+      expect(snapshot.ci.status).toBe('BLOCKED');
+    }
+  });
+  it('does not turn closed-PR history into current merge permission', async () => {
+    sourceFetch.mockImplementation(historicalApi());
+    const snapshot = await collectGithubEvidence({ repository: historicalRepo.full_name, prNumber: 2995, token: 'secret', now: new Date('2026-11-08T05:00:00Z') });
+    expect(snapshot.ci.status).toBe('PASSED');
+    const review = assessReviewEvidence(snapshot, { headSha: historicalHead, contractSha256: 'a'.repeat(64), policySha256: 'b'.repeat(64), now: new Date('2026-11-08T05:00:00Z') });
+    expect(review.status).toBe('BLOCKED');
+    expect(review.blockers).toContain('PR is draft or not open');
+  });
+});
 describe('authenticated GitHub engineering collector', () => {
   afterEach(() => sourceFetch.mockReset());
   it('binds checks to the actual workflow and job, never name-only success', async () => {
@@ -35,6 +171,7 @@ describe('authenticated GitHub engineering collector', () => {
     expect(isGithubEvidence(JSON.parse(JSON.stringify(evidence)))).toBe(false);
     expect(evidence.ci.status).toBe('PASSED');
     expect(evidence.ci.runId).toBe(9);
+    expect(evidence.ci.association).toMatchObject({ kind: 'direct_pr', prNumber: 1, triggerPrNumber: null });
     expect(JSON.stringify(evidence)).not.toContain('secret');
     expect(Object.isFrozen(evidence.pullRequest)).toBe(true);
   });

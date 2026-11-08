@@ -32,7 +32,7 @@ export function assessReviewEvidence(snapshot: unknown, policy: ReviewPolicy): {
 };
 export function assessOperationalEvidence(runtime: unknown, policy: OperationalPolicy, options?: { github?: unknown; now?: Date }): {
   status: string;
-  deployment: { id: number; sha: string; environment: string; deployedAt: string } | null;
+  deployment: { id: number; sha: string; environment: string; rawEnvironment: string; rawStatusEnvironment: string | null; deployedAt: string } | null;
   observation: { requiredDays: number; sampleDays: number; sampleCount: number };
   blockers: string[];
 };

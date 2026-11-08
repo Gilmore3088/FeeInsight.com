@@ -22,6 +22,9 @@ const freeze = value => {
 };
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 const fresh = (observedAt, now) => Number.isFinite(at(observedAt)) && at(observedAt) <= now.getTime() && now.getTime() - at(observedAt) <= 15 * 60000;
+// GitHub's artifact expiry can be anchored to workflow creation, before upload
+// and before a later attempt. Never extend either that run age or the API expiry.
+const artifactExpiry = (run, artifact) => Math.min(at(run?.created_at) + 90 * DAY, at(artifact?.expires_at));
 
 async function bytes(response, limit) {
   const declared = response.headers.get('content-length');
@@ -71,7 +74,7 @@ export function assessCollectedProof(snapshot, { now = new Date() } = {}) {
   if (!isCollectedProof(snapshot)) blockers.push('Proof artifact provenance is not authenticated in this process');
   if (snapshot?.validation?.status !== 'PASSED') blockers.push('Proof artifact validation did not pass');
   if (!fresh(snapshot?.observedAt, now)) blockers.push('Proof collection is stale or has no valid observation time');
-  const expiry = Math.min(at(snapshot?.artifact?.created_at) + 90 * DAY, at(snapshot?.artifact?.expires_at));
+  const expiry = artifactExpiry(snapshot?.run, snapshot?.artifact);
   if (!Number.isFinite(expiry) || now.getTime() >= expiry || snapshot?.artifact?.expired !== false) blockers.push('Proof artifact expired or retention evidence is missing');
   return { status: blockers.length ? 'BLOCKED' : 'VERIFIED', blockers: [...new Set(blockers)],
     runId: snapshot?.run?.id ?? null, runAttempt: snapshot?.run?.run_attempt ?? null,
@@ -160,15 +163,17 @@ export async function collectProofEvidence({ github, contract, contractRaw, toke
       || proofJobs[0].head_sha !== run.head_sha || proofJobs[0].status !== 'completed' || proofJobs[0].conclusion !== 'success') throw new Error('Successful proof job bound to this run attempt is missing');
     const artifact = await get(`/actions/artifacts/${selected.artifact.id}`);
     snapshot.artifact = artifact;
+    const runCreated = at(run.created_at), attemptCreated = at(attempt.created_at);
     const created = at(artifact.created_at), expires = at(artifact.expires_at), started = at(attempt.run_started_at), updated = at(attempt.updated_at);
     if (!positive(artifact.id) || artifact.id !== selected.artifact.id || artifact.name !== expectedName || artifact.expired !== false
       || typeof artifact.digest !== 'string' || !/^sha256:[a-f0-9]{64}$/i.test(artifact.digest)
       || !positive(artifact.size_in_bytes) || artifact.size_in_bytes > ZIP_LIMIT
       || artifact.workflow_run?.id !== run.id || artifact.workflow_run?.repository_id !== repo.id || artifact.workflow_run?.head_repository_id !== repo.id
       || artifact.workflow_run?.head_sha !== run.head_sha || artifact.workflow_run?.head_branch !== 'main'
+      || !Number.isFinite(runCreated) || runCreated !== attemptCreated
       || !Number.isFinite(created) || !Number.isFinite(expires) || !Number.isFinite(started) || !Number.isFinite(updated)
-      || created < started || created > updated || created > now.getTime() || expires < created + 90 * DAY - 60000
-      || now.getTime() >= Math.min(expires, created + 90 * DAY)) throw new Error('Proof artifact identity, digest, retention or run-attempt timestamp invalid');
+      || runCreated > started || created < started || created > updated || created > now.getTime() || expires < runCreated + 90 * DAY
+      || now.getTime() >= artifactExpiry(run, artifact)) throw new Error('Proof artifact identity, digest, retention or run-attempt timestamp invalid');
     const download = await request(`${base}/actions/artifacts/${artifact.id}/zip`, true, 'manual');
     let response = download;
     if (download.status === 302) {

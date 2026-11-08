@@ -123,12 +123,15 @@ export function assessOperationalEvidence(runtime, policy, { github, now = new D
   const days = policy?.observationDays ?? 7, gap = policy?.maxSampleGapHours ?? 24;
   if (!(days > 0 && days <= 90 && gap > 0 && gap <= 168)) blockers.push('Observation window and sample cadence invalid');
   if (github && (github.pullRequest?.headSha !== policy.headSha || (policy.environment === 'production' && (!github.pullRequest?.merged || github.pullRequest?.mergeSha !== policy.deployedSha)))) blockers.push('Deployment does not have authenticated PR-head to merged-SHA lineage');
-  const activeDeployment = [...(github?.deployments ?? [])].filter(row => row.environment === policy.environment).sort((a, b) => time(b.created_at) - time(a.created_at)).find(row => {
+  // GitHub/Vercel uses the exact display label Production; runtime and policy identities stay untouched.
+  const githubEnvironment = value => authenticGithub(github) && (value === 'Production' || value === 'production') ? 'production' : value;
+  const activeDeployment = [...(github?.deployments ?? [])].filter(row => githubEnvironment(row.environment) === policy.environment).sort((a, b) => time(b.created_at) - time(a.created_at)).find(row => {
     const latest = [...(row.statuses ?? [])].sort((a, b) => time(b.created_at) - time(a.created_at) || b.id - a.id)[0];
-    return latest?.state === 'success' && (!latest.environment || latest.environment === policy.environment);
+    return latest?.state === 'success' && (!latest.environment || githubEnvironment(latest.environment) === policy.environment);
   });
   const deployment = activeDeployment?.sha === policy.deployedSha ? activeDeployment : null;
-  const deployedAt = deployment ? time([...deployment.statuses].sort((a, b) => time(b.created_at) - time(a.created_at) || b.id - a.id)[0].created_at) : NaN;
+  const deploymentStatus = deployment ? [...deployment.statuses].sort((a, b) => time(b.created_at) - time(a.created_at) || b.id - a.id)[0] : null;
+  const deployedAt = deploymentStatus ? time(deploymentStatus.created_at) : NaN;
   if (github && !Number.isFinite(deployedAt)) blockers.push('Successful deployment with exact SHA and environment is missing');
   if (!(runtime?.atlas ?? []).some(row => count(row.runId) && count(row.stepId) && row.status === 'completed' && executionMatches(row, policy))) blockers.push('Completed Atlas execution lineage on deployed SHA and environment missing');
   const samples = [...(runtime?.deming ?? [])].sort((a, b) => time(a.score?.at) - time(b.score?.at));
@@ -165,7 +168,7 @@ export function assessOperationalEvidence(runtime, policy, { github, now = new D
       if (!authorization) blockers.push(`Bayes ${key} exclusion ${reason} lacks independent authorization`);
     }
   }
-  return { status: blockers.length ? 'PRODUCTION_UNVERIFIED' : 'PRODUCTION_VERIFIED', deployment: deployment ? { id: deployment.id, sha: deployment.sha, environment: deployment.environment, deployedAt: new Date(deployedAt).toISOString() } : null, observation: { requiredDays: days, sampleDays: unique(sampleTimes.map(at => new Date(at).toISOString().slice(0, 10))).length, sampleCount: samples.length }, blockers: unique(blockers) };
+  return { status: blockers.length ? 'PRODUCTION_UNVERIFIED' : 'PRODUCTION_VERIFIED', deployment: deployment ? { id: deployment.id, sha: deployment.sha, environment: policy.environment, rawEnvironment: deployment.environment, rawStatusEnvironment: deploymentStatus?.environment ?? null, deployedAt: new Date(deployedAt).toISOString() } : null, observation: { requiredDays: days, sampleDays: unique(sampleTimes.map(at => new Date(at).toISOString().slice(0, 10))).length, sampleCount: samples.length }, blockers: unique(blockers) };
 }
 
 const median = values => { if (!values.length) return null; const sorted = [...values].sort((a, b) => a - b); const middle = Math.floor(sorted.length / 2); return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2; };

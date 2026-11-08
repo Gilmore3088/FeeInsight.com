@@ -4,6 +4,10 @@ import { createHash } from 'node:crypto';
 const trustedFetch = globalThis.fetch;
 const collected = new WeakSet();
 const sha40 = /^[a-f0-9]{40}$/i;
+const isSha = value => typeof value === 'string' && sha40.test(value);
+const positiveId = value => Number.isSafeInteger(value) && value > 0;
+const ref = value => typeof value === 'string' && value.length > 0 && value.length <= 255 && !/[\x00-\x20\x7f]/.test(value);
+const date = value => typeof value === 'string' ? Date.parse(value) : NaN;
 const freeze = value => {
   if (value && typeof value === 'object') { Object.values(value).forEach(freeze); Object.freeze(value); }
   return value;
@@ -39,7 +43,7 @@ export async function collectGithubEvidence({ repository, prNumber, token, requi
   const pr = await get(`/pulls/${prNumber}`);
   const headSha = pr.head?.sha;
   if (!sha40.test(headSha ?? '')) throw new Error('GitHub PR has no valid head SHA');
-  const [files, reviews, comments, checks, workflow, deployments, threads] = await Promise.all([
+  const [files, reviews, comments, checks, workflow, deployments, threads, repositoryIdentity] = await Promise.all([
     capture('changed files', () => pages(`/pulls/${prNumber}/files`)),
     capture('reviews', () => pages(`/pulls/${prNumber}/reviews`)),
     capture('approval comments', () => pages(`/issues/${prNumber}/comments`)),
@@ -60,14 +64,47 @@ export async function collectGithubEvidence({ repository, prNumber, token, requi
       }
       throw new Error('Review-thread pagination exceeded bounded inventory');
     }),
+    capture('repository identity', () => get(''), null),
   ]);
   const runs = workflow ? await capture('CI runs', () => pages(`/actions/workflows/${workflow.id}/runs?head_sha=${headSha}`, 'workflow_runs')) : [];
-  const latestRun = rows => rows.filter(row => row.workflow_id === workflow?.id && row.head_sha === headSha && row.event === 'pull_request' && row.pull_requests?.some(item => item.number === prNumber))
+  const historical = pr.merged === true && pr.state === 'closed';
+  const directAssociation = row => Array.isArray(row?.pull_requests) && row.pull_requests.some(item => item?.number === prNumber);
+  const emptyAssociation = row => Array.isArray(row?.pull_requests) && row.pull_requests.length === 0;
+  const latestRun = rows => rows.filter(row => row?.workflow_id === workflow?.id && row.head_sha === headSha && row.event === 'pull_request'
+      && (directAssociation(row) || (historical && emptyAssociation(row))))
     .sort((a, b) => b.id - a.id || b.run_attempt - a.run_attempt)[0];
   const run = latestRun(runs);
+  const sameRepository = (value, expected) => positiveId(expected?.id) && value?.id === expected.id && value?.full_name === expected.full_name;
+  const sameMergedPr = value => value?.number === prNumber && value.state === 'closed' && value.merged_at === pr.merged_at && value.merge_commit_sha === pr.merge_commit_sha
+    && value.head?.sha === headSha && value.head?.ref === pr.head?.ref && sameRepository(value.head?.repo, pr.head?.repo)
+    && value.base?.sha === pr.base?.sha && value.base?.ref === pr.base?.ref && sameRepository(value.base?.repo, pr.base?.repo);
+  const matchesHistoricalAssociation = rows => Array.isArray(rows) && rows.length === 1 && sameMergedPr(rows[0]);
+  const historicalIdentity = run && !directAssociation(run) ? await capture('historical CI association', async () => {
+    // This intentionally supports only a closed, merged, same-repository PR whose
+    // final tree is byte-identical to the native merge tree. Actual CI checkout
+    // identity stays unknown; neither this association nor the missing trigger
+    // relationship can authorize an open PR.
+    if (!historical || pr.number !== prNumber || !isSha(pr.merge_commit_sha) || !isSha(pr.base?.sha)
+      || !Number.isFinite(date(pr.merged_at)) || date(pr.merged_at) > now.getTime()
+      || repositoryIdentity?.full_name !== repository || !positiveId(repositoryIdentity?.id)
+      || !sameRepository(pr.head?.repo, repositoryIdentity) || !sameRepository(pr.base?.repo, repositoryIdentity)
+      || !ref(pr.head?.ref) || pr.base?.ref !== repositoryIdentity.default_branch) throw new Error('Merged PR repository/ref/merge identity is unavailable or mismatched');
+    const [associations, head, merge] = await Promise.all([
+      pages(`/commits/${headSha}/pulls`), get(`/git/commits/${headSha}`), get(`/git/commits/${pr.merge_commit_sha}`),
+    ]);
+    if (!matchesHistoricalAssociation(associations)) throw new Error('Native commit-to-PR association is missing, ambiguous or mismatched');
+    if (head.sha !== headSha || merge.sha !== pr.merge_commit_sha || !isSha(head.tree?.sha) || head.tree.sha !== merge.tree?.sha) throw new Error('Native head and merge commit trees are missing or not identical');
+    return { kind: 'historical_head_identity', prNumber, triggerPrNumber: null, headSha, mergeSha: pr.merge_commit_sha, treeSha: head.tree.sha };
+  }, null) : null;
+  const association = directAssociation(run) ? { kind: 'direct_pr', prNumber, triggerPrNumber: null, headSha } : historicalIdentity;
+  const validHistoricalRun = row => historicalIdentity && emptyAssociation(row)
+    && sameRepository(row.repository, repositoryIdentity) && sameRepository(row.head_repository, pr.head.repo)
+    && row.head_branch === pr.head.ref && row.path === '.github/workflows/test.yml'
+    && Number.isFinite(date(row.created_at)) && Number.isFinite(date(row.updated_at))
+    && date(row.created_at) <= date(row.updated_at) && date(row.updated_at) <= date(pr.merged_at);
   const trustedWorkflow = await capture('trusted workflow identity', async () => {
-    const repo = await get('');
-    const branch = await get(`/commits/${encodeURIComponent(repo.default_branch)}`);
+    if (!ref(repositoryIdentity?.default_branch)) throw new Error('Default-branch identity is unavailable');
+    const branch = await get(`/commits/${encodeURIComponent(repositoryIdentity.default_branch)}`);
     const [trusted, candidate] = await Promise.all([get(`/contents/.github/workflows/test.yml?ref=${branch.sha}`), get(`/contents/.github/workflows/test.yml?ref=${headSha}`)]);
     const digest = item => { if (item.encoding !== 'base64' || typeof item.content !== 'string') throw new Error('Workflow source unavailable'); return createHash('sha256').update(Buffer.from(item.content, 'base64')).digest('hex'); };
     return { trustedSha: branch.sha, trustedDigest: digest(trusted), candidateDigest: digest(candidate) };
@@ -78,6 +115,7 @@ export async function collectGithubEvidence({ repository, prNumber, token, requi
     capture('CI artifacts', () => pages(`/actions/runs/${run.id}/artifacts`, 'artifacts')),
   ]) : [[], []];
   const ciProblems = [];
+  if (!association || (!directAssociation(run) && !validHistoricalRun(run))) ciProblems.push('CI PR association or corroborated historical head identity is unavailable');
   if (!trustedWorkflow || trustedWorkflow.trustedDigest !== trustedWorkflow.candidateDigest) ciProblems.push('CI workflow differs from trusted default-branch workflow or its identity is unavailable');
   if (run?.repository?.full_name !== repository) ciProblems.push('CI workflow run repository identity missing or mismatched');
   if (!validRunIdentity) ciProblems.push('CI workflow run or attempt identity missing');
@@ -88,6 +126,8 @@ export async function collectGithubEvidence({ repository, prNumber, token, requi
     const check = checks.find(row => row.name === name && row.head_sha === headSha && row.app?.slug === 'github-actions' && row.details_url === job?.html_url);
     if (!job || job.run_id !== run?.id || job.run_attempt !== run?.run_attempt || job.head_sha !== headSha
       || job.status !== 'completed' || job.conclusion !== 'success' || !check || check.status !== 'completed' || check.conclusion !== 'success') ciProblems.push(`Required ${name} is not a successful check bound to the expected workflow job`);
+    if (historicalIdentity && (check?.app?.id !== 15368 || !positiveId(run.check_suite_id) || check?.check_suite?.id !== run.check_suite_id
+      || !Number.isFinite(date(job?.completed_at)) || date(job.completed_at) > date(pr.merged_at))) ciProblems.push(`Required ${name} historical check suite or completion identity is unavailable`);
   }
   const deploymentStatuses = await Promise.all(deployments.map(async deployment => ({ ...deployment, statuses: await capture(`deployment ${deployment.id} statuses`, () => pages(`/deployments/${deployment.id}/statuses`)) })));
   if (validRunIdentity) {
@@ -98,14 +138,20 @@ export async function collectGithubEvidence({ repository, prNumber, token, requi
     const selected = latestRun(currentRuns);
     if (!currentRun || currentRun.id !== run.id || currentRun.run_attempt !== run.run_attempt
       || currentRun.workflow_id !== workflow.id || currentRun.head_sha !== headSha || currentRun.event !== 'pull_request'
-      || currentRun.repository?.full_name !== repository || !currentRun.pull_requests?.some(item => item.number === prNumber)
+      || currentRun.repository?.full_name !== repository || (directAssociation(run) ? !directAssociation(currentRun) : !validHistoricalRun(currentRun))
       || currentRun.status !== 'completed' || currentRun.conclusion !== 'success'
       || selected?.id !== run.id || selected?.run_attempt !== run.run_attempt
+      || (historicalIdentity && !validHistoricalRun(selected))
       || selected?.status !== 'completed' || selected?.conclusion !== 'success') ciProblems.push('CI run or attempt changed while collecting evidence');
   }
-  const current = await get(`/pulls/${prNumber}`);
-  if (current.head?.sha !== headSha) problems.push('Pull request head changed while collecting evidence');
-  const snapshot = freeze({ schemaVersion: 1, provenance: { kind: testTransport ? 'test-transport-untrusted' : 'authenticated-github-api' }, repository, prNumber, observedAt: now.toISOString(), pullRequest: { number: prNumber, headSha, body: typeof pr.body === 'string' ? pr.body : '', openedAt: pr.created_at ?? null, author: pr.user, mergeSha: pr.merge_commit_sha ?? null, merged: pr.merged === true, mergedAt: pr.merged_at ?? null, state: pr.state, draft: pr.draft === true, mergeable: current.mergeable, url: pr.html_url }, files, reviews, comments, threads, checks, deploymentsIncluded: includeDeployments, deployments: deploymentStatuses, ci: { status: ciProblems.length || problems.length ? 'BLOCKED' : 'PASSED', runId: run?.id ?? null, runAttempt: run?.run_attempt ?? null, workflowId: workflow?.id ?? null, runHeadSha: run?.head_sha ?? null, actualCheckoutSha: null, checkoutRef: run?.event === 'pull_request' ? 'pull_request_merge_or_explicit_ref' : 'unknown', trustedWorkflow, run, jobs, artifacts, problems: ciProblems }, problems });
+  if (historicalIdentity) {
+    const associations = await capture('current historical CI association', () => pages(`/commits/${headSha}/pulls`), null);
+    if (!matchesHistoricalAssociation(associations)) ciProblems.push('Historical native commit association changed while collecting evidence');
+  }
+  const current = await capture('current pull request identity', () => get(`/pulls/${prNumber}`), null);
+  if (current?.head?.sha !== headSha) problems.push('Pull request head changed while collecting evidence');
+  if (historicalIdentity && (!sameMergedPr(current) || current?.merged !== true)) problems.push('Historical merged PR identity changed while collecting evidence');
+  const snapshot = freeze({ schemaVersion: 1, provenance: { kind: testTransport ? 'test-transport-untrusted' : 'authenticated-github-api' }, repository, prNumber, observedAt: now.toISOString(), pullRequest: { number: prNumber, headSha, body: typeof pr.body === 'string' ? pr.body : '', openedAt: pr.created_at ?? null, author: pr.user, mergeSha: pr.merge_commit_sha ?? null, merged: pr.merged === true, mergedAt: pr.merged_at ?? null, state: pr.state, draft: pr.draft === true, mergeable: current?.mergeable, url: pr.html_url }, files, reviews, comments, threads, checks, deploymentsIncluded: includeDeployments, deployments: deploymentStatuses, ci: { status: ciProblems.length || problems.length ? 'BLOCKED' : 'PASSED', association, runId: run?.id ?? null, runAttempt: run?.run_attempt ?? null, workflowId: workflow?.id ?? null, runHeadSha: run?.head_sha ?? null, actualCheckoutSha: null, checkoutRef: run?.event === 'pull_request' ? 'pull_request_merge_or_explicit_ref' : 'unknown', trustedWorkflow, run, jobs, artifacts, problems: ciProblems }, problems });
   collected.add(snapshot);
   return snapshot;
 }

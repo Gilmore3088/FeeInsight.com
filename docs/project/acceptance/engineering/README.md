@@ -49,6 +49,19 @@ The manual workflow is `.github/workflows/engineering-verification.yml`, job `hi
 
 Existing `test.yml` suites run once. The read-only audit workflow checks out trusted `main` and reads PR metadata; it never executes PR code. On proof completion, its authenticated `resolve-run` path resolves the artifact's PR and contract, then rechecks the actual current PR head and contract marker. The audit is not a new prerequisite of `app-tests` during bootstrap. Check publication and separately controlled GitHub ruleset/reviewer activation remain disabled until authorized; [activation-proposal.md](activation-proposal.md) records the concrete proposal.
 
+Artifact availability ends at the earlier of the native API's `expires_at` and ninety days
+from original workflow creation. An upload or later attempt does not restart that age.
+The collector checks the configured retention against this original run epoch, while
+still requiring the artifact to belong to the exact successful attempt. A request for
+ninety-day retention does not promise ninety additional days after a delayed upload.
+
+If GitHub omits a merged PR from a historical CI run's association list, a separate
+`historical_head_identity` result requires native commit-to-PR association and identical
+head/merge trees, alongside the existing repository, workflow, run/attempt and check/job
+checks. It corroborates historical CI associated with that exact head and its identical
+final merge tree. The historical checkout SHA/tree and triggering PR remain unknown;
+this result cannot certify their identities or relax an open PR's merge gates.
+
 For each required database group, CI points both database clients at the same loopback fixture and checks that configuration before testing. The `required-database-tests.mjs` guard checks Vitest's actual JSON assertion inventory against every selected file; missing files, empty inventories and skipped, pending, todo or nonpassing assertions block the job. Fixture catch-up and the pipeline use separate databases and reports. Actions retains those reports for ninety days, bound to the native run and attempt. This applies to the required database groups and does not certify optional unit cases or replace historical proof and review.
 
 A human may include this marker in an actual GitHub review/comment, replacing every value with the frozen identity and listing **all actual changed files**:
@@ -70,6 +83,11 @@ The `buyer-journey-mapper`, `ux-ui-auditor` and `playwright-ux-simulator` skills
 Operational policy separates `headSha` (reviewed PR code) from `deployedSha` (the authenticated production merge SHA). The read-only admin endpoint joins existing Atlas steps, Deming fixed-cohort observations and Bayes checks. A server-owned `step.execution` event supplies the historical deployment/environment binding. The API server's current build SHA and caller-supplied run parameters are insufficient. Historical steps without that event stay unverified.
 
 The proposed default is **seven days**, with explicit frozen sample thresholds and cadence. A separately reviewed per-change window may differ. The initial policy requires the exact deployment SHA throughout observation; frequent releases can reset or prevent a seven-day window. Descendants are not silently accepted. Missing/stale samples, changed cohorts/scorers, queued/not-counted replay, unreconciled counts or unauthorized exclusions remain `PRODUCTION_UNVERIFIED`.
+
+GitHub deployment/status labels `Production` and `production` refer to the policy's
+canonical `production` environment. The adapter preserves their native spelling; it does
+not normalize policy values, server-owned execution envelopes, preview environments or
+other aliases. A successful deployment supplies lineage, not the required outcome window.
 
 Remaining activation includes concrete owner security approval, a distinct reviewer identity, authentic post-bootstrap Actions proof, deployment/outcome observations and any separately authorized reruns. Broader UI/Hamilton contract adoption, actual browser evidence, independent private holdouts and corroborated multi-change scorecard acceptance remain explicit work in `program.json`. The native scorecard mechanism exists; trusted collection against real changes still depends on bootstrap and does not complete M5.
 

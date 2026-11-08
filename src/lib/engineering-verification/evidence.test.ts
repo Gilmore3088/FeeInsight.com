@@ -67,13 +67,18 @@ describe('engineering evidence assessment', () => {
 
 describe('authenticated deployment to runtime observation', () => {
   afterEach(() => sourceFetch.mockReset());
-  async function collected({ wrongDeployment = false, wrongMerge = false, environment = 'production', githubObservedAt = now, runtimeObservedAt = now } = {}) {
+  type CollectionOptions = {
+    wrongDeployment?: boolean; wrongMerge?: boolean; newerWrongDeployment?: boolean;
+    environment?: string; deploymentEnvironment?: string; statusEnvironment?: string; runtimeEnvironment?: string;
+    githubObservedAt?: Date; runtimeObservedAt?: Date;
+  };
+  async function collected({ wrongDeployment = false, wrongMerge = false, environment = 'production', deploymentEnvironment = environment, statusEnvironment = deploymentEnvironment, runtimeEnvironment = environment, newerWrongDeployment = false, githubObservedAt = now, runtimeObservedAt = now }: CollectionOptions = {}) {
     const deployedSha = 'd'.repeat(40);
     const observationPolicy = { ...policy, deployedSha, environment };
     const data = runtime();
-    data.atlas.forEach(row => { row.execution.deployedSha = deployedSha; row.execution.environment = environment; });
-    data.deming.forEach(row => { row.execution.deployedSha = deployedSha; row.execution.environment = environment; });
-    data.bayes.forEach(row => { row.execution.deployedSha = deployedSha; row.execution.environment = environment; });
+    data.atlas.forEach(row => { row.execution.deployedSha = deployedSha; row.execution.environment = runtimeEnvironment; });
+    data.deming.forEach(row => { row.execution.deployedSha = deployedSha; row.execution.environment = runtimeEnvironment; });
+    data.bayes.forEach(row => { row.execution.deployedSha = deployedSha; row.execution.environment = runtimeEnvironment; });
     const since = '2026-11-02T00:00:00Z', until = now.toISOString();
     const request = { deployedSha, since, until, changeKeys: policy.replayChangeKeys };
     const values: Record<string, unknown> = {
@@ -81,8 +86,9 @@ describe('authenticated deployment to runtime observation', () => {
       '/pulls/1': { number: 1, head: { sha }, user: { login: 'builder', id: 1 }, state: 'closed', merged: true, merge_commit_sha: wrongMerge ? 'e'.repeat(40) : deployedSha, merged_at: '2026-11-01T00:00:00Z' },
       '/pulls/1/files': [], '/pulls/1/reviews': [], '/issues/1/comments': [],
       [`/commits/${sha}/check-runs`]: { check_runs: [] }, '/actions/workflows/test.yml': { id: 7, path: '.github/workflows/test.yml' }, '/actions/workflows/7/runs': { workflow_runs: [] },
-      '/deployments': [{ id: 10, sha: wrongDeployment ? 'e'.repeat(40) : deployedSha, environment, created_at: '2026-11-01T23:00:00Z' }],
-      '/deployments/10/statuses': [{ id: 11, state: 'success', environment, created_at: since }],
+      '/deployments': [{ id: 10, sha: wrongDeployment ? 'e'.repeat(40) : deployedSha, environment: deploymentEnvironment, created_at: '2026-11-01T23:00:00Z' }, ...(newerWrongDeployment ? [{ id: 12, sha: 'e'.repeat(40), environment: 'Production', created_at: '2026-11-08T00:00:00Z' }] : [])],
+      '/deployments/10/statuses': [{ id: 11, state: 'success', environment: statusEnvironment, created_at: since }],
+      '/deployments/12/statuses': [{ id: 13, state: 'success', environment: 'Production', created_at: '2026-11-08T00:00:00Z' }],
     };
     sourceFetch.mockImplementation(async (input: string | URL | Request) => {
       const url = new URL(input instanceof Request ? input.url : String(input));
@@ -100,6 +106,42 @@ describe('authenticated deployment to runtime observation', () => {
     expect(assessOperationalEvidence(evidence, observationPolicy, { github, now }).status).toBe('PRODUCTION_VERIFIED');
     expect(assessOperationalEvidence(JSON.parse(JSON.stringify(evidence)), observationPolicy, { github, now }).status).toBe('PRODUCTION_UNVERIFIED');
     expect(JSON.stringify(evidence)).not.toContain('session=private');
+  });
+  it('binds native GitHub Production labels to runtime production while retaining both raw labels', async () => {
+    const { github, evidence, observationPolicy } = await collected({ deploymentEnvironment: 'Production' });
+    const result = assessOperationalEvidence(evidence, observationPolicy, { github, now });
+    expect(result.status).toBe('PRODUCTION_VERIFIED');
+    expect(result.deployment).toMatchObject({ environment: 'production', rawEnvironment: 'Production', rawStatusEnvironment: 'Production' });
+    const imported = assessOperationalEvidence(evidence, observationPolicy, { github: JSON.parse(JSON.stringify(github)), now });
+    expect(imported.status).toBe('PRODUCTION_UNVERIFIED');
+    expect(imported.deployment).toBeNull();
+  });
+  it.each([
+    { deploymentEnvironment: 'Production', statusEnvironment: 'production' },
+    { deploymentEnvironment: 'production', statusEnvironment: 'Production' },
+  ])('accepts only the two exact native deployment/status spellings: %j', async options => {
+    const { github, evidence, observationPolicy } = await collected(options);
+    expect(assessOperationalEvidence(evidence, observationPolicy, { github, now }).status).toBe('PRODUCTION_VERIFIED');
+  });
+  it.each([
+    { deploymentEnvironment: 'preview' },
+    { deploymentEnvironment: 'Production', statusEnvironment: 'preview' },
+    { deploymentEnvironment: 'PRODUCTION' }, { deploymentEnvironment: 'prod' },
+    { deploymentEnvironment: ' production' }, { deploymentEnvironment: 'Production ' },
+    { deploymentEnvironment: 'Production', statusEnvironment: 'PRODUCTION' },
+    { deploymentEnvironment: 'Production', statusEnvironment: 'prod' },
+    { deploymentEnvironment: 'Production', statusEnvironment: 'production ' },
+    { deploymentEnvironment: 'Production', runtimeEnvironment: 'Production' },
+    { environment: 'Production', deploymentEnvironment: 'Production' },
+  ])('never broadens deployment aliases, runtime execution or policy environment identity: %j', async options => {
+    const { github, evidence, observationPolicy } = await collected(options);
+    expect(assessOperationalEvidence(evidence, observationPolicy, { github, now }).status).toBe('PRODUCTION_UNVERIFIED');
+  });
+  it('does not hide a newer native Production deployment behind an older lowercase production record', async () => {
+    const { github, evidence, observationPolicy } = await collected({ newerWrongDeployment: true });
+    const result = assessOperationalEvidence(evidence, observationPolicy, { github, now });
+    expect(result.status).toBe('PRODUCTION_UNVERIFIED');
+    expect(result.deployment).toBeNull();
   });
   it.each([{ wrongDeployment: true }, { wrongMerge: true }])('rejects a different current production deployment or an unrelated merge SHA', async options => {
     const { github, evidence, observationPolicy } = await collected(options);

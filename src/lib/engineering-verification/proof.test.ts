@@ -154,6 +154,46 @@ describe('trusted GitHub proof artifact collection', () => {
       expect(result.validation.problems.filter(problem => !problem.includes('provenance')).length).toBeGreaterThan(0);
     }
   });
+  it.each([71_000, 88_000, 6 * 60 * 60 * 1000, 89 * 86400000])('corroborates run-retained artifacts uploaded %i ms after workflow creation', async delay => {
+    const f = fixture();
+    f.run.created_at = new Date(Date.parse(f.artifact().created_at) - delay).toISOString();
+    const expires_at = new Date(Date.parse(f.run.created_at) + 90 * 86400000 + 1000).toISOString();
+    f.overrides['/actions/artifacts/88'] = { ...f.artifact(), expires_at };
+    const result = await collectProofEvidence({ github: await githubSnapshot(), ...f, token: 'secret', now: NOW });
+    expect(result.receipt?.head_sha).toBe(HEAD);
+    expect(result.validation.problems).toEqual(['GitHub snapshot provenance is not authenticated in this process']);
+    // Native API fixtures exercise corroboration, but cannot create live provenance.
+    expect(isCollectedProof(result)).toBe(false);
+  });
+  it('rejects shortened retention, missing run epochs and an expired original run even after a fresh upload', async () => {
+    const cases = [
+      (f: ReturnType<typeof fixture>) => { f.overrides['/actions/artifacts/88'] = { ...f.artifact(), expires_at: new Date(Date.parse(f.run.created_at) + 90 * 86400000 - 1000).toISOString() }; },
+      (f: ReturnType<typeof fixture>) => { f.run.created_at = ''; },
+      (f: ReturnType<typeof fixture>) => { f.run.created_at = 'not-a-date'; },
+      (f: ReturnType<typeof fixture>) => { f.run.created_at = '2026-11-06T12:00:01Z'; },
+      (f: ReturnType<typeof fixture>) => { f.run.created_at = new Date(NOW.getTime() - 90 * 86400000).toISOString(); },
+      (f: ReturnType<typeof fixture>) => { f.overrides['/actions/runs/101/attempts/2'] = { ...f.run, created_at: '2026-11-06T10:00:00Z' }; },
+    ];
+    for (const mutate of cases) {
+      const f = fixture(); mutate(f);
+      const result = await collectProofEvidence({ github: await githubSnapshot(), ...f, token: 'secret', now: NOW });
+      expect(result.receipt).toBeNull();
+      expect(result.validation.problems.filter(problem => !problem.includes('provenance')).length).toBeGreaterThan(0);
+    }
+  });
+  it('reassesses the original run age and the exact API expiry without extending either boundary', () => {
+    const f = fixture();
+    const runExpiry = Date.parse(f.run.created_at) + 90 * 86400000;
+    const snapshot = (expiresAt: number, now: number) => ({ run: f.run, artifact: { ...f.artifact(), expires_at: new Date(expiresAt).toISOString() },
+      observedAt: new Date(now).toISOString(), validation: { status: 'PASSED', problems: [] } });
+    const expired = (expiresAt: number, now: number) => assessCollectedProof(snapshot(expiresAt, now), { now: new Date(now) }).blockers.some(problem => problem.includes('expired'));
+    expect(expired(runExpiry + 86400000, runExpiry - 1)).toBe(false);
+    expect(expired(runExpiry + 86400000, runExpiry)).toBe(true);
+    expect(expired(runExpiry - 1000, runExpiry - 1001)).toBe(false);
+    expect(expired(runExpiry - 1000, runExpiry - 1000)).toBe(true);
+    // A fresh artifact cannot erase a missing original-run epoch.
+    expect(assessCollectedProof({ ...snapshot(runExpiry, NOW.getTime()), run: {} }, { now: NOW }).blockers.join(' ')).toContain('expired');
+  });
   it('rejects wrong job identity, receipt hashes, run attempts and changed current head', async () => {
     const cases = [
       (f: ReturnType<typeof fixture>) => { f.overrides['/actions/runs/101/attempts/2/jobs'] = { jobs: [{ name: 'app-tests', status: 'completed', conclusion: 'success' }] }; },
