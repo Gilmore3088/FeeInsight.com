@@ -142,7 +142,8 @@
         "tests/e2e/hamilton/serve.mjs",
         "tests/e2e/hamilton/playwright.config.ts",
         "docs/plans/hamilton-h07-acceptance-matrix.md",
-        "src/lib/skills/manifest.ts"
+        "src/lib/skills/manifest.ts",
+        "src/lib/engineering-verification/browser-protocol.mjs"
       ],
       "tests": [
         "src/lib/engineering-verification/contract.test.ts",
@@ -151,7 +152,9 @@
         "tests/e2e/hamilton/reports-journey.pw.ts",
         "tests/e2e/hamilton/command-center-journey.pw.ts",
         "tests/e2e/hamilton/board-brief-journey.pw.ts",
-        "src/lib/skills/manifest.test.ts"
+        "src/lib/skills/manifest.test.ts",
+        "src/lib/engineering-verification/browser-protocol.test.ts",
+        "tests/e2e/hamilton/evidence.test.ts"
       ]
     },
     "workflow": {
@@ -532,7 +535,7 @@
       "activation_gates": [
         "ui-specialist-adoption"
       ],
-      "remaining_work": "The three named skills, exact-build browser capture and identity/redaction assessment exist; actual desktop/mobile journey execution, independent artifact review and broader UI pilot adoption remain pending."
+      "remaining_work": "The three named skills, strict v1 capture and opt-in registered-session CDP diagnostics exist. Expanded independently frozen browser acceptance, exact action settlement and fresh persistence witnesses, executed desktop/mobile product journeys, independent artifact review and broader UI adoption remain pending. Unseen targets remain unknown."
     },
     {
       "id": "FR-21",
@@ -977,7 +980,7 @@
     {
       "id": "ui-specialist-adoption",
       "state": "PENDING_ADOPTION",
-      "reason": "The three named specialist skills and browser evidence mechanisms exist; execute frozen desktop/mobile Hamilton/UI journeys and independently review their exact-build artifacts before adoption acceptance."
+      "reason": "Passive registered-session protocol capture and strict v1 diagnostics do not establish action settlement, persistence or unseen traffic. Freeze expanded desktop/mobile Hamilton contracts, execute exact-build product journeys with independent witnesses and review actual artifacts before adoption acceptance."
     },
     {
       "id": "holdout-and-scorecard-adoption",

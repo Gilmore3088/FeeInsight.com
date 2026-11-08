@@ -1,9 +1,14 @@
 /** Actual journey capture, including successful renders. No request bodies or credentials are retained. */
-import { test as base, expect, type Page, type Request, type TestInfo } from 'playwright/test';
+import { test as base, expect, type Page, type Request, type TestInfo, type CDPSession } from 'playwright/test';
 import { readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { BROWSER_DIAGNOSTIC_POLICY, assessBrowserCapture, classifyBrowserRequestFailure, safeBrowserUrl, sanitizeBrowserText } from '../../../src/lib/engineering-verification/browser-evidence.mjs';
+
+import { createBrowserProtocolCapture, attachBrowserProtocolObserver } from '../../../src/lib/engineering-verification/browser-protocol.mjs';
+
+// Explicit public route templates only. Unmapped URLs retain no path, query or fragment.
+const PROTOCOL_ROUTES = ['/', '/login', '/account', '/pro', '/pro/analyze', '/pro/reports', '/pro/reports/[id]', '/pro/simulate', '/pro/monitor', '/pro/settings'];
 
 export { expect };
 export type { Page } from 'playwright/test';
@@ -19,6 +24,20 @@ export async function withJourneyCapture(page: Page, info: TestInfo, run: () => 
     let navigationResponse: { url: string; status: number } | null = null;
     const fixtureOrigin = new URL(String(info.project.use.baseURL)).origin;
     const httpErrors: Array<{ method: string; url: string; status: number }> = [];
+    const protocolRequested = process.env.ENGINEERING_PROTOCOL_CAPTURE === '1';
+    let protocol: ReturnType<typeof createBrowserProtocolCapture> | null = null;
+    let protocolObserver: Awaited<ReturnType<typeof attachBrowserProtocolObserver>> | null = null;
+    let protocolSession: CDPSession | null = null;
+    let protocolSetupFailed = false;
+    let protocolAttachmentFailed = false;
+    if (protocolRequested) {
+      try {
+        protocolSession = await page.context().newCDPSession(page);
+        const version = await protocolSession.send('Browser.getVersion');
+        protocol = createBrowserProtocolCapture({ fixtureOrigin, routeTemplates: PROTOCOL_ROUTES, protocolVersion: version.protocolVersion });
+        protocolObserver = await attachBrowserProtocolObserver(protocolSession, protocol, { sessionKey: protocolSession, contextKey: page.context() });
+      } catch { protocolSetupFailed = true; } // Fixed code only; protocol exceptions can contain private URLs.
+    }
     let truncated = false;
     let runFailed = false;
     const push = <T>(rows: T[], row: T) => { if (rows.length < 500) rows.push(row); else truncated = true; };
@@ -78,8 +97,21 @@ export async function withJourneyCapture(page: Page, info: TestInfo, run: () => 
       test: { id: info.testId, title: info.title, status: runFailed ? 'failed' : info.status, retry: info.retry },
       viewport: page.viewportSize(), browser: page.context().browser()?.version() ?? null,
       url: safeBrowserUrl(page.url()), screenshot, truncated, consoleErrors, pageErrors, failedRequests, httpErrors };
+    if (protocolRequested) {
+      let cleanupFailed = false;
+      try { await protocolObserver?.stop(); } catch { cleanupFailed = true; }
+      const protocolCapture = protocol?.finish() ?? null;
+      try { await protocolSession?.detach(); } catch { cleanupFailed = true; }
+      try { await info.attach(name + '-browser-protocol', { body: JSON.stringify({
+        schemaVersion: 1, provenance: 'LOCAL_BROWSER_PROTOCOL_UNTRUSTED', identity,
+        status: protocolSetupFailed || cleanupFailed || !protocolCapture ? 'BLOCKED' : protocolCapture.status,
+        setupFailed: protocolSetupFailed, cleanupFailed, acceptance: 'NOT_ASSESSED',
+        completenessScope: 'registered_cdp_sessions', unobservedTargets: 'unknown', capture: protocolCapture,
+      }, null, 2), contentType: 'application/json' }); } catch { protocolAttachmentFailed = true; }
+    }
     const assessment = assessBrowserCapture(capture);
-    await info.attach(name + '-browser-evidence', { body: JSON.stringify({ ...capture, assessment }, null, 2), contentType: 'application/json' });
+    await info.attach(name + '-browser-evidence', { body: JSON.stringify({ ...capture, assessment, ...(protocolRequested ? { protocolAttachmentFailed } : {}) }, null, 2), contentType: 'application/json' });
+    if (protocolAttachmentFailed && !runFailed && info.status === 'passed') throw new Error('Browser protocol evidence attachment failed');
     if (process.env.ENGINEERING_VERIFICATION === '1' && assessment.status === 'BLOCKED' && !runFailed && info.status === 'passed') throw new Error('Browser evidence blocked: ' + assessment.blockers.join('; '));
     }
 }
