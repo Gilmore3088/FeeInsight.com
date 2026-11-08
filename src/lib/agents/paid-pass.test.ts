@@ -6,7 +6,20 @@ vi.mock("@/lib/ai-provider-usage", async (importOriginal) => ({
   trackAnthropicRequest: (context: unknown, request: () => PromiseLike<unknown>) => trackAnthropicRequest(context, request),
 }));
 
+const rawTimeouts: number[] = [];
+vi.mock("@/lib/ai-response-budget", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/ai-response-budget")>();
+  return {
+    ...actual,
+    withRawProviderResponseOperation: (timeoutMs: number, ...rest: unknown[]) => {
+      rawTimeouts.push(timeoutMs);
+      return (actual.withRawProviderResponseOperation as (...args: unknown[]) => unknown)(timeoutMs, ...rest);
+    },
+  };
+});
+
 import { ProviderCircuitOpenError } from "@/lib/ai-provider-usage";
+import { RAW_PROVIDER_TIMEOUT_MS } from "@/lib/ai-response-budget";
 import { paidCallCostMicrousd, paidModelCall, paidResponseJson, PROVIDER_REFUSAL_PATTERN, providerRefusalError, providerRefusalSql, WEB_SEARCH_COST_MICROUSD, webSearchSettings } from "./paid-pass";
 
 const message = (text: string, usage: Record<string, unknown> = {}) =>
@@ -41,6 +54,14 @@ describe("paid pass", () => {
     );
     expect(create).toHaveBeenCalledTimes(1);
     expect(result.costMicrousd).toBe(1000 * 2 + 100 * 10);
+  });
+
+  it("bounds the whole call by the raw default, or by a step's tighter deadline", async () => {
+    rawTimeouts.length = 0;
+    const params = { model: "claude-sonnet-5-5", max_tokens: 10, messages: [{ role: "user" as const, content: "hi" }] };
+    await paidModelCall({ agent: "knox", operation: "paid_extract", runId: 7, params, create: vi.fn(async () => message("{}")) });
+    await paidModelCall({ agent: "knox", operation: "knox_second_read", runId: 7, params, create: vi.fn(async () => message("{}")), timeoutMs: 80_000 });
+    expect(rawTimeouts).toEqual([RAW_PROVIDER_TIMEOUT_MS, 80_000]);
   });
 
   it("logs what a call's web search allowed, so a setting's cost can be compared (#1035)", async () => {
