@@ -325,6 +325,8 @@ Every finding in `findings/`, grouped by where the problem was, newest first in 
 
 ### Provider calls and paid reads
 
+- 2026-11-06 — Put transcription/extraction instructions in the trusted system channel and treat source PDF/web instructions as data; frozen injection fixtures check the actual request envelopes without paid calls. — [finding](findings/2026-11-06-source-document-instruction-boundary.md) — Guard: `src/lib/engineering-verification/source-injection.test.ts`; Agent lessons: Knox and Rosetta source boundaries.
+
 - 2026-11-07 — A fee Knox never reads is found only by reading the text a second, independent way: a blind model read, traced line by line with `checkFeeAgainstSource`, files each miss as a `never_read` lesson row (KNOX_SECOND_READER_LIVE, off). — [finding](findings/2026-11-07-blind-second-reader.md) — Guard: `src/lib/agents/knox/second-reader.test.ts`
 - 2026-10-20 — A refusal that describes the account (billing, quota) must never be recorded as a fact about the item. — [finding](findings/2026-10-20-billing-refusal-settled-paid-items.md) — Agent lesson: rosetta/issue-1056-billing-refusal-is-not-the-scan
 - 2026-10-19 — Rosetta paid transcription response and cost contract. — [finding](findings/2026-10-19-rosetta-paid-response-policy.md) — Guard: `src/lib/agents/rosetta/paid-read.integration.test.ts`; 2 more Guard line(s)
@@ -669,6 +671,15 @@ Every finding in `findings/`, grouped by where the problem was, newest first in 
 - 2026-10-09 — An outgoing side effect needs its own record in Postgres; don't rely on a provider's read API that needs broader credentials than sending. — [finding](findings/2026-10-09-no-sent-email-log.md) — Guard: `src/lib/email/resend.test.ts` (+1 more)
 
 ### CI, tests, tooling and PR workflow
+
+- 2026-11-07 — A selected DB suite can still skip cases; align both database clients and require its actual assertion inventory before accepting a green job. — [finding](findings/2026-11-07-required-database-test-execution.md) — Guards: `src/lib/engineering-verification/required-database-tests.test.ts`, `src/lib/engineering-verification/workflows.test.ts`.
+- 2026-11-07 — Serial tests still inherit fixture writes; restore research's baseline and confine temporary database suites to their own lookup path before asserting literal fees or lineage counts. — [finding](findings/2026-11-07-hamilton-journey-fixture-isolation.md) — Guards: `tests/e2e/hamilton/research-journey.pw.ts`, `src/lib/agents/atlas/vault-retention.db.test.ts`.
+- 2026-11-07 — Budget the complete growing lessons audit separately from short unit cases; keep the real command and exit-zero assertion. — [finding](findings/2026-11-07-lessons-audit-test-budget.md) — Guard: `scripts/ci-guards.test.ts`.
+
+- 2026-11-07 — Recheck the current CI run and attempt at the same commit; an earlier green job cannot survive a rerun or a newer selected workflow run. — [finding](findings/2026-11-07-verification-ci-attempt-freshness.md) — Guard: `src/lib/engineering-verification/github.test.ts`.
+- 2026-11-07 — Route the actual password, session, API access and workspace-authority owners to R3, including server-action entry points outside the auth directory. — [finding](findings/2026-11-07-verification-access-control-routing.md) — Guard: `src/lib/engineering-verification/contract.test.ts`.
+
+- 2026-11-06 — A schema-only fixture snapshot can flatten partition trees and omit migration history; restore only known empty structures transactionally, then replay unchanged SQL instead of inventing applied history. — [finding](findings/2026-11-06-hamilton-fixture-partition-restoration.md) — Guard: `tests/e2e/hamilton/schema-catch-up.test.ts`
 
 - 2026-11-02 — Never commit a table the code can compute: the committed switch inventory made every switch PR conflict and main go red on stale counts, so `npm run switch-inventory` prints it, the test checks its invariants against the code, and only hand-kept facts are committed, one line per switch. — [finding](findings/2026-11-02-switch-inventory-doc-conflicts.md) — Guard: `src/lib/agents/deming/switch-inventory.test.ts`; Agent lesson: deming/derived-tables-are-printed-not-committed
 - 2026-11-01 — Never hand-keep a total in a file parallel PRs append to: LESSONS.md's counts made PRs conflict and drifted, so the guard computes them and each finding has exactly one line. — [finding](findings/2026-11-01-lessons-index-counts-conflict.md) — Guard: `scripts/ci-guards.sh lessons-index-kill`

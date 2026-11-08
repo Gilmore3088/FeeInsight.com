@@ -1,0 +1,106 @@
+{
+  "schema_version": "1.1",
+  "contract_id": "EV-KNOX-2285",
+  "issue": "#2285",
+  "risk_tier": "R2",
+  "base_sha": "eee142d7c8289aad52f977e489e6b6d00ef2a07b",
+  "execution_files": [
+    {
+      "path": "src/lib/engineering-verification/__fixtures__/knox-2285.json",
+      "sha256": "457232128d20222e6826d415320c01ab723a2b0d83f578f996ffa660ce3c5225"
+    },
+    {
+      "path": "src/lib/engineering-verification/__fixtures__/policy-1048.json",
+      "sha256": "30d208d57556c25fd55fe02f9f3b780afe999c07425078bf4cc6e150a87ed4b1"
+    },
+    {
+      "path": "src/lib/engineering-verification/child.mjs",
+      "sha256": "768b1c10b5d6d55190118a6df403476f3da710ce5a4a40ce72f5d4192b65f7b2"
+    },
+    {
+      "path": "src/lib/engineering-verification/contract.mjs",
+      "sha256": "340b036f8befd116e3e075f4deefc85d2258a4cb28ddaf6a0c14011b7722d1e1"
+    },
+    {
+      "path": "src/lib/engineering-verification/loader.mjs",
+      "sha256": "93a9c271089e47092dff1b168cc60f79c5b39f39b048d64b0f9d54d9c1cb0ba5"
+    },
+    {
+      "path": "src/lib/engineering-verification/pilot.mjs",
+      "sha256": "9d0dda8b99705c31b0fc8c81160ad11cf26d7b47be9b25929df4f4563a7267d3"
+    },
+    {
+      "path": "src/lib/engineering-verification/policy-pilot.mjs",
+      "sha256": "e91c76facc740efda15ea99f18716ce6108d889d20df7e2d05ac7d093b1d19fd"
+    },
+    {
+      "path": "src/lib/engineering-verification/runner.mjs",
+      "sha256": "602b58d4fdfecf34aa78b4c8553e2396a5d3ec95c7a0336228b5370f755ba552"
+    },
+    {
+      "path": "src/lib/engineering-verification/runtime.json",
+      "sha256": "10d1b652ad69c2d5ebedcdd33b85914f92c24ebbf428d2ad0aaf8ee0d0f160a2"
+    }
+  ],
+  "scope": [
+    "src/lib/agents/knox/**"
+  ],
+  "required_skills": [
+    "tdd",
+    "adversarial-document-testing",
+    "error-to-test"
+  ],
+  "requirements": [
+    {
+      "id": "KNOX-2285-01",
+      "behavior": "Under an explicit business or commercial wire-fee heading, an incoming wire cannot take the outgoing amount. Declined restricted lines remain held with their own direction, amount and source audience; never publish the synthetic source as a consumer fee.",
+      "authority": "GitHub issue #2285, reproducible historical synthetic failure on baseline eee142d7; not an independent current-bank accuracy claim",
+      "test_id": "knox-2285-business-heading-own-price",
+      "test_path": "src/lib/engineering-verification/pilot.test.ts",
+      "fixture_path": "src/lib/engineering-verification/__fixtures__/knox-2285.json",
+      "adapter_path": "src/lib/engineering-verification/pilot.mjs",
+      "fixture_sha256": "457232128d20222e6826d415320c01ab723a2b0d83f578f996ffa660ce3c5225",
+      "test_sha256": "fdb447e62e0e975ee6004f3699bb7fa801a88dc20642c17b25da0387c6dd1d18",
+      "adapter_sha256": "9d0dda8b99705c31b0fc8c81160ad11cf26d7b47be9b25929df4f4563a7267d3",
+      "baseline_expectation": "FAIL",
+      "baseline_failure_assertion_ids": [
+        "business-own-price",
+        "commercial-own-price"
+      ],
+      "assertion_ids": [
+        "business-own-price",
+        "commercial-own-price",
+        "business-audience",
+        "commercial-audience"
+      ],
+      "failure_signature": "business incoming wire must retain its own $5 price and held eligibility"
+    },
+    {
+      "id": "KNOX-2285-02",
+      "behavior": "Adjacent headings must not leak commercial eligibility across a boundary, and unqualified restricted sections must not invent an audience.",
+      "authority": "GitHub issue #2285 and existing wire-clause-prices.test.ts negative controls; synthetic fixture",
+      "test_id": "knox-2285-restricted-heading-no-leak",
+      "test_path": "src/lib/engineering-verification/pilot.test.ts",
+      "fixture_path": "src/lib/engineering-verification/__fixtures__/knox-2285.json",
+      "adapter_path": "src/lib/engineering-verification/pilot.mjs",
+      "fixture_sha256": "457232128d20222e6826d415320c01ab723a2b0d83f578f996ffa660ce3c5225",
+      "test_sha256": "fdb447e62e0e975ee6004f3699bb7fa801a88dc20642c17b25da0387c6dd1d18",
+      "adapter_sha256": "9d0dda8b99705c31b0fc8c81160ad11cf26d7b47be9b25929df4f4563a7267d3",
+      "baseline_expectation": "FAIL",
+      "baseline_failure_assertion_ids": [
+        "heading-reset"
+      ],
+      "assertion_ids": [
+        "youth-no-audience",
+        "bank-name-no-audience",
+        "mixed-no-audience",
+        "heading-reset",
+        "unrestricted-pair",
+        "injection-data-only"
+      ],
+      "failure_signature": "business audience must not leak past another heading"
+    }
+  ],
+  "production_boundary": "NO_PROD_MUTATION",
+  "human_approval_required": true
+}

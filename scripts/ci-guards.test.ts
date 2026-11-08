@@ -415,7 +415,7 @@ describe("lessons-index-kill", () => {
   it("passes the repo's own LESSONS.md", () => {
     const out = spawnSync("bash", [GUARD, "lessons-index-kill"], { encoding: "utf8", env });
     expect(out.status, `${out.stdout}${out.stderr}`).toBe(0);
-  });
+  }, 30_000); // This real-corpus audit grows with the repository; keep its exit-status assertion.
 
   // Two PRs adding a line at the top of the same theme insert at one spot; union keeps both.
   it("merges the repo's LESSONS.md with git's union driver", () => {

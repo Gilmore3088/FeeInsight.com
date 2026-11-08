@@ -12,6 +12,7 @@ Atlas is the orchestration and operator-visibility agent. Atlas-specific code ma
 ## Required Behavior
 
 - Every operator action needs a durable run/event receipt.
+- The step claim records `step.execution` from the executor's own valid Vercel SHA and environment before work. Operational engineering verification joins that identity to the actual finished step; historical steps without it remain unverified, never inferred from a request or timestamp.
 - Every blocked state needs a concrete next safe action.
 - Scheduled advancement must remain deterministic and idempotent.
 - A state lane with no finished step for 15 minutes gets a fresh tick ahead of maintenance,

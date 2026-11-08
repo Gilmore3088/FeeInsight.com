@@ -1,0 +1,36 @@
+{
+  "id": "ux-ui-auditor",
+  "version": 1,
+  "maintainer": "atlas",
+  "owning_agent": "hamilton",
+  "inputs": [
+    "scoped journey and acceptance IDs",
+    "exact commit and desktop/phone browser artifacts"
+  ],
+  "outputs": [
+    "reproducible usability/accessibility findings",
+    "exact-commit verdict with untested steps"
+  ],
+  "data_access": [],
+  "external_endpoints": [],
+  "provider_inference": false,
+  "budget": "artifact and local browser review; no paid calls",
+  "triggering_workflows": [
+    "UI flow review or Hamilton journey change"
+  ],
+  "evaluation_suite": [
+    "tests/e2e/hamilton/command-center-journey.pw.ts",
+    "tests/e2e/hamilton/reports-journey.pw.ts"
+  ],
+  "failure_behavior": "Missing screenshots or unexercised steps remain untested; unresolved blockers prevent approval.",
+  "approval_requirements": "Advisory review does not satisfy distinct GitHub identity or owner authorization.",
+  "dependencies": [
+    {
+      "path": "docs/plans/hamilton-h07-acceptance-matrix.md"
+    }
+  ],
+  "abstain_when": [
+    "the rendered journey or exact candidate identity is unavailable"
+  ],
+  "last_validated": "2026-11-06"
+}

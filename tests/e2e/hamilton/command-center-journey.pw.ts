@@ -11,9 +11,9 @@
  * confirmed change. HAMILTON_SCREENS_DIR=<dir> also saves desktop and phone screenshots.
  */
 import path from "node:path";
-import { expect, test, type Page } from "playwright/test";
+import { expect, test, type Page } from "./evidence";
 import { FIXTURE_USERS, HOME, PEERS, connectFixtureDb, type FixtureDb } from "./fixtures";
-import { signIn } from "./helpers";
+import { navigate, signIn } from "./helpers";
 
 /** Screenshots never show the shared fixture home's name, which echoes a real credit union's. */
 const HOME_NAME = "Lakeshore Test Credit Union";
@@ -106,7 +106,7 @@ test.describe("command center (#1891)", () => {
     test(`linked account lands on the command center at ${width}`, async ({ page }) => {
       await page.setViewportSize({ width, height: width > 500 ? 900 : 844 });
       await signIn(page, FIXTURE_USERS.pro.email, "/pro/hamilton");
-      await page.goto("/pro/hamilton");
+      await navigate(page, "/pro/hamilton");
       await expect(page.getByRole("heading", { name: HOME_NAME, level: 1 })).toBeVisible();
       // The dashboard (Hamilton redesign): four KPI cards drive the trend chart.
       const kpis = page.getByRole("region", { name: "Key figures. Choose one to chart it." });
@@ -136,7 +136,7 @@ test.describe("command center (#1891)", () => {
   test("an account with no institution keeps a clear way to choose one", async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await signIn(page, FIXTURE_USERS.proNoHome.email, "/pro/hamilton");
-    await page.goto("/pro/hamilton");
+    await navigate(page, "/pro/hamilton");
     const choose = page.getByRole("link", { name: "Choose your institution" });
     await expect(choose).toBeVisible();
     await expect(choose).toHaveAttribute("href", "/pro/settings");

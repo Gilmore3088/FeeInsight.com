@@ -1,0 +1,86 @@
+name: engineering-verification-proof
+run-name: "Engineering proof PR #${{ inputs.pr_number }} contract ${{ inputs.contract }}"
+on:
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: "PR whose exact head is evaluated; merged PRs allowed for bootstrap"
+        required: true
+        type: string
+      contract:
+        description: "Approved frozen contract"
+        required: true
+        type: choice
+        options: ["2285", "1048"]
+permissions:
+  contents: read
+  pull-requests: read
+  actions: read
+  checks: read
+concurrency:
+  group: engineering-proof-${{ inputs.pr_number }}-${{ inputs.contract }}
+  cancel-in-progress: false
+jobs:
+  historical-proof:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Resolve immutable PR and reviewed contract identities
+        id: prepare
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+          CONTRACT_NUMBER: ${{ inputs.contract }}
+        run: node src/lib/engineering-verification/cli.mjs prepare --pr "$PR_NUMBER" --contract "$CONTRACT_NUMBER" --output test-results/engineering-verification
+      - name: Materialize immutable source commits with an ephemeral read credential
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_SHA: ${{ steps.prepare.outputs.head_sha }}
+          BASELINE_SHA: ${{ steps.prepare.outputs.base_sha }}
+        run: |
+          verification_askpass="$(mktemp "$RUNNER_TEMP/engineering-git-askpass.XXXXXX")"
+          trap 'rm -f "$verification_askpass"' EXIT
+          cat > "$verification_askpass" <<'SH'
+          #!/bin/sh
+          case "$1" in
+            *Username*) printf '%s\n' x-access-token ;;
+            *Password*) printf '%s\n' "$GH_TOKEN" ;;
+          esac
+          SH
+          chmod 700 "$verification_askpass"
+          GIT_ASKPASS="$verification_askpass" GIT_TERMINAL_PROMPT=0 git -c credential.helper= fetch --no-tags origin "$TARGET_SHA" "$BASELINE_SHA"
+      - name: Pull the approved immutable runtime
+        run: |
+          image=$(node -e "const r=JSON.parse(require('node:fs').readFileSync('src/lib/engineering-verification/runtime.json','utf8')); if(!/^node@sha256:[a-f0-9]{64}$/.test(r.image))throw Error('Unapproved runtime'); process.stdout.write(r.image)")
+          docker pull "$image"
+      - name: Evaluate source values in credentialless containers
+        env:
+          TARGET_SHA: ${{ steps.prepare.outputs.head_sha }}
+          CONTRACT_NUMBER: ${{ inputs.contract }}
+        run: node src/lib/engineering-verification/runner.mjs --head "$TARGET_SHA" --contract "$CONTRACT_NUMBER" --output test-results/engineering-verification/proof
+      - name: Publish proof summary
+        if: always()
+        run: |
+          if [ -f test-results/engineering-verification/proof/summary.md ]; then
+            cat test-results/engineering-verification/proof/summary.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "BLOCKED: no behavioral proof receipt was produced." >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always() && steps.prepare.outcome == 'success'
+        with:
+          name: engineering-verification-${{ inputs.pr_number }}-${{ steps.prepare.outputs.head_sha }}-${{ inputs.contract }}-attempt-${{ github.run_attempt }}
+          path: test-results/engineering-verification/proof/
+          if-no-files-found: error
+          retention-days: 90

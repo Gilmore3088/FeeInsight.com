@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "enforcement_enabled": false,
+  "owner_logins": [
+    "Gilmore3088"
+  ],
+  "allowed_reviewers": [],
+  "required_checks": [
+    "app-tests"
+  ],
+  "artifact_retention_days": 90,
+  "operational_default_days": 7,
+  "security_boundary": "Activation and GitHub protection changes require explicit owner authorization; this file does not grant it."
+}

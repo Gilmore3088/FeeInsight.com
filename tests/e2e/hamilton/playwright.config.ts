@@ -12,6 +12,7 @@ import path from "node:path";
 import { defineConfig } from "playwright/test";
 
 const port = Number(process.env.HAMILTON_E2E_PORT ?? 3197);
+const verification = process.env.ENGINEERING_VERIFICATION === "1";
 const root = path.resolve(__dirname, "../../..");
 
 /** The newest pre-installed Chromium under PLAYWRIGHT_BROWSERS_PATH, when Playwright's own revision is absent. */
@@ -51,7 +52,7 @@ export default defineConfig({
     command: "node tests/e2e/hamilton/serve.mjs",
     cwd: root,
     url: `http://localhost:${port}/login`,
-    reuseExistingServer: true,
+    reuseExistingServer: !verification,
     timeout: 240_000,
     stdout: "ignore",
     stderr: "pipe",

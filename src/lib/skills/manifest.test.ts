@@ -68,6 +68,11 @@ describe("validateSkillManifest", () => {
     expect(validateSkillManifest(good)).toEqual([]);
   });
 
+  it("accepts the repository's actual Playwright journey file convention", () => {
+    expect(validateSkillManifest({ ...good, evaluation_suite: ["tests/e2e/hamilton/reports-journey.pw.ts"] })).toEqual([]);
+    expect(validateSkillManifest({ ...good, evaluation_suite: ["tests/e2e/hamilton/reports-journey.ts"] })).toContain("evaluation_suite[0] must be a test file");
+  });
+
   it("refuses write access, provider inference and an unknown owner", () => {
     const problems = validateSkillManifest({
       ...good,
