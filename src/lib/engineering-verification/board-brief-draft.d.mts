@@ -1,0 +1,21 @@
+export type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
+export type ComponentValues = {
+  pathnameSearch: string; statusText: string | null; alertText: string | null; alertPresent: boolean;
+  titleValue: string | null; noteValue: string | null; titleDisabled: boolean | null;
+  saveDisabled: boolean | null; downloadDisabled: boolean | null;
+  saveArgs: Json[][]; replaceArgs: Json[][]; fetchArgs: Json[][];
+  createObjectUrlArgs: Json[][]; anchorClickArgs: Json[][]; revokeArgs: Json[][];
+};
+export type ComponentObservation = { id: string; kind: 'component'; checkpoints: { name: string; values: ComponentValues }[] };
+export type PdfItem = { text: string; transform: [number, number, number, number, number, number]; width: number; height: number; fontAscent: number; fontDescent: number };
+export type PdfObservation = { id: string; kind: 'pdf'; pages: { width: number; height: number; items: PdfItem[] }[] };
+export type Observation = ComponentObservation | PdfObservation;
+export type Outcome = { requirement_id: string; test_id: string; status: 'PASSED' | 'FAILED'; assertions: { id: string; status: 'PASSED' | 'FAILED'; message?: string }[] };
+export const PILOT_ID: 'EV-HAMILTON-975-BOARD-BRIEF-V1';
+export const ADAPTER_ID: 'hamilton.board-brief.v1';
+export const FIXTURE_PATH: URL;
+export const PILOT: { readonly id: string; readonly adapter: string; readonly cases: readonly Json[]; readonly requirements: readonly Json[]; readonly requiredNative: readonly Json[] };
+export function pilotRequest(): Json;
+export function validateAdapterRequest(value: unknown): void;
+export function validateObservedValues(value: unknown): asserts value is Observation[];
+export function assessPilotValues(value: unknown): Outcome[];

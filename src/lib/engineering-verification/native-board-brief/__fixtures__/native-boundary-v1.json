@@ -1,0 +1,702 @@
+{
+  "schemaVersion": 1,
+  "kind": "PUBLIC_FINITE_SYNTHETIC_INFRASTRUCTURE_INVENTORY",
+  "status": "DESIGN_ONLY_NOT_TESTED_UNREGISTERED_BLOCKED",
+  "createdAt": "2026-11-08T14:40:08.919849+00:00",
+  "controlHeadAtDesign": "1b51ff03825316dbdb7b1706573e8d11a4cfff11",
+  "authorRole": "Independent public infrastructure expectation designer; author of earlier trusted boundary/stream tests, not a distinct authenticated GitHub reviewer.",
+  "parentDesign": {
+    "path": "test-results/engineering-verification/hamilton-proof-adapter/native-isolation-design-v1.json",
+    "sha256": "0b1c9814924218fdec0498429404c0782948ad655d49fc1f07bc6522ab0b305c",
+    "readScope": "Only that design and previously inspected committed public source; no private holdout, raw server-reference manifest or ignored historical capture reads."
+  },
+  "scope": {
+    "purpose": "Freeze literal trusted-fixture proxy/topology counterexamples before infrastructure implementation. No Next app, real browser, real Postgres, provider, production or product acceptance assertion is added by this inventory.",
+    "requiredNativeGroupsRemain": [
+      "HBB-UI-UPDATE-PDF-OWNER",
+      "HBB-UI-LATE-ACK"
+    ],
+    "requiredNativeStatus": "BLOCKED",
+    "original100ComponentPredicatesChanged": false,
+    "implementationPresent": false,
+    "testsExecuted": false,
+    "registered": false,
+    "currentCodeVerified": false
+  },
+  "fixedIdentities": {
+    "roles": [
+      "literal-orchestrator",
+      "literal-client",
+      "literal-proxy",
+      "literal-app",
+      "literal-db",
+      "literal-observer",
+      "literal-management",
+      "literal-browser-controller",
+      "literal-cdp"
+    ],
+    "origin": "http://board.fixture.invalid:8080",
+    "armId": "ARM-0001",
+    "connectionId": "CONN-0001",
+    "requestId": "REQ-0001",
+    "identityLimit": "These public literal IDs are correlation labels for controlled fixtures, not credentials, actor authorization, action authenticity or production provenance."
+  },
+  "trustRules": [
+    "All peers/controllers/observers in this inventory are separately owned trusted literal fixture programs; none loads candidate code or expected product values into an app sandbox.",
+    "Native kernel/socket/process/configuration observations and independently read bytes are required; a fixture saying PASS is never sufficient.",
+    "Private management handshake ordinals bind cross-process causal acknowledgments. Wall clocks are diagnostic only; no comparison of unrelated process counters supplies a missing edge.",
+    "Preserve Host/Origin/forwarded-origin bytes without silently repairing Next CSRF. Real Next behavior remains unknown.",
+    "Never drain/complete/replace a response merely to make EOF. Canceled and missing browser terminals remain strict v1 blockers in future product runs.",
+    "Actual network restrictions require directional policy plus inspected native configuration and live-target negative controls. --internal and network membership are insufficient."
+  ],
+  "bounds": {
+    "existingReviewedPerContainerEnvelope": {
+      "seconds": 45,
+      "memoryMiB": 768,
+      "pids": 128,
+      "cpus": 1,
+      "tmpfsMiB": 32,
+      "maxProcessOutputBytes": 2097152,
+      "image": "node@sha256:5ec23b7c622b00547753bc6ffd78085dd868a68aeb41c8e0a1418f033e13d96d"
+    },
+    "reviewedEnvelopeLimit": "These are the current static-source limits, not measured multi-container/native Next capacity. This inventory does not authorize their change or certify that the proposed topology fits them.",
+    "proposedFixtureOnlyFiniteBounds": {
+      "operationDeadlineMs": 5000,
+      "wholeCaseDeadlineMs": 45000,
+      "maxHeaderBytes": 8192,
+      "maxBodyBytesPerDirection": 65536,
+      "maxWireBytesPerDirection": 73728,
+      "maxConcurrentDataConnections": 2,
+      "maxEligibleHeldRequests": 1,
+      "maxControlOperations": 8,
+      "maxObservedEventsPerCase": 256,
+      "maxProxyQueuedBytesPerDirection": 8192,
+      "maxAllRawArtifactBytesPerCase": 2097152
+    },
+    "newBoundsReviewStatus": "Prospectively frozen proposals, NOT measured or already approved. Root/security review is required before execution. They deliberately describe only small literal fixtures; no full Next build/native capacity is invented.",
+    "overflowPolicy": "Block on any bound violation; retain actual available raw bytes with explicit incomplete/overflow flags. Finite overflow fixtures fit the larger raw artifact budget. Arbitrarily unbounded output must be stopped and cannot be described as fully retained."
+  },
+  "literalBytePolicy": {
+    "encoding": "hex fields define exact bytes; textual HTTP uses exact ASCII plus CRLF. Digests bind complete fixture bytes. No trimming/normalizing/UTF-8 replacement is permitted.",
+    "privacy": "These public synthetic request/response byte fixtures intentionally contain no auth headers, cookies, credentials or personal data, so exact raw wire retention is safe. This is NOT permission to retain real product request bodies/headers, session state or raw server-reference manifests.",
+    "framing": "Exact raw HTTP/1.1 forwarding is frozen here. Deliberate protocol translation, hop-header mutation or rechunking would need a separate prospective design; do not weaken an exact-wire comparison after output is seen."
+  },
+  "cases": [
+    {
+      "caseId": "NET01",
+      "kind": "positive",
+      "status": "NOT_TESTED",
+      "reason": "Proves the allowed browser-to-proxy-to-app path is live rather than treating absent services as isolation.",
+      "literalStimulus": {
+        "roles": [
+          "literal-client",
+          "literal-proxy",
+          "literal-app"
+        ],
+        "request": "GET /literal/ping HTTP/1.1\r\nHost: board.fixture.invalid:8080\r\nConnection: close\r\n\r\n",
+        "body": "APP-PONG-01"
+      },
+      "requiredActualObservations": [
+        "Actual client connection succeeds only through the intermediary. Literal app receives the exact request bytes once and client receives the exact frozen response bytes once.",
+        "Retain actual network/container configuration and separate per-socket send/receive ordinals; producer log text alone is insufficient."
+      ]
+    },
+    {
+      "caseId": "NET02",
+      "kind": "positive",
+      "status": "NOT_TESTED",
+      "reason": "Every private endpoint needs a live authorized control so denied probes are not explained by a stopped listener.",
+      "literalStimulus": {
+        "exchanges": [
+          {
+            "from": "literal-app",
+            "to": "literal-db",
+            "send": "APP-DB-PING-01",
+            "receive": "APP-DB-PONG-01"
+          },
+          {
+            "from": "literal-observer",
+            "to": "literal-db",
+            "send": "OBSERVER-READ-01",
+            "receive": "OBSERVER-READ-PONG-01"
+          },
+          {
+            "from": "literal-orchestrator",
+            "to": "literal-management",
+            "send": "MGMT-PING-01",
+            "receive": "MGMT-PONG-01"
+          },
+          {
+            "from": "literal-browser-controller",
+            "to": "literal-cdp",
+            "send": "CDP-PING-01",
+            "receive": "CDP-PONG-01"
+          }
+        ]
+      },
+      "requiredActualObservations": [
+        "Each exact authorized exchange succeeds before and after the corresponding denied probes.",
+        "DB and CDP endpoints in this inventory are literal TCP stand-ins. This does not prove Postgres privileges, real auth or browser/CDP compatibility."
+      ]
+    },
+    {
+      "caseId": "NET03",
+      "kind": "negative",
+      "status": "NOT_TESTED",
+      "reason": "An internal network flag alone does not establish app egress restrictions.",
+      "literalStimulus": {
+        "from": "literal-app",
+        "deniedTargets": [
+          "owned-external-canary",
+          "owned-host-gateway-canary",
+          "literal-management",
+          "literal-cdp",
+          "literal-observer"
+        ]
+      },
+      "requiredActualObservations": [
+        "Actual attempted sockets fail or reach a finite blocked deadline according to the frozen packet policy; no canary receives the literal APP-DENY-01 payload.",
+        "Every target is an owned live canary, not a real external service. Native allow/deny policy and canary inventories are retained. No secret is transmitted."
+      ]
+    },
+    {
+      "caseId": "NET04",
+      "kind": "negative",
+      "status": "NOT_TESTED",
+      "reason": "Browser/client must not bypass the intermediary or reach DB/observer/control interfaces.",
+      "literalStimulus": {
+        "from": "literal-client",
+        "deniedTargets": [
+          "literal-app-direct",
+          "literal-db",
+          "literal-observer",
+          "literal-management",
+          "literal-cdp"
+        ],
+        "payload": "CLIENT-DENY-01"
+      },
+      "requiredActualObservations": [
+        "All actual denied connection attempts have native socket outcomes; live canaries receive no payload.",
+        "NET01 still succeeds, distinguishing intended restrictions from loss of all networking."
+      ]
+    },
+    {
+      "caseId": "NET05",
+      "kind": "negative",
+      "status": "NOT_TESTED",
+      "reason": "Management arming/release and CDP must be inaccessible even though data-plane HTTP is live.",
+      "literalStimulus": {
+        "dataPlaneRequests": [
+          "POST /__control/arm",
+          "POST /__control/release",
+          "GET /json/version"
+        ],
+        "managementIds": [
+          "ARM-0001",
+          "REQ-0001"
+        ]
+      },
+      "requiredActualObservations": [
+        "Requests through the public HTTP origin cannot change private management state or retrieve CDP data.",
+        "Private controller sequence remains unchanged and authenticated/local private management positive control still succeeds. No topology control URL is served by the subject app."
+      ]
+    },
+    {
+      "caseId": "NET06",
+      "kind": "negative",
+      "status": "NOT_TESTED",
+      "reason": "Admission must inspect actual native restrictions rather than infer them from network names or declared flags.",
+      "literalStimulus": {
+        "counterfactualConfigurations": [
+          "network-internal-only-without-directional-policy",
+          "host-network",
+          "docker-socket-mount",
+          "writable-controller-mount",
+          "unexpected-network-endpoint"
+        ]
+      },
+      "requiredActualObservations": [
+        "Each forbidden actual configuration is rejected before the literal app starts.",
+        "Retain rejected native configuration and owned setup cleanup. A synthetic configuration object alone is unit coverage, not native isolation evidence."
+      ]
+    },
+    {
+      "caseId": "HTTP01",
+      "kind": "positive",
+      "status": "NOT_TESTED",
+      "reason": "Opaque invalid UTF-8 and binary bytes must survive without text decoding, compression or newline rewriting.",
+      "literalStimulus": {
+        "requestWireHex": "504f5354202f6c69746572616c2f6f70617175653f636173653d48545450303120485454502f312e310d0a486f73743a20626f6172642e666978747572652e696e76616c69643a383038300d0a4f726967696e3a20687474703a2f2f626f6172642e666978747572652e696e76616c69643a383038300d0a436f6e74656e742d547970653a206170706c69636174696f6e2f6f637465742d73747265616d0d0a436f6e74656e742d4c656e6774683a20390d0a436f6e6e656374696f6e3a20636c6f73650d0a0d0a00017f80ffc3280d0a",
+        "responseWireHex": "485454502f312e3120323030204f4b0d0a436f6e74656e742d547970653a206170706c69636174696f6e2f6f637465742d73747265616d0d0a436f6e74656e742d4c656e6774683a2031300d0a436f6e6e656374696f6e3a20636c6f73650d0a0d0aff000d0a804142e282ac"
+      },
+      "requiredActualObservations": [
+        "Upstream raw request and downstream raw response equal the literal full HTTP/1.1 byte streams exactly.",
+        "Body bytes, lengths and SHA256 match separately. No replacement-character decoding, reserialization, automatic content encoding or extra bytes."
+      ],
+      "hashes": {
+        "requestSha256": "bf5b509debf20007da505cd106fc46687ddcb23c1891569dae3e32a433b44fba",
+        "responseSha256": "1e3729fe4f6612de4042178386c2918b0c2e5f9df9aa8cb0fc27a33f218b7630",
+        "requestBodySha256": "5d886b1ecdeda7469e13c6a57764c5af796b5e7ac9b62f16a5b750c4adfec283",
+        "responseBodySha256": "e2ab8ced9a5df2408ad1eddb03beee3b24fd27724cf0437e79a3bece32a69ac5"
+      }
+    },
+    {
+      "caseId": "HTTP02",
+      "kind": "positive",
+      "status": "NOT_TESTED",
+      "reason": "A bounded raw HTTP/1.1 proxy must preserve chunk framing, extensions, trailers and cross-chunk code points.",
+      "literalStimulus": {
+        "requestWireHex": "504f5354202f6c69746572616c2f6368756e6b656420485454502f312e310d0a486f73743a20626f6172642e666978747572652e696e76616c69643a383038300d0a4f726967696e3a20687474703a2f2f626f6172642e666978747572652e696e76616c69643a383038300d0a5472616e736665722d456e636f64696e673a206368756e6b65640d0a547261696c65723a20582d466978747572652d547261696c65720d0a436f6e6e656374696f6e3a20636c6f73650d0a0d0a333b666978747572653d6f6e650d0a4100e20d0a350d0a82acff0d0a0d0a300d0a582d466978747572652d547261696c65723a20726571756573742d72657461696e65640d0a0d0a",
+        "responseWireHex": "485454502f312e3120323030204f4b0d0a5472616e736665722d456e636f64696e673a206368756e6b65640d0a547261696c65723a20582d466978747572652d547261696c65720d0a436f6e6e656374696f6e3a20636c6f73650d0a0d0a333b666978747572653d6f6e650d0aefbbbf0d0a340d0aff0d0a000d0a340d0af09f92b30d0a300d0a582d466978747572652d547261696c65723a20726573706f6e73652d72657461696e65640d0a0d0a",
+        "requestChunksHex": [
+          "4100e2",
+          "82acff0d0a"
+        ],
+        "responseChunksHex": [
+          "efbbbf",
+          "ff0d0a00",
+          "f09f92b3"
+        ]
+      },
+      "requiredActualObservations": [
+        "Both raw full wire streams match exactly, including chunk extensions, CRLF boundaries, terminal zero chunk and literal trailer.",
+        "Decoded entity bytes also match independently; preserving only text/entity bytes cannot satisfy the raw-wire predicate.",
+        "This freezes HTTP/1.1 byte-forwarding semantics for the literal infrastructure. HTTP/2 translation/rechunking is outside this inventory and cannot be silently substituted."
+      ],
+      "hashes": {
+        "requestSha256": "b6ccd24de7d374713af52615445ba4cea6ea236dfe74d6589f764ad631b68b22",
+        "responseSha256": "45666716acf68ee51ceddf383f2eb92e021d98ed43e6a55cdaab4558295cdd24",
+        "requestEntitySha256": "058a124475f323febd369d81955c661016f1a25bdbf119c7bf3d679e84106a85",
+        "responseEntitySha256": "ed7b290bd4b873e55e4ddebccc4030e747bf71fdcee5cdfa86f2aa1cb02c4a5c"
+      }
+    },
+    {
+      "caseId": "HTTP03",
+      "kind": "positive",
+      "status": "NOT_TESTED",
+      "reason": "Full duplex means the proxy does not wait for complete request buffering before forwarding a response.",
+      "literalStimulus": {
+        "requestBodyHex": "4142434445464748",
+        "responseBodyHex": "3132333435363738",
+        "barriers": [
+          "client sends ABCD",
+          "app observes ABCD then sends 1234",
+          "client observes 1234 before sending EFGH",
+          "app observes EFGH then sends 5678"
+        ]
+      },
+      "requiredActualObservations": [
+        "Native socket observations establish each causal barrier in order using explicit private acknowledgments, not cross-process wall clocks.",
+        "Exact final request ABCDEFGH and response 12345678 complete once; neither direction is silently drained or ended."
+      ]
+    },
+    {
+      "caseId": "HTTP04",
+      "kind": "positive",
+      "status": "NOT_TESTED",
+      "reason": "Backpressure requires observed producer suspension/drain while preserving every byte, not a small successful buffered transfer.",
+      "literalStimulus": {
+        "bodyGenerator": "bytes 0x00 through 0xff, in that order, repeated 256 times",
+        "bodyBytes": 65536,
+        "bodySha256": "7daca2095d0438260fa849183dfc67faa459fdf4936e1bc91eec6b281b27e4c2",
+        "producerChunkBytes": 256,
+        "fixtureWritableHighWaterMarkBytes": 256,
+        "pausedDirections": [
+          "upstream-read",
+          "downstream-read"
+        ]
+      },
+      "requiredActualObservations": [
+        "Run each direction separately with the receiving peer held at a private barrier. Observe a native producer write returning false, then drain/resumption after the private release.",
+        "Complete bytes/hash match the literal 65536-byte sequence and per-proxy queued-byte counters remain within frozen bounds.",
+        "If this bounded setup does not induce observable backpressure, mark the capability NOT_MEASURED/BLOCKED; do not call a buffered transfer a positive backpressure result."
+      ]
+    },
+    {
+      "caseId": "HTTP05",
+      "kind": "positive",
+      "status": "NOT_TESTED",
+      "reason": "Next action CSRF/origin behavior must not be silently repaired by the intermediary.",
+      "literalStimulus": {
+        "host": "board.fixture.invalid:8080",
+        "origin": "http://board.fixture.invalid:8080",
+        "forwardedHeaderLine": "X-Forwarded-Host: deliberately-untrusted.fixture.invalid\r\n",
+        "route": "/literal/origin"
+      },
+      "requiredActualObservations": [
+        "Upstream fixture observes exact frozen Host, Origin and supplied forwarded-header bytes; the intermediary injects no trusted origin assertion or action identity.",
+        "Controller correlation does not trust these client-provided strings. Real Next stable-origin/forwarded-origin compatibility remains unmeasured and requires separate source review."
+      ]
+    },
+    {
+      "caseId": "HOLD01",
+      "kind": "positive",
+      "status": "NOT_TESTED",
+      "reason": "Exactly one private handshake must hold and later forward exactly one eligible request.",
+      "literalStimulus": {
+        "armId": "ARM-0001",
+        "connectionId": "CONN-0001",
+        "requestId": "REQ-0001",
+        "method": "POST",
+        "path": "/literal/save",
+        "bodyHex": "534156452d412d3031",
+        "handshake": [
+          "arm acknowledged at control ordinal 1",
+          "native client request observed",
+          "held receipt at control ordinal 2",
+          "release ARM-0001/REQ-0001 acknowledged at control ordinal 3"
+        ]
+      },
+      "requiredActualObservations": [
+        "Before release the client request is pending and the upstream fixture has received zero request bytes.",
+        "After release upstream receives exactly one full unchanged request, emits literal ACK-A-01 once, and client observes complete native response once.",
+        "Retained cross-references bind each private acknowledgment to native connection/request observations. ARM-0001 or a nonce alone provides no action authenticity."
+      ]
+    },
+    {
+      "caseId": "HOLD02",
+      "kind": "positive",
+      "status": "NOT_TESTED",
+      "reason": "Unrelated routes must continue while the exact request is held.",
+      "literalStimulus": {
+        "held": "POST /literal/save",
+        "concurrent": "GET /literal/other",
+        "otherResponse": "OTHER-OK-01"
+      },
+      "requiredActualObservations": [
+        "Other response completes before releasing held save; held request has no upstream bytes and no manufactured response terminal.",
+        "This is finite literal behavior only; actual Next same-route action/navigation queueing remains unknown."
+      ]
+    },
+    {
+      "caseId": "HOLD03",
+      "kind": "negative",
+      "status": "NOT_TESTED",
+      "reason": "Same-route concurrency is ambiguous and cannot be resolved by first-match timing.",
+      "literalStimulus": {
+        "armId": "ARM-0001",
+        "requests": [
+          {
+            "id": "REQ-0001",
+            "method": "POST",
+            "path": "/literal/save"
+          },
+          {
+            "id": "REQ-0002",
+            "method": "POST",
+            "path": "/literal/save"
+          }
+        ]
+      },
+      "requiredActualObservations": [
+        "Controller marks the armed case AMBIGUOUS/BLOCKED; it does not select either request as authentic.",
+        "No successful release/effect receipt is emitted. Any sockets closed during safe cleanup retain their abort outcomes, never successful EOF."
+      ]
+    },
+    {
+      "caseId": "HOLD04",
+      "kind": "negative",
+      "status": "NOT_TESTED",
+      "reason": "Repeated or wrong releases cannot forward a request twice or invent a second acknowledgment.",
+      "literalStimulus": {
+        "controls": [
+          "release ARM-0002/REQ-0001",
+          "release ARM-0001/REQ-9999",
+          "release ARM-0001/REQ-0001",
+          "release ARM-0001/REQ-0001"
+        ]
+      },
+      "requiredActualObservations": [
+        "Wrong identifiers fail without forwarding. The one correct release forwards once; a duplicate release is explicitly rejected and the case is not fully complete.",
+        "Upstream full-request count stays one and there is only one native response."
+      ]
+    },
+    {
+      "caseId": "HOLD05",
+      "kind": "negative",
+      "status": "NOT_TESTED",
+      "reason": "Missing state/correlation must fail closed without guessing from clocks or untrusted success output.",
+      "literalStimulus": {
+        "counterfactuals": [
+          "release before arm",
+          "release before held receipt",
+          "request with wrong connection binding",
+          "missing held receipt",
+          "duplicate native request identifier",
+          "out-of-order control ordinal",
+          "forged PASS stdout"
+        ]
+      },
+      "requiredActualObservations": [
+        "Each missing/contradictory state produces an explicit BLOCKED infrastructure result.",
+        "No ordinary response, clock coincidence, route match, arbitrary nonce or stdout status supplies the absent private handshake edge."
+      ]
+    },
+    {
+      "caseId": "ABORT01",
+      "kind": "negative",
+      "status": "NOT_TESTED",
+      "reason": "Client abort during a partially forwarded request must reach upstream rather than become a complete request.",
+      "literalStimulus": {
+        "contentLength": 8,
+        "sentBodyAscii": "ABCD",
+        "abortAfterBodyBytes": 4
+      },
+      "requiredActualObservations": [
+        "Upstream sees exactly the four-byte prefix then native close/error with incomplete message; no EOF/success/ACK is manufactured.",
+        "Controller aborts the paired upstream socket, retains both outcomes and does not drain remaining client bytes or retry the request."
+      ]
+    },
+    {
+      "caseId": "ABORT02",
+      "kind": "negative",
+      "status": "NOT_TESTED",
+      "reason": "Upstream abort after a partial response must reach the client without manufactured loadingFinished.",
+      "literalStimulus": {
+        "status": 200,
+        "contentLength": 8,
+        "sentBodyAscii": "1234",
+        "abortAfterBodyBytes": 4
+      },
+      "requiredActualObservations": [
+        "Client receives exact four-byte prefix then native incomplete/close/error, not a complete eight-byte response.",
+        "Controller propagates the abort, emits no replacement response, zero chunk, extra padding, retry or success; literal infrastructure outcome is expected BLOCKED."
+      ]
+    },
+    {
+      "caseId": "ABORT03",
+      "kind": "negative",
+      "status": "NOT_TESTED",
+      "reason": "A canceled held request cannot be forwarded after a late private release.",
+      "literalStimulus": {
+        "armId": "ARM-0001",
+        "requestId": "REQ-0001",
+        "sequence": [
+          "hold acknowledged",
+          "client abort observed",
+          "release attempted"
+        ]
+      },
+      "requiredActualObservations": [
+        "Upstream receives zero bytes; late release is rejected as aborted.",
+        "Client/paired controller outcomes remain canceled/incomplete. Cleanup does not turn them into complete responses."
+      ]
+    },
+    {
+      "caseId": "ABORT04",
+      "kind": "negative",
+      "status": "NOT_TESTED",
+      "reason": "Upstream failure before headers must not be silently transformed into product success.",
+      "literalStimulus": {
+        "upstreamAction": "close accepted socket before response headers",
+        "clientRequest": "GET /literal/early-abort"
+      },
+      "requiredActualObservations": [
+        "Client observes native failure/incomplete response; no synthetic HTTP 200 or EOF success is emitted.",
+        "Original error and controller/cleanup errors are retained separately. A proxy-generated diagnostic, if explicitly designed later, cannot qualify product transport completion."
+      ]
+    },
+    {
+      "caseId": "BOUND01",
+      "kind": "negative",
+      "status": "NOT_TESTED",
+      "reason": "Request and response byte limits must fail closed in either direction.",
+      "literalStimulus": {
+        "maxBodyBytes": 65536,
+        "overBodyGenerator": "bytes 0x00 through 0xff repeated 256 times, followed by 0x5a",
+        "overBodyBytes": 65537
+      },
+      "requiredActualObservations": [
+        "Run request and response overflow separately. The one extra byte is detected without unbounded buffering and no successful complete forwarding/result is claimed.",
+        "Retain the complete bounded synthetic input and actual bytes seen at each peer, overflow ordinal, byte counts, raw error and aborted socket outcomes."
+      ]
+    },
+    {
+      "caseId": "BOUND02",
+      "kind": "negative",
+      "status": "NOT_TESTED",
+      "reason": "HTTP framing ambiguity/overlong headers cannot be normalized into an apparently exact request.",
+      "literalStimulus": {
+        "counterfactuals": [
+          {
+            "description": "conflicting framing",
+            "headerLines": [
+              "Content-Length: 4",
+              "Transfer-Encoding: chunked"
+            ]
+          },
+          {
+            "description": "conflicting lengths",
+            "headerLines": [
+              "Content-Length: 4",
+              "Content-Length: 8"
+            ]
+          },
+          {
+            "description": "header one byte over bound",
+            "headerSectionBytes": 8193
+          },
+          {
+            "description": "premature end",
+            "declaredContentLength": 8,
+            "actualBodyAscii": "ABCD"
+          }
+        ]
+      },
+      "requiredActualObservations": [
+        "Reject ambiguous/malformed framing or retain a native incomplete outcome, without forwarding a reinterpreted successful request.",
+        "No dropped header, guessed length, text conversion or synthesized terminating chunk hides the original bytes."
+      ]
+    },
+    {
+      "caseId": "BOUND03",
+      "kind": "negative",
+      "status": "NOT_TESTED",
+      "reason": "Every held socket and whole attempt must have a finite deadline with honest timeout evidence.",
+      "literalStimulus": {
+        "operations": [
+          "no eligible request after arm",
+          "held request never released",
+          "upstream never accepts",
+          "upstream headers arrive but body never completes"
+        ],
+        "fixtureOperationDeadlineMs": 5000,
+        "wholeFixtureCaseDeadlineMs": 45000
+      },
+      "requiredActualObservations": [
+        "Actual deadline expires, the result is TIMEOUT/BLOCKED and every owned socket/container cleanup is attempted independently.",
+        "No partial output, retained heartbeat, HTTP 200 header or release-after-deadline creates completion. Actual elapsed/native signals are retained; synthetic clock tests alone are not native timeout evidence."
+      ]
+    },
+    {
+      "caseId": "BOUND04",
+      "kind": "negative",
+      "status": "NOT_TESTED",
+      "reason": "Correlation/event inventory is finite and append-only.",
+      "literalStimulus": {
+        "counterfactuals": [
+          "missing terminal",
+          "duplicate terminal",
+          "contradictory complete then aborted",
+          "wrong connection/request association",
+          "event beyond configured inventory bound",
+          "lost source observer",
+          "unknown protocol version"
+        ]
+      },
+      "requiredActualObservations": [
+        "Every condition produces BLOCKED with the original bounded sequence retained; no deduplication/relabeling discards contradictory evidence.",
+        "Replay of retained trusted infrastructure observations must agree with the initial assessment. This does not replace the frozen browser protocol/v1 reducer."
+      ]
+    },
+    {
+      "caseId": "EVID01",
+      "kind": "positive",
+      "status": "NOT_TESTED",
+      "reason": "Full bounded nonempty raw process output must be retained as bytes, not only count/digest.",
+      "literalStimulus": {
+        "stdoutHex": "4c49544552414c2d4f55542d30310a",
+        "stderrHex": "5741524e2d303100ffc3280d0a"
+      },
+      "requiredActualObservations": [
+        "Retained stdout/stderr byte files match exact literals, byte counts and independently recomputed SHA256.",
+        "Exit status, signal, timing, exact argv, native inspected configuration, role/image identity and artifact inventory accompany the raw files. Invalid UTF-8 stderr remains raw bytes; presentation decoding cannot replace it."
+      ]
+    },
+    {
+      "caseId": "EVID02",
+      "kind": "negative",
+      "status": "NOT_TESTED",
+      "reason": "Missing/tampered native evidence cannot be interpreted as empty, default or current.",
+      "literalStimulus": {
+        "counterfactuals": [
+          "stderr field absent",
+          "cleanup stdout absent",
+          "raw stdout digest differs",
+          "native config missing",
+          "artifact bytes replaced after hash",
+          "wrong control/source closure",
+          "stale attempt ID",
+          "nonzero exit hidden by PASS text",
+          "truncated raw output mislabeled complete"
+        ]
+      },
+      "requiredActualObservations": [
+        "Each exact deficiency is BLOCKED and named; no fallback to a boolean, historical receipt or digest-only absent raw stream.",
+        "Before/after closure and installed-byte inventory comparison must be explicit."
+      ]
+    },
+    {
+      "caseId": "CLEAN01",
+      "kind": "positive",
+      "status": "NOT_TESTED",
+      "reason": "Automatic removal may make explicit rm fail; native exact-owned absence can still establish cleanup.",
+      "literalStimulus": {
+        "containerName": "literal-owned-0001",
+        "removeExit": 1,
+        "successfulExactNameInventoryStdout": ""
+      },
+      "requiredActualObservations": [
+        "Requires an explicitly successful native inventory query with an explicitly present empty byte stream and exact-owned selectors.",
+        "Native removal failure and successful absence query raw outputs/statuses are both retained. No claim about unrelated containers/resources."
+      ]
+    },
+    {
+      "caseId": "CLEAN02",
+      "kind": "negative",
+      "status": "NOT_TESTED",
+      "reason": "Cleanup must not convert evidence absence or leftovers into success, nor hide a primary failure.",
+      "literalStimulus": {
+        "counterfactuals": [
+          "inventory query exits nonzero",
+          "inventory stdout missing",
+          "owned container remains",
+          "owned network remains",
+          "owned volume remains",
+          "owned listener remains",
+          "one cleanup fails after primary abort"
+        ]
+      },
+      "requiredActualObservations": [
+        "Cleanup is BLOCKED for each missing or nonempty owned inventory. All other owned cleanup actions still run.",
+        "Retain primary abort/error and each cleanup error independently; preserve raw removal/list/config outputs."
+      ]
+    },
+    {
+      "caseId": "CLEAN03",
+      "kind": "negative",
+      "status": "NOT_TESTED",
+      "reason": "Partial setup cleanup must be bounded to owned resources and leave no discoverable executable fixtures.",
+      "literalStimulus": {
+        "createdResources": [
+          "literal-owned-0001",
+          "literal-network-0001",
+          "literal-volume-0001"
+        ],
+        "unrelatedSentinel": "literal-unrelated-0001",
+        "abortStage": "after network and scratch creation before app starts"
+      },
+      "requiredActualObservations": [
+        "All and only actually created owned resources are removed with successful explicit absence queries.",
+        "Unrelated sentinel identity is unchanged; fresh owned scratch is gone and no .test.ts/.tsx fixture copies remain discoverable. Any retained source snapshot uses inert .txt/JSON."
+      ]
+    }
+  ],
+  "qualification": {
+    "caseCount": 29,
+    "expectedOutcomesAreProspective": true,
+    "positiveControls": "A positive infrastructure case must produce the exact actual byte/native configuration/causal observations, complete raw evidence and verified owned cleanup.",
+    "negativeControls": "A negative case passes only by demonstrating the expected infrastructure refusal/abort/blocking behavior with honest native observations. It does not make a failing product/native journey acceptable.",
+    "missingOrUnavailable": "No native capability/setup, uninduced backpressure, absent listener positive control, missing correlation or cleanup observation is UNKNOWN/BLOCKED, not a passing negative test.",
+    "testOwnership": "A future implementation owner cannot alter these expected observations from observed output. Source-backed prospective amendments retain original inventory/hash and reason; all baseline failures remain preserved."
+  },
+  "missingNativeCapabilitiesAndDependencies": [
+    "No implementation or execution of this literal topology exists from this document; network/policy mechanisms, private management transport and exact socket observation adapter require independent review.",
+    "Literal DB/CDP endpoints do not test actual Postgres roles/schema/TLS, synthetic app auth, Chromium/CDP behavior or browser-origin security.",
+    "Real Next production build/dependencies/fonts/platform/image closure and resource capacity are unmeasured; no capacity follows from these small byte cases.",
+    "Next Server Action queuing, stable browser origin, request-hold behavior and exact browser/intermediary/app/DB association remain unmeasured. Do not derive action authority from public labels/nonces or raw server-reference manifests.",
+    "Strict v1 request cancellation/missing-EOF causes remain unresolved. This inventory does not add a waiver, change the 100 component predicates or satisfy either required native group.",
+    "Frozen #3006 exact-head owner authorization/actual main reconciliation, complete new registry/workflow execution closure, independent authenticated review and future R3 topology authorization are still required before trusted activation."
+  ],
+  "currentConclusion": "Only a public prospective infrastructure expectation inventory is frozen. No test, isolation claim, product proof, native acceptance, registration, owner approval or M0-M5 completion is established."
+}
