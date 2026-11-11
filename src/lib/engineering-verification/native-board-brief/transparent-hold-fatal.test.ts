@@ -62,7 +62,8 @@ describe('prospective fatal envelope admission refuses all later work', () => {
       if (mode === 'semantic-event-limit') {
         const first = await nativeClient(hold.address);
         first.write(GET);
-        await waitFor(() => first.closed);
+        await waitFor(() => first.ended || first.closed);
+        expect(first.received.length).toBe(0);
       }
       await waitFor(() => hold.snapshot().status === 'BLOCKED');
       expect(hold.snapshot().reasons).toContain(mode === 'semantic-event-limit' ? 'event_limit' : 'whole_case_deadline');
