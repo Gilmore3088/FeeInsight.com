@@ -119,6 +119,11 @@ function amountOf(label: string): number {
   return Number(label.replace(/[^0-9.]/g, "")) || 0;
 }
 
+/** "Wire" from "wire": a caption starts with a capital. */
+function capitalize(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
 /** One card's figure, caption and chart, from the live sample only; without it, the caption alone. */
 export function cardFigure(k: EvidenceKey, view: OneQuestionView | null, fee: OneQuestionFee | null): CardFigure {
   const empty = (caption: string): CardFigure => ({ metric: null, caption, source: null, chart: null, key: "empty" });
@@ -151,7 +156,7 @@ export function cardFigure(k: EvidenceKey, view: OneQuestionView | null, fee: On
     if (fee.local) {
       return {
         metric: vs(fee.amountLabel, fee.local.medianLabel),
-        caption: `Our ${fee.short} fee vs. local median`,
+        caption: `${capitalize(fee.short)} fee${fee.comparedNote ? ", compared value," : ""} vs. local median`,
         source: read,
         chart: <PairBars own={amountOf(fee.amountLabel)} other={amountOf(fee.local.medianLabel)} label={`${fee.label}: ${view.institution} ${fee.amountLabel}, local median ${fee.local.medianLabel}`} />,
         key: `fee:${fee.key}`,
@@ -160,7 +165,7 @@ export function cardFigure(k: EvidenceKey, view: OneQuestionView | null, fee: On
     if (fee.sizePeers) {
       return {
         metric: vs(fee.amountLabel, fee.sizePeers.medianLabel),
-        caption: `Our ${fee.short} fee vs. ${view.peerNoun} our size`,
+        caption: `${capitalize(fee.short)} fee${fee.comparedNote ? ", compared value," : ""} vs. ${view.peerNoun} its size`,
         source: `${read}. ${fee.sizePeers.groupLabel}.`,
         chart: (
           <PairBars
@@ -172,7 +177,7 @@ export function cardFigure(k: EvidenceKey, view: OneQuestionView | null, fee: On
         key: `fee:${fee.key}`,
       };
     }
-    return { metric: fee.amountLabel, caption: `Our ${fee.short} fee`, source: read, chart: null, key: `fee:${fee.key}` };
+    return { metric: fee.priceLabel, caption: `${capitalize(fee.short)} fee`, source: read, chart: null, key: `fee:${fee.key}` };
   }
   const market = view.market;
   if (!market) return empty(detail);
@@ -340,11 +345,11 @@ function FinancialList({ view }: { view: OneQuestionView }) {
 }
 
 /** The sentence Benchmark leads with: the fee, then the medians the reads hold. */
-export function benchmarkSentence(fee: OneQuestionFee): string {
+export function benchmarkSentence(fee: OneQuestionFee, institution: string): string {
   const parts: string[] = [];
   if (fee.local) parts.push(`${a(fee.local.medianLabel)} local median`);
   if (fee.sizePeers) parts.push(`${a(fee.sizePeers.medianLabel)} asset-size peer median`);
-  const base = `Our ${fee.name} fee is ${fee.amountLabel}`;
+  const base = `${institution}’s ${fee.name} fee is ${fee.priceLabel}${fee.comparedNote ? ` (${fee.comparedNote.charAt(0).toLowerCase()}${fee.comparedNote.slice(1)})` : ""}`;
   return parts.length ? `${base}, compared with ${parts.join(" and ")}.` : `${base}. Too few local competitors publish it for a local median.`;
 }
 
@@ -376,7 +381,7 @@ function BenchmarkPanel({ view, fee }: { view: OneQuestionView | null; fee: OneQ
   return (
     <>
       <Preview heading={OUTPUTS[0].heading} visual={<MiniCompare fee={fee} />}>
-        <p data-benchmark-sentence="">{benchmarkSentence(fee)}</p>
+        <p data-benchmark-sentence="">{benchmarkSentence(fee, view.institution)}</p>
       </Preview>
       <Detail>
         <div className="grid gap-6 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]">
@@ -456,11 +461,14 @@ function InvestigatePanel({ view, fee }: { view: OneQuestionView | null; fee: On
     <>
       <Preview heading={heading}>
         <p data-kind="observation">
-          Our {fee.name} fee is <b className={`font-semibold text-ink ${NUM}`}>{fee.amountLabel}</b>
+          {`${view.institution}’s ${fee.name} fee is `}
+          <b className={`font-semibold text-ink ${NUM}`}>{fee.priceLabel}</b>
+          {fee.comparedNote ? `, ${fee.comparedNote.charAt(0).toLowerCase()}${fee.comparedNote.slice(1)},` : ""}
           {local ? (
             <>
               {" "}
-              against {a(local.medianLabel).split(" ")[0]} <span className={NUM}>{local.medianLabel}</span> local median
+              {`against ${a(local.medianLabel).split(" ")[0]} `}
+              <span className={NUM}>{local.medianLabel}</span> local median
               {local.chargingLess !== null ? `; ${local.chargingLess} of ${local.competitors} local competitors that publish it charge less` : ""}.
             </>
           ) : (
@@ -487,7 +495,7 @@ function InvestigatePanel({ view, fee }: { view: OneQuestionView | null; fee: On
               ) : null}
               {view.market?.shareLabel ? (
                 <li>
-                  {view.market.shareLabel} of bank deposits across its {view.market.counties} {view.market.counties === 1 ? "county" : "counties"} (FDIC Summary of Deposits, {view.market.sodYear})
+                  {`${view.market.shareLabel} of bank deposits across its ${view.market.counties} ${view.market.counties === 1 ? "county" : "counties"}`} (FDIC Summary of Deposits, {view.market.sodYear})
                 </li>
               ) : null}
               <li>Published fee schedules{fee.competitorReadRange ? `, read ${fee.competitorReadRange}` : ""}</li>
@@ -574,7 +582,8 @@ function MonitorPanel({ view }: { view: OneQuestionView | null }) {
       >
         <p data-monitor-change="">
           {income.measureLabel} {verb}
-          {change.direction === "flat" ? "" : ` ${change.pctLabel}`} from {change.from} to {change.to}, from <span className={NUM}>{change.fromLabel}</span> to{" "}
+          {change.direction === "flat" ? "" : ` ${change.pctLabel}`} from {change.from} to {change.to}, from <span className={NUM}>{change.fromLabel}</span>
+          {" to "}
           <span className={NUM}>{change.toLabel}</span>.
         </p>
         <p className={`mt-1 ${SOURCE}`}>
@@ -598,7 +607,7 @@ function ReportPanel({ view, fee, sampleHref }: { view: OneQuestionView | null; 
             title: "Executive summary",
             body: (
               <>
-                {view.institution} charges {fee.amountLabel} for its {fee.name} fee
+                {`${view.institution} charges ${fee.priceLabel} for its ${fee.name} fee`}
                 {fee.local ? `, against ${a(fee.local.medianLabel)} local median` : ""}.
               </>
             ),

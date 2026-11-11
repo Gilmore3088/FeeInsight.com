@@ -83,8 +83,7 @@ export function LandingDeliverable({ report, preparedOn }: { report: MarketRepor
                   {page.institutionName} against its local market
                 </p>
                 <p className="mt-2 text-[13px] text-ink-soft">
-                  {page.market} · verified fees for {page.competitors.withData} of {page.competitors.inMarket} local competitors · prepared{" "}
-                  {DATE.format(preparedOn)} by {SITE_NAME}
+                  {page.market} · verified fees for {page.competitors.withData} of {page.competitors.inMarket} local competitors {`· prepared ${DATE.format(preparedOn)} by ${SITE_NAME}`}
                 </p>
               </div>
               <div className="[&>section]:mt-3 [&>section]:p-5">
