@@ -71,6 +71,29 @@ describe('CLI composes required authorization with rename-aware diff evidence', 
     const result = await main(['audit', '--pr', '1', '--output', directory()], repository());
     expect(result.status).toBe('CODE_VERIFIED');
   });
+  it('keeps CI blocked in the actual audit even when independent proof, review and owner gates pass', async () => {
+    const ci = { status: 'BLOCKED', association: null, actualCheckoutSha: null,
+      problems: ['Native head and merge commit trees are not identical'] };
+    seams.github.mockResolvedValue({ ...github(), ci });
+    seams.review.mockReturnValue({ status: 'INDEPENDENT_REVIEW_VERIFIED', ownerSignoff: { actor: 'owner', id: 2 }, blockers: [] });
+    const output = directory();
+    const result = await main(['audit', '--pr', '1', '--output', output], repository());
+    expect(result).toMatchObject({ status: 'BLOCKED', currentCodeVerified: false, executionStatus: 'CURRENT',
+      proof: { status: 'VERIFIED', currentCodeVerified: true },
+      review: { status: 'INDEPENDENT_REVIEW_VERIFIED' }, ci });
+    expect(result.review.blockers).toEqual([]);
+    expect(JSON.parse(readFileSync(join(output, 'audit.json'), 'utf8'))).toMatchObject({
+      status: 'BLOCKED', currentCodeVerified: false, proof: { status: 'VERIFIED' }, ci,
+    });
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+  });
+  it('keeps missing independent review blocking with proof, CI and owner authorization otherwise passing', async () => {
+    seams.review.mockReturnValue({ status: 'BLOCKED', ownerSignoff: { actor: 'owner', id: 2 }, blockers: ['Independent exact-head review is missing'] });
+    const result = await main(['audit', '--pr', '1', '--output', directory()], repository());
+    expect(result).toMatchObject({ status: 'BLOCKED', currentCodeVerified: false,
+      ci: { status: 'PASSED' }, proof: { status: 'VERIFIED', currentCodeVerified: true } });
+    expect(result.review.blockers).toEqual(['Independent exact-head review is missing']);
+  });
   it('passes rename origins to actual risk and reviewed scope instead of only the inert destination', async () => {
     seams.github.mockResolvedValue(github([{ filename: 'docs/old-provider.txt', previous_filename: 'src/lib/ai-provider.ts', status: 'renamed' }]));
     const result = await main(['audit', '--pr', '1', '--output', directory()], repository());

@@ -5,7 +5,7 @@ import { CURRENT_PROOF_INPUTS, FORBIDDEN_PROOF_INPUTS, HISTORICAL_PROOF_SOURCE, 
 import { createHash } from 'node:crypto';
 import { strToU8, zipSync } from 'fflate';
 import { nativeTreeResponse, nativeBlobSha } from './native-tree.fixture';
-import { collectGithubEvidence } from './github.mjs';
+import { collectGithubEvidence, isGithubEvidence } from './github.mjs';
 import { contractDigest } from './contract.mjs';
 import { assessCollectedProof, collectProofEvidence, isCollectedProof } from './proof.mjs';
 
@@ -101,6 +101,152 @@ async function githubSnapshot(marker = '<!-- engineering-contract: 1048-v2 -->')
   };
   return collectGithubEvidence({ repository: 'o/r', prNumber: 1, token: 'secret', now: NOW, fetchImpl });
 }
+
+/** Finite synthetic history exercises the real reader, without native provenance. */
+async function historicalGithubSnapshot(options: {
+  equalTrees?: boolean;
+  initialMembershipMissing?: boolean;
+  lateMembership?: 'missing' | 'ambiguous' | 'wrong-identity' | 'malformed' | 'unavailable';
+  latePrChanged?: boolean;
+} = {}) {
+  const repo = { id: 17, full_name: 'o/r' }, mergeSha = 'e'.repeat(40), treeSha = 'f'.repeat(40);
+  const pr = { number: 1, state: 'closed', merged: true, merged_at: '2026-11-06T12:03:00Z', merge_commit_sha: mergeSha,
+    body: '<!-- engineering-contract: 1048-v2 -->', base: { sha: BASE, ref: 'main', repo },
+    head: { sha: HEAD, ref: 'unit-history', repo }, user: { id: 1, login: 'builder' },
+    mergeable: null, html_url: 'https://github.com/o/r/pull/1' };
+  const run = { id: 9, workflow_id: 7, event: 'pull_request', head_sha: HEAD, head_branch: pr.head.ref,
+    path: '.github/workflows/test.yml', repository: repo, head_repository: repo, run_attempt: 1, check_suite_id: 42,
+    status: 'completed', conclusion: 'success', created_at: '2026-11-06T11:00:00Z', updated_at: '2026-11-06T12:02:00Z', pull_requests: [] };
+  const job = { id: 10, run_id: 9, run_attempt: 1, head_sha: HEAD, name: 'app-tests', status: 'completed', conclusion: 'success',
+    completed_at: '2026-11-06T12:01:00Z', html_url: 'https://github.com/o/r/actions/runs/9/job/10' };
+  const values: Record<string, unknown> = {
+    '': { ...repo, default_branch: 'main' }, '/commits/main': { sha: ORCHESTRATOR },
+    '/contents/.github/workflows/test.yml': { encoding: 'base64', content: btoa('finite CI workflow') },
+    '/pulls/1': pr, '/pulls/1/files': [{ filename: 'src/lib/a.ts', status: 'modified' }], '/pulls/1/reviews': [], '/issues/1/comments': [],
+    [`/commits/${HEAD}/check-runs`]: { check_runs: [{ ...job, check_suite: { id: 42 }, app: { id: 15368, slug: 'github-actions' }, details_url: job.html_url }] },
+    '/actions/workflows/test.yml': { id: 7, path: '.github/workflows/test.yml' }, '/actions/workflows/7/runs': { workflow_runs: [run] },
+    '/actions/runs/9': run, '/actions/runs/9/attempts/1/jobs': { jobs: [job] }, '/actions/runs/9/artifacts': { artifacts: [] },
+    [`/commits/${HEAD}/pulls`]: [pr], [`/git/commits/${HEAD}`]: { sha: HEAD, tree: { sha: treeSha } },
+    [`/git/commits/${mergeSha}`]: { sha: mergeSha, tree: { sha: options.equalTrees ? treeSha : mergeSha } },
+  };
+  let membershipReads = 0, prReads = 0;
+  const unexpectedRequests: string[] = [];
+  const fetchImpl: typeof fetch = async (input, init) => {
+    const url = new URL(String(input));
+    if (url.origin === 'https://api.github.com' && url.pathname === '/graphql' && init?.method === 'POST') {
+      return Response.json({ data: { repository: { pullRequest: { reviewThreads: { nodes: [], pageInfo: { hasNextPage: false } } } } } });
+    }
+    const path = url.pathname.replace('/repos/o/r', '');
+    if (url.origin !== 'https://api.github.com' || !url.pathname.startsWith('/repos/o/r') || init?.method !== 'GET' || !(path in values)) {
+      unexpectedRequests.push(String(input));
+      throw new Error('Unmapped synthetic proof-boundary request');
+    }
+    if (path === `/commits/${HEAD}/pulls`) {
+      membershipReads++;
+      if (options.initialMembershipMissing) return Response.json([]);
+      if (membershipReads === 2) {
+        if (options.lateMembership === 'missing') return Response.json([]);
+        if (options.lateMembership === 'ambiguous') return Response.json([pr, { ...pr, number: 2 }]);
+        if (options.lateMembership === 'wrong-identity') return Response.json([{ ...pr, head: { ...pr.head, ref: 'changed-ref' } }]);
+        if (options.lateMembership === 'malformed') return Response.json({ unavailable: true });
+        if (options.lateMembership === 'unavailable') return new Response('', { status: 403 });
+      }
+    }
+    if (path === '/pulls/1' && ++prReads === 2 && options.latePrChanged) return Response.json({ ...pr, merged: false });
+    return Response.json(values[path]);
+  };
+  const github = await collectGithubEvidence({ repository: 'o/r', prNumber: 1, token: 'secret', now: NOW,
+    requiredChecks: ['app-tests'], includeDeployments: false, fetchImpl });
+  return { github, membershipReads, unexpectedRequests };
+}
+
+describe('independent proof inspection with blocked historical CI', () => {
+  it('reads the independent proof receipt and native sources after only valid unequal CI trees fail', async () => {
+    const { github, membershipReads, unexpectedRequests } = await historicalGithubSnapshot();
+    expect(unexpectedRequests).toEqual([]);
+    expect(membershipReads).toBe(2);
+    expect(github.problems).toEqual([]);
+    expect(github.ci).toMatchObject({ status: 'BLOCKED', association: null, actualCheckoutSha: null });
+    expect(github.ci.problems).toContain('Native head and merge commit trees are not identical');
+    expect(isGithubEvidence(github)).toBe(false);
+    const f = fixture(), fetchImpl = vi.fn(f.fetchImpl);
+    const result = await collectProofEvidence({ github, ...f, fetchImpl, token: 'secret', now: NOW });
+    expect(result.receipt?.head_sha).toBe(HEAD);
+    const paths = fetchImpl.mock.calls.map(([input]) => new URL(String(input)).pathname);
+    expect(paths).toContain('/repos/o/r/actions/artifacts/88/zip');
+    expect(paths.some(path => path.includes('/git/trees/'))).toBe(true);
+    expect(paths).toContain('/repos/o/r/contents/src/lib/engineering-verification/runner.mjs');
+    expect(result.validation.problems).toEqual(['GitHub snapshot provenance is not authenticated in this process']);
+    expect(result).toMatchObject({ status: 'BLOCKED', currentCodeVerified: false });
+    expect(isCollectedProof(result)).toBe(false);
+  });
+  it.each([
+    ['initial membership missing', { initialMembershipMissing: true }],
+    ['late merged PR identity', { latePrChanged: true }],
+  ] as const)('does not start proof reads after globally invalid %s', async (_kind, changes) => {
+    const { github, unexpectedRequests } = await historicalGithubSnapshot(changes);
+    expect(unexpectedRequests).toEqual([]);
+    expect(github.problems.length).toBeGreaterThan(0);
+    const f = fixture(), fetchImpl = vi.fn(f.fetchImpl);
+    const result = await collectProofEvidence({ github, ...f, fetchImpl, token: 'secret', now: NOW });
+    expect(result.validation.problems).toEqual(expect.arrayContaining(github.problems));
+    expect(result.receipt).toBeNull();
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(result.currentCodeVerified).toBe(false);
+  });
+  it.each([false, true])('keeps late native membership globally required before proof reads (equal trees: %s)', async equalTrees => {
+    for (const lateMembership of ['missing', 'ambiguous', 'wrong-identity', 'malformed', 'unavailable'] as const) {
+      const { github, membershipReads, unexpectedRequests } = await historicalGithubSnapshot({ equalTrees, lateMembership });
+      expect(unexpectedRequests).toEqual([]);
+      expect(membershipReads).toBe(2);
+      expect(github.ci.status).toBe('BLOCKED');
+      expect(github.problems.join(' ')).toMatch(/historical.*association/i);
+      const f = fixture(), fetchImpl = vi.fn(f.fetchImpl);
+      const result = await collectProofEvidence({ github, ...f, fetchImpl, token: 'secret', now: NOW });
+      expect(result.receipt).toBeNull();
+      expect(result.validation.problems).toEqual(expect.arrayContaining(github.problems));
+      expect(fetchImpl).not.toHaveBeenCalled();
+      expect(result.currentCodeVerified).toBe(false);
+    }
+  });
+  it('never upgrades imported lookalike JSON to GitHub or proof authority', async () => {
+    const { github } = await historicalGithubSnapshot();
+    const imported = JSON.parse(JSON.stringify(github));
+    imported.provenance.kind = 'authenticated-github-api';
+    expect(isGithubEvidence(imported)).toBe(false);
+    const result = await collectProofEvidence({ github: imported, ...fixture(), token: 'secret', now: NOW });
+    expect(result.receipt?.head_sha).toBe(HEAD);
+    expect(result.validation.problems).toEqual(['GitHub snapshot provenance is not authenticated in this process']);
+    expect(isCollectedProof(result)).toBe(false);
+    expect(result.currentCodeVerified).toBe(false);
+  });
+  it.each([
+    ['stale', new Date(NOW.getTime() - 15 * 60000 - 1).toISOString()],
+    ['future', new Date(NOW.getTime() + 1).toISOString()],
+    ['missing', undefined],
+  ])('keeps %s snapshot time blocking before proof reads after CI-only refusal', async (_kind, observedAt) => {
+    const { github } = await historicalGithubSnapshot();
+    const f = fixture(), fetchImpl = vi.fn(f.fetchImpl);
+    const result = await collectProofEvidence({ github: { ...github, observedAt }, ...f, fetchImpl, token: 'secret', now: NOW });
+    expect(result.validation.problems).toContain('GitHub snapshot is stale or missing observation time');
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(result.receipt).toBeNull();
+    expect(isCollectedProof(result)).toBe(false);
+  });
+  it('still blocks final proof default-branch drift after CI-only refusal allowed artifact inspection', async () => {
+    const { github } = await historicalGithubSnapshot();
+    const f = fixture(); let mainReads = 0;
+    const fetchImpl: typeof fetch = async (input, init) => {
+      if (new URL(String(input)).pathname === '/repos/o/r/commits/main' && ++mainReads === 2) return Response.json({ sha: '9'.repeat(40) });
+      return f.fetchImpl(input, init);
+    };
+    const result = await collectProofEvidence({ github, ...f, fetchImpl, token: 'secret', now: NOW });
+    expect(mainReads).toBe(2);
+    expect(result.receipt?.head_sha).toBe(HEAD);
+    expect(result.validation.problems).toContain('Trusted default branch changed while collecting proof');
+    expect(result.currentCodeVerified).toBe(false);
+  });
+});
 
 describe('trusted GitHub proof artifact collection', () => {
   afterEach(() => vi.unstubAllGlobals());

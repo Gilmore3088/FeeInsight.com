@@ -79,6 +79,8 @@ export async function collectGithubEvidence({ repository, prNumber, token, requi
     && value.head?.sha === headSha && value.head?.ref === pr.head?.ref && sameRepository(value.head?.repo, pr.head?.repo)
     && value.base?.sha === pr.base?.sha && value.base?.ref === pr.base?.ref && sameRepository(value.base?.repo, pr.base?.repo);
   const matchesHistoricalAssociation = rows => Array.isArray(rows) && rows.length === 1 && sameMergedPr(rows[0]);
+  const ciProblems = [];
+  let validatedHistoricalContext = false;
   const historicalIdentity = run && !directAssociation(run) ? await capture('historical CI association', async () => {
     // This intentionally supports only a closed, merged, same-repository PR whose
     // final tree is byte-identical to the native merge tree. Actual CI checkout
@@ -93,7 +95,12 @@ export async function collectGithubEvidence({ repository, prNumber, token, requi
       pages(`/commits/${headSha}/pulls`), get(`/git/commits/${headSha}`), get(`/git/commits/${pr.merge_commit_sha}`),
     ]);
     if (!matchesHistoricalAssociation(associations)) throw new Error('Native commit-to-PR association is missing, ambiguous or mismatched');
-    if (head.sha !== headSha || merge.sha !== pr.merge_commit_sha || !isSha(head.tree?.sha) || head.tree.sha !== merge.tree?.sha) throw new Error('Native head and merge commit trees are missing or not identical');
+    if (head.sha !== headSha || merge.sha !== pr.merge_commit_sha || !isSha(head.tree?.sha) || !isSha(merge.tree?.sha)) throw new Error('Native head and merge commit trees are missing or not identical');
+    validatedHistoricalContext = true;
+    if (head.tree.sha !== merge.tree.sha) {
+      ciProblems.push('Native head and merge commit trees are not identical');
+      return null;
+    }
     return { kind: 'historical_head_identity', prNumber, triggerPrNumber: null, headSha, mergeSha: pr.merge_commit_sha, treeSha: head.tree.sha };
   }, null) : null;
   const association = directAssociation(run) ? { kind: 'direct_pr', prNumber, triggerPrNumber: null, headSha } : historicalIdentity;
@@ -114,7 +121,6 @@ export async function collectGithubEvidence({ repository, prNumber, token, requi
     capture('CI jobs', () => pages(`/actions/runs/${run.id}/attempts/${run.run_attempt}/jobs`, 'jobs')),
     capture('CI artifacts', () => pages(`/actions/runs/${run.id}/artifacts`, 'artifacts')),
   ]) : [[], []];
-  const ciProblems = [];
   if (!association || (!directAssociation(run) && !validHistoricalRun(run))) ciProblems.push('CI PR association or corroborated historical head identity is unavailable');
   if (!trustedWorkflow || trustedWorkflow.trustedDigest !== trustedWorkflow.candidateDigest) ciProblems.push('CI workflow differs from trusted default-branch workflow or its identity is unavailable');
   if (run?.repository?.full_name !== repository) ciProblems.push('CI workflow run repository identity missing or mismatched');
@@ -144,13 +150,17 @@ export async function collectGithubEvidence({ repository, prNumber, token, requi
       || (historicalIdentity && !validHistoricalRun(selected))
       || selected?.status !== 'completed' || selected?.conclusion !== 'success') ciProblems.push('CI run or attempt changed while collecting evidence');
   }
-  if (historicalIdentity) {
+  if (validatedHistoricalContext) {
     const associations = await capture('current historical CI association', () => pages(`/commits/${headSha}/pulls`), null);
-    if (!matchesHistoricalAssociation(associations)) ciProblems.push('Historical native commit association changed while collecting evidence');
+    if (!matchesHistoricalAssociation(associations)) {
+      const problem = 'Historical native commit association changed or could not be rechecked while collecting evidence';
+      problems.push(problem);
+      ciProblems.push(problem);
+    }
   }
   const current = await capture('current pull request identity', () => get(`/pulls/${prNumber}`), null);
   if (current?.head?.sha !== headSha) problems.push('Pull request head changed while collecting evidence');
-  if (historicalIdentity && (!sameMergedPr(current) || current?.merged !== true)) problems.push('Historical merged PR identity changed while collecting evidence');
+  if (historical && (!sameMergedPr(current) || current?.merged !== true)) problems.push('Historical merged PR identity changed while collecting evidence');
   const snapshot = freeze({ schemaVersion: 1, provenance: { kind: testTransport ? 'test-transport-untrusted' : 'authenticated-github-api' }, repository, prNumber, observedAt: now.toISOString(), pullRequest: { number: prNumber, headSha, body: typeof pr.body === 'string' ? pr.body : '', openedAt: pr.created_at ?? null, author: pr.user, mergeSha: pr.merge_commit_sha ?? null, merged: pr.merged === true, mergedAt: pr.merged_at ?? null, state: pr.state, draft: pr.draft === true, mergeable: current?.mergeable, url: pr.html_url }, files, reviews, comments, threads, checks, deploymentsIncluded: includeDeployments, deployments: deploymentStatuses, ci: { status: ciProblems.length || problems.length ? 'BLOCKED' : 'PASSED', association, runId: run?.id ?? null, runAttempt: run?.run_attempt ?? null, workflowId: workflow?.id ?? null, runHeadSha: run?.head_sha ?? null, actualCheckoutSha: null, checkoutRef: run?.event === 'pull_request' ? 'pull_request_merge_or_explicit_ref' : 'unknown', trustedWorkflow, run, jobs, artifacts, problems: ciProblems }, problems });
   collected.add(snapshot);
   return snapshot;
