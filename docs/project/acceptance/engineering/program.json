@@ -20,10 +20,15 @@
         "src/lib/engineering-verification/contract.mjs",
         "src/lib/engineering-verification/policy.json",
         "docs/project/acceptance/engineering/2285.json",
-        "docs/project/acceptance/engineering/1048.json"
+        "docs/project/acceptance/engineering/1048.json",
+        "src/lib/engineering-verification/contract-registry.mjs",
+        "docs/project/acceptance/engineering/1048-v2.json"
       ],
       "tests": [
-        "src/lib/engineering-verification/contract.test.ts"
+        "src/lib/engineering-verification/contract.test.ts",
+        "src/lib/engineering-verification/contract-registry.test.ts",
+        "src/lib/engineering-verification/financial-routing.test.ts",
+        "src/lib/engineering-verification/contract-paths.test.ts"
       ]
     },
     "policy": {
@@ -47,12 +52,17 @@
         "src/lib/engineering-verification/child.mjs",
         "src/lib/engineering-verification/loader.mjs",
         "src/lib/engineering-verification/pilot.mjs",
-        "src/lib/engineering-verification/policy-pilot.mjs"
+        "src/lib/engineering-verification/policy-pilot.mjs",
+        "src/lib/engineering-verification/policy-v2-pilot.mjs",
+        "src/lib/engineering-verification/__fixtures__/policy-v2.json"
       ],
       "tests": [
         "src/lib/engineering-verification/runner.test.ts",
         "src/lib/engineering-verification/pilot.test.ts",
-        "src/lib/engineering-verification/policy-pilot.test.ts"
+        "src/lib/engineering-verification/policy-pilot.test.ts",
+        "src/lib/engineering-verification/policy-v2-pilot.test.ts",
+        "src/lib/engineering-verification/runner-revisions.test.ts",
+        "src/lib/engineering-verification/preparer-closure.test.ts"
       ]
     },
     "proof": {
@@ -60,7 +70,9 @@
         "src/lib/engineering-verification/proof.mjs"
       ],
       "tests": [
-        "src/lib/engineering-verification/proof.test.ts"
+        "src/lib/engineering-verification/proof.test.ts",
+        "src/lib/engineering-verification/preparer-closure.test.ts",
+        "src/lib/engineering-verification/contract-paths.test.ts"
       ]
     },
     "github": {
@@ -291,7 +303,7 @@
       "activation_gates": [
         "owner-security-approval"
       ],
-      "remaining_work": "Financial-source regulatory, data-catalog and report-assembler paths still fall to R1 and lack corresponding Hoovie/Hamilton routes. Correct this in a separately reviewed R3 frozen-classifier/execution change with protected owner authorization and new affected proof identities."
+      "remaining_work": "Source-backed financial/access routes, Git/npm execution controls and owner families are implemented in the proposed controlled revision. Exact-head protected owner acceptance, trusted successor proof and actual-diff review outside documented families remain required; static routes do not establish universal behavioral classification."
     },
     {
       "id": "FR-03",
@@ -556,8 +568,13 @@
         "proof",
         "review"
       ],
-      "implementation_state": "MECHANISM_PRESENT",
-      "activation_gates": []
+      "implementation_state": "PARTIAL",
+      "activation_gates": [
+        "owner-security-approval",
+        "independent-reviewer-identity",
+        "trusted-actions-proof"
+      ],
+      "remaining_work": "Explicit revision keys, raw/frozen identities and historical/current separation are proposed. Registration is not accepted authority; collect authorized exact-head acceptance/review events and trusted affected proof for the new revision, preserving stale/revoked rejection and original native history."
     },
     {
       "id": "FR-22",
@@ -725,7 +742,11 @@
         "proof"
       ],
       "implementation_state": "MECHANISM_PRESENT",
-      "activation_gates": []
+      "activation_gates": [
+        "owner-security-approval",
+        "trusted-actions-proof"
+      ],
+      "remaining_work": "The proposed successor changes the frozen execution chain under its own identity. Protected exact-head owner authorization and post-bootstrap trusted proof remain pending; legacy bytes and receipts are not rewritten."
     },
     {
       "id": "AT-04",
@@ -1018,6 +1039,7 @@
     "FR-17",
     "FR-19",
     "FR-20",
+    "FR-21",
     "FR-22",
     "SEC-02",
     "SEC-03",
@@ -1027,6 +1049,7 @@
     "SEC-07",
     "SEC-08",
     "AT-02",
+    "AT-03",
     "AT-04",
     "AT-06",
     "AT-07",

@@ -1,0 +1,682 @@
+{
+  "schemaVersion": 1,
+  "authority": [
+    {
+      "path": "docs/project/acceptance/engineering/design-v1/prd-v1.md",
+      "sha256": "6ec2ff3c9a5005dfd783cdfc94652148613cec77c493d712f228601da71f7dcc",
+      "sections": [
+        "FR-02",
+        "FR-03",
+        "FR-21",
+        "8"
+      ]
+    },
+    {
+      "path": "docs/project/acceptance/engineering/design-v1/technical-design-v1.md",
+      "sha256": "40acbb05266c300fc5dbb2b690d3fd89eb368310c3ccdeeb7580ccdf3c042c35",
+      "sections": [
+        "4",
+        "7",
+        "12"
+      ]
+    },
+    {
+      "path": "src/lib/agents/hoovie/AGENTS.md",
+      "sha256": "2a2e57613bf7eb027472b42311b64e1d591503fa613fc7e02bf376d675c64422",
+      "sections": [
+        "Order of work, item5"
+      ]
+    }
+  ],
+  "cases": [
+    {
+      "id": "FIN-01",
+      "paths": [
+        "src/lib/regulatory/fdic.ts"
+      ],
+      "expectedRisk": "R2",
+      "expectedSkills": [
+        "audit-data",
+        "data-quality-audit",
+        "supabase",
+        "supabase-postgres-best-practices"
+      ],
+      "authority": "FDIC official quarterly financial units and deposit service-charge/revenue ratios; PRD8 Hoovie source contracts."
+    },
+    {
+      "id": "FIN-02",
+      "paths": [
+        "src/lib/data-catalog/catalog.ts"
+      ],
+      "expectedRisk": "R2",
+      "expectedSkills": [
+        "audit-data",
+        "data-quality-audit",
+        "supabase",
+        "supabase-postgres-best-practices"
+      ],
+      "authority": "Hoovie AGENTS read-door ownership, licence/servable source contracts and financial datasets."
+    },
+    {
+      "id": "FIN-03",
+      "paths": [
+        "src/lib/data-catalog/roll-ups.ts"
+      ],
+      "expectedRisk": "R2",
+      "expectedSkills": [
+        "audit-data",
+        "data-quality-audit",
+        "fee-evaluation",
+        "report-reconciliation",
+        "supabase",
+        "supabase-postgres-best-practices"
+      ],
+      "authority": "Hoovie-owned read door derives Hamilton peer medians, population rules and dollars/thousands conversions."
+    },
+    {
+      "id": "FIN-04",
+      "paths": [
+        "src/lib/data-catalog/query-data.ts"
+      ],
+      "expectedRisk": "R2",
+      "expectedSkills": [
+        "audit-data",
+        "data-quality-audit",
+        "fee-evaluation",
+        "report-reconciliation",
+        "supabase",
+        "supabase-postgres-best-practices"
+      ],
+      "authority": "Hoovie-owned bounded data door returns Hamilton fee indexes and peer financial outputs."
+    },
+    {
+      "id": "FIN-05",
+      "paths": [
+        "src/lib/report-assemblers/financial-income.ts"
+      ],
+      "expectedRisk": "R2",
+      "expectedSkills": [
+        "fee-evaluation",
+        "report-reconciliation"
+      ],
+      "authority": "Hamilton regulator-specific financial populations, mean income and dollars writer payload."
+    },
+    {
+      "id": "FIN-06",
+      "paths": [
+        "src/lib/report-assemblers/peer-competitive.ts"
+      ],
+      "expectedRisk": "R2",
+      "expectedSkills": [
+        "fee-evaluation",
+        "report-reconciliation"
+      ],
+      "authority": "Hamilton peer/national median percentage differences and live fee-change evidence."
+    },
+    {
+      "id": "FIN-07",
+      "paths": [
+        "src/lib/data-store/fee-index.ts"
+      ],
+      "expectedRisk": "R2",
+      "expectedSkills": [
+        "fee-evaluation",
+        "report-reconciliation"
+      ],
+      "authority": "Canonical fee-index reader feeding actual financial report and query-data consumers."
+    },
+    {
+      "id": "AUTH-01",
+      "paths": [
+        "src/app/api/v1/index/route.ts"
+      ],
+      "expectedRisk": "R3",
+      "expectedSkills": [
+        "fee-evaluation",
+        "report-reconciliation"
+      ],
+      "authority": "Actual authenticated paid-key/CSV export gate and free-tier fee visibility; auth precedence."
+    },
+    {
+      "id": "AUTH-02",
+      "paths": [
+        "src/app/api/pro/report-pdf/route.ts"
+      ],
+      "expectedRisk": "R3",
+      "expectedSkills": [
+        "fee-evaluation",
+        "report-reconciliation"
+      ],
+      "authority": "Actual authentication, premium gate and own-saved-report exception; auth precedence."
+    },
+    {
+      "id": "AUTH-03",
+      "paths": [
+        "src/app/api/reports/[id]/download/route.ts"
+      ],
+      "expectedRisk": "R3",
+      "expectedSkills": [
+        "fee-evaluation",
+        "report-reconciliation"
+      ],
+      "authority": "Actual ownership/admin authorization before minting signed report URL; auth precedence."
+    },
+    {
+      "id": "CONTROL-01",
+      "paths": [
+        "docs/project/README.md"
+      ],
+      "expectedRisk": "R0",
+      "expectedSkills": [],
+      "authority": "Inert project documentation remains copy-only; no protected policy path."
+    },
+    {
+      "id": "CONTROL-02",
+      "paths": [
+        "src/components/ui/button.tsx"
+      ],
+      "expectedRisk": "R1",
+      "expectedSkills": [
+        "buyer-journey-mapper",
+        "playwright-ux-simulator",
+        "ux-ui-auditor"
+      ],
+      "authority": "Actual non-financial UI control retains UI journey requirements without financial escalation."
+    },
+    {
+      "id": "MIX-01",
+      "paths": [
+        "src/lib/regulatory/fdic.ts",
+        "src/lib/report-assemblers/financial-income.ts",
+        "src/components/ui/button.tsx"
+      ],
+      "expectedRisk": "R2",
+      "expectedSkills": [
+        "audit-data",
+        "buyer-journey-mapper",
+        "data-quality-audit",
+        "fee-evaluation",
+        "playwright-ux-simulator",
+        "report-reconciliation",
+        "supabase",
+        "supabase-postgres-best-practices",
+        "ux-ui-auditor"
+      ],
+      "authority": "Highest applicable financial tier plus independent Hoovie/Hamilton/UI skill union."
+    },
+    {
+      "id": "MIX-02",
+      "paths": [
+        "src/lib/regulatory/fdic.ts",
+        "src/lib/report-assemblers/financial-income.ts",
+        "src/components/ui/button.tsx",
+        "src/app/api/v1/index/route.ts"
+      ],
+      "expectedRisk": "R3",
+      "expectedSkills": [
+        "audit-data",
+        "buyer-journey-mapper",
+        "data-quality-audit",
+        "fee-evaluation",
+        "playwright-ux-simulator",
+        "report-reconciliation",
+        "supabase",
+        "supabase-postgres-best-practices",
+        "ux-ui-auditor"
+      ],
+      "authority": "Actual paid export access gate wins while financial and UI specialist groups remain."
+    },
+    {
+      "id": "MIX-03",
+      "paths": [
+        "src/app/api/v1/index/route.ts",
+        "src/components/ui/button.tsx",
+        "src/lib/report-assemblers/financial-income.ts",
+        "src/lib/regulatory/fdic.ts",
+        "src/app/api/v1/index/route.ts"
+      ],
+      "expectedRisk": "R3",
+      "expectedSkills": [
+        "audit-data",
+        "buyer-journey-mapper",
+        "data-quality-audit",
+        "fee-evaluation",
+        "playwright-ux-simulator",
+        "report-reconciliation",
+        "supabase",
+        "supabase-postgres-best-practices",
+        "ux-ui-auditor"
+      ],
+      "authority": "Reordering and duplicates preserve highest tier and sorted unique skill union."
+    },
+    {
+      "id": "MOVE-01",
+      "paths": [
+        "src/lib/report-assemblers/financial-income.ts",
+        "src/lib/neutral-report.ts"
+      ],
+      "expectedRisk": "R2",
+      "expectedSkills": [
+        "fee-evaluation",
+        "report-reconciliation"
+      ],
+      "authority": "Native rename/copy must retain old financial path alongside neutral destination."
+    },
+    {
+      "id": "MOVE-02",
+      "paths": [
+        "src/app/api/reports/[id]/download/route.ts",
+        "src/app/api/neutral/route.ts"
+      ],
+      "expectedRisk": "R3",
+      "expectedSkills": [
+        "fee-evaluation",
+        "report-reconciliation"
+      ],
+      "authority": "Native rename/copy must retain old authorization path alongside neutral destination."
+    },
+    {
+      "id": "MATH-01",
+      "paths": [
+        "src/lib/percentile.ts"
+      ],
+      "expectedRisk": "R2",
+      "expectedSkills": [
+        "report-reconciliation",
+        "tdd"
+      ],
+      "authority": "Hamilton shared mid-rank percentile: peer ties, tolerance and rounding are financial results."
+    },
+    {
+      "id": "MATH-02",
+      "paths": [
+        "src/lib/city-median.ts"
+      ],
+      "expectedRisk": "R2",
+      "expectedSkills": [
+        "report-reconciliation",
+        "tdd"
+      ],
+      "authority": "Institution-weighted city fee median, minimum population and cent rounding."
+    },
+    {
+      "id": "MATH-03",
+      "paths": [
+        "src/lib/percent-fees.ts"
+      ],
+      "expectedRisk": "R2",
+      "expectedSkills": [
+        "fee-evaluation",
+        "fee-taxonomy-regression",
+        "tdd"
+      ],
+      "authority": "Fee rates, permitted categories and rate-versus-dollar pooling contract."
+    },
+    {
+      "id": "MATH-04",
+      "paths": [
+        "src/lib/fee-taxonomy.ts"
+      ],
+      "expectedRisk": "R2",
+      "expectedSkills": [
+        "fee-evaluation",
+        "fee-taxonomy-regression",
+        "tdd"
+      ],
+      "authority": "Canonical financial fee families and source-approved classifications."
+    },
+    {
+      "id": "MATH-05",
+      "paths": [
+        "src/lib/fee-institution-value.ts"
+      ],
+      "expectedRisk": "R2",
+      "expectedSkills": [
+        "report-reconciliation",
+        "tdd"
+      ],
+      "authority": "Financial median, cent rounding and institution comparison values shared with reports."
+    },
+    {
+      "id": "FIN-08",
+      "paths": [
+        "src/lib/regulatory/ncua.ts"
+      ],
+      "expectedRisk": "R2",
+      "expectedSkills": [
+        "audit-data",
+        "data-quality-audit",
+        "supabase",
+        "supabase-postgres-best-practices"
+      ],
+      "authority": "Official NCUA dollar/YTD account normalization under Hoovie financial source ownership."
+    },
+    {
+      "id": "FIN-09",
+      "paths": [
+        "src/lib/data-catalog/ncua-call-measures.ts"
+      ],
+      "expectedRisk": "R2",
+      "expectedSkills": [
+        "audit-data",
+        "data-quality-audit",
+        "supabase",
+        "supabase-postgres-best-practices"
+      ],
+      "authority": "Hoovie read-door NCUA source account definitions, units and period bases."
+    },
+    {
+      "id": "FIN-10",
+      "paths": [
+        "src/lib/research/fee-income-peers.ts"
+      ],
+      "expectedRisk": "R2",
+      "expectedSkills": [
+        "audit-data",
+        "data-quality-audit",
+        "fee-evaluation",
+        "report-reconciliation",
+        "supabase",
+        "supabase-postgres-best-practices"
+      ],
+      "authority": "Hamilton same-filer/quarter fee-income peers derive official Hoovie financial evidence."
+    },
+    {
+      "id": "FIN-11",
+      "paths": [
+        "src/lib/data-store/financial-peer-contract.ts"
+      ],
+      "expectedRisk": "R2",
+      "expectedSkills": [
+        "audit-data",
+        "data-quality-audit",
+        "fee-evaluation",
+        "report-reconciliation",
+        "supabase",
+        "supabase-postgres-best-practices"
+      ],
+      "authority": "Canonical financial source/charter, publisher, measurement units and comparison contract."
+    },
+    {
+      "id": "AUTH-04",
+      "paths": [
+        "src/app/api/v1/rate-fees/route.ts"
+      ],
+      "expectedRisk": "R3",
+      "expectedSkills": [
+        "fee-evaluation",
+        "report-reconciliation"
+      ],
+      "authority": "Actual paidOnly authorization, Enterprise bulk gate and institution-read capability."
+    },
+    {
+      "id": "AUTH-05",
+      "paths": [
+        "src/lib/api-v1-bulk-guard.ts"
+      ],
+      "expectedRisk": "R3",
+      "expectedSkills": [
+        "fee-evaluation",
+        "report-reconciliation"
+      ],
+      "authority": "Actual fee-export Enterprise authorization and per-organization institution read limits."
+    },
+    {
+      "id": "AUTH-06",
+      "paths": [
+        "src/lib/api-v1.ts"
+      ],
+      "expectedRisk": "R3",
+      "expectedSkills": [
+        "fee-evaluation",
+        "report-reconciliation"
+      ],
+      "authority": "isPaidApiKey controls paid full-catalog and per-institution fee visibility."
+    },
+    {
+      "id": "AUTH-07",
+      "paths": [
+        "src/lib/api-v1-hamilton-context.ts"
+      ],
+      "expectedRisk": "R3",
+      "expectedSkills": [
+        "fee-evaluation",
+        "report-reconciliation"
+      ],
+      "authority": "Authenticated numeric Hamilton context identity and protected saved-peer/workspace evidence."
+    },
+    {
+      "id": "AUTH-08",
+      "paths": [
+        "src/lib/api-v1-mcp.ts"
+      ],
+      "expectedRisk": "R3",
+      "expectedSkills": [
+        "fee-evaluation",
+        "report-reconciliation"
+      ],
+      "authority": "MCP credential validation/forwarding and delegation to protected financial read/export routes."
+    },
+    {
+      "id": "FIN-12",
+      "paths": [
+        "src/lib/api-v1-peer-params.ts"
+      ],
+      "expectedRisk": "R2",
+      "expectedSkills": [
+        "fee-evaluation",
+        "report-reconciliation"
+      ],
+      "authority": "Canonical financial peer-group filters, whole-dollar asset bounds and regulator identity."
+    },
+    {
+      "id": "CONTROL-03",
+      "paths": [
+        "src/lib/api-v1-background.ts"
+      ],
+      "expectedRisk": "R1",
+      "expectedSkills": [],
+      "authority": "Bookkeeping promise lifetime helper; no financial calculation or authorization decision."
+    },
+    {
+      "id": "CONTROL-04",
+      "paths": [
+        "src/app/api/v1/openapi.json/route.ts"
+      ],
+      "expectedRisk": "R1",
+      "expectedSkills": [],
+      "authority": "Public API schema metadata route; no protected runtime financial read or authorization gate."
+    },
+    {
+      "id": "AUTH-09",
+      "paths": [
+        "src/app/api/v1/fees/route.ts"
+      ],
+      "expectedRisk": "R3",
+      "expectedSkills": [
+        "fee-evaluation",
+        "report-reconciliation"
+      ],
+      "authority": "Actual authorizeV1 and paid full-fee visibility decision."
+    },
+    {
+      "id": "AUTH-10",
+      "paths": [
+        "src/app/api/v1/fee-changes/route.ts"
+      ],
+      "expectedRisk": "R3",
+      "expectedSkills": [
+        "fee-evaluation",
+        "report-reconciliation"
+      ],
+      "authority": "Actual paidOnly authorization before financial fee movement results."
+    },
+    {
+      "id": "AUTH-11",
+      "paths": [
+        "src/app/api/v1/revenue/route.ts"
+      ],
+      "expectedRisk": "R3",
+      "expectedSkills": [
+        "fee-evaluation",
+        "report-reconciliation"
+      ],
+      "authority": "Actual paidOnly authorization before financial revenue trends."
+    },
+    {
+      "id": "AUTH-12",
+      "paths": [
+        "src/app/api/v1/peers/route.ts"
+      ],
+      "expectedRisk": "R3",
+      "expectedSkills": [
+        "fee-evaluation",
+        "report-reconciliation"
+      ],
+      "authority": "Actual paid authorization, authenticated saved peer context and institution read limits."
+    },
+    {
+      "id": "AUTH-13",
+      "paths": [
+        "src/app/api/v1/institutions/route.ts"
+      ],
+      "expectedRisk": "R3",
+      "expectedSkills": [
+        "fee-evaluation",
+        "report-reconciliation"
+      ],
+      "authority": "Actual authorization, paid detail and Enterprise fee exports/institution capabilities."
+    },
+    {
+      "id": "AUTH-14",
+      "paths": [
+        "src/app/api/v1/hamilton-context/route.ts"
+      ],
+      "expectedRisk": "R3",
+      "expectedSkills": [
+        "fee-evaluation",
+        "report-reconciliation"
+      ],
+      "authority": "Actual paid authorization and protected Hamilton context identity."
+    },
+    {
+      "id": "AUTH-15",
+      "paths": [
+        "src/app/api/v1/market/route.ts"
+      ],
+      "expectedRisk": "R3",
+      "expectedSkills": [
+        "fee-evaluation",
+        "report-reconciliation"
+      ],
+      "authority": "Actual paid authorization before local competitor/peer financial research."
+    },
+    {
+      "id": "AUTH-16",
+      "paths": [
+        "src/app/api/v1/mcp/route.ts"
+      ],
+      "expectedRisk": "R3",
+      "expectedSkills": [
+        "fee-evaluation",
+        "report-reconciliation"
+      ],
+      "authority": "Delegates MCP financial tools to authenticated paid/export route handlers."
+    },
+    {
+      "id": "FIN-13",
+      "paths": [
+        "src/lib/regulatory/ffiec.ts"
+      ],
+      "expectedRisk": "R2",
+      "expectedSkills": [
+        "audit-data",
+        "data-quality-audit",
+        "supabase",
+        "supabase-postgres-best-practices"
+      ],
+      "authority": "Actual Schedule RI RIADH032 overdraft/NSF YTD thousands parsing; PRD section8 public financial data R2 and Hoovie public-source ownership."
+    },
+    {
+      "id": "FIN-14",
+      "paths": [
+        "src/lib/data-catalog/ncua-call-series.ts"
+      ],
+      "expectedRisk": "R2",
+      "expectedSkills": [
+        "audit-data",
+        "data-quality-audit",
+        "supabase",
+        "supabase-postgres-best-practices"
+      ],
+      "authority": "Actual financial unit/period filtering and hot/cold series merge; Hoovie AGENTS read-door ownership and PRD section8."
+    },
+    {
+      "id": "FIN-15",
+      "paths": [
+        "src/lib/report-assemblers/national-quarterly.ts"
+      ],
+      "expectedRisk": "R2",
+      "expectedSkills": [
+        "fee-evaluation",
+        "report-reconciliation"
+      ],
+      "authority": "Actual fee medians/quartiles/maturity and revenue percentages; PRD section8 financial reports R2 with Hamilton report-reconciliation/fee-evaluation."
+    },
+    {
+      "id": "FIN-16",
+      "paths": [
+        "src/lib/regulatory/ffiec-call-items.ts"
+      ],
+      "expectedRisk": "R2",
+      "expectedSkills": [
+        "audit-data",
+        "data-quality-audit",
+        "supabase",
+        "supabase-postgres-best-practices"
+      ],
+      "authority": "Actual FFIEC maintenance/ATM/deposit-service-charge income definitions and filed units/basis; PRD section8 public financial data R2 and Hoovie ownership."
+    },
+    {
+      "id": "FIN-17",
+      "paths": [
+        "src/lib/regulatory/fr-y9c.ts"
+      ],
+      "expectedRisk": "R2",
+      "expectedSkills": [
+        "audit-data",
+        "data-quality-audit",
+        "supabase",
+        "supabase-postgres-best-practices"
+      ],
+      "authority": "Actual FR Y-9C service-charge and interchange income filed in thousands/YTD; Hoovie public regulator source ownership and PRD section8."
+    },
+    {
+      "id": "CONTROL-05",
+      "paths": [
+        ".gitattributes"
+      ],
+      "expectedRisk": "R3",
+      "expectedSkills": [],
+      "authority": "Reviewed execution control: Git checkout/archive attributes can change materialized source; FR-02 highest-risk execution-policy boundary."
+    },
+    {
+      "id": "CONTROL-06",
+      "paths": [
+        "npm-shrinkwrap.json"
+      ],
+      "expectedRisk": "R3",
+      "expectedSkills": [],
+      "authority": "Reviewed npm install precedence control can replace the declared lockfile; FR-02 highest-risk execution-policy boundary."
+    },
+    {
+      "id": "CONTROL-07",
+      "paths": [
+        "src/lib/.gitattributes"
+      ],
+      "expectedRisk": "R3",
+      "expectedSkills": [],
+      "authority": "Nested Git attributes affect materialized source beneath the directory; same FR-02 execution-policy boundary as root attributes."
+    }
+  ]
+}

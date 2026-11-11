@@ -18,9 +18,52 @@ const SAFE_PATH = value => NONEMPTY(value)
   && !value.startsWith('/') && !/[\\\x00-\x20\x7f:%]/.test(value)
   && !value.split('/').some(segment => segment === '' || segment === '.' || segment === '..');
 const INERT_DOCUMENT = value => SAFE_PATH(value) && /\.(md|txt|rst|png|jpe?g|gif|webp|pdf)$/i.test(value);
-const EXECUTION_POLICY = /^(vercel\.json|(?:next|vite|vitest|playwright)\.config\.[^/]+|tsconfig(?:\.[^/]+)?\.json|package(?:-lock)?\.json|(?:pnpm-lock\.yaml|yarn\.lock|bun\.lockb?)|\.npmrc|\.claude\/settings(?:\.[^/]+)?\.json|\.codex\/config\.toml|(?:[^/]*\/)?Dockerfile(?:\.[^/]*)?|scripts\/ci-[^/]+)$/;
+const EXECUTION_POLICY = /^(vercel\.json|(?:next|vite|vitest|playwright)\.config\.[^/]+|tsconfig(?:\.[^/]+)?\.json|package(?:-lock)?\.json|npm-shrinkwrap\.json|(?:pnpm-lock\.yaml|yarn\.lock|bun\.lockb?)|\.npmrc|(?:[^/]+\/)*\.gitattributes|\.claude\/settings(?:\.[^/]+)?\.json|\.codex\/config\.toml|(?:[^/]*\/)?Dockerfile(?:\.[^/]*)?|scripts\/ci-[^/]+)$/;
 // Repository authentication and authority ownership includes modules outside lib/auth and api/auth.
 const ACCESS_CONTROL = /^src\/(?:proxy\.[^/]+$|lib\/(?:password[^/]*|session-cookie|api-auth|api-v1-auth|api-keys|api-subscriber-access|access|report-access)(?:\.|\/)|lib\/(?:hamilton\/(?:institution-membership|workspace-invite-link|workspace-seats)|custom-report\/link(?:-access)?)(?:\.|\/)|app\/(?:\(auth\)\/|workspace-invite\/|api\/session\/|pro\/\(hamilton\)\/settings\/actions\.|admin\/quality\/actions\.))/;
+
+// Reviewed runtime owners, not a claim that every financial behavior can be inferred from a name.
+const HOOVIE_SKILLS = ['audit-data', 'data-quality-audit', 'supabase', 'supabase-postgres-best-practices'];
+const HAMILTON_SKILLS = ['report-reconciliation', 'fee-evaluation'];
+// Hoovie owns regulator source contracts and the data-catalog read door; Hamilton owns report assembly.
+// Match executable source/tests, leaving ordinary inert documentation unchanged.
+const OWNED_CODE_FAMILIES = [
+  [/^src\/lib\/regulatory\/.+\.[cm]?[jt]sx?$/, HOOVIE_SKILLS],
+  [/^src\/lib\/data-catalog\/.+\.[cm]?[jt]sx?$/, HOOVIE_SKILLS],
+  [/^src\/lib\/report-assemblers\/.+\.[cm]?[jt]sx?$/, HAMILTON_SKILLS],
+];
+const FINANCIAL_PATHS = new Map([
+  ['src/lib/percentile.ts', ['report-reconciliation', 'tdd']],
+  ['src/lib/city-median.ts', ['report-reconciliation', 'tdd']],
+  ['src/lib/fee-institution-value.ts', ['report-reconciliation', 'tdd']],
+  ['src/lib/percent-fees.ts', ['fee-evaluation', 'fee-taxonomy-regression', 'tdd']],
+  ['src/lib/fee-taxonomy.ts', ['fee-evaluation', 'fee-taxonomy-regression', 'tdd']],
+  ['src/lib/data-catalog/roll-ups.ts', [...HOOVIE_SKILLS, ...HAMILTON_SKILLS]],
+  ['src/lib/data-catalog/query-data.ts', [...HOOVIE_SKILLS, ...HAMILTON_SKILLS]],
+  ['src/lib/research/fee-income-peers.ts', [...HOOVIE_SKILLS, ...HAMILTON_SKILLS]],
+  ['src/lib/data-store/financial-peer-contract.ts', [...HOOVIE_SKILLS, ...HAMILTON_SKILLS]],
+  ['src/lib/report-assemblers/financial-income.ts', HAMILTON_SKILLS],
+  ['src/lib/report-assemblers/peer-competitive.ts', HAMILTON_SKILLS],
+  ['src/lib/data-store/fee-index.ts', HAMILTON_SKILLS],
+  ['src/lib/api-v1.ts', HAMILTON_SKILLS],
+  ['src/lib/api-v1-bulk-guard.ts', HAMILTON_SKILLS],
+  ['src/lib/api-v1-hamilton-context.ts', HAMILTON_SKILLS],
+  ['src/lib/api-v1-mcp.ts', HAMILTON_SKILLS],
+  ['src/lib/api-v1-peer-params.ts', HAMILTON_SKILLS],
+  ...['fees', 'index', 'rate-fees', 'fee-changes', 'revenue', 'peers', 'institutions', 'hamilton-context', 'market', 'mcp']
+    .map(route => ['src/app/api/v1/' + route + '/route.ts', HAMILTON_SKILLS]),
+  ['src/app/api/pro/report-pdf/route.ts', HAMILTON_SKILLS],
+  ['src/app/api/reports/[id]/download/route.ts', HAMILTON_SKILLS],
+]);
+// The complete reviewed v1 route inventory has one schema-only exception: openapi.json.
+// Branches has a paid gate but no financial-analysis specialist requirement.
+const INLINE_ACCESS_PATHS = new Set([
+  ...['fees', 'index', 'rate-fees', 'fee-changes', 'revenue', 'peers', 'institutions', 'hamilton-context', 'market', 'branches', 'mcp']
+    .map(route => 'src/app/api/v1/' + route + '/route.ts'),
+  'src/lib/api-v1.ts', 'src/lib/api-v1-bulk-guard.ts', 'src/lib/api-v1-hamilton-context.ts', 'src/lib/api-v1-mcp.ts',
+  'src/app/api/pro/report-pdf/route.ts', 'src/app/api/reports/[id]/download/route.ts',
+]);
+const runtimeOwnerPath = path => path.replace(/\.(?:[a-z][a-z0-9-]*\.)?(?:test|spec)\.[cm]?[jt]sx?$/, '.ts');
 
 export function contractDigest(rawText) {
   return createHash('sha256').update(rawText, 'utf8').digest('hex');
@@ -61,7 +104,7 @@ export function isPolicySensitive(path) {
 
 export function classifyPath(path) {
   if (!SAFE_PATH(path)) return 'R3'; // An unknown path cannot safely be assumed inert.
-  if (ACCESS_CONTROL.test(path)
+  if (ACCESS_CONTROL.test(path) || INLINE_ACCESS_PATHS.has(runtimeOwnerPath(path))
     || /^(supabase\/migrations\/|src\/app\/api\/auth\/|src\/lib\/auth|src\/lib\/payment|src\/lib\/stripe|src\/lib\/billing|src\/lib\/api-hardening\/)/.test(path)
     || /(^|\/)(\.env[^/]*|secrets?[^/]*|permissions?[^/]*|CODEOWNERS)$/.test(path)
     || path.startsWith('.github/workflows/')
@@ -70,6 +113,8 @@ export function classifyPath(path) {
     || /^src\/lib\/(ai-provider|automation-control|provider[^/]*|agents\/[^/]*(provider|budget)[^/]*)(\/|\.)/.test(path)
     || /\.sql$/i.test(path)) return 'R3';
   if (isPolicySensitive(path)
+    || FINANCIAL_PATHS.has(runtimeOwnerPath(path))
+    || OWNED_CODE_FAMILIES.some(([pattern]) => pattern.test(path))
     || /^src\/lib\/(agents\/|data-store\/|fee-|custom-report\/|hamilton\/|engineering-verification\/)/.test(path)
     || /^src\/app\/api\/admin\//.test(path)) return 'R2';
   if (INERT_DOCUMENT(path)) return 'R0';
@@ -111,6 +156,8 @@ export function routeSkills(paths) {
   const skills = new Set();
   for (const path of (Array.isArray(paths) ? paths : [])) {
     if (!SAFE_PATH(path)) continue;
+    for (const skill of FINANCIAL_PATHS.get(runtimeOwnerPath(path)) ?? []) skills.add(skill);
+    for (const [pattern, names] of OWNED_CODE_FAMILIES) if (pattern.test(path)) names.forEach(skill => skills.add(skill));
     for (const [pattern, names] of SKILL_ROUTES) if (pattern.test(path)) names.forEach(skill => skills.add(skill));
   }
   return [...skills].sort();

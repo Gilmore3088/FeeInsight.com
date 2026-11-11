@@ -8,10 +8,10 @@ on:
         required: true
         type: string
       contract:
-        description: "Approved frozen contract"
+        description: "Explicit runnable contract revision; registration is not approval"
         required: true
         type: choice
-        options: ["2285", "1048"]
+        options: ["1048-v2"]
 permissions:
   contents: read
   pull-requests: read
@@ -41,8 +41,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ inputs.pr_number }}
-          CONTRACT_NUMBER: ${{ inputs.contract }}
-        run: node src/lib/engineering-verification/cli.mjs prepare --pr "$PR_NUMBER" --contract "$CONTRACT_NUMBER" --output test-results/engineering-verification
+          CONTRACT_KEY: ${{ inputs.contract }}
+        run: node src/lib/engineering-verification/cli.mjs prepare --pr "$PR_NUMBER" --contract "$CONTRACT_KEY" --output test-results/engineering-verification
       - name: Materialize immutable source commits with an ephemeral read credential
         env:
           GH_TOKEN: ${{ github.token }}
@@ -67,8 +67,8 @@ jobs:
       - name: Evaluate source values in credentialless containers
         env:
           TARGET_SHA: ${{ steps.prepare.outputs.head_sha }}
-          CONTRACT_NUMBER: ${{ inputs.contract }}
-        run: node src/lib/engineering-verification/runner.mjs --head "$TARGET_SHA" --contract "$CONTRACT_NUMBER" --output test-results/engineering-verification/proof
+          CONTRACT_KEY: ${{ steps.prepare.outputs.contract_key }}
+        run: node src/lib/engineering-verification/runner.mjs --head "$TARGET_SHA" --contract "$CONTRACT_KEY" --output test-results/engineering-verification/proof
       - name: Publish proof summary
         if: always()
         run: |
@@ -80,7 +80,7 @@ jobs:
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always() && steps.prepare.outcome == 'success'
         with:
-          name: engineering-verification-${{ inputs.pr_number }}-${{ steps.prepare.outputs.head_sha }}-${{ inputs.contract }}-attempt-${{ github.run_attempt }}
+          name: engineering-verification-${{ inputs.pr_number }}-${{ steps.prepare.outputs.head_sha }}-${{ steps.prepare.outputs.contract_key }}-attempt-${{ github.run_attempt }}
           path: test-results/engineering-verification/proof/
           if-no-files-found: error
           retention-days: 90

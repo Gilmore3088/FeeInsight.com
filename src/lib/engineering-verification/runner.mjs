@@ -1,17 +1,19 @@
 import { spawnSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
-import { readFileSync, writeFileSync, mkdirSync, mkdtempSync, rmSync, cpSync, chmodSync, realpathSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, mkdtempSync, rmSync, cpSync, chmodSync, realpathSync, lstatSync } from 'node:fs';
 import { dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import * as knoxPilot from './pilot.mjs';
 import * as policyPilot from './policy-pilot.mjs';
+import * as policyV2Pilot from './policy-v2-pilot.mjs';
 import { assessProofBundle, contractDigest, validateContract } from './contract.mjs';
+import { CONTRACT_REVISIONS, resolveContractRevision } from './contract-registry.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SHA = /^[a-f0-9]{40}$/;
 const DIGEST = /^node@sha256:[a-f0-9]{64}$/;
 const LIMIT = 2 * 1024 * 1024;
-const PILOTS = { '2285': knoxPilot, '1048': policyPilot };
+const PILOTS = { '2285': knoxPilot, '1048': policyPilot, '1048-v2': policyV2Pilot };
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 /** Inspect Git tree modes before extracting any candidate-controlled archive on the parent host. */
 export function validateSnapshotEntries(tree) {
@@ -83,7 +85,8 @@ function snapshot(root, sha, directory, adapterId) {
   command('tar', ['-xf', '-', '-C', directory, '--no-same-owner'], { input: archive.stdout });
   // The extraction closure needs none of the verifier's public expected answers or control code.
   if (!realpathSync(join(directory, 'src/lib')).startsWith(realpathSync(directory) + sep)) throw new Error('Snapshot control directory escaped sandbox');
-  const candidatePolicy = adapterId === policyPilot.ADAPTER_ID ? readFileSync(join(directory, 'src/lib/engineering-verification/contract.mjs')) : null;
+  const candidatePolicy = [policyPilot.ADAPTER_ID, policyV2Pilot.ADAPTER_ID].includes(adapterId)
+    ? readFileSync(join(directory, 'src/lib/engineering-verification/contract.mjs')) : null;
   rmSync(join(directory, 'src/lib/engineering-verification'), { recursive: true, force: true });
   if (candidatePolicy) {
     mkdirSync(join(directory, 'src/lib/engineering-verification'), { mode: 0o755 });
@@ -91,33 +94,88 @@ function snapshot(root, sha, directory, adapterId) {
   }
 }
 
+function readCanonicalFile(root, path) {
+  if (typeof path !== 'string' || !path.length || path.startsWith('/') || /[\\\x00-\x20\x7f:%*?]/.test(path)
+    || path.split('/').some(part => !part || part === '.' || part === '..')) throw new Error('Unsafe frozen source path');
+  let current = realpathSync(root);
+  const parts = path.split('/');
+  for (const [index, part] of parts.entries()) {
+    current = join(current, part);
+    const stat = lstatSync(current);
+    if (stat.isSymbolicLink() || (index === parts.length - 1 ? !stat.isFile() : !stat.isDirectory())) throw new Error('Frozen source must use a canonical regular file');
+  }
+  return readFileSync(current);
+}
+
+function currentProofPolicy(contract) {
+  if (!contract || typeof contract !== 'object' || Array.isArray(contract)) throw new Error('Registered current contract required for proof input closure');
+  const matches = CONTRACT_REVISIONS.filter(row => row.contractId === contract.contract_id && '#' + row.issueNumber === contract.issue);
+  if (matches.length !== 1) throw new Error('Registered current contract required for proof input closure');
+  const revision = resolveContractRevision(matches[0].key, { requireRunnable: true });
+  if (!Array.isArray(revision.requiredProofInputs) || !revision.requiredProofInputs.length
+    || !Array.isArray(revision.forbiddenProofInputs) || !revision.forbiddenProofInputs.length) throw new Error('Canonical proof input closure unavailable');
+  if (!Array.isArray(contract.execution_files)) throw new Error('Required proof execution input closure missing');
+  const declared = new Set();
+  for (const file of contract.execution_files) {
+    if (!file || typeof file !== 'object' || Array.isArray(file) || typeof file.path !== 'string' || declared.has(file.path)) throw new Error('Malformed or duplicate proof execution input');
+    declared.add(file.path);
+  }
+  for (const path of revision.requiredProofInputs) {
+    if (!declared.has(path)) throw new Error('Required proof execution input missing: ' + path);
+  }
+  return revision;
+}
+
+function assertProofOverridesAbsent(root, paths) {
+  const canonicalRoot = realpathSync(root);
+  for (const path of paths) {
+    try { lstatSync(join(canonicalRoot, path)); }
+    catch (error) {
+      if (error?.code === 'ENOENT') continue;
+      throw new Error('Forbidden proof input absence could not be verified: ' + path);
+    }
+    throw new Error('Forbidden proof input override is present: ' + path);
+  }
+}
+
 export function frozenIdentities(root, contract) {
+  const revision = currentProofPolicy(contract);
+  assertProofOverridesAbsent(root, revision.forbiddenProofInputs);
   const identities = {};
   for (const requirement of contract.requirements) {
     for (const kind of ['test', 'fixture', 'adapter']) {
       const path = requirement[kind + '_path'];
-      const actual = hash(readFileSync(join(root, path)));
+      const actual = hash(readCanonicalFile(root, path));
       if (actual !== requirement[kind + '_sha256']) throw new Error('Frozen identity changed: ' + path);
+      if (identities[kind + '_sha256'] && identities[kind + '_sha256'] !== actual) throw new Error('Approved pilot requires one shared ' + kind + ' identity');
       identities[kind + '_sha256'] = actual;
     }
   }
   for (const file of contract.execution_files ?? []) {
-    if (hash(readFileSync(join(root, file.path))) !== file.sha256) throw new Error('Frozen execution identity changed: ' + file.path);
+    if (hash(readCanonicalFile(root, file.path)) !== file.sha256) throw new Error('Frozen execution identity changed: ' + file.path);
   }
+  assertProofOverridesAbsent(root, revision.forbiddenProofInputs);
   return { ...identities, execution_sha256: contractDigest(JSON.stringify(contract.execution_files ?? [])) };
 }
 
 /** Only the known pilot is executable; contracts never supply commands to run. */
-export function runPilot({ repositoryRoot, headSha, outputDirectory, contractNumber = '2285', artifactUrl = 'local:engineering-verification' }) {
+export function runPilot({ repositoryRoot, headSha, outputDirectory, contractKey, contractNumber, artifactUrl = 'local:engineering-verification' }) {
+  if (contractKey !== undefined && contractNumber !== undefined && contractKey !== contractNumber) throw new Error('Conflicting contract revision selectors');
+  const revision = resolveContractRevision(contractKey ?? contractNumber ?? '2285', { requireRunnable: true });
   const root = resolve(repositoryRoot);
-  const pilot = PILOTS[contractNumber];
-  if (!pilot) throw new Error('No approved execution adapter for this contract');
-  const contractPath = join(root, 'docs/project/acceptance/engineering/' + contractNumber + '.json');
-  const raw = readFileSync(contractPath, 'utf8');
+  const pilot = PILOTS[revision.key];
+  if (!pilot || revision.adapter !== pilot.ADAPTER_ID) throw new Error('No approved execution adapter for this contract revision');
+  const raw = readCanonicalFile(root, revision.path).toString('utf8');
   const contract = JSON.parse(raw);
   const validation = validateContract(contract);
   if (!validation.ok) throw new Error(validation.errors.join('; '));
-  if (contract.contract_id !== pilot.PILOT_ID) throw new Error('Contract identity does not match approved adapter');
+  if (contract.contract_id !== revision.contractId || contract.contract_id !== pilot.PILOT_ID
+    || contract.issue !== '#' + revision.issueNumber) throw new Error('Contract identity does not match registered revision and approved adapter');
+  if (contract.requirements.length !== pilot.PILOT.requirements.length || pilot.PILOT.requirements.some(expected => {
+    const actual = contract.requirements.find(row => row.id === expected.id);
+    return !actual || actual.test_id !== expected.test_id
+      || JSON.stringify([...actual.assertion_ids].sort()) !== JSON.stringify(expected.assertions.map(row => row.id).sort());
+  })) throw new Error('Contract requirements do not match approved parent assertion inventory');
   const identities = frozenIdentities(root, contract);
   const head = assertCommit(root, headSha);
   const base = assertCommit(root, contract.base_sha);
@@ -174,7 +232,7 @@ export function runPilot({ repositoryRoot, headSha, outputDirectory, contractNum
     });
     const assessment = assessProofBundle(contract, { pairs }, head, contractDigest(raw));
     const receipt = {
-      schema_version: '1.0', contract_id: pilot.PILOT_ID, authority: pilot.PILOT.authority,
+      schema_version: '1.0', contract_key: revision.key, contract_id: pilot.PILOT_ID, authority: pilot.PILOT.authority,
       base_sha: base, head_sha: head, contract_sha256: contractDigest(raw), execution_files: contract.execution_files,
       source_scope: 'Committed src excluding engineering-verification control-plane files, plus package.json',
       runtime: { ...runtimeIdentity, image: runtime.image, typescript: JSON.parse(readFileSync(join(root, 'node_modules/typescript/package.json'), 'utf8')).version,
@@ -201,10 +259,11 @@ export function runPilot({ repositoryRoot, headSha, outputDirectory, contractNum
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   try {
     const args = process.argv.slice(2);
-    if (args.length % 2 || args.some((arg, index) => index % 2 === 0 && !['--head', '--output', '--contract'].includes(arg))) throw new Error('Usage: runner.mjs --head <exact-sha> --output <directory> [--contract 2285|1048]');
+    if (args.length % 2 || args.some((arg, index) => index % 2 === 0 && !['--head', '--output', '--contract'].includes(arg))
+      || new Set(args.filter((_, index) => index % 2 === 0)).size !== args.length / 2) throw new Error('Usage: runner.mjs --head <exact-sha> --output <directory> --contract 1048-v2');
     const options = Object.fromEntries(Array.from({ length: args.length / 2 }, (_, index) => [args[index * 2], args[index * 2 + 1]]));
     if (!options['--head'] || !options['--output']) throw new Error('Exact --head and --output are required');
-    const receipt = runPilot({ repositoryRoot: process.cwd(), headSha: options['--head'], outputDirectory: options['--output'], contractNumber: options['--contract'] ?? '2285',
+    const receipt = runPilot({ repositoryRoot: process.cwd(), headSha: options['--head'], outputDirectory: options['--output'], contractKey: options['--contract'],
       artifactUrl: process.env.GITHUB_RUN_ID ? 'https://github.com/' + process.env.GITHUB_REPOSITORY + '/actions/runs/' + process.env.GITHUB_RUN_ID : undefined });
     process.stdout.write(JSON.stringify({ status: receipt.assessment.status, head_sha: receipt.head_sha, duration_ms: receipt.duration_ms }) + '\n');
     if (receipt.assessment.status === 'BLOCKED') process.exitCode = 1;

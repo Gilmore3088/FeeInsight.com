@@ -18,13 +18,15 @@ export interface ScorecardChange {
   merged: boolean | null;
   mergedAt: string | null;
   riskTier: string | null;
-  contractNumber: string | null;
+  contractKey: string | null;
+  contractExecutionStatus: 'CURRENT' | 'HISTORICAL_ONLY' | null;
+  currentCodeVerified: boolean;
   contractSha256: string | null;
   historicalContractSha256: string | null;
   policySha256: string | null;
   review: { status: string; latencyHours: number | null; blockers: string[] };
   ownerAuthorization: { required: boolean | null; status: string; decidedAt: string | null };
-  proof: { status: string; blockers: string[]; completedBeforeMerge?: boolean };
+  proof: { status: string; blockers: string[]; currentCodeVerified?: boolean; contractKey?: string | null; completedBeforeMerge?: boolean };
   ci: { status: string; runId?: number; runAttempt?: number };
   problems: string[];
 }

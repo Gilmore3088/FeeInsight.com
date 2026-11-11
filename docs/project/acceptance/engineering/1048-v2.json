@@ -1,0 +1,320 @@
+{
+  "schema_version": "1.1",
+  "contract_id": "EV-FOUNDATION-1048-V2",
+  "issue": "#1048",
+  "risk_tier": "R3",
+  "base_sha": "8b748c49a9ffeedea997c44a1a0772e6b76a5fb8",
+  "execution_files": [
+    {
+      "path": ".gitattributes",
+      "sha256": "6f8be4f7dc0f90e7a988d21085d6fa9b947092500429203fdbba2d3c5ef07935"
+    },
+    {
+      "path": ".github/workflows/engineering-verification.yml",
+      "sha256": "02c17ecbd29b154cd667f868a7beed2b59ba70ec6ce3274face95c82be45f60a"
+    },
+    {
+      "path": "docs/project/acceptance/engineering/design-v1/prd-v1.md",
+      "sha256": "6ec2ff3c9a5005dfd783cdfc94652148613cec77c493d712f228601da71f7dcc"
+    },
+    {
+      "path": "docs/project/acceptance/engineering/design-v1/technical-design-v1.md",
+      "sha256": "40acbb05266c300fc5dbb2b690d3fd89eb368310c3ccdeeb7580ccdf3c042c35"
+    },
+    {
+      "path": "package-lock.json",
+      "sha256": "18b9c5a6dfecc82c6cec60ecdf26c27c072efd65f980eae94d960f3c429ec819"
+    },
+    {
+      "path": "package.json",
+      "sha256": "19845fd48614ba37c028dc001939342e54468c3b0e2c71840808b6e42b2a0920"
+    },
+    {
+      "path": "src/lib/agents/hoovie/AGENTS.md",
+      "sha256": "2a2e57613bf7eb027472b42311b64e1d591503fa613fc7e02bf376d675c64422"
+    },
+    {
+      "path": "src/lib/engineering-verification/__fixtures__/knox-2285.json",
+      "sha256": "457232128d20222e6826d415320c01ab723a2b0d83f578f996ffa660ce3c5225"
+    },
+    {
+      "path": "src/lib/engineering-verification/__fixtures__/policy-1048.json",
+      "sha256": "30d208d57556c25fd55fe02f9f3b780afe999c07425078bf4cc6e150a87ed4b1"
+    },
+    {
+      "path": "src/lib/engineering-verification/__fixtures__/policy-v2.json",
+      "sha256": "0cf8634e600f102896b02e12adab66e481bbb9706a3be5dca2490bea8f738989"
+    },
+    {
+      "path": "src/lib/engineering-verification/child.mjs",
+      "sha256": "2efd941a6f0d49d343e9dcc03a7177e060e3bf8ba3e032f3490094b7fa823726"
+    },
+    {
+      "path": "src/lib/engineering-verification/cli.mjs",
+      "sha256": "11a51cf5b6e130ff7f5cf34773596a31cee0b6f848e49394ae4abf223581c2e0"
+    },
+    {
+      "path": "src/lib/engineering-verification/contract-registry.mjs",
+      "sha256": "e41e159c58eaa60c101e7ef90b48057a29bf390edb3cf7636816be0b48fa2664"
+    },
+    {
+      "path": "src/lib/engineering-verification/contract.mjs",
+      "sha256": "169d6b1eebd9cff59a579e7b6e7d5540c473bddacf74678fd50d1149b2a4523c"
+    },
+    {
+      "path": "src/lib/engineering-verification/events.mjs",
+      "sha256": "42d06b95ac8324d44bb62906d0b69df257aa102007a42f275ca92f9d552f4b4f"
+    },
+    {
+      "path": "src/lib/engineering-verification/evidence.mjs",
+      "sha256": "d3db3db34f1bb707819351390cba35cc53becc652796d179da103e0ffdfdf9bf"
+    },
+    {
+      "path": "src/lib/engineering-verification/github.mjs",
+      "sha256": "87a9210baf62c30dab3e3b83863a6b9399cafd6159755b239bbc80ffdd0e996d"
+    },
+    {
+      "path": "src/lib/engineering-verification/loader.mjs",
+      "sha256": "93a9c271089e47092dff1b168cc60f79c5b39f39b048d64b0f9d54d9c1cb0ba5"
+    },
+    {
+      "path": "src/lib/engineering-verification/pilot.mjs",
+      "sha256": "9d0dda8b99705c31b0fc8c81160ad11cf26d7b47be9b25929df4f4563a7267d3"
+    },
+    {
+      "path": "src/lib/engineering-verification/policy-pilot.mjs",
+      "sha256": "e91c76facc740efda15ea99f18716ce6108d889d20df7e2d05ac7d093b1d19fd"
+    },
+    {
+      "path": "src/lib/engineering-verification/policy-v2-pilot.mjs",
+      "sha256": "59c38cb3374cd03e9846ea1de0634d5cda811927935e473148de06e85bc8dde3"
+    },
+    {
+      "path": "src/lib/engineering-verification/policy.json",
+      "sha256": "e5f78465e3362cceedabed6d5361790d054f8c3789f9c87fbd4b618f456ab1a0"
+    },
+    {
+      "path": "src/lib/engineering-verification/program.mjs",
+      "sha256": "c13ed7a739a99a5ecc528b9be71c53080a5261e0cbe43971462a7e4fc561059a"
+    },
+    {
+      "path": "src/lib/engineering-verification/proof.mjs",
+      "sha256": "fe6f9dfc1feba27801a1a527c7e6321d76330bac0687cdd8ab906873f250049a"
+    },
+    {
+      "path": "src/lib/engineering-verification/runner.mjs",
+      "sha256": "9ea8e3a0634b6595d89ddcf2b14248e91833439043299eaf74ff264a2f1aec6a"
+    },
+    {
+      "path": "src/lib/engineering-verification/runtime.json",
+      "sha256": "10d1b652ad69c2d5ebedcdd33b85914f92c24ebbf428d2ad0aaf8ee0d0f160a2"
+    },
+    {
+      "path": "src/lib/engineering-verification/scope.mjs",
+      "sha256": "ff2f834266497d317a0fe9b680a3b0897088280798de984babd5617b7ec7f2a0"
+    },
+    {
+      "path": "src/lib/engineering-verification/scorecard.mjs",
+      "sha256": "777e00870105c083523b66b8e2efee8a17b8d7616b45540dbbb6f2709da72ab7"
+    },
+    {
+      "path": "vendor/baseline-browser-mapping/baseline-browser-mapping-2.9.19-process-error-backport.tgz",
+      "sha256": "b09d3f74192140f2de174eb5148d1ac372529565e184f5fafffb7ae898b74fd8"
+    }
+  ],
+  "scope": [
+    ".github/PULL_REQUEST_TEMPLATE.md",
+    ".github/workflows/engineering-verification-gate.yml",
+    ".github/workflows/engineering-verification.yml",
+    "docs/project/LESSONS.md",
+    "docs/project/acceptance/engineering/1048-v2.json",
+    "docs/project/acceptance/engineering/README.md",
+    "docs/project/acceptance/engineering/plan-validation.md",
+    "docs/project/acceptance/engineering/program.json",
+    "docs/project/findings/2026-11-08-financial-risk-contract-revisions.md",
+    "src/lib/engineering-verification/__fixtures__/policy-v2.json",
+    "src/lib/engineering-verification/child.mjs",
+    "src/lib/engineering-verification/cli.d.mts",
+    "src/lib/engineering-verification/cli.mjs",
+    "src/lib/engineering-verification/cli.test.ts",
+    "src/lib/engineering-verification/contract-paths.test.ts",
+    "src/lib/engineering-verification/contract-registry.d.mts",
+    "src/lib/engineering-verification/contract-registry.mjs",
+    "src/lib/engineering-verification/contract-registry.test.ts",
+    "src/lib/engineering-verification/contract.mjs",
+    "src/lib/engineering-verification/events.mjs",
+    "src/lib/engineering-verification/events.test.ts",
+    "src/lib/engineering-verification/financial-routing.test.ts",
+    "src/lib/engineering-verification/native-tree.fixture.ts",
+    "src/lib/engineering-verification/policy-v2-pilot.d.mts",
+    "src/lib/engineering-verification/policy-v2-pilot.mjs",
+    "src/lib/engineering-verification/policy-v2-pilot.test.ts",
+    "src/lib/engineering-verification/preparer-closure.test.ts",
+    "src/lib/engineering-verification/proof-inputs.fixture.ts",
+    "src/lib/engineering-verification/proof.d.mts",
+    "src/lib/engineering-verification/proof.mjs",
+    "src/lib/engineering-verification/proof.test.ts",
+    "src/lib/engineering-verification/runner-revisions.test.ts",
+    "src/lib/engineering-verification/runner.d.mts",
+    "src/lib/engineering-verification/runner.mjs",
+    "src/lib/engineering-verification/scorecard.d.mts",
+    "src/lib/engineering-verification/scorecard.mjs",
+    "src/lib/engineering-verification/scorecard.test.ts",
+    "src/lib/engineering-verification/workflows.test.ts"
+  ],
+  "required_skills": [
+    "audit-data",
+    "buyer-journey-mapper",
+    "data-quality-audit",
+    "fee-evaluation",
+    "fee-taxonomy-regression",
+    "playwright-ux-simulator",
+    "report-reconciliation",
+    "supabase",
+    "supabase-postgres-best-practices",
+    "tdd",
+    "ux-ui-auditor"
+  ],
+  "requirements": [
+    {
+      "id": "EV-FINANCIAL-RISK-ROUTES",
+      "behavior": "Source-backed financial and paid-access paths receive their required risk floor; mixed/renamed changes retain the highest applicable risk.",
+      "authority": "Supplied Engineering Verification PRD FR-02, FR-03 and FR-21; technical design sections4,7,12; Hoovie AGENTS read-door ownership. Literal cases are independently source-inspected policy regressions, not fee-accuracy, reviewer enrollment or production acceptance.",
+      "test_id": "financial-risk-routes",
+      "test_path": "src/lib/engineering-verification/policy-v2-pilot.test.ts",
+      "fixture_path": "src/lib/engineering-verification/__fixtures__/policy-v2.json",
+      "adapter_path": "src/lib/engineering-verification/policy-v2-pilot.mjs",
+      "fixture_sha256": "0cf8634e600f102896b02e12adab66e481bbb9706a3be5dca2490bea8f738989",
+      "test_sha256": "fe91629727e018c10561efa0b2447a99e9e999c1febb966b6eefa963fbc1e3fe",
+      "adapter_sha256": "59c38cb3374cd03e9846ea1de0634d5cda811927935e473148de06e85bc8dde3",
+      "baseline_expectation": "FAIL",
+      "baseline_failure_assertion_ids": [
+        "risk-FIN-01"
+      ],
+      "assertion_ids": [
+        "risk-FIN-01",
+        "risk-FIN-02",
+        "risk-FIN-03",
+        "risk-FIN-04",
+        "risk-FIN-05",
+        "risk-FIN-06",
+        "risk-FIN-07",
+        "risk-AUTH-01",
+        "risk-AUTH-02",
+        "risk-AUTH-03",
+        "risk-CONTROL-01",
+        "risk-CONTROL-02",
+        "risk-MIX-01",
+        "risk-MIX-02",
+        "risk-MIX-03",
+        "risk-MOVE-01",
+        "risk-MOVE-02",
+        "risk-MATH-01",
+        "risk-MATH-02",
+        "risk-MATH-03",
+        "risk-MATH-04",
+        "risk-MATH-05",
+        "risk-FIN-08",
+        "risk-FIN-09",
+        "risk-FIN-10",
+        "risk-FIN-11",
+        "risk-AUTH-04",
+        "risk-AUTH-05",
+        "risk-AUTH-06",
+        "risk-AUTH-07",
+        "risk-AUTH-08",
+        "risk-FIN-12",
+        "risk-CONTROL-03",
+        "risk-CONTROL-04",
+        "risk-AUTH-09",
+        "risk-AUTH-10",
+        "risk-AUTH-11",
+        "risk-AUTH-12",
+        "risk-AUTH-13",
+        "risk-AUTH-14",
+        "risk-AUTH-15",
+        "risk-AUTH-16",
+        "risk-FIN-13",
+        "risk-FIN-14",
+        "risk-FIN-15",
+        "risk-FIN-16",
+        "risk-FIN-17",
+        "risk-CONTROL-05",
+        "risk-CONTROL-06",
+        "risk-CONTROL-07"
+      ],
+      "failure_signature": "Financial risk requirement differs: FIN-01"
+    },
+    {
+      "id": "EV-FINANCIAL-SKILL-ROUTES",
+      "behavior": "Financial-source and analysis paths retain the exact independently specified owner-specialist union, with conservative control cases.",
+      "authority": "Supplied Engineering Verification PRD FR-02, FR-03 and FR-21; technical design sections4,7,12; Hoovie AGENTS read-door ownership. Literal cases are independently source-inspected policy regressions, not fee-accuracy, reviewer enrollment or production acceptance.",
+      "test_id": "financial-skill-routes",
+      "test_path": "src/lib/engineering-verification/policy-v2-pilot.test.ts",
+      "fixture_path": "src/lib/engineering-verification/__fixtures__/policy-v2.json",
+      "adapter_path": "src/lib/engineering-verification/policy-v2-pilot.mjs",
+      "fixture_sha256": "0cf8634e600f102896b02e12adab66e481bbb9706a3be5dca2490bea8f738989",
+      "test_sha256": "fe91629727e018c10561efa0b2447a99e9e999c1febb966b6eefa963fbc1e3fe",
+      "adapter_sha256": "59c38cb3374cd03e9846ea1de0634d5cda811927935e473148de06e85bc8dde3",
+      "baseline_expectation": "FAIL",
+      "baseline_failure_assertion_ids": [
+        "skills-FIN-01"
+      ],
+      "assertion_ids": [
+        "skills-FIN-01",
+        "skills-FIN-02",
+        "skills-FIN-03",
+        "skills-FIN-04",
+        "skills-FIN-05",
+        "skills-FIN-06",
+        "skills-FIN-07",
+        "skills-AUTH-01",
+        "skills-AUTH-02",
+        "skills-AUTH-03",
+        "skills-CONTROL-01",
+        "skills-CONTROL-02",
+        "skills-MIX-01",
+        "skills-MIX-02",
+        "skills-MIX-03",
+        "skills-MOVE-01",
+        "skills-MOVE-02",
+        "skills-MATH-01",
+        "skills-MATH-02",
+        "skills-MATH-03",
+        "skills-MATH-04",
+        "skills-MATH-05",
+        "skills-FIN-08",
+        "skills-FIN-09",
+        "skills-FIN-10",
+        "skills-FIN-11",
+        "skills-AUTH-04",
+        "skills-AUTH-05",
+        "skills-AUTH-06",
+        "skills-AUTH-07",
+        "skills-AUTH-08",
+        "skills-FIN-12",
+        "skills-CONTROL-03",
+        "skills-CONTROL-04",
+        "skills-AUTH-09",
+        "skills-AUTH-10",
+        "skills-AUTH-11",
+        "skills-AUTH-12",
+        "skills-AUTH-13",
+        "skills-AUTH-14",
+        "skills-AUTH-15",
+        "skills-AUTH-16",
+        "skills-FIN-13",
+        "skills-FIN-14",
+        "skills-FIN-15",
+        "skills-FIN-16",
+        "skills-FIN-17",
+        "skills-CONTROL-05",
+        "skills-CONTROL-06",
+        "skills-CONTROL-07"
+      ],
+      "failure_signature": "Financial specialist requirement differs: FIN-01"
+    }
+  ],
+  "production_boundary": "NO_PROD_MUTATION",
+  "human_approval_required": true
+}
