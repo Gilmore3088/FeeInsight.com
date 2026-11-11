@@ -113,7 +113,7 @@ export function leftOutNote(name: string, lines: ReportLine[]): string | null {
   if (thin.length > 0) {
     parts.push(`Not compared, because fewer than ${MIN_LOCAL_PEERS_PER_LINE} local competitors publish them: ${thin.join(", ")}.`);
   }
-  if (notFound.length > 0) parts.push(`Not found on ${name}'s published schedule: ${notFound.join(", ")}.`);
+  if (notFound.length > 0) parts.push(`No price on file yet from ${name}'s published schedule: ${notFound.join(", ")}.`);
   return parts.length > 0 ? parts.join(" ") : null;
 }
 

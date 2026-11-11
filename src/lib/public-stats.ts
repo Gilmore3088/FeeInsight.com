@@ -8,6 +8,9 @@ import { maturityTier } from "@/lib/data-store/maturity";
 import { US_STATES_ONLY, VALID_US_CODES } from "@/lib/us-states";
 import { publicCategoryCount } from "@/lib/headline-counts";
 import { activeInstitutionFilter } from "@/lib/data-store/fee-stats";
+import { formatAbsoluteDate } from "@/lib/absolute-date";
+
+export { formatAbsoluteDate };
 
 /**
  * Single source of truth for every public-facing headline number.
@@ -81,25 +84,6 @@ export function formatCountOrUnavailable(n: number | null): string {
 function logFailedRead(name: string, error: unknown): null {
   console.error(`[public-stats] ${name} read failed; showing it as unavailable`, error);
   return null;
-}
-
-export function formatAbsoluteDate(value: string | Date | null | undefined): string | null {
-  if (!value) return null;
-  const d = value instanceof Date ? value : new Date(value);
-  if (Number.isNaN(d.getTime())) return null;
-  // A calendar date (a "YYYY-MM-DD" string, or a date column read as UTC midnight) keeps its own day.
-  // Any other timestamp is dated in U.S. Pacific time, so no mainland visitor ever reads a date that
-  // is still tomorrow for them (the server runs on UTC; Eastern dated a 9pm Pacific refresh tomorrow,
-  // site check 2026-11-01).
-  const calendarDate =
-    (typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)) ||
-    (d.getUTCHours() === 0 && d.getUTCMinutes() === 0 && d.getUTCSeconds() === 0 && d.getUTCMilliseconds() === 0);
-  return d.toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-    timeZone: calendarDate ? "UTC" : "America/Los_Angeles",
-  });
 }
 
 export function formatFreshness(value: string | Date | null | undefined): string {

@@ -1,9 +1,10 @@
 import { positionCounts, type ReportChange, type ReportLine } from "@/lib/custom-report/analysis";
 import { EXTRA_ROW, ROWS_SHOWN } from "../rows";
+import { comparedAt, priceText } from "../report-view";
 import { ShowAll } from "../show-all";
+import { formatAbsoluteDate } from "@/lib/absolute-date";
 
 const SERIF = { fontFamily: "var(--fi-font-sans)" };
-const DATE = new Intl.DateTimeFormat("en-US", { month: "long", day: "numeric", year: "numeric", timeZone: "UTC" });
 
 function money(value: number | null | undefined): string {
   if (value === null || value === undefined || Number.isNaN(value)) return "—";
@@ -47,6 +48,24 @@ export function ordinal(n: number): string {
   const tens = n % 100;
   if (tens >= 11 && tens <= 13) return `${n}th`;
   return `${n}${["th", "st", "nd", "rd"][n % 10] ?? "th"}`;
+}
+
+/**
+ * Where the fee sits, in words a pricing committee reads as intended: "highest of 19 local
+ * competitors" when it is above every one of them (a "100th percentile" reads as an error), else
+ * a percentile held to 1st to 99th.
+ */
+export function rankPhrase(line: PlottedLine, rank: number): string {
+  const n = line.peerFigures.length || line.peers.n;
+  const amounts = line.peerFigures.map((f) => f.amount);
+  if (amounts.length > 0 && amounts.every((a) => a < line.own.amount)) return `highest of ${n} local competitors`;
+  if (amounts.length > 0 && amounts.every((a) => a > line.own.amount)) return `lowest of ${n} local competitors`;
+  return `${ordinal(Math.min(99, Math.max(1, Math.round(rank))))} percentile among ${n} local competitors`;
+}
+
+/** "middle 50% $25 to $30", or "all of the middle 50% at $15" when the half is one price. */
+export function middleHalfText(p25: number, p75: number): string {
+  return p25 === p75 ? `all of the middle 50% at ${money(p25)}` : `middle 50% ${money(p25)} to ${money(p75)}`;
 }
 
 function gap(line: PlottedLine): string {
@@ -133,7 +152,7 @@ export function AtAGlance({
             <span
               role="cell"
               className={`relative order-last col-span-3 mt-2 block h-6 ${wide("sm:order-none sm:col-span-1 sm:mt-0 sm:h-10")}`}
-              title={`${line.label}: yours ${money(line.own.amount)}; local median ${money(line.peers.median)}; middle half ${money(line.peers.p25)}–${money(line.peers.p75)} across ${line.peers.n} competitors`}
+              title={`${line.label}: yours ${priceText(line.own).replace(", depending on account", "")}; local median ${money(line.peers.median)}; ${middleHalfText(line.peers.p25, line.peers.p75)} across ${line.peers.n} competitors`}
             >
               <span className="absolute inset-y-0 left-1/4 right-1/4 bg-surface-200" aria-hidden="true" />
               <span className="absolute inset-y-0 left-1/2 w-px bg-ink-muted" aria-hidden="true" />
@@ -141,11 +160,14 @@ export function AtAGlance({
               <span
                 className={`absolute top-1/2 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full ring-2 ring-surface-0 ${TONE[tone].dot}`}
                 style={{ left: `${Math.min(98, Math.max(2, rank))}%` }}
-                aria-label={`${ordinal(Math.round(rank))} percentile among local competitors`}
+                aria-label={rankPhrase(line, rank)}
               />
             </span>
             <span role="cell" className="text-right text-[14px] font-semibold tabular-nums text-ink">
-              {money(line.own.amount)}
+              {priceText(line.own).replace(", depending on account", "")}
+              {comparedAt(line.key, line.own) && (
+                <span className="block text-[11px] font-normal text-ink-muted">compared at {money(line.own.amount)}</span>
+              )}
             </span>
             <span role="cell" className={`text-right text-[13px] tabular-nums ${TONE[tone].text}`}>
               {gap(line)}
@@ -181,7 +203,7 @@ function whose(change: ReportChange, name: string): string {
 
 /** The line under "Since this report was bought". */
 export function sinceBoughtFinding(savedAt: string, changes: ReportChange[]): string {
-  const on = DATE.format(new Date(savedAt));
+  const on = formatAbsoluteDate(savedAt, "long");
   if (changes.length === 0) return `No figure has moved since the copy saved on ${on}.`;
   return `${changes.length} ${changes.length === 1 ? "figure has" : "figures have"} moved since the copy saved on ${on}.`;
 }

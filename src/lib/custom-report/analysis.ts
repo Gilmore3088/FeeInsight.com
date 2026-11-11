@@ -371,7 +371,7 @@ function csvCell(value: string | number | null | undefined): string {
 }
 
 /** The CSV's reasons in place of a blank cell, so "not found" never reads as "too few competitors". */
-export const MISSING_NOT_FOUND = "not found on schedule";
+export const MISSING_NOT_FOUND = "no price on file from schedule";
 export const MISSING_TOO_FEW = `too few competitors (n<${MIN_LOCAL_PEERS_PER_LINE})`;
 /** An amount left out because no record's quote shows it. */
 export const MISSING_EXCLUDED = "excluded: the quote does not show the amount";
