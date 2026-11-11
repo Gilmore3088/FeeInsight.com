@@ -20,7 +20,8 @@ interface PageProps {
 }
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
-  return institutionProfileMetadata((await params).id);
+  const { id, fee } = await params;
+  return institutionProfileMetadata(id, focusCategoryFrom(fee) ?? undefined);
 }
 
 export default async function InstitutionFeeFocusPage({ params }: PageProps) {
