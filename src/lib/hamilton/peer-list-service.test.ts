@@ -269,3 +269,68 @@ describe("peer lists past 50 rows (#977, H02-T08)", () => {
     expect(refined.peerList.offset).toBeUndefined();
   });
 });
+
+describe("peer reference identity after object-key reordering", () => {
+  type Continuation = import("./peer-list").PeerListContinuation;
+  const originalPeers = [peer, { ...peer, institutionId: 404, name: "Georgia CU", stateCode: "GA", recordId: 2 }];
+  const prior = (): Continuation => ({
+    originQuestion: "List ten peers", originInstitutionId: "202", originSubjectId: 202,
+    originRows: [
+      { institutionId: 303, recordId: 1, reportDate: "2026-06-30", source: "ncua" },
+      { institutionId: 404, recordId: 2, reportDate: "2026-06-30", source: "ncua" },
+    ],
+    selectedIds: [303, 404],
+  });
+  const refine = async (previousPeerList: Continuation) => {
+    mocks.rows.mockResolvedValue({ rows: originalPeers, totalMatches: 2 });
+    return answerPeerList(user, { institutionId: 202, question: "Only Florida", previousPeerList });
+  };
+
+  it("canonical-key control refines the unchanged ordered dated peers", async () => {
+    const result = await refine(prior());
+    expect(result?.peerList.status).toBe("ready");
+    expect(result?.peerList.rows.map(row => [row.institutionId, row.recordId, row.reportDate, row.source])).toEqual([
+      [303, 1, "2026-06-30", "ncua"],
+    ]);
+    expect(result?.peerList.subject?.institutionId).toBe(202);
+    expect(result?.peerList.totalMatches).toBe(1);
+  });
+
+  it("refines semantically identical references whose JSON object keys have a different insertion order", async () => {
+    const reordered: Continuation = {
+      originQuestion: "List ten peers", originInstitutionId: "202", originSubjectId: 202,
+      originRows: [
+        { source: "ncua", reportDate: "2026-06-30", recordId: 1, institutionId: 303 },
+        { source: "ncua", reportDate: "2026-06-30", recordId: 2, institutionId: 404 },
+      ],
+      selectedIds: [303, 404],
+    };
+    expect(validatePeerListContinuation(reordered)).toEqual(prior());
+    const result = await refine(reordered);
+    expect(result?.peerList.status).toBe("ready");
+    expect(result?.peerList.rows.map(row => [row.institutionId, row.recordId, row.reportDate, row.source])).toEqual([
+      [303, 1, "2026-06-30", "ncua"],
+    ]);
+    expect(result?.peerList.subject?.institutionId).toBe(202);
+    expect(result?.peerList.totalMatches).toBe(1);
+  });
+
+  const changes: Array<{ field: string; mutate: (value: Continuation) => void }> = [
+    { field: "institution ID", mutate: value => { value.originRows[0].institutionId = 505; value.selectedIds = [505, 404]; } },
+    { field: "record ID", mutate: value => { value.originRows[0].recordId = 99; } },
+    { field: "row order", mutate: value => { value.originRows.reverse(); } },
+    { field: "report date", mutate: value => { value.originRows[0].reportDate = "2026-09-30"; } },
+    { field: "source", mutate: value => { value.originRows[0].source = "fdic"; } },
+    { field: "row count", mutate: value => { value.originRows.pop(); value.selectedIds = [303]; } },
+    { field: "extra enumerable field", mutate: value => { Object.assign(value.originRows[0], { unexpected: "not a reference field" }); } },
+  ];
+  it.each(changes)("still refuses a changed $field without substituting a peer group", async ({ mutate }) => {
+    const changed = prior();
+    mutate(changed);
+    expect(validatePeerListContinuation(changed)).not.toBeNull();
+    const result = await refine(changed);
+    expect(result?.peerList.status).toBe("unavailable");
+    expect(result?.peerList.rows).toEqual([]);
+    expect(result?.shortAnswer).toContain("original peer selection or its dated records have changed");
+  });
+});
