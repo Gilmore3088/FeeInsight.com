@@ -28,6 +28,7 @@ import { getLocalMarketMembers, type LocalMarketMembers } from "@/lib/data-store
 import { getStateEconomicContext } from "@/lib/data-store/economic-context";
 import { STATE_NEWS_SOURCE_PATTERNS, TOPIC_SQL } from "@/lib/data-store/news";
 import { STRUCK_ENFORCEMENT_AGENCIES, STRUCK_REG_ARTICLE_SOURCES } from "@/lib/data-store/struck-sources";
+import { hamiltonShowsStatePosts, hamiltonStateAgencies } from "@/lib/data-catalog/hamilton-sources";
 import { getNationalRateStats, getRateFeesByInstitution } from "@/lib/data-store/rate-fees";
 import { getInstitutionRegulators } from "@/lib/data-store/regulators";
 import { getComplaintBenchmark, getInstitutionComplaintYears } from "@/lib/data-store/complaints";
@@ -637,6 +638,8 @@ export async function loadWire(
   now = new Date(),
 ): Promise<WireRows & { posts: WirePostRow[] }> {
   const today = now.toISOString().slice(0, 10);
+  // States whose terms are unconfirmed are not shown in Hamilton (hamilton-sources.ts, #2226); null = every non-struck state.
+  const stateAgencies = hamiltonStateAgencies();
   // A state code is upper-cased once here and compared upper case in SQL (party_state too).
   const state = stateCode ? stateCode.toUpperCase() : null;
   const federal = enforcementCode(primaryRegulator);
@@ -677,13 +680,16 @@ export async function loadWire(
              AND (agency = ${federal} OR upper(party_state) = ${state})
              -- Struck states' orders (DECISIONS.md "No non-commercial data") are never read.
              AND agency <> ALL(${[...STRUCK_ENFORCEMENT_AGENCIES]}::text[])
+             -- States whose terms are unconfirmed are not shown in Hamilton (hamilton-sources.ts, #2226).
+             AND (${stateAgencies !== null}::boolean IS NOT TRUE OR agency NOT LIKE 'STATE!_%' ESCAPE '!'
+                  OR agency = ANY(${stateAgencies ?? []}::text[]))
              AND subject ~* ${CONSUMER_LAW_PG}
              -- Rows the reader would drop for having no link must not use up the LIMIT (#1359).
              AND (document_url IS NOT NULL OR agency = 'OCC')
            ORDER BY start_date DESC NULLS LAST, id DESC
            LIMIT 50`.catch(empty("enforcement"))
       : Promise.resolve([]),
-    state
+    state && hamiltonShowsStatePosts(state)
       ? sql`
           SELECT source, title, link, published_at
             FROM reg_articles

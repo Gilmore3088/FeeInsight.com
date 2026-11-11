@@ -13,7 +13,8 @@ import {
 import { FEE_TYPE_LABELS, feeTypesOf } from "@/lib/regulatory/wire-fee-types";
 import type { FeeDataStrip } from "@/lib/regulatory/wire-fee-links";
 import { billTimeline, researchKey, type RelatedItem, type ResearchNote } from "@/lib/regulatory/wire-research";
-import { STRUCK_REGULATOR_STATES } from "@/lib/data-store/struck-sources";
+import { REUSE_CONFIRMED_REGULATOR_STATES, STRUCK_REGULATOR_STATES } from "@/lib/data-store/struck-sources";
+import { hamiltonShowsStatePosts, hamiltonStatePostSources } from "@/lib/data-catalog/hamilton-sources";
 import { STATE_NAMES } from "@/lib/us-states";
 import { ResearchPanel } from "./research-panel";
 import { FeeChips, WireDate, WirePager, WireSummary } from "./wire-controls";
@@ -49,10 +50,52 @@ export function struckRegulatorNote(states: readonly string[]): string | null {
   return `${named} regulator posts are not shown because ${whose} website terms do not allow commercial use.`;
 }
 
-/** Whether every state in the view is struck, so no regulator posts can arrive at all. */
-function everyStateStruck(params: WireParams, watched: readonly string[], struck: readonly string[]): boolean {
-  if (params.state) return struck.length > 0;
-  if (params.mine && watched.length > 0) return struck.length === watched.length;
+/**
+ * The states in view whose regulator posts are hidden because their site terms are not confirmed
+ * (hamilton-sources.ts, #2226), struck states aside; "all" on All states (or My states with
+ * nothing watched) while any state is unconfirmed.
+ */
+export function unconfirmedStatesInView(params: WireParams, watched: readonly string[] = []): string[] | "all" {
+  const unconfirmed = (s: string) => !STRUCK_REGULATOR_STATES.includes(s) && !hamiltonShowsStatePosts(s);
+  if (params.state) return unconfirmed(params.state) ? [params.state] : [];
+  if (params.mine && watched.length > 0) return watched.filter(unconfirmed);
+  return hamiltonStatePostSources() === null ? [] : "all";
+}
+
+/** Why these states' regulator posts are missing, when their site terms are not confirmed. */
+export function unconfirmedRegulatorNote(states: readonly string[] | "all"): string | null {
+  if (states === "all") {
+    const shown = REUSE_CONFIRMED_REGULATOR_STATES.map(stateName);
+    if (shown.length === 0) return "No other state's regulator posts are shown, because we have not confirmed that their website terms allow commercial use.";
+    const possessive = shown.length === 1 ? `${shown[0]}'s` : `${listNames(shown)}'`;
+    return `Of the remaining states, only ${possessive} regulator posts are shown: we have not confirmed that the others' website terms allow commercial use.`;
+  }
+  if (states.length === 0) return null;
+  const whose = states.length === 1 ? "the regulator's" : "those regulators'";
+  return `${listNames(states.map(stateName))} regulator posts are not shown because we have not confirmed that ${whose} website terms allow commercial use.`;
+}
+
+/** "New Jersey's regulator posts are" (or "Other states' regulator posts are"), for the states in view that can show posts. */
+function shownStatesClause(params: WireParams, watched: readonly string[], struck: readonly string[], unconfirmed: readonly string[] | "all"): string {
+  const shown =
+    unconfirmed === "all"
+      ? [...REUSE_CONFIRMED_REGULATOR_STATES]
+      : params.mine && watched.length > 0
+        ? watched.filter((s) => !struck.includes(s) && !unconfirmed.includes(s))
+        : null;
+  if (!shown || shown.length === 0) return "Other states' regulator posts are";
+  const names = shown.map(stateName);
+  return `${names.length === 1 ? `${names[0]}'s` : `${listNames(names)}'`} regulator posts are`;
+}
+
+function listNames(names: readonly string[]): string {
+  return names.length === 1 ? names[0] : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+}
+
+/** Whether every state in the view is hidden (struck or unconfirmed), so no regulator posts can arrive at all. */
+function everyStateHidden(params: WireParams, watched: readonly string[], hidden: number): boolean {
+  if (params.state) return hidden > 0;
+  if (params.mine && watched.length > 0) return hidden === watched.length;
   return false;
 }
 
@@ -276,12 +319,14 @@ export function emptyMessage(params: WireParams, where: string, phrase: string, 
   const searched = params.q ? ` matching “${params.q}”` : "";
   const bills = "Fee bills come from Open States and are kept only when the bill names a bank or credit union fee; each state's bills are checked once a week.";
   const struck = struckStatesInView(params, watched);
-  const note = struckRegulatorNote(struck);
+  const unconfirmed = unconfirmedStatesInView(params, watched);
+  const note = [struckRegulatorNote(struck), unconfirmedRegulatorNote(unconfirmed)].filter(Boolean).join(" ");
+  const hidden = struck.length + (unconfirmed === "all" ? 0 : unconfirmed.length);
   const news = !note
     ? "Regulator posts are read once a day."
-    : everyStateStruck(params, watched, struck)
+    : everyStateHidden(params, watched, hidden)
       ? note
-      : `${note} Other states' regulator posts are read once a day.`;
+      : `${note} ${shownStatesClause(params, watched, struck, unconfirmed)} read once a day.`;
   if (params.kind === "bills") return `No fee bills are stored for ${where} ${phrase}${searched}. ${bills}`;
   if (params.kind === "regulators") return `No regulator posts are stored for ${where} ${phrase}${searched}. Only the state banking and credit union regulators' posts about banking are kept. ${news}`;
   if (params.kind === "press") return "Press coverage is paused while we confirm its license.";
@@ -404,7 +449,10 @@ export function StateWire({
   const mine = Boolean(params.mine && watch && watch.states.length > 0);
   const where = params.state ? stateName(params.state) : mine ? "your watched states" : "any state";
   const watchedInView = mine && watch ? watch.states : [];
-  const struckNote = struckRegulatorNote(struckStatesInView(params, watchedInView));
+  const struckNote =
+    [struckRegulatorNote(struckStatesInView(params, watchedInView)), unconfirmedRegulatorNote(unconfirmedStatesInView(params, watchedInView))]
+      .filter(Boolean)
+      .join(" ") || null;
   const noun = params.kind === "bills" ? "fee bills" : params.kind === "regulators" ? "regulator posts" : params.kind === "press" ? "press stories" : "items";
   // Press is held, so a failed press read is not news to the reader.
   const failed = wire.failed.filter((k) => k !== "press");

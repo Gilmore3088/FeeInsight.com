@@ -4,6 +4,17 @@ import { hasFeeType, type FeeType } from "@/lib/regulatory/wire-fee-types";
 import { trackerItemId } from "@/lib/regulatory/wire-research";
 import { sql } from "./connection";
 import { STRUCK_REG_ARTICLE_SOURCES } from "./struck-sources";
+import { hamiltonStatePostSources } from "@/lib/data-catalog/hamilton-sources";
+
+/**
+ * Every reader here serves Hamilton, its Regulatory Wire or a paid report, so regulator posts
+ * follow the Hamilton source rule: only states whose terms are confirmed while state-reg-news is
+ * terms-unconfirmed (hamilton-sources.ts, #2226). `restrict` false means every non-struck state.
+ */
+function postFilter(): { restrict: boolean; sources: string[] } {
+  const sources = hamiltonStatePostSources();
+  return { restrict: sources !== null, sources: sources ?? [] };
+}
 
 /**
  * State-level news for the Pro news page and the State report: the state regulators' own
@@ -195,11 +206,13 @@ async function readArticles(prefix: "state" | "news", options: StateNewsOptions,
   if (prefix === "news") return [];
   const pattern = options.stateCode ? `${prefix}:${options.stateCode.toUpperCase()}` : `${prefix}:%`;
   const since = options.since ?? null;
+  const posts = postFilter();
   return (await sql`
     SELECT source, title, link, published_at
       FROM reg_articles
      WHERE source LIKE ${pattern}
        AND source <> ALL(${[...STRUCK_REG_ARTICLE_SOURCES]}::text[])
+       AND (${posts.restrict}::boolean IS NOT TRUE OR source = ANY(${posts.sources}::text[]))
        AND (${since}::text IS NULL OR published_at >= ${since})
      ORDER BY published_at DESC NULLS LAST, created_at DESC
      LIMIT ${limit}
@@ -239,10 +252,12 @@ export async function getStateNews(options: StateNewsOptions = {}): Promise<Stat
 
 /** States with at least one stored item, for the news page's state picker. */
 export async function getStatesWithNews(): Promise<string[]> {
+  const posts = postFilter();
   try {
     const rows = (await sql`
       SELECT DISTINCT upper(split_part(source, ':', 2)) AS state_code FROM reg_articles
        WHERE source LIKE 'state:%' AND source <> ALL(${[...STRUCK_REG_ARTICLE_SOURCES]}::text[])
+         AND (${posts.restrict}::boolean IS NOT TRUE OR source = ANY(${posts.sources}::text[]))
       UNION
       SELECT DISTINCT upper(jurisdiction) FROM reg_tracker_items WHERE source = 'open_states' AND cardinality(topics) > 0
       ORDER BY 1
@@ -421,11 +436,13 @@ async function readWireArticles(prefix: "state" | "news", options: StateWireOpti
   const patterns = states ? states.map((code) => `${prefix}:${code}`) : [`${prefix}:%`];
   const since = options.since ?? null;
   const q = likePattern(options.q);
+  const posts = postFilter();
   return (await sql`
     SELECT guid, source, title, link, published_at
       FROM reg_articles
      WHERE source LIKE ANY(${patterns}::text[])
        AND source <> ALL(${[...STRUCK_REG_ARTICLE_SOURCES]}::text[])
+       AND (${posts.restrict}::boolean IS NOT TRUE OR source = ANY(${posts.sources}::text[]))
        AND (${since}::text IS NULL OR published_at >= ${since})
        AND (${q}::text IS NULL OR title ILIKE ${q})
      ORDER BY published_at DESC NULLS LAST, created_at DESC

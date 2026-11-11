@@ -448,7 +448,7 @@ export async function assembleReportInputs(input: {
       ? await getInstitutionComplaintYears(selectedInstitution.id).catch(() => [])
       : [],
     enforcement: selectedInstitution
-      ? await getEnforcementRecord(selectedInstitution.id).catch(() => null)
+      ? await getEnforcementRecord(selectedInstitution.id, { audience: "hamilton" }).catch(() => null)
       : null,
     // An FDIC letter is listed only for an FDIC-supervised institution (#2525).
     primaryRegulator: selectedInstitution

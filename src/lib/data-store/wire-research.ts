@@ -66,7 +66,13 @@ export function toResearchNote(row: NoteRow): ResearchNote {
   };
 }
 
-/** Notes for these items, keyed by researchKey(kind, id). */
+/**
+ * Notes for these items, keyed by researchKey(kind, id). A note is Fee Insight's own summary of one
+ * item, so it is shown only beside an item the page already shows: callers pass the ids of items
+ * their readers returned, and those readers apply the Hamilton source rule (federal releases and
+ * Open States bills are public domain; state posts only from confirmed states, #2226). The
+ * wire-research contract is terms-unconfirmed for its mixed inputs, not for the notes themselves.
+ */
 export async function getResearchNotes(refs: Array<{ kind: ResearchItemKind; id: string }>): Promise<Map<string, ResearchNote>> {
   const out = new Map<string, ResearchNote>();
   const articleIds = refs.filter((r) => r.kind === "article").map((r) => r.id);

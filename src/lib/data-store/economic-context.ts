@@ -1,6 +1,7 @@
 import { CPI_BANK_SERVICES_SERIES } from "@/lib/regulatory/fed";
 import { sql } from "./connection";
 import { fedIndicatorServedSql } from "./struck-sources";
+import { hamiltonShowsSource } from "@/lib/data-catalog/hamilton-sources";
 import { getBeigeBookThemes, getLatestBeigeBook } from "./fed";
 import { STATE_NEWS_SOURCE_PATTERNS, TOPIC_SQL } from "./news";
 
@@ -196,6 +197,9 @@ const DISTRICT_RESEARCH_DAYS = 180;
 const DISTRICT_RESEARCH_LIMIT = 3;
 
 async function loadDistrictResearch(district: number): Promise<DistrictResearchItem[]> {
+  // Only Hamilton and paid reports read district research, so the Hamilton source rule applies:
+  // fed-publications is terms-unconfirmed until #1872 reads the district banks' terms (#2226).
+  if (!hamiltonShowsSource("fed-publications")) return [];
   try {
     const rows = await sql<DistrictResearchItem[]>`
       SELECT bank, title, link, to_char(published_at, 'YYYY-MM-DD') AS published_at

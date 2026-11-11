@@ -3,6 +3,19 @@
 Newest first. Each entry: date, what was decided, who, why, and what it means for the work.
 Seeded 2026-10-05 from the project's working memory; earlier decisions were not recorded here.
 
+## 2026-11-08
+
+**Hamilton and paid reports show no source whose commercial terms are unconfirmed.** James,
+2026-11-08 16:26 UTC, on the decision card "Hide sources whose commercial terms are unconfirmed from
+Hamilton and paid reports?" (#2226): "Yes, hide in Hamilton". This matches his standing rule that
+unconfirmed sources stay out of Hamilton. The rule is the catalog's `isServable`, read through
+`src/lib/data-catalog/hamilton-sources.ts`. Hamilton, its Regulatory Wire and paid reports drop
+Federal Reserve district research (`fed-publications`) and every state regulator's posts and
+orders except New Jersey's (`REUSE_CONFIRMED_REGULATOR_STATES`; its terms allow reuse). This holds
+until the terms check (#1872) confirms each source. Public pages keep the struck-and-held rule only
+(Round 2 of 2026-10-18). Where the gap shows, the Wire says in one line that the posts are not
+shown because their terms are not confirmed.
+
 ## 2026-11-07
 
 **Build a blind second reader into the pipeline.** James, 2026-11-07 04:30 UTC, answering the
