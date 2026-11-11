@@ -5160,10 +5160,16 @@ export async function executeAgentRun(
 /**
  * Sources of the one-off paid batches James approved, each queued one run at a time by its own
  * scheduler and capped there: the answer-key re-key (deming/answer-key-rekey-schedule.ts) and the
- * Darwin release-review sample (darwin/release-review-sample.ts). They rank ahead of state lanes
- * once queued 30 minutes, so an approved batch actually runs (Nov 1: both sat queued for hours).
+ * Darwin release-review sample (darwin/release-review-sample.ts), and Knox's blind second reader
+ * (knox/second-reader.ts). They rank ahead of state lanes once queued 30 minutes, so an approved
+ * batch actually runs (Nov 1: both sat queued for hours; Nov 8: the second reader's first run sat
+ * queued behind 20 lane runs and was never reached).
  */
-export const ONE_OFF_PAID_BATCH_SOURCES: readonly string[] = ["deming.answer_key_rekey", "darwin.release_review_sample"];
+export const ONE_OFF_PAID_BATCH_SOURCES: readonly string[] = [
+  "deming.answer_key_rekey",
+  "darwin.release_review_sample",
+  "knox.second_reader",
+];
 
 /**
  * A run that is not a lane, a report or a direct run (LANE_ROOM_SOURCES), has finished no step for
@@ -5644,12 +5650,27 @@ export async function cancelAllActiveAgentRuns(
   return result;
 }
 
+/**
+ * Schedulers that serialize admission+creation in one short transaction of their own (under their
+ * advisory lock) pass it to `startAgentRun`, which then creates the run on that connection only, so
+ * the scheduler holds one pool connection, not two. Only these sources may, with only these steps.
+ * No execution/HTTP/provider work is allowed in this opt-in creation seam.
+ */
+const TRANSACTION_RUN_SCOPES: ReadonlyArray<{ source: string; agents: readonly string[]; steps: readonly string[] }> = [
+  { source: "deming.live_source_audit", agents: ["atlas", "magellan"], steps: ["deming-live-source-draw", "deming-live-source-audit", "magellan-live-audit-capture", "deming-live-source-archive"] },
+  // Knox's blind second reader (second-reader-schedule.ts): its one paid step's provider stop is read on the transaction.
+  { source: "knox.second_reader", agents: ["knox"], steps: ["knox-second-reader"] },
+];
+
+function inTransactionRunScope(input: StartAgentRunInput): boolean {
+  const scope = TRANSACTION_RUN_SCOPES.find((entry) => entry.source === input.params?.source);
+  return Boolean(scope && input.reuseTerminal && input.kind === "workflow" && scope.agents.includes(input.agent)
+    && input.steps.every((step) => scope.steps.includes(step.key)) && getExecutionBackend() === "agentic_v1");
+}
+
 export async function startAgentRun(input: StartAgentRunInput, transaction?: typeof sql): Promise<StartAgentRunResult> {
-  // The live diagnostic scheduler serializes admission+creation in one short transaction.
-  // No execution/HTTP/provider work is allowed in this opt-in deterministic creation seam.
-  if(transaction&&(!input.reuseTerminal||input.params?.source!=="deming.live_source_audit"||input.kind!=="workflow"
-    ||!["atlas","magellan"].includes(input.agent)||input.steps.some(s=>!["deming-live-source-draw","deming-live-source-audit","magellan-live-audit-capture","deming-live-source-archive"].includes(s.key))
-    ||getExecutionBackend()!=="agentic_v1"))throw new Error("Invalid live diagnostic transaction scope");
+  if (transaction && !inTransactionRunScope(input)) throw new Error("Invalid transaction run scope");
+  const providerOnly = input.steps.length > 0 && input.steps.every((step) => isProviderStep(step.key));
   const normalizedStateCode = normalizeStateCode(input.stateCode ?? input.params?.state_code);
   const params = normalizedStateCode
     ? { ...(input.params ?? {}), state_code: normalizedStateCode }
@@ -5702,6 +5723,9 @@ export async function startAgentRun(input: StartAgentRunInput, transaction?: typ
         return { run: mapRun(existing), steps: rows.map(mapStep), reused: true };
       }
     }
+    // On the caller's transaction a stopped provider refuses here, before any insert, and on that
+    // connection: the blocked-run path below would write on a second one.
+    if (transaction && providerOnly) await assertAutomationEnabled("agent run launch", tx);
     const [runRow] = await tx`
       INSERT INTO agent_runs
         (agent_name, run_kind, state_code, title, summary, status, params_json,
@@ -5759,7 +5783,8 @@ export async function startAgentRun(input: StartAgentRunInput, transaction?: typ
   };
   const created = transaction ? await create(transaction) : await withTransaction(create);
 
-  if (created.reused) return created;
+  // On the caller's transaction the scope is agentic_v1 and the provider stop was read above.
+  if (created.reused || transaction) return created;
   if (getExecutionBackend() !== "agentic_v1") {
     await blockRunForBackend(created.run.id);
     const [run, steps] = await Promise.all([
@@ -5774,7 +5799,7 @@ export async function startAgentRun(input: StartAgentRunInput, transaction?: typ
   // automation stop is active. Mixed runs (a state lane with its paid last passes)
   // are accepted: their paid steps are skipped at execution, the free ones still run.
   try {
-    if (input.steps.length > 0 && input.steps.every((step) => isProviderStep(step.key))) {
+    if (providerOnly) {
       await assertAutomationEnabled("agent run launch");
     }
   } catch (error) {

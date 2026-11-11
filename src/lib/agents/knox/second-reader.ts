@@ -5,9 +5,10 @@ import { anthropicPriceFor, type Anthropic } from "@/lib/ai-provider";
 import { recordAttempt } from "@/lib/agents/learning/attempts";
 import type { AttemptOutcome } from "@/lib/agents/learning/outcomes";
 import { recordFeedback, type FeedbackRow } from "@/lib/agents/learning/feedback";
+import { ProviderResponseBudgetError } from "@/lib/ai-response-budget";
 import { PAID_PASS_MODELS, paidModelCall, paidResponseJson, type PaidMessageCreator } from "@/lib/agents/paid-pass";
 import { KNOX_RULES_STRATEGY, runFreeSpecialists } from "@/lib/agents/knox/specialists";
-import { groundPaidRow, paidExtractInstructions, paidExtractPrompt, type AcceptedPaidFee, type PaidFeeRow, type PaidRowRejection } from "@/lib/agents/knox/paid-extract";
+import { groundPaidRow, MAX_TEXT_CHARS, paidExtractInstructions, paidExtractPrompt, type AcceptedPaidFee, type PaidFeeRow, type PaidRowRejection } from "@/lib/agents/knox/paid-extract";
 import { summarizePaidFindMisses, type FreeTeamRead, type PaidFindMiss, type PaidFindMissKind, type PaidFindMissSummary } from "@/lib/agents/knox/paid-find-misses";
 import { loadNeverReadLessonDrafts, neverReadLessonsMessage, type NeverReadLessonDraft } from "@/lib/agents/knox/never-read-lessons";
 
@@ -74,8 +75,24 @@ export const SECOND_READER_TEXTS_PER_STEP = 5;
  * step's writes stays under the tick's 270 s finish budget (STEP_FINISH_BUDGET_MS) and the route's 300 s.
  */
 export const SECOND_READER_STOP_STARTING_AFTER_MS = 120_000;
+/**
+ * One read's whole deadline, its retries' waits included (the raw paid-call default is 600 s). A read
+ * started just before SECOND_READER_STOP_STARTING_AFTER_MS ends by 200 s, the step's expected runtime
+ * (run-store STEP_EXPECTED_MS), and the slowest paid_extract read of the 4,110 above, 74.5 s, fits.
+ * A read cut off here is a `timeout` attempt: charged its ceiling, and retried at most once.
+ */
+export const SECOND_READER_CALL_TIMEOUT_MS = 80_000;
 /** Outcomes a later run may retry: nothing about the text caused them. */
 const TRANSIENT_OUTCOMES = ["timeout", "network_error", "http_429", "http_5xx", "budget_blocked"] as const;
+/**
+ * Failures where the provider may have run, and billed, the request with no usage logged (the call was
+ * cut off or the connection dropped; its usage event records cost unknown, a NULL that sums to $0).
+ * Each one charges the text's worst case to the batch (`charged_ceiling_microusd` on the attempt,
+ * counted by `secondReaderBatchSpend`), so the cap stays conservative.
+ */
+const UNKNOWN_BILLING_OUTCOMES = new Set<AttemptOutcome>(["timeout", "network_error"]);
+/** A text whose read ends in one of those this many times in a batch is not retried again. */
+export const SECOND_READER_MAX_UNKNOWN_BILLING_ATTEMPTS = 2;
 const STOP_ERRORS = new Set(["ProviderBudgetBlockedError", "EmergencyStopActiveError", "ProviderCircuitOpenError"]);
 
 /** The switch reads on for "1" or "true", allowing for stray spaces, quotes and capitals. */
@@ -137,6 +154,11 @@ export function secondReaderRequest(model: string, text: string): Anthropic.Mess
 /** The characters one read sends: the instructions plus the (cut) document prompt. */
 export function secondReaderRequestChars(text: string): number {
   return paidExtractInstructions().length + paidExtractPrompt(text).length;
+}
+
+/** The same count from the text's length alone (the scheduler reads `length(normalized_text)`, not the text). */
+export function secondReaderRequestCharsForLength(textChars: number): number {
+  return paidExtractInstructions().length + paidExtractPrompt("").length + Math.min(Math.max(0, textChars), MAX_TEXT_CHARS);
 }
 
 function comparable(value: string): string {
@@ -320,7 +342,12 @@ export function batchRefusal(batch: SecondReaderBatch | undefined, model: string
 
 /** One text's worst case: every output token used, 3 characters a token, no cache. */
 export function textCeilingMicrousd(text: string, model: string): number {
-  const inputTokens = Math.ceil(secondReaderRequestChars(text) / 3);
+  return textCeilingMicrousdForChars(text.length, model);
+}
+
+/** `textCeilingMicrousd` from the text's length alone. */
+export function textCeilingMicrousdForChars(textChars: number, model: string): number {
+  const inputTokens = Math.ceil(secondReaderRequestCharsForLength(textChars) / 3);
   return (
     estimateAnthropicCostMicrousd(model, { inputTokens, outputTokens: SECOND_READER_MAX_OUTPUT_TOKENS, cacheReadInputTokens: 0, cacheCreationInputTokens: 0, webSearchRequests: 0 }) ??
     inputTokens * 15 + SECOND_READER_MAX_OUTPUT_TOKENS * 75
@@ -344,12 +371,30 @@ export interface SecondReaderTextRow {
  * text hash in this batch. Read-only.
  */
 export async function selectSecondReaderTexts(db: SqlTag, batch: SecondReaderBatch, limit: number): Promise<SecondReaderTextRow[]> {
-  if (batch.institutionIds.length === 0) return [];
-  const rows = await db.unsafe<SecondReaderTextRow[]>(
-    `
-      SELECT adt.id AS document_text_id, adt.source_document_id, adt.institution_id, adt.source_url,
+  return selectLeftTexts<SecondReaderTextRow>(db, batch, limit, `
+      adt.id AS document_text_id, adt.source_document_id, adt.institution_id, adt.source_url,
              adt.normalized_text, adt.text_hash, inst.institution_name,
-             COALESCE(NULLIF(btrim(profile.platform), ''), NULLIF(btrim(inst.cms_platform), '')) AS platform
+             COALESCE(NULLIF(btrim(profile.platform), ''), NULLIF(btrim(inst.cms_platform), '')) AS platform`);
+}
+
+export interface SecondReaderTextSize {
+  document_text_id: number | string;
+  institution_id: number | string;
+  /** `length(normalized_text)`: the scheduler prices each text's worst case without reading it. */
+  text_chars: number | string;
+}
+
+/** The same texts as `selectSecondReaderTexts`, with each one's length instead of its text. Read-only. */
+export async function selectSecondReaderTextSizes(db: SqlTag, batch: SecondReaderBatch, limit: number): Promise<SecondReaderTextSize[]> {
+  return selectLeftTexts<SecondReaderTextSize>(db, batch, limit, `
+      adt.id AS document_text_id, adt.institution_id, length(adt.normalized_text) AS text_chars`);
+}
+
+async function selectLeftTexts<Row extends { institution_id: number | string }>(db: SqlTag, batch: SecondReaderBatch, limit: number, columns: string): Promise<Row[]> {
+  if (batch.institutionIds.length === 0) return [];
+  const rows = await db.unsafe<Row[]>(
+    `
+      SELECT ${columns}
         FROM agent_source_texts adt
         JOIN source_documents doc ON doc.id = adt.source_document_id
         JOIN institution_sources inst ON inst.id = adt.institution_id
@@ -368,6 +413,15 @@ export async function selectSecondReaderTexts(db: SqlTag, batch: SecondReaderBat
               AND done.detail->>'batch_id' = $3
               AND done.outcome NOT IN (${TRANSIENT_OUTCOMES.map((outcome) => `'${outcome}'`).join(", ")})
          )
+         AND (
+           SELECT count(*) FROM pipeline_attempts cut
+            WHERE cut.stage = 'extract'
+              AND cut.strategy = $2
+              AND cut.institution_id = adt.institution_id
+              AND cut.input_fingerprint = adt.text_hash
+              AND cut.detail->>'batch_id' = $3
+              AND cut.outcome IN (${[...UNKNOWN_BILLING_OUTCOMES].map((outcome) => `'${outcome}'`).join(", ")})
+         ) < ${SECOND_READER_MAX_UNKNOWN_BILLING_ATTEMPTS}
        ORDER BY adt.institution_id, adt.id
        LIMIT $4
     `,
@@ -378,13 +432,26 @@ export async function selectSecondReaderTexts(db: SqlTag, batch: SecondReaderBat
   return rows.filter((row) => scope.has(Number(row.institution_id)));
 }
 
-/** The batch's logged provider spend so far: every second-reader call tagged with its batch id. */
+/**
+ * The batch's spend so far: every second-reader call tagged with its batch id, at its logged cost,
+ * plus the worst case charged for each read whose billing is unknown (UNKNOWN_BILLING_OUTCOMES).
+ * Such a call's usage event has a NULL cost, so nothing is counted twice.
+ */
 export async function secondReaderBatchSpend(db: SqlTag, batchId: string): Promise<number> {
   const [row] = await db`
-    SELECT COALESCE(SUM(estimated_cost_microusd), 0)::bigint AS spent
-      FROM ai_api_usage_events
-     WHERE operation = ${SECOND_READER_OPERATION}
-       AND metadata->>'batch_id' = ${batchId}
+    SELECT (
+      SELECT COALESCE(SUM(estimated_cost_microusd), 0)::bigint
+        FROM ai_api_usage_events
+       WHERE operation = ${SECOND_READER_OPERATION}
+         AND metadata->>'batch_id' = ${batchId}
+    ) + (
+      SELECT COALESCE(SUM((detail->>'charged_ceiling_microusd')::bigint), 0)::bigint
+        FROM pipeline_attempts
+       WHERE stage = 'extract'
+         AND strategy = ${KNOX_SECOND_READER_STRATEGY.strategy}
+         AND detail->>'batch_id' = ${batchId}
+         AND detail ? 'charged_ceiling_microusd'
+    ) AS spent
   `;
   return Number(row?.spent ?? 0);
 }
@@ -424,6 +491,8 @@ export interface SecondReaderResult {
 }
 
 function failureOutcome(error: unknown): AttemptOutcome {
+  // The call's own deadline ("The AI response took too long"), which the text test below misses.
+  if (error instanceof ProviderResponseBudgetError && (error.reason === "deadline" || error.reason === "idle")) return "timeout";
   const status = Number((error as { status?: unknown })?.status);
   if (status === 429) return "http_429";
   if (status >= 500) return "http_5xx";
@@ -509,6 +578,7 @@ export async function runKnoxSecondReader(options: {
         agent: "knox",
         operation: SECOND_READER_OPERATION,
         runId: options.runId,
+        timeoutMs: SECOND_READER_CALL_TIMEOUT_MS,
         params: secondReaderRequest(model, row.normalized_text),
         create: options.create,
         metadata: { batch_id: batch.id, institution_id: institutionId, document_text_id: documentTextId, text_hash: row.text_hash },
@@ -524,7 +594,15 @@ export async function runKnoxSecondReader(options: {
       result.processed += 1;
       result.failed += 1;
       result.texts.push({ institution_id: institutionId, document_text_id: documentTextId, outcome, error: message });
-      await recordAttempt(db, { ...base, outcome, yieldCount: 0, costMicrousd: 0, durationMs: Date.now() - startedAt, detail: { batch_id: batch.id, document_text_id: documentTextId, model, error: message } });
+      // The billed cost is unknown, so cost_microusd stays 0; the cap is charged the worst case.
+      const charged = UNKNOWN_BILLING_OUTCOMES.has(outcome) ? ceiling : 0;
+      spent += charged;
+      // attempted_at keeps a re-entered step's second cut-off read from being folded into the first
+      // by recordAttempt's same-step de-duplication, so its charge and its count both land.
+      await recordAttempt(db, { ...base, outcome, yieldCount: 0, costMicrousd: 0, durationMs: Date.now() - startedAt, detail: {
+        batch_id: batch.id, document_text_id: documentTextId, model, error: message, attempted_at: new Date(startedAt).toISOString(),
+        ...(charged > 0 ? { charged_ceiling_microusd: charged } : {}),
+      } });
       continue;
     }
     // The model is priced (batchRefusal), so the call's cost is its billed usage.

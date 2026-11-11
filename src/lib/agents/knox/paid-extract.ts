@@ -110,7 +110,7 @@ export const PAID_LESSON_STEPS = ["extract-paid", "extract"] as const;
 export const PAID_MIN_PRICED_LINES = 15;
 export const KNOX_PAID_FLAG = "knox_paid_extraction";
 /** Long texts are cut to keep one call's cost bounded. */
-const MAX_TEXT_CHARS = 60_000;
+export const MAX_TEXT_CHARS = 60_000;
 const MAX_OUTPUT_TOKENS = 8_000;
 /** Outcomes a later run may retry: nothing about the text caused them. */
 const TRANSIENT_OUTCOMES = ["timeout", "network_error", "http_429", "http_5xx", "budget_blocked"];

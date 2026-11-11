@@ -7,6 +7,19 @@ vi.mock("@/lib/ai-provider-usage", async (importOriginal) => ({
   trackAnthropicRequest: (context: unknown, request: () => PromiseLike<unknown>) => trackAnthropicRequest(context, request),
 }));
 
+// Each paid call's whole-operation deadline, as the second reader asks paidModelCall for it.
+const rawTimeouts: number[] = [];
+vi.mock("@/lib/ai-response-budget", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/ai-response-budget")>();
+  return {
+    ...actual,
+    withRawProviderResponseOperation: (timeoutMs: number, ...rest: unknown[]) => {
+      rawTimeouts.push(timeoutMs);
+      return (actual.withRawProviderResponseOperation as (...args: unknown[]) => unknown)(timeoutMs, ...rest);
+    },
+  };
+});
+
 // Knox's free read is controlled per test, so the diff is exact.
 const freeRead = vi.fn();
 vi.mock("./specialists", async (importOriginal) => ({
@@ -26,11 +39,12 @@ vi.mock("./lessons", async (importOriginal) => ({
   loadKnoxLessons: (...args: unknown[]) => loadKnoxLessons(...args),
 }));
 
-const getAutomationControl = vi.fn(async () => ({ enabled: true }));
-const startAgentRun = vi.fn(async () => ({ reused: false, run: { id: 77 } }));
-vi.mock("@/lib/automation-control", () => ({ getAutomationControl: () => getAutomationControl() }));
-vi.mock("@/lib/agents/run-store", () => ({ startAgentRun: (...args: unknown[]) => startAgentRun(...(args as [])) }));
+const getAutomationControl = vi.fn<(...args: unknown[]) => Promise<{ enabled: boolean }>>(async () => ({ enabled: true }));
+const startAgentRun = vi.fn<(...args: unknown[]) => Promise<{ reused: boolean; run: { id: number } }>>(async () => ({ reused: false, run: { id: 77 } }));
+vi.mock("@/lib/automation-control", () => ({ getAutomationControl: (...args: unknown[]) => getAutomationControl(...args) }));
+vi.mock("@/lib/agents/run-store", () => ({ startAgentRun: (...args: unknown[]) => startAgentRun(...args) }));
 
+import { ProviderResponseBudgetError } from "@/lib/ai-response-budget";
 import { paidExtractInstructions, paidExtractPrompt } from "./paid-extract";
 import {
   diffSecondRead,
@@ -41,11 +55,14 @@ import {
   OBSERVED_OUTPUT_TOKENS,
   runKnoxSecondReader,
   SECOND_READER_BATCHES,
+  SECOND_READER_CALL_TIMEOUT_MS,
+  SECOND_READER_MAX_UNKNOWN_BILLING_ATTEMPTS,
   SECOND_READER_STOP_STARTING_AFTER_MS,
   SECOND_READER_MAX_OUTPUT_TOKENS,
   secondReaderLive,
   secondReaderRequest,
   textCeilingMicrousd,
+  textCeilingMicrousdForChars,
   traceSecondRead,
   traceSecondReadFind,
   type SecondReaderBatch,
@@ -101,7 +118,10 @@ function createDb(rows: Array<Record<string, unknown>>, options: { spent?: numbe
     if (sqlText.includes("FROM agent_runs")) return Promise.resolve(options.active ? [{ id: 55 }] : []);
     return Promise.resolve([]);
   }) as DbMock;
-  db.unsafe = vi.fn(() => Promise.resolve(rows));
+  // The scheduler's scan asks for each text's length, never the text.
+  db.unsafe = vi.fn((query: string) => Promise.resolve(query.includes("length(adt.normalized_text) AS text_chars")
+    ? rows.map((row) => ({ document_text_id: row.document_text_id, institution_id: row.institution_id, text_chars: String(row.normalized_text).length }))
+    : rows));
   db.begin = vi.fn(async (work: (tx: DbMock) => unknown) => work(db));
   return db;
 }
@@ -128,6 +148,7 @@ describe("Knox's blind second reader", () => {
     loadKnoxLessons.mockClear();
     startAgentRun.mockClear();
     getAutomationControl.mockClear();
+    rawTimeouts.length = 0;
   });
 
   it("is a provider step behind a switch that is off by default", () => {
@@ -317,7 +338,94 @@ describe("Knox's blind second reader", () => {
     expect(lock).toBeGreaterThanOrEqual(0);
     expect(db.mock.calls[lock]).toContain(secondReaderScheduleLockKey(BATCH));
     expect(lock).toBeLessThan(activeCheck);
-    expect(startAgentRun).toHaveBeenCalledWith(expect.objectContaining({ params: { source: "knox.second_reader", batch_id: BATCH }, steps: [expect.objectContaining({ key: "knox-second-reader" })] }));
+    expect(startAgentRun).toHaveBeenCalledWith(
+      expect.objectContaining({ params: { source: "knox.second_reader", batch_id: BATCH }, reuseTerminal: true, steps: [expect.objectContaining({ key: "knox-second-reader" })] }),
+      db,
+    );
+  });
+
+  it("checks, reads and queues on its one transaction, holding a single pool connection", async () => {
+    // The transaction is its own handle: nothing may go to the outer pool while it holds the lock.
+    const tx = createDb([textRow()]);
+    const db = createDb([textRow()]);
+    db.begin = vi.fn(async (work: (scope: DbMock) => unknown) => work(tx));
+    expect(await scheduleKnoxSecondReaderRun(asDb(db), new Date(0), ON)).toEqual({ scheduled: true, runId: 77 });
+    expect(db).not.toHaveBeenCalled();
+    expect(db.unsafe).not.toHaveBeenCalled();
+    expect(getAutomationControl).toHaveBeenCalledWith(tx);
+    expect(startAgentRun).toHaveBeenCalledTimes(1);
+    expect(startAgentRun.mock.calls[0][1]).toBe(tx);
+  });
+
+  it("scans the left texts' lengths, not their text, and prices them the same", async () => {
+    const db = createDb([textRow()]);
+    await scheduleKnoxSecondReaderRun(asDb(db), new Date(0), ON);
+    const scan = String(db.unsafe.mock.calls[0][0]);
+    expect(scan).toContain("length(adt.normalized_text) AS text_chars");
+    expect(scan).not.toMatch(/adt\.normalized_text,/);
+    expect(scan).toContain("superseded_by_id IS NULL");
+    for (const sample of [text, "x".repeat(70_000), ""]) {
+      expect(textCeilingMicrousdForChars(sample.length, "claude-sonnet-5-5")).toBe(textCeilingMicrousd(sample, "claude-sonnet-5-5"));
+    }
+  });
+
+  it("gives each read a deadline that ends inside the step's expected 200 s", async () => {
+    // run-store STEP_EXPECTED_MS["knox-second-reader"]; the raw paid-call default is 600 s.
+    expect(SECOND_READER_STOP_STARTING_AFTER_MS + SECOND_READER_CALL_TIMEOUT_MS).toBeLessThanOrEqual(200_000);
+    await runKnoxSecondReader({ runId: 1, stepId: 2, db: asDb(createDb([textRow()])), create: vi.fn(async () => reply(modelFees)), env: ON, batchId: BATCH });
+    expect(rawTimeouts).toEqual([SECOND_READER_CALL_TIMEOUT_MS]);
+  });
+
+  it("charges a read cut off at its deadline its worst case, and reads that text at most twice", async () => {
+    // A stateful stand-in for the two tables: the usage event of a cut-off call has a NULL cost (it adds
+    // nothing), so the batch's spend is what the attempts charged.
+    const attempts: Array<{ outcome: unknown; detail: Record<string, unknown> }> = [];
+    const db = createDb([textRow()]);
+    db.mockImplementation((strings: TemplateStringsArray, ...values: unknown[]) => {
+      const sqlText = templateText(strings);
+      if (sqlText.includes("INSERT INTO pipeline_attempts")) {
+        const detail = values.find((value) => typeof value === "string" && value.startsWith("{")) as string;
+        attempts.push({ outcome: values[6], detail: JSON.parse(detail) as Record<string, unknown> });
+        return Promise.resolve([]);
+      }
+      if (sqlText.includes("FROM ai_api_usage_events")) {
+        expect(sqlText).toContain("charged_ceiling_microusd");
+        return Promise.resolve([{ spent: attempts.reduce((sum, attempt) => sum + Number(attempt.detail.charged_ceiling_microusd ?? 0), 0) }]);
+      }
+      return Promise.resolve([]);
+    });
+    const cutOff = () => attempts.filter((attempt) => attempt.outcome === "timeout" || attempt.outcome === "network_error").length;
+    db.unsafe = vi.fn((query: string) => {
+      expect(query).toContain("cut.outcome IN ('timeout', 'network_error')");
+      expect(query).toContain(`< ${SECOND_READER_MAX_UNKNOWN_BILLING_ATTEMPTS}`);
+      return Promise.resolve(cutOff() < SECOND_READER_MAX_UNKNOWN_BILLING_ATTEMPTS ? [textRow()] : []);
+    });
+    // The request never answers; the call's deadline ends it.
+    const hangs = vi.fn(() => new Promise<never>((_, reject) => {
+      setTimeout(() => reject(new ProviderResponseBudgetError("deadline")), SECOND_READER_CALL_TIMEOUT_MS + 1);
+    }));
+    const ceiling = textCeilingMicrousd(text, "claude-sonnet-5-5");
+
+    vi.useFakeTimers();
+    try {
+      for (const runId of [1, 2]) {
+        const run = runKnoxSecondReader({ runId, stepId: runId, db: asDb(db), create: hangs, env: ON, batchId: BATCH });
+        await vi.advanceTimersByTimeAsync(SECOND_READER_CALL_TIMEOUT_MS + 1);
+        const result = await run;
+        expect(result).toMatchObject({ processed: 1, failed: 1, costMicrousd: 0, spentMicrousd: ceiling * runId });
+        expect(result.texts[0].outcome).toBe("timeout");
+        expect(attempts[runId - 1]).toMatchObject({ outcome: "timeout", detail: { charged_ceiling_microusd: ceiling, batch_id: BATCH } });
+      }
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(hangs).toHaveBeenCalledTimes(2);
+
+    // After the second cut-off the text is final: no third read, and the scheduler sees the batch done.
+    const third = await runKnoxSecondReader({ runId: 3, stepId: 3, db: asDb(db), create: hangs, env: ON, batchId: BATCH });
+    expect(third).toMatchObject({ selected: 0, processed: 0 });
+    expect(hangs).toHaveBeenCalledTimes(2);
+    expect(await scheduleKnoxSecondReaderRun(asDb(db), new Date(0), ON)).toEqual({ scheduled: false, runId: null, reason: "done" });
   });
 
   it("queues nothing while a run is active, when no text is left, at the cap or under the provider stop", async () => {
