@@ -1,0 +1,62 @@
+{
+  "schemaVersion": 1,
+  "kind": "PROSPECTIVE_PUBLIC_BOUNDARY_CLARIFICATIONS",
+  "status": "FROZEN_BEFORE_IMPLEMENTATION_NOT_EXECUTED",
+  "originalInventorySha256": "243c3b8d5eb3eb247624f6625220b15208ce5093a6eefd0953367ed5a75db0e8",
+  "originalControlHead": "1b51ff03825316dbdb7b1706573e8d11a4cfff11",
+  "reviewBasis": "Independent pre-implementation design review by the boundary designer, implementation reviewer and root. This is local advisory design review, not authenticated GitHub review or owner R3 authorization.",
+  "changes": [
+    {
+      "id": "CONNECTION-ACCOUNTING",
+      "originalField": "maxConcurrentDataConnections",
+      "originalValue": 2,
+      "reason": "HOLD02 requires two simultaneous client flows. Each flow can have an accepted client leg and an upstream leg. The original field did not distinguish logical flows from physical connections or local socket handles.",
+      "clarification": "Admit at most two logical client flows, two upstream legs and four physical TCP connections. The proxy owns at most four connected socket handles; all trusted literal peers together own at most eight data socket handles. Listener and private in-process capability identities are separately inventoried. No extra logical flow is admitted.",
+      "maxConcurrentClientFlows": 2,
+      "maxConcurrentUpstreamLegs": 2,
+      "maxConcurrentPhysicalDataConnections": 4,
+      "maxProxyDataSocketHandles": 4,
+      "maxAllFixtureDataSocketHandles": 8
+    },
+    {
+      "id": "EVENT-ACCOUNTING",
+      "originalField": "maxObservedEventsPerCase",
+      "originalValue": 256,
+      "reason": "HTTP04 already sends 256 body chunks per direction. Counting every payload write as a semantic event would exhaust the inventory before lifecycle and control observations.",
+      "clarification": "The unchanged 256-event cap counts semantic lifecycle, framing, control, backpressure and terminal events. Complete bounded raw streams and monotonically increasing byte/chunk counters are retained separately. No payload, abort, contradictory terminal or control event may be silently discarded to meet the cap.",
+      "maxSemanticEventsPerCase": 256
+    },
+    {
+      "id": "QUEUE-ACCOUNTING",
+      "originalField": "maxProxyQueuedBytesPerDirection",
+      "originalValue": 8192,
+      "reason": "A high-water mark is a stream pressure threshold, not a hard incoming-read bound. Slicing an oversized read does not establish that queued bytes stayed below the limit.",
+      "clarification": "Keep the 8192-byte bound. Account explicitly for application pending/header bytes and the applicable Node socket readableLength/writableLength observations, without omitting an overlapping owned buffer or double-counting an alias. Retain the component counts and their maximum. Kernel buffers, global heap and unobserved peaks are outside this counter and must not be claimed bounded by it. Any observed excess blocks the fixture; it does not authorize a larger limit.",
+      "maxProxyQueuedBytesPerDirection": 8192,
+      "kernelBufferCapacityMeasured": false
+    },
+    {
+      "id": "DEADLINE-TEST-BUDGET",
+      "originalOperationDeadlineMs": 5000,
+      "originalWholeCaseDeadlineMs": 45000,
+      "reason": "An actual five-second operation deadline needs test-harness time for assertions and independent socket cleanup.",
+      "clarification": "Keep the operation deadline at 5000 ms and whole-case deadline at 45000 ms. Only new real-deadline test cases may use an 8000 ms test budget. Existing tests and global Vitest timeouts remain unchanged. Missing or uninduced native capabilities remain NOT_MEASURED/BLOCKED.",
+      "newRealDeadlineTestBudgetMs": 8000
+    }
+  ],
+  "unchanged": {
+    "requiredInventoryCases": 29,
+    "maxHeaderBytes": 8192,
+    "maxBodyBytesPerDirection": 65536,
+    "maxWireBytesPerDirection": 73728,
+    "maxControlOperations": 8,
+    "maxAllRawArtifactBytesPerCase": 2097152,
+    "operationDeadlineMs": 5000,
+    "wholeCaseDeadlineMs": 45000,
+    "literalRequestsResponsesAndHashes": true,
+    "requiredActualObservations": true,
+    "original100ComponentPredicates": true,
+    "strictBrowserV1": true
+  },
+  "qualification": "These prospective clarifications precede implementation and execution. They neither establish tested capability nor weaken a positive or negative case. Keep all original 29 cases required. An unavailable listener, uninduced causal backpressure, unsupported topology, missing evidence or failed cleanup remains NOT_MEASURED/BLOCKED. Both product native groups, registration and full M0-M5 acceptance remain open."
+}
