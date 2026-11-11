@@ -13,6 +13,7 @@ import { resolveHamiltonInstitutionContext } from "@/lib/hamilton/workspace-cont
 import { loadHamiltonAccountContext } from "@/lib/hamilton/account-context-store";
 import {
   getHamiltonArtifactContextLookup,
+  isSavedPeerResearchPath,
   resolveArtifactContextInstitutionId,
 } from "@/lib/hamilton/artifact-context";
 import { getHamiltonArtifactInstitutionId } from "@/lib/hamilton/artifact-context-store";
@@ -79,7 +80,8 @@ async function HamiltonLayoutInner({
   const pathname = requestPath.split("?")[0] || requestPath;
   const queryString = requestPath.includes("?") ? requestPath.split("?")[1] : "";
   const requestSearchParams = new URLSearchParams(queryString);
-  const hasResearch = requestSearchParams.has("research");
+  // A path-keyed saved artifact wins irrelevant research/instId query parameters.
+  const hasResearch = !isSavedPeerResearchPath(pathname) && requestSearchParams.has("research");
   let research = null;
   try { research = decodeLandingResearch(requestSearchParams.get("research")); } catch { /* Page shows validation error. */ }
   const selectedInstId = hasResearch
@@ -87,7 +89,7 @@ async function HamiltonLayoutInner({
     : requestSearchParams.get("instId");
   const selectedIntent = requestSearchParams.get("intent");
   const artifactLookup = hasResearch ? null : getHamiltonArtifactContextLookup({ pathname, searchParams: requestSearchParams });
-  const savedArtifactRequested = artifactLookup?.kind === "analysis" || artifactLookup?.kind === "report"
+  const savedArtifactRequested = artifactLookup?.kind === "analysis" || artifactLookup?.kind === "peer-research" || artifactLookup?.kind === "report"
     || (pathname === "/pro/simulate" && artifactLookup?.kind === "scenario");
   // null means the artifact is missing or unscoped (its page 404s). A failed read is different:
   // log it and let it reach the Pro error boundary, rather than open an unscoped shell (#975).
