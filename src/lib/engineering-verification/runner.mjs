@@ -1,11 +1,14 @@
 import { spawnSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
-import { readFileSync, writeFileSync, mkdirSync, mkdtempSync, rmSync, cpSync, chmodSync, realpathSync, lstatSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, mkdtempSync, rmSync, cpSync, chmodSync, realpathSync, lstatSync, readdirSync } from 'node:fs';
 import { dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import * as knoxPilot from './pilot.mjs';
 import * as policyPilot from './policy-pilot.mjs';
 import * as policyV2Pilot from './policy-v2-pilot.mjs';
+import * as ciDomainPilot from './ci-domain-pilot.mjs';
+import { canonicalPath, collectCiDomainBatch } from './ci-domain-collection.mjs';
+import { parseStrictJson } from './strict-json.mjs';
 import { assessProofBundle, contractDigest, validateContract } from './contract.mjs';
 import { CONTRACT_REVISIONS, resolveContractRevision } from './contract-registry.mjs';
 
@@ -13,7 +16,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const SHA = /^[a-f0-9]{40}$/;
 const DIGEST = /^node@sha256:[a-f0-9]{64}$/;
 const LIMIT = 2 * 1024 * 1024;
-const PILOTS = { '2285': knoxPilot, '1048': policyPilot, '1048-v2': policyV2Pilot };
+const PILOTS = { '2285': knoxPilot, '1048': policyPilot, '1048-v2': policyV2Pilot, '1048-v3': ciDomainPilot };
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 /** Inspect Git tree modes before extracting any candidate-controlled archive on the parent host. */
 export function validateSnapshotEntries(tree) {
@@ -51,7 +54,7 @@ export function classifyExecution(result, adapterId = knoxPilot.ADAPTER_ID) {
   if (result.error || result.status !== 0) return { ...base, failure_kind: 'SETUP_FAILURE', outcomes: [], error: result.error?.message ?? 'Source process did not complete' };
   try {
     if (Buffer.byteLength(String(result.stdout)) > LIMIT) throw new Error('Source output exceeds bound');
-    const value = JSON.parse(result.stdout);
+    const value = parseStrictJson(result.stdout);
     if (!value || value.schema_version !== 1 || Object.keys(value).sort().join(',') !== 'cases,schema_version') throw new Error('Unexpected source output protocol');
     const pilot = Object.values(PILOTS).find(item => item.ADAPTER_ID === adapterId);
     if (!pilot) throw new Error('Unknown source adapter');
@@ -158,6 +161,107 @@ export function frozenIdentities(root, contract) {
   return { ...identities, execution_sha256: contractDigest(JSON.stringify(contract.execution_files ?? [])) };
 }
 
+/** Reader-only path: each native batch owns its complete asynchronous collection envelope. */
+export function prepareReaderOutputDirectory(repositoryRoot, outputDirectory) {
+  const root = canonicalPath(resolve(repositoryRoot)), output = canonicalPath(resolve(outputDirectory), true);
+  if (output === root || !output.startsWith(root + sep)) throw new Error('Fresh reader output must be inside canonical repository');
+  try { lstatSync(output); throw new Error('Fresh reader output required; attempt directory already exists'); }
+  catch (error) { if (error.code !== 'ENOENT') throw error; }
+  mkdirSync(dirname(output), { recursive: true, mode: 0o700 });
+  canonicalPath(dirname(output));
+  // The final mkdir is atomic and refuses a path created after the absence check.
+  mkdirSync(output, { mode: 0o700 });
+  return canonicalPath(output);
+}
+
+async function runCiDomainPilot({ root, headSha, outputDirectory, contract, raw, identities, artifactUrl, revision }) {
+  if (!SHA.test(headSha) || !SHA.test(contract.base_sha)) throw new Error('Exact immutable reader source commits required');
+  const runtime = parseStrictJson(readCanonicalFile(root, 'src/lib/engineering-verification/runtime.json'));
+  if (!DIGEST.test(runtime.image)) throw new Error('Immutable reader runtime required');
+  const output = prepareReaderOutputDirectory(root, outputDirectory);
+  const harnessSources = Object.fromEntries(['child.mjs', 'ci-domain-probe.mjs', 'ci-domain-stimulus-v2.json'].map(name => [name,
+    readCanonicalFile(root, 'src/lib/engineering-verification/' + (name.endsWith('.json') ? '__fixtures__/' : '') + name)]));
+  const parentOracleBytes = readCanonicalFile(root, 'src/lib/engineering-verification/__fixtures__/ci-domain-expectations-v2.json');
+  const targetHash = contract.execution_files.find(file => file.path === 'src/lib/engineering-verification/github.mjs')?.sha256;
+  const started = new Date(), results = {}, readerBatches = { schemaVersion: 1, adapter: ciDomainPilot.ADAPTER_ID, sources: [] };
+  let runtimeIdentity = null, retainedBytes = 0, setupBlocked = false;
+  for (const [label, sourceRef] of [['red', contract.base_sha], ['green', headSha]]) {
+    const group = { label, sourceRef, batches: [] }, values = [];
+    readerBatches.sources.push(group);
+    results[label] = { execution_exit_code: null, failure_kind: 'SETUP_FAILURE', outcomes: [], cleanup_verified: false };
+    for (const batch of ciDomainPilot.BATCHES) {
+      if (setupBlocked) break;
+      const directory = label + '-' + batch.id;
+      try {
+        const collected = await collectCiDomainBatch({ repositoryRoot: root, sourceRef,
+          expectedSourceSha256: label === 'red' ? ciDomainPilot.BASELINE_SOURCE_SHA256 : targetHash,
+          outputDirectory: join(output, directory), batchId: batch.id, caseIds: batch.caseIds,
+          request: ciDomainPilot.pilotRequest(batch.id), image: runtime.image, harnessSources, parentOracleBytes });
+        const receiptBytes = readCanonicalFile(output, directory + '/receipt.json');
+        group.batches.push({ directory, receiptSha256: hash(receiptBytes), receiptBytes: receiptBytes.length, manifest: collected.manifest });
+        if (collected.collectionStatus !== 'COMPLETE_UNASSESSED' || collected.execution_exit_code !== 0 || !collected.cleanupVerified) throw new Error(collected.error ?? 'Native reader batch incomplete');
+        // Verify every retained raw file; no receipt-authored PASS can replace it.
+        for (const artifact of collected.manifest.artifacts) {
+          const bytes = readCanonicalFile(output, directory + '/' + artifact.path);
+          if (bytes.length !== artifact.bytes || hash(bytes) !== artifact.sha256) throw new Error('Retained reader batch artifact changed');
+          retainedBytes += bytes.length;
+        }
+        retainedBytes += receiptBytes.length;
+        if (hash(receiptBytes) !== collected.receiptSha256 || retainedBytes > 8 * 1024 * 1024 - 65536) throw new Error('Reader artifact aggregate exceeds finalization capacity');
+        values.push(...ciDomainPilot.parseBatchOutput(collected.stdout, batch.id));
+        runtimeIdentity ??= collected.runtime;
+      } catch (error) {
+        setupBlocked = true;
+        results[label].error = error.message;
+      }
+    }
+    if (!setupBlocked && group.batches.length === 2) {
+      const outcomes = ciDomainPilot.assessPilotValues(values);
+      results[label] = { execution_exit_code: 0, failure_kind: outcomes.some(row => row.status === 'FAILED') ? 'ASSERTION_FAILURE' : 'NONE',
+        outcomes, cleanup_verified: true, values };
+    }
+  }
+  // Parent controls must still have their original canonical bytes after collection.
+  if (JSON.stringify(frozenIdentities(root, contract)) !== JSON.stringify(identities)) throw new Error('Parent control input bookend changed');
+  if (!setupBlocked) ciDomainPilot.validateReaderBatchSet(readerBatches, { baseSha: contract.base_sha, headSha, executionFiles: contract.execution_files });
+  const pairs = contract.requirements.map(requirement => Object.fromEntries(['red', 'green'].map(label => {
+    const actual = results[label], outcome = actual.outcomes.find(row => row.requirement_id === requirement.id);
+    return [label, { requirement_id: requirement.id, test_id: requirement.test_id, ...identities, contract_sha256: contractDigest(raw),
+      ...(label === 'red' ? { base_sha: contract.base_sha } : { head_sha: headSha }), command: ciDomainPilot.ADAPTER_ID + ' (trusted parent assertions)',
+      artifact_url: artifactUrl, execution_exit_code: actual.execution_exit_code,
+      exit_code: outcome?.status === 'PASSED' ? 0 : 1, status: outcome?.status ?? 'NOT_TESTED',
+      failure_kind: outcome ? (outcome.status === 'FAILED' ? 'ASSERTION_FAILURE' : 'NONE') : actual.failure_kind,
+      assertions: outcome?.assertions ?? [] }];
+  })));
+  const assessment = assessProofBundle(contract, { pairs }, headSha, contractDigest(raw));
+  if (results.red.outcomes.length && !ciDomainPilot.expectedBaselineOutcome(results.red.outcomes)) {
+    assessment.status = 'BLOCKED';
+    assessment.problems.push('Observed baseline failures differ from the frozen21-case inventory; preserve evidence for review');
+  }
+  const receipt = { schema_version: '1.0', contract_key: revision.key, contract_id: ciDomainPilot.PILOT_ID, authority: ciDomainPilot.PILOT.authority,
+    base_sha: contract.base_sha, head_sha: headSha, contract_sha256: contractDigest(raw), execution_files: contract.execution_files,
+    source_scope: 'One literal canonical Git blob src/lib/engineering-verification/github.mjs; selected32+7 fresh builtin-only Node containers per source',
+    runtime: { ...runtimeIdentity, image: runtime.image, subject_loader: 'node-mjs-builtins-only', dependency_lock_sha256: hash(readCanonicalFile(root, 'package-lock.json')) },
+    started_at: started.toISOString(), completed_at: new Date().toISOString(), duration_ms: Date.now() - started.valueOf(),
+    provenance: { claimed_origin: process.env.GITHUB_ACTIONS === 'true' ? 'GITHUB_ACTIONS_UNCORROBORATED' : 'LOCAL_SANDBOXED_UNTRUSTED',
+      workflow_sha: process.env.GITHUB_SHA ?? null, run_id: process.env.GITHUB_RUN_ID ?? null, run_attempt: process.env.GITHUB_RUN_ATTEMPT ?? null },
+    reader_batches: readerBatches, assessment, pairs, review_status: 'INDEPENDENT_REVIEW_NOT_ENFORCED', production_status: 'PRODUCTION_UNVERIFIED' };
+  const serialized = JSON.stringify(receipt, null, 2) + '\n';
+  const summary = ['# Fee Insight reader verification proof', '', 'Contract: ' + ciDomainPilot.PILOT_ID,
+    'Baseline: ' + contract.base_sha, 'Target head: ' + headSha, 'Behavioral evidence: ' + assessment.status,
+    'Four fresh32+7 batch captures are required; source exit0 records completion, not an assertion verdict.',
+    'Native GitHub acceptance, independent review, owner authorization and production outcomes remain separate.',
+    ...assessment.problems.map(problem => 'BLOCKED: ' + problem), ''].join('\n');
+  const ownDirectories = new Set(readerBatches.sources.flatMap(source => source.batches.map(batch => batch.directory)));
+  const topEntries = readdirSync(output, { withFileTypes: true });
+  if (topEntries.length !== ownDirectories.size || topEntries.some(entry => !entry.isDirectory() || !ownDirectories.has(entry.name))) throw new Error('Unexpected or unrelated reader attempt artifacts');
+  if (Buffer.byteLength(serialized) > LIMIT || retainedBytes + Buffer.byteLength(serialized) + Buffer.byteLength(summary) > 8 * 1024 * 1024 - 65536) throw new Error('Reader proof receipt/artifact exceeds unchanged capacity');
+  writeFileSync(join(output, 'receipt.json'), serialized, { flag: 'wx' });
+  writeFileSync(join(output, 'summary.md'), summary, { flag: 'wx' });
+  if (readdirSync(output).some(name => !ownDirectories.has(name) && !['receipt.json', 'summary.md'].includes(name))) throw new Error('Reader attempt artifact inventory changed during finalization');
+  return receipt;
+}
+
 /** Only the known pilot is executable; contracts never supply commands to run. */
 export function runPilot({ repositoryRoot, headSha, outputDirectory, contractKey, contractNumber, artifactUrl = 'local:engineering-verification' }) {
   if (contractKey !== undefined && contractNumber !== undefined && contractKey !== contractNumber) throw new Error('Conflicting contract revision selectors');
@@ -166,7 +270,7 @@ export function runPilot({ repositoryRoot, headSha, outputDirectory, contractKey
   const pilot = PILOTS[revision.key];
   if (!pilot || revision.adapter !== pilot.ADAPTER_ID) throw new Error('No approved execution adapter for this contract revision');
   const raw = readCanonicalFile(root, revision.path).toString('utf8');
-  const contract = JSON.parse(raw);
+  const contract = parseStrictJson(raw);
   const validation = validateContract(contract);
   if (!validation.ok) throw new Error(validation.errors.join('; '));
   if (contract.contract_id !== revision.contractId || contract.contract_id !== pilot.PILOT_ID
@@ -176,7 +280,9 @@ export function runPilot({ repositoryRoot, headSha, outputDirectory, contractKey
     return !actual || actual.test_id !== expected.test_id
       || JSON.stringify([...actual.assertion_ids].sort()) !== JSON.stringify(expected.assertions.map(row => row.id).sort());
   })) throw new Error('Contract requirements do not match approved parent assertion inventory');
+  if (pilot.ADAPTER_ID === ciDomainPilot.ADAPTER_ID) ciDomainPilot.validateReaderContractInventory(contract);
   const identities = frozenIdentities(root, contract);
+  if (pilot.ADAPTER_ID === ciDomainPilot.ADAPTER_ID) return runCiDomainPilot({ root, headSha, outputDirectory, contract, raw, identities, artifactUrl, revision });
   const head = assertCommit(root, headSha);
   const base = assertCommit(root, contract.base_sha);
   const runtime = JSON.parse(readFileSync(join(HERE, 'runtime.json'), 'utf8'));
@@ -260,10 +366,10 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
   try {
     const args = process.argv.slice(2);
     if (args.length % 2 || args.some((arg, index) => index % 2 === 0 && !['--head', '--output', '--contract'].includes(arg))
-      || new Set(args.filter((_, index) => index % 2 === 0)).size !== args.length / 2) throw new Error('Usage: runner.mjs --head <exact-sha> --output <directory> --contract 1048-v2');
+      || new Set(args.filter((_, index) => index % 2 === 0)).size !== args.length / 2) throw new Error('Usage: runner.mjs --head <exact-sha> --output <directory> --contract 1048-v3');
     const options = Object.fromEntries(Array.from({ length: args.length / 2 }, (_, index) => [args[index * 2], args[index * 2 + 1]]));
     if (!options['--head'] || !options['--output']) throw new Error('Exact --head and --output are required');
-    const receipt = runPilot({ repositoryRoot: process.cwd(), headSha: options['--head'], outputDirectory: options['--output'], contractKey: options['--contract'],
+    const receipt = await runPilot({ repositoryRoot: process.cwd(), headSha: options['--head'], outputDirectory: options['--output'], contractKey: options['--contract'],
       artifactUrl: process.env.GITHUB_RUN_ID ? 'https://github.com/' + process.env.GITHUB_REPOSITORY + '/actions/runs/' + process.env.GITHUB_RUN_ID : undefined });
     process.stdout.write(JSON.stringify({ status: receipt.assessment.status, head_sha: receipt.head_sha, duration_ms: receipt.duration_ms }) + '\n');
     if (receipt.assessment.status === 'BLOCKED') process.exitCode = 1;

@@ -3,6 +3,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { nativeTreeResponse, nativeBlobSha } from './native-tree.fixture';
 import { CURRENT_PROOF_INPUTS, completeProofFiles } from './proof-inputs.fixture';
 import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { syntheticBatchEvidence } from './ci-domain-collection.fixture';
+import { BATCHES, BASELINE_SOURCE_SHA256 } from './ci-domain-pilot.mjs';
+import { READER_IMAGE } from './ci-domain-collection.mjs';
 import { strToU8, zipSync } from 'fflate';
 const { sourceFetch } = vi.hoisted(() => { const sourceFetch = vi.fn(); vi.stubGlobal('fetch', sourceFetch); return { sourceFetch }; });
 import { collectScorecard, assessScorecard, renderScorecard, isScorecardEvidence } from './scorecard.mjs';
@@ -14,26 +18,42 @@ function fixture(options: { changedHead?: boolean; missingHistoricalPolicy?: boo
   const files: Record<string, string> = {
     '.github/workflows/test.yml': 'trusted tests', '.github/workflows/engineering-verification.yml': 'trusted proof workflow',
     'src/lib/engineering-verification/pilot.mjs': 'parent assertions', 'src/lib/engineering-verification/pilot.test.ts': 'parent tests',
-    'src/lib/engineering-verification/runner.mjs': 'trusted runner', 'src/lib/engineering-verification/runtime.json': JSON.stringify({ image: 'node@sha256:' + 'd'.repeat(64) }),
+    'src/lib/engineering-verification/runner.mjs': 'trusted runner', 'src/lib/engineering-verification/runtime.json': JSON.stringify({ image: READER_IMAGE }),
     'src/lib/engineering-verification/__fixtures__/knox-2285.json': 'synthetic authority', 'package-lock.json': 'locked dependencies', 'package.json': 'package configuration',
   };
   const policy = { schema_version: 1, enforcement_enabled: false, owner_logins: ['owner'], allowed_reviewers: ['reviewer'], required_checks: ['app-tests'] };
   files['src/lib/engineering-verification/policy.json'] = JSON.stringify(policy);
   completeProofFiles(files);
+  // Full native reader prerequisites, literal control bytes only; no source execution.
+  for (const name of ['github.mjs', 'child.mjs', 'ci-domain-probe.mjs', 'ci-domain-collection.mjs', 'strict-json.mjs',
+    '__fixtures__/ci-domain-stimulus-v2.json', '__fixtures__/ci-domain-expectations-v2.json']) {
+    files['src/lib/engineering-verification/' + name] = readFileSync(new URL('./' + name, import.meta.url), 'utf8');
+  }
   const paths = (n: number) => n === 2 ? ['src/lib/stripe.ts'] : n === 3 ? ['docs/changelog.md'] : n === 5 ? ['src/lib/utility.ts'] : ['src/lib/agents/knox/example.ts'];
-  const contract = { schema_version: '1.1', contract_id: 'EV-FOUNDATION-1048-V2', issue: '#1048', risk_tier: 'R2', base_sha: BASE,
+  const contract = { schema_version: '1.1', contract_id: 'EV-FOUNDATION-1048-V3', issue: '#1048', risk_tier: 'R2', base_sha: BASE,
     scope: ['src/lib/agents/knox/**', 'src/lib/utility.ts'], required_skills: ['tdd', 'adversarial-document-testing', 'error-to-test'], production_boundary: 'NO_PROD_MUTATION', human_approval_required: options.ownerRequired ?? false,
     execution_files: CURRENT_PROOF_INPUTS.filter(path => !options.missingWorkflowFreeze || path !== '.github/workflows/engineering-verification.yml').map(path => ({ path, sha256: digest(files[path]) })),
     requirements: [{ id: 'KNOX-2285-01', behavior: 'Keep own price', authority: 'Synthetic issue #2285', test_id: 'knox-price', test_path: 'src/lib/engineering-verification/pilot.test.ts', fixture_path: 'src/lib/engineering-verification/__fixtures__/knox-2285.json', adapter_path: 'src/lib/engineering-verification/pilot.mjs', test_sha256: digest(files['src/lib/engineering-verification/pilot.test.ts']), fixture_sha256: digest(files['src/lib/engineering-verification/__fixtures__/knox-2285.json']), adapter_sha256: digest(files['src/lib/engineering-verification/pilot.mjs']), failure_signature: 'own price', assertion_ids: ['own-price'], baseline_failure_assertion_ids: ['own-price'], baseline_expectation: 'FAIL' }] };
-  files['docs/project/acceptance/engineering/1048-v2.json'] = JSON.stringify(contract);
+  files['docs/project/acceptance/engineering/1048-v3.json'] = JSON.stringify(contract);
   const r1Contract = { schema_version: '1.0', contract_id: 'EV-UTILITY-1001', issue: '#1001', risk_tier: 'R1', base_sha: BASE, scope: ['src/lib/utility.ts'], required_skills: [], requirements: [], production_boundary: 'NO_PROD_MUTATION', human_approval_required: false };
   files['docs/project/acceptance/engineering/1001.json'] = JSON.stringify(r1Contract);
   const run = { id: 101, workflow_id: 33, run_attempt: 1, head_branch: 'main', head_sha: MAIN, event: 'workflow_dispatch', status: 'completed', conclusion: options.brokenProof ? 'failure' : 'success', path: '.github/workflows/engineering-verification.yml', repository: { id: 17, full_name: REPO }, head_repository: { id: 17, full_name: REPO }, html_url: `https://github.com/${REPO}/actions/runs/101`, created_at: '2026-11-06T11:59:00Z', run_started_at: '2026-11-06T12:00:00Z', updated_at: '2026-11-06T12:03:00Z' };
   const req = contract.requirements[0];
   const common = { requirement_id: req.id, test_id: req.test_id, command: 'trusted parent', artifact_url: run.html_url, execution_exit_code: 0, test_sha256: req.test_sha256, fixture_sha256: req.fixture_sha256, adapter_sha256: req.adapter_sha256, execution_sha256: digest(JSON.stringify(contract.execution_files)), contract_sha256: digest(JSON.stringify(contract)) };
-  const receipt = { schema_version: '1.0', contract_key: '1048-v2', contract_id: contract.contract_id, base_sha: BASE, head_sha: head(1), contract_sha256: digest(JSON.stringify(contract)), execution_files: contract.execution_files, started_at: '2026-11-06T12:00:10Z', completed_at: '2026-11-06T12:01:00Z', runtime: { image: JSON.parse(files['src/lib/engineering-verification/runtime.json']).image, dependency_lock_sha256: digest(files['package-lock.json']) }, provenance: { claimed_origin: 'GITHUB_ACTIONS_UNCORROBORATED', workflow_sha: MAIN, run_id: '101', run_attempt: '1' }, pairs: [{ red: { ...common, base_sha: BASE, exit_code: 1, status: 'FAILED', failure_kind: 'ASSERTION_FAILURE', assertions: [{ id: 'own-price', status: 'FAILED' }] }, green: { ...common, head_sha: head(1), exit_code: 0, status: 'PASSED', failure_kind: 'NONE', assertions: [{ id: 'own-price', status: 'PASSED' }] } }] };
-  const archive = zipSync({ 'receipt.json': strToU8(JSON.stringify(receipt)) });
-  const artifact = { id: 88, name: `engineering-verification-1-${head(1)}-1048-v2-attempt-1`, expired: false, digest: 'sha256:' + digest(archive), size_in_bytes: archive.length, created_at: '2026-11-06T12:01:10Z', expires_at: '2027-02-04T12:01:10Z', workflow_run: { id: 101, repository_id: 17, head_repository_id: 17, head_branch: 'main', head_sha: MAIN } };
+  const batchArtifacts: Record<string, Uint8Array> = {};
+  const reader_batches = { schemaVersion: 1, adapter: 'engineering.ci-domains.v1', sources: ['red', 'green'].map(label => {
+    const sourceRef = label === 'red' ? BASE : head(1);
+    return { label, sourceRef, batches: BATCHES.map(batch => {
+      const directory = label + '-' + batch.id;
+      const sample = syntheticBatchEvidence({ sourceRef, batchId: batch.id, caseIds: [...batch.caseIds],
+        ...(label === 'red' ? { sourceSha256: BASELINE_SOURCE_SHA256 } : {}) });
+      for (const [path, bytes] of Object.entries(sample.artifacts)) batchArtifacts[directory + '/' + path] = bytes;
+      return { directory, receiptSha256: digest(sample.artifacts['receipt.json']), receiptBytes: sample.artifacts['receipt.json'].length, manifest: sample.manifest };
+    }) };
+  }) };
+  const receipt = { reader_batches, schema_version: '1.0', contract_key: '1048-v3', contract_id: contract.contract_id, base_sha: BASE, head_sha: head(1), contract_sha256: digest(JSON.stringify(contract)), execution_files: contract.execution_files, started_at: '2026-11-06T12:00:10Z', completed_at: '2026-11-06T12:01:00Z', runtime: { image: JSON.parse(files['src/lib/engineering-verification/runtime.json']).image, dependency_lock_sha256: digest(files['package-lock.json']) }, provenance: { claimed_origin: 'GITHUB_ACTIONS_UNCORROBORATED', workflow_sha: MAIN, run_id: '101', run_attempt: '1' }, pairs: [{ red: { ...common, base_sha: BASE, exit_code: 1, status: 'FAILED', failure_kind: 'ASSERTION_FAILURE', assertions: [{ id: 'own-price', status: 'FAILED' }] }, green: { ...common, head_sha: head(1), exit_code: 0, status: 'PASSED', failure_kind: 'NONE', assertions: [{ id: 'own-price', status: 'PASSED' }] } }] };
+  const archive = zipSync({ ...batchArtifacts, 'receipt.json': strToU8(JSON.stringify(receipt)) });
+  const artifact = { id: 88, name: `engineering-verification-1-${head(1)}-1048-v3-attempt-1`, expired: false, digest: 'sha256:' + digest(archive), size_in_bytes: archive.length, created_at: '2026-11-06T12:01:10Z', expires_at: '2027-02-04T12:01:10Z', workflow_run: { id: 101, repository_id: 17, head_repository_id: 17, head_branch: 'main', head_sha: MAIN } };
   const prReads = new Map<number, number>();
   const fetchImpl: typeof fetch = async (input, init) => {
     const url = new URL(String(input)), path = url.pathname.replace(`/repos/${REPO}`, '');
@@ -53,7 +73,7 @@ function fixture(options: { changedHead?: boolean; missingHistoricalPolicy?: boo
     const prMatch = path.match(/^\/pulls\/(\d+)$/);
     if (prMatch) {
       const n = Number(prMatch[1]), reads = (prReads.get(n) ?? 0) + 1; prReads.set(n, reads);
-      return Response.json({ number: n, head: { sha: options.changedHead && reads >= 3 ? 'f'.repeat(40) : head(n) }, user: { id: 1, login: 'builder', type: 'User' }, body: options.finalMarker != null && reads >= 4 ? options.finalMarker : n === 3 ? '' : '<!-- engineering-contract: 1048-v2 -->', created_at: '2026-11-06T11:00:00Z', state: n === 4 ? 'open' : 'closed', merged: n !== 4, merged_at: n === 4 ? null : '2026-11-06T12:05:00Z', merge_commit_sha: n.toString(16).padStart(40, 'e'), mergeable: n === 4 ? true : null });
+      return Response.json({ number: n, head: { sha: options.changedHead && reads >= 3 ? 'f'.repeat(40) : head(n), ref: 'unit-feature-' + n, repo: { id: 17, full_name: REPO } }, base: { sha: BASE, ref: 'main', repo: { id: 17, full_name: REPO } }, user: { id: 1, login: 'builder', type: 'User' }, body: options.finalMarker != null && reads >= 4 ? options.finalMarker : n === 3 ? '' : '<!-- engineering-contract: 1048-v3 -->', created_at: '2026-11-06T11:00:00Z', state: n === 4 ? 'open' : 'closed', merged: n !== 4, merged_at: n === 4 ? null : '2026-11-06T12:05:00Z', merge_commit_sha: n.toString(16).padStart(40, 'e'), mergeable: n === 4 ? true : null });
     }
     const number = Number(path.match(/^\/(?:pulls|issues)\/(\d+)/)?.[1]);
     if (path.endsWith('/files')) return Response.json(paths(number).map(filename => ({ filename, status: 'modified' })));
@@ -162,9 +182,9 @@ describe('final same-head scorecard marker freshness', () => {
   });
   it.each([
     ['same-issue historical revision', '<!-- engineering-contract: 1048 -->'],
-    ['unknown revision', '<!-- engineering-contract: 1048-v3 -->'],
-    ['duplicate marker', '<!-- engineering-contract: 1048-v2 -->\n<!-- engineering-contract: 1048-v2 -->'],
-    ['malformed marker', '<!-- engineering-contract: 1048-v2'],
+    ['unknown revision', '<!-- engineering-contract: 1048-v4 -->'],
+    ['duplicate marker', '<!-- engineering-contract: 1048-v3 -->\n<!-- engineering-contract: 1048-v3 -->'],
+    ['malformed marker', '<!-- engineering-contract: 1048-v3'],
     ['missing marker', ''],
   ])('invalidates previously current positive proof and review after %s', async (_kind, finalMarker) => {
     const f = fixture({ finalMarker }); sourceFetch.mockImplementation(f.fetchImpl);

@@ -1,0 +1,2019 @@
+{
+  "schemaVersion": 2,
+  "kind": "PARENT_ONLY_PUBLIC_EXPECTATIONS_WITH_MEMBERSHIP_BOOKENDS",
+  "createdAt": "2026-11-11T22:09:45.077250+00:00",
+  "notMountedIntoSubject": true,
+  "qualification": "PROSPECTIVE_UNEXECUTED_NO_AUTHORITY",
+  "caseCount": 39,
+  "designatedBaselineRedCase": "reader-01",
+  "baselineIsActualCommittedSource": "baf057d9e87f7f1c48306eb0ad2ef4e60dea787f",
+  "cases": [
+    {
+      "caseId": "reader-01",
+      "requiredOutcome": "CI_ONLY",
+      "parentPredicates": [
+        {
+          "op": "eq",
+          "path": "observation.provenanceKind",
+          "value": "test-transport-untrusted"
+        },
+        {
+          "op": "eq",
+          "path": "observation.inProcessEvidenceClaim",
+          "value": false
+        },
+        {
+          "op": "eq",
+          "path": "observation.actualCheckoutSha",
+          "value": null
+        },
+        {
+          "op": "eq",
+          "path": "observation.globalProblems",
+          "value": []
+        },
+        {
+          "op": "eq",
+          "path": "observation.ciStatus",
+          "value": "BLOCKED"
+        },
+        {
+          "op": "eq",
+          "path": "observation.ciAssociation",
+          "value": null
+        },
+        {
+          "op": "contains",
+          "path": "observation.ciProblems",
+          "value": "Native head and merge commit trees are not identical"
+        },
+        {
+          "op": "eq",
+          "path": "wrapper.executionComplete",
+          "value": true
+        },
+        {
+          "op": "eq",
+          "path": "wrapper.setupErrors",
+          "value": []
+        },
+        {
+          "op": "eq",
+          "path": "wrapper.membershipReadCount",
+          "value": 2
+        }
+      ],
+      "prospectiveBaselineExpectation": "FAIL",
+      "baselineMeaning": "Shipped Baf places valid unequal trees in globalProblems; this contradicts the frozen CI-only expectation. Actual offline adapter execution remains unrun.",
+      "notes": null
+    },
+    {
+      "caseId": "reader-02",
+      "requiredOutcome": "VALID",
+      "parentPredicates": [
+        {
+          "op": "eq",
+          "path": "observation.provenanceKind",
+          "value": "test-transport-untrusted"
+        },
+        {
+          "op": "eq",
+          "path": "observation.inProcessEvidenceClaim",
+          "value": false
+        },
+        {
+          "op": "eq",
+          "path": "observation.actualCheckoutSha",
+          "value": null
+        },
+        {
+          "op": "eq",
+          "path": "observation.globalProblems",
+          "value": []
+        },
+        {
+          "op": "eq",
+          "path": "observation.ciStatus",
+          "value": "PASSED"
+        },
+        {
+          "op": "eq",
+          "path": "observation.ciProblems",
+          "value": []
+        },
+        {
+          "op": "eq",
+          "path": "wrapper.executionComplete",
+          "value": true
+        },
+        {
+          "op": "eq",
+          "path": "wrapper.setupErrors",
+          "value": []
+        },
+        {
+          "op": "eq",
+          "path": "wrapper.membershipReadCount",
+          "value": 2
+        },
+        {
+          "op": "eq",
+          "path": "observation.ciAssociation",
+          "value": {
+            "kind": "historical_head_identity",
+            "prNumber": 1,
+            "triggerPrNumber": null,
+            "headSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "mergeSha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "treeSha": "1111111111111111111111111111111111111111"
+          }
+        }
+      ],
+      "prospectiveBaselineExpectation": "PASS_CONTROL",
+      "baselineMeaning": "One designated behavioral baseline failure; control refusal does not establish which original error caused refusal.",
+      "notes": null
+    },
+    {
+      "caseId": "reader-03",
+      "requiredOutcome": "VALID",
+      "parentPredicates": [
+        {
+          "op": "eq",
+          "path": "observation.provenanceKind",
+          "value": "test-transport-untrusted"
+        },
+        {
+          "op": "eq",
+          "path": "observation.inProcessEvidenceClaim",
+          "value": false
+        },
+        {
+          "op": "eq",
+          "path": "observation.actualCheckoutSha",
+          "value": null
+        },
+        {
+          "op": "eq",
+          "path": "observation.globalProblems",
+          "value": []
+        },
+        {
+          "op": "eq",
+          "path": "observation.ciStatus",
+          "value": "PASSED"
+        },
+        {
+          "op": "eq",
+          "path": "observation.ciProblems",
+          "value": []
+        },
+        {
+          "op": "eq",
+          "path": "wrapper.executionComplete",
+          "value": true
+        },
+        {
+          "op": "eq",
+          "path": "wrapper.setupErrors",
+          "value": []
+        },
+        {
+          "op": "eq",
+          "path": "wrapper.membershipReadCount",
+          "value": 0
+        },
+        {
+          "op": "eq",
+          "path": "observation.ciAssociation",
+          "value": {
+            "kind": "direct_pr",
+            "prNumber": 1,
+            "triggerPrNumber": null,
+            "headSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          }
+        }
+      ],
+      "prospectiveBaselineExpectation": "PASS_CONTROL",
+      "baselineMeaning": "One designated behavioral baseline failure; control refusal does not establish which original error caused refusal.",
+      "notes": null
+    },
+    {
+      "caseId": "reader-04",
+      "requiredOutcome": "GLOBAL_REFUSAL",
+      "parentPredicates": [
+        {
+          "op": "eq",
+          "path": "observation.provenanceKind",
+          "value": "test-transport-untrusted"
+        },
+        {
+          "op": "eq",
+          "path": "observation.inProcessEvidenceClaim",
+          "value": false
+        },
+        {
+          "op": "eq",
+          "path": "observation.actualCheckoutSha",
+          "value": null
+        },
+        {
+          "op": "nonemptyArray",
+          "path": "observation.globalProblems"
+        },
+        {
+          "op": "eq",
+          "path": "observation.ciStatus",
+          "value": "BLOCKED"
+        },
+        {
+          "op": "eq",
+          "path": "wrapper.executionComplete",
+          "value": true
+        },
+        {
+          "op": "eq",
+          "path": "wrapper.setupErrors",
+          "value": []
+        }
+      ],
+      "prospectiveBaselineExpectation": "PASS_CONTROL",
+      "baselineMeaning": "One designated behavioral baseline failure; control refusal does not establish which original error caused refusal.",
+      "notes": null
+    },
+    {
+      "caseId": "reader-05",
+      "requiredOutcome": "GLOBAL_REFUSAL",
+      "parentPredicates": [
+        {
+          "op": "eq",
+          "path": "observation.provenanceKind",
+          "value": "test-transport-untrusted"
+        },
+        {
+          "op": "eq",
+          "path": "observation.inProcessEvidenceClaim",
+          "value": false
+        },
+        {
+          "op": "eq",
+          "path": "observation.actualCheckoutSha",
+          "value": null
+        },
+        {
+          "op": "nonemptyArray",
+          "path": "observation.globalProblems"
+        },
+        {
+          "op": "eq",
+          "path": "observation.ciStatus",
+          "value": "BLOCKED"
+        },
+        {
+          "op": "eq",
+          "path": "wrapper.executionComplete",
+          "value": true
+        },
+        {
+          "op": "eq",
+          "path": "wrapper.setupErrors",
+          "value": []
+        }
+      ],
+      "prospectiveBaselineExpectation": "PASS_CONTROL",
+      "baselineMeaning": "One designated behavioral baseline failure; control refusal does not establish which original error caused refusal.",
+      "notes": null
+    },
+    {
+      "caseId": "reader-06",
+      "requiredOutcome": "GLOBAL_REFUSAL",
+      "parentPredicates": [
+        {
+          "op": "eq",
+          "path": "observation.provenanceKind",
+          "value": "test-transport-untrusted"
+        },
+        {
+          "op": "eq",
+          "path": "observation.inProcessEvidenceClaim",
+          "value": false
+        },
+        {
+          "op": "eq",
+          "path": "observation.actualCheckoutSha",
+          "value": null
+        },
+        {
+          "op": "nonemptyArray",
+          "path": "observation.globalProblems"
+        },
+        {
+          "op": "eq",
+          "path": "observation.ciStatus",
+          "value": "BLOCKED"
+        },
+        {
+          "op": "eq",
+          "path": "wrapper.executionComplete",
+          "value": true
+        },
+        {
+          "op": "eq",
+          "path": "wrapper.setupErrors",
+          "value": []
+        }
+      ],
+      "prospectiveBaselineExpectation": "PASS_CONTROL",
+      "baselineMeaning": "One designated behavioral baseline failure; control refusal does not establish which original error caused refusal.",
+      "notes": null
+    },
+    {
+      "caseId": "reader-07",
+      "requiredOutcome": "GLOBAL_REFUSAL",
+      "parentPredicates": [
+        {
+          "op": "eq",
+          "path": "observation.provenanceKind",
+          "value": "test-transport-untrusted"
+        },
+        {
+          "op": "eq",
+          "path": "observation.inProcessEvidenceClaim",
+          "value": false
+        },
+        {
+          "op": "eq",
+          "path": "observation.actualCheckoutSha",
+          "value": null
+        },
+        {
+          "op": "nonemptyArray",
+          "path": "observation.globalProblems"
+        },
+        {
+          "op": "eq",
+          "path": "observation.ciStatus",
+          "value": "BLOCKED"
+        },
+        {
+          "op": "eq",
+          "path": "wrapper.executionComplete",
+          "value": true
+        },
+        {
+          "op": "eq",
+          "path": "wrapper.setupErrors",
+          "value": []
+        }
+      ],
+      "prospectiveBaselineExpectation": "PASS_CONTROL",
+      "baselineMeaning": "One designated behavioral baseline failure; control refusal does not establish which original error caused refusal.",
+      "notes": null
+    },
+    {
+      "caseId": "reader-08",
+      "requiredOutcome": "GLOBAL_REFUSAL",
+      "parentPredicates": [
+        {
+          "op": "eq",
+          "path": "observation.provenanceKind",
+          "value": "test-transport-untrusted"
+        },
+        {
+          "op": "eq",
+          "path": "observation.inProcessEvidenceClaim",
+          "value": false
+        },
+        {
+          "op": "eq",
+          "path": "observation.actualCheckoutSha",
+          "value": null
+        },
+        {
+          "op": "nonemptyArray",
+          "path": "observation.globalProblems"
+        },
+        {
+          "op": "eq",
+          "path": "observation.ciStatus",
+          "value": "BLOCKED"
+        },
+        {
+          "op": "eq",
+          "path": "wrapper.executionComplete",
+          "value": true
+        },
+        {
+          "op": "eq",
+          "path": "wrapper.setupErrors",
+          "value": []
+        }
+      ],
+      "prospectiveBaselineExpectation": "PASS_CONTROL",
+      "baselineMeaning": "One designated behavioral baseline failure; control refusal does not establish which original error caused refusal.",
+      "notes": null
+    },
+    {
+      "caseId": "reader-09",
+      "requiredOutcome": "GLOBAL_REFUSAL",
+      "parentPredicates": [
+        {
+          "op": "eq",
+          "path": "observation.provenanceKind",
+          "value": "test-transport-untrusted"
+        },
+        {
+          "op": "eq",
+          "path": "observation.inProcessEvidenceClaim",
+          "value": false
+        },
+        {
+          "op": "eq",
+          "path": "observation.actualCheckoutSha",
+          "value": null
+        },
+        {
+          "op": "nonemptyArray",
+          "path": "observation.globalProblems"
+        },
+        {
+          "op": "eq",
+          "path": "observation.ciStatus",
+          "value": "BLOCKED"
+        },
+        {
+          "op": "eq",
+          "path": "wrapper.executionComplete",
+          "value": true
+        },
+        {
+          "op": "eq",
+          "path": "wrapper.setupErrors",
+          "value": []
+        }
+      ],
+      "prospectiveBaselineExpectation": "PASS_CONTROL",
+      "baselineMeaning": "One designated behavioral baseline failure; control refusal does not establish which original error caused refusal.",
+      "notes": null
+    },
+    {
+      "caseId": "reader-10",
+      "requiredOutcome": "GLOBAL_REFUSAL",
+      "parentPredicates": [
+        {
+          "op": "eq",
+          "path": "observation.provenanceKind",
+          "value": "test-transport-untrusted"
+        },
+        {
+          "op": "eq",
+          "path": "observation.inProcessEvidenceClaim",
+          "value": false
+        },
+        {
+          "op": "eq",
+          "path": "observation.actualCheckoutSha",
+          "value": null
+        },
+        {
+          "op": "nonemptyArray",
+          "path": "observation.globalProblems"
+        },
+        {
+          "op": "eq",
+          "path": "observation.ciStatus",
+          "value": "BLOCKED"
+        },
+        {
+          "op": "eq",
+          "path": "wrapper.executionComplete",
+          "value": true
+        },
+        {
+          "op": "eq",
+          "path": "wrapper.setupErrors",
+          "value": []
+        }
+      ],
+      "prospectiveBaselineExpectation": "PASS_CONTROL",
+      "baselineMeaning": "One designated behavioral baseline failure; control refusal does not establish which original error caused refusal.",
+      "notes": null
+    },
+    {
+      "caseId": "reader-11",
+      "requiredOutcome": "GLOBAL_REFUSAL",
+      "parentPredicates": [
+        {
+          "op": "eq",
+          "path": "observation.provenanceKind",
+          "value": "test-transport-untrusted"
+        },
+        {
+          "op": "eq",
+          "path": "observation.inProcessEvidenceClaim",
+          "value": false
+        },
+        {
+          "op": "eq",
+          "path": "observation.actualCheckoutSha",
+          "value": null
+        },
+        {
+          "op": "nonemptyArray",
+          "path": "observation.globalProblems"
+        },
+        {
+          "op": "eq",
+          "path": "observation.ciStatus",
+          "value": "BLOCKED"
+        },
+        {
+          "op": "eq",
+          "path": "wrapper.executionComplete",
+          "value": true
+        },
+        {
+          "op": "eq",
+          "path": "wrapper.setupErrors",
+          "value": []
+        }
+      ],
+      "prospectiveBaselineExpectation": "PASS_CONTROL",
+      "baselineMeaning": "One designated behavioral baseline failure; control refusal does not establish which original error caused refusal.",
+      "notes": null
+    },
+    {
+      "caseId": "reader-12",
+      "requiredOutcome": "GLOBAL_REFUSAL",
+      "parentPredicates": [
+        {
+          "op": "eq",
+          "path": "observation.provenanceKind",
+          "value": "test-transport-untrusted"
+        },
+        {
+          "op": "eq",
+          "path": "observation.inProcessEvidenceClaim",
+          "value": false
+        },
+        {
+          "op": "eq",
+          "path": "observation.actualCheckoutSha",
+          "value": null
+        },
+        {
+          "op": "nonemptyArray",
+          "path": "observation.globalProblems"
+        },
+        {
+          "op": "eq",
+          "path": "observation.ciStatus",
+          "value": "BLOCKED"
+        },
+        {
+          "op": "eq",
+          "path": "wrapper.executionComplete",
+          "value": true
+        },
+        {
+          "op": "eq",
+          "path": "wrapper.setupErrors",
+          "value": []
+        }
+      ],
+      "prospectiveBaselineExpectation": "PASS_CONTROL",
+      "baselineMeaning": "One designated behavioral baseline failure; control refusal does not establish which original error caused refusal.",
+      "notes": null
+    },
+    {
+      "caseId": "reader-13",
+      "requiredOutcome": "GLOBAL_REFUSAL",
+      "parentPredicates": [
+        {
+          "op": "eq",
+          "path": "observation.provenanceKind",
+          "value": "test-transport-untrusted"
+        },
+        {
+          "op": "eq",
+          "path": "observation.inProcessEvidenceClaim",
+          "value": false
+        },
+        {
+          "op": "eq",
+          "path": "observation.actualCheckoutSha",
+          "value": null
+        },
+        {
+          "op": "nonemptyArray",
+          "path": "observation.globalProblems"
+        },
+        {
+          "op": "eq",
+          "path": "observation.ciStatus",
+          "value": "BLOCKED"
+        },
+        {
+          "op": "eq",
+          "path": "wrapper.executionComplete",
+          "value": true
+        },
+        {
+          "op": "eq",
+          "path": "wrapper.setupErrors",
+          "value": []
+        }
+      ],
+      "prospectiveBaselineExpectation": "PASS_CONTROL",
+      "baselineMeaning": "One designated behavioral baseline failure; control refusal does not establish which original error caused refusal.",
+      "notes": null
+    },
+    {
+      "caseId": "reader-14",
+      "requiredOutcome": "GLOBAL_REFUSAL",
+      "parentPredicates": [
+        {
+          "op": "eq",
+          "path": "observation.provenanceKind",
+          "value": "test-transport-untrusted"
+        },
+        {
+          "op": "eq",
+          "path": "observation.inProcessEvidenceClaim",
+          "value": false
+        },
+        {
+          "op": "eq",
+          "path": "observation.actualCheckoutSha",
+          "value": null
+        },
+        {
+          "op": "nonemptyArray",
+          "path": "observation.globalProblems"
+        },
+        {
+          "op": "eq",
+          "path": "observation.ciStatus",
+          "value": "BLOCKED"
+        },
+        {
+          "op": "eq",
+          "path": "wrapper.executionComplete",
+          "value": true
+        },
+        {
+          "op": "eq",
+          "path": "wrapper.setupErrors",
+          "value": []
+        }
+      ],
+      "prospectiveBaselineExpectation": "PASS_CONTROL",
+      "baselineMeaning": "One designated behavioral baseline failure; control refusal does not establish which original error caused refusal.",
+      "notes": null
+    },
+    {
+      "caseId": "reader-15",
+      "requiredOutcome": "GLOBAL_REFUSAL",
+      "parentPredicates": [
+        {
+          "op": "eq",
+          "path": "observation.provenanceKind",
+          "value": "test-transport-untrusted"
+        },
+        {
+          "op": "eq",
+          "path": "observation.inProcessEvidenceClaim",
+          "value": false
+        },
+        {
+          "op": "eq",
+          "path": "observation.actualCheckoutSha",
+          "value": null
+        },
+        {
+          "op": "nonemptyArray",
+          "path": "observation.globalProblems"
+        },
+        {
+          "op": "eq",
+          "path": "observation.ciStatus",
+          "value": "BLOCKED"
+        },
+        {
+          "op": "eq",
+          "path": "wrapper.executionComplete",
+          "value": true
+        },
+        {
+          "op": "eq",
+          "path": "wrapper.setupErrors",
+          "value": []
+        }
+      ],
+      "prospectiveBaselineExpectation": "PASS_CONTROL",
+      "baselineMeaning": "One designated behavioral baseline failure; control refusal does not establish which original error caused refusal.",
+      "notes": null
+    },
+    {
+      "caseId": "reader-16",
+      "requiredOutcome": "GLOBAL_REFUSAL",
+      "parentPredicates": [
+        {
+          "op": "eq",
+          "path": "observation.provenanceKind",
+          "value": "test-transport-untrusted"
+        },
+        {
+          "op": "eq",
+          "path": "observation.inProcessEvidenceClaim",
+          "value": false
+        },
+        {
+          "op": "eq",
+          "path": "observation.actualCheckoutSha",
+          "value": null
+        },
+        {
+          "op": "nonemptyArray",
+          "path": "observation.globalProblems"
+        },
+        {
+          "op": "eq",
+          "path": "observation.ciStatus",
+          "value": "BLOCKED"
+        },
+        {
+          "op": "eq",
+          "path": "wrapper.executionComplete",
+          "value": true
+        },
+        {
+          "op": "eq",
+          "path": "wrapper.setupErrors",
+          "value": []
+        }
+      ],
+      "prospectiveBaselineExpectation": "PASS_CONTROL",
+      "baselineMeaning": "One designated behavioral baseline failure; control refusal does not establish which original error caused refusal.",
+      "notes": null
+    },
+    {
+      "caseId": "reader-17",
+      "requiredOutcome": "GLOBAL_REFUSAL",
+      "parentPredicates": [
+        {
+          "op": "eq",
+          "path": "observation.provenanceKind",
+          "value": "test-transport-untrusted"
+        },
+        {
+          "op": "eq",
+          "path": "observation.inProcessEvidenceClaim",
+          "value": false
+        },
+        {
+          "op": "eq",
+          "path": "observation.actualCheckoutSha",
+          "value": null
+        },
+        {
+          "op": "nonemptyArray",
+          "path": "observation.globalProblems"
+        },
+        {
+          "op": "eq",
+          "path": "observation.ciStatus",
+          "value": "BLOCKED"
+        },
+        {
+          "op": "eq",
+          "path": "wrapper.executionComplete",
+          "value": true
+        },
+        {
+          "op": "eq",
+          "path": "wrapper.setupErrors",
+          "value": []
+        }
+      ],
+      "prospectiveBaselineExpectation": "PASS_CONTROL",
+      "baselineMeaning": "One designated behavioral baseline failure; control refusal does not establish which original error caused refusal.",
+      "notes": null
+    },
+    {
+      "caseId": "reader-18",
+      "requiredOutcome": "GLOBAL_REFUSAL",
+      "parentPredicates": [
+        {
+          "op": "eq",
+          "path": "observation.provenanceKind",
+          "value": "test-transport-untrusted"
+        },
+        {
+          "op": "eq",
+          "path": "observation.inProcessEvidenceClaim",
+          "value": false
+        },
+        {
+          "op": "eq",
+          "path": "observation.actualCheckoutSha",
+          "value": null
+        },
+        {
+          "op": "nonemptyArray",
+          "path": "observation.globalProblems"
+        },
+        {
+          "op": "eq",
+          "path": "observation.ciStatus",
+          "value": "BLOCKED"
+        },
+        {
+          "op": "eq",
+          "path": "wrapper.executionComplete",
+          "value": true
+        },
+        {
+          "op": "eq",
+          "path": "wrapper.setupErrors",
+          "value": []
+        }
+      ],
+      "prospectiveBaselineExpectation": "PASS_CONTROL",
+      "baselineMeaning": "One designated behavioral baseline failure; control refusal does not establish which original error caused refusal.",
+      "notes": null
+    },
+    {
+      "caseId": "reader-19",
+      "requiredOutcome": "GLOBAL_REFUSAL",
+      "parentPredicates": [
+        {
+          "op": "eq",
+          "path": "observation.provenanceKind",
+          "value": "test-transport-untrusted"
+        },
+        {
+          "op": "eq",
+          "path": "observation.inProcessEvidenceClaim",
+          "value": false
+        },
+        {
+          "op": "eq",
+          "path": "observation.actualCheckoutSha",
+          "value": null
+        },
+        {
+          "op": "nonemptyArray",
+          "path": "observation.globalProblems"
+        },
+        {
+          "op": "eq",
+          "path": "observation.ciStatus",
+          "value": "BLOCKED"
+        },
+        {
+          "op": "contains",
+          "path": "observation.globalProblems",
+          "value": "Pull request head changed while collecting evidence"
+        },
+        {
+          "op": "eq",
+          "path": "wrapper.executionComplete",
+          "value": true
+        },
+        {
+          "op": "eq",
+          "path": "wrapper.setupErrors",
+          "value": []
+        },
+        {
+          "op": "eq",
+          "path": "wrapper.membershipReadCount",
+          "value": 2
+        }
+      ],
+      "prospectiveBaselineExpectation": "FAIL",
+      "baselineMeaning": "The new membership-bookend observation is a prospective additional requirement: old unequal-tree source skips the second read, while old equal-tree returned mismatch lacks a global refusal. These are expected failures to verify in actual baseline execution, not previously measured defects or passing controls.",
+      "notes": null
+    },
+    {
+      "caseId": "reader-20",
+      "requiredOutcome": "GLOBAL_REFUSAL",
+      "parentPredicates": [
+        {
+          "op": "eq",
+          "path": "observation.provenanceKind",
+          "value": "test-transport-untrusted"
+        },
+        {
+          "op": "eq",
+          "path": "observation.inProcessEvidenceClaim",
+          "value": false
+        },
+        {
+          "op": "eq",
+          "path": "observation.actualCheckoutSha",
+          "value": null
+        },
+        {
+          "op": "nonemptyArray",
+          "path": "observation.globalProblems"
+        },
+        {
+          "op": "eq",
+          "path": "observation.ciStatus",
+          "value": "BLOCKED"
+        },
+        {
+          "op": "eq",
+          "path": "wrapper.executionComplete",
+          "value": true
+        },
+        {
+          "op": "eq",
+          "path": "wrapper.setupErrors",
+          "value": []
+        },
+        {
+          "op": "eq",
+          "path": "wrapper.membershipReadCount",
+          "value": 2
+        }
+      ],
+      "prospectiveBaselineExpectation": "FAIL",
+      "baselineMeaning": "The new membership-bookend observation is a prospective additional requirement: old unequal-tree source skips the second read, while old equal-tree returned mismatch lacks a global refusal. These are expected failures to verify in actual baseline execution, not previously measured defects or passing controls.",
+      "notes": "Target must still refuse globally after CI-only tree mismatch no longer supplies a global blocker. A later executable unit assertion should require the historical-identity-drift diagnostic itself, preventing a confounded fallback."
+    },
+    {
+      "caseId": "reader-21",
+      "requiredOutcome": "GLOBAL_REFUSAL",
+      "parentPredicates": [
+        {
+          "op": "eq",
+          "path": "observation.provenanceKind",
+          "value": "test-transport-untrusted"
+        },
+        {
+          "op": "eq",
+          "path": "observation.inProcessEvidenceClaim",
+          "value": false
+        },
+        {
+          "op": "eq",
+          "path": "observation.actualCheckoutSha",
+          "value": null
+        },
+        {
+          "op": "nonemptyArray",
+          "path": "observation.globalProblems"
+        },
+        {
+          "op": "eq",
+          "path": "observation.ciStatus",
+          "value": "BLOCKED"
+        },
+        {
+          "op": "eq",
+          "path": "wrapper.executionComplete",
+          "value": true
+        },
+        {
+          "op": "eq",
+          "path": "wrapper.setupErrors",
+          "value": []
+        },
+        {
+          "op": "eq",
+          "path": "wrapper.membershipReadCount",
+          "value": 2
+        }
+      ],
+      "prospectiveBaselineExpectation": "FAIL",
+      "baselineMeaning": "The new membership-bookend observation is a prospective additional requirement: old unequal-tree source skips the second read, while old equal-tree returned mismatch lacks a global refusal. These are expected failures to verify in actual baseline execution, not previously measured defects or passing controls.",
+      "notes": "Target must still refuse globally after CI-only tree mismatch no longer supplies a global blocker. A later executable unit assertion should require the historical-identity-drift diagnostic itself, preventing a confounded fallback."
+    },
+    {
+      "caseId": "reader-22",
+      "requiredOutcome": "GLOBAL_REFUSAL",
+      "parentPredicates": [
+        {
+          "op": "eq",
+          "path": "observation.provenanceKind",
+          "value": "test-transport-untrusted"
+        },
+        {
+          "op": "eq",
+          "path": "observation.inProcessEvidenceClaim",
+          "value": false
+        },
+        {
+          "op": "eq",
+          "path": "observation.actualCheckoutSha",
+          "value": null
+        },
+        {
+          "op": "nonemptyArray",
+          "path": "observation.globalProblems"
+        },
+        {
+          "op": "eq",
+          "path": "observation.ciStatus",
+          "value": "BLOCKED"
+        },
+        {
+          "op": "eq",
+          "path": "wrapper.executionComplete",
+          "value": true
+        },
+        {
+          "op": "eq",
+          "path": "wrapper.setupErrors",
+          "value": []
+        },
+        {
+          "op": "eq",
+          "path": "wrapper.membershipReadCount",
+          "value": 2
+        }
+      ],
+      "prospectiveBaselineExpectation": "FAIL",
+      "baselineMeaning": "The new membership-bookend observation is a prospective additional requirement: old unequal-tree source skips the second read, while old equal-tree returned mismatch lacks a global refusal. These are expected failures to verify in actual baseline execution, not previously measured defects or passing controls.",
+      "notes": "Target must still refuse globally after CI-only tree mismatch no longer supplies a global blocker. A later executable unit assertion should require the historical-identity-drift diagnostic itself, preventing a confounded fallback."
+    },
+    {
+      "caseId": "reader-23",
+      "requiredOutcome": "GLOBAL_REFUSAL",
+      "parentPredicates": [
+        {
+          "op": "eq",
+          "path": "observation.provenanceKind",
+          "value": "test-transport-untrusted"
+        },
+        {
+          "op": "eq",
+          "path": "observation.inProcessEvidenceClaim",
+          "value": false
+        },
+        {
+          "op": "eq",
+          "path": "observation.actualCheckoutSha",
+          "value": null
+        },
+        {
+          "op": "nonemptyArray",
+          "path": "observation.globalProblems"
+        },
+        {
+          "op": "eq",
+          "path": "observation.ciStatus",
+          "value": "BLOCKED"
+        },
+        {
+          "op": "eq",
+          "path": "wrapper.executionComplete",
+          "value": true
+        },
+        {
+          "op": "eq",
+          "path": "wrapper.setupErrors",
+          "value": []
+        },
+        {
+          "op": "eq",
+          "path": "wrapper.membershipReadCount",
+          "value": 2
+        }
+      ],
+      "prospectiveBaselineExpectation": "FAIL",
+      "baselineMeaning": "The new membership-bookend observation is a prospective additional requirement: old unequal-tree source skips the second read, while old equal-tree returned mismatch lacks a global refusal. These are expected failures to verify in actual baseline execution, not previously measured defects or passing controls.",
+      "notes": "Target must still refuse globally after CI-only tree mismatch no longer supplies a global blocker. A later executable unit assertion should require the historical-identity-drift diagnostic itself, preventing a confounded fallback."
+    },
+    {
+      "caseId": "reader-24",
+      "requiredOutcome": "GLOBAL_REFUSAL",
+      "parentPredicates": [
+        {
+          "op": "eq",
+          "path": "observation.provenanceKind",
+          "value": "test-transport-untrusted"
+        },
+        {
+          "op": "eq",
+          "path": "observation.inProcessEvidenceClaim",
+          "value": false
+        },
+        {
+          "op": "eq",
+          "path": "observation.actualCheckoutSha",
+          "value": null
+        },
+        {
+          "op": "nonemptyArray",
+          "path": "observation.globalProblems"
+        },
+        {
+          "op": "eq",
+          "path": "observation.ciStatus",
+          "value": "BLOCKED"
+        },
+        {
+          "op": "eq",
+          "path": "wrapper.executionComplete",
+          "value": true
+        },
+        {
+          "op": "eq",
+          "path": "wrapper.setupErrors",
+          "value": []
+        },
+        {
+          "op": "eq",
+          "path": "wrapper.membershipReadCount",
+          "value": 2
+        }
+      ],
+      "prospectiveBaselineExpectation": "FAIL",
+      "baselineMeaning": "The new membership-bookend observation is a prospective additional requirement: old unequal-tree source skips the second read, while old equal-tree returned mismatch lacks a global refusal. These are expected failures to verify in actual baseline execution, not previously measured defects or passing controls.",
+      "notes": "Target must still refuse globally after CI-only tree mismatch no longer supplies a global blocker. A later executable unit assertion should require the historical-identity-drift diagnostic itself, preventing a confounded fallback."
+    },
+    {
+      "caseId": "reader-25",
+      "requiredOutcome": "GLOBAL_REFUSAL",
+      "parentPredicates": [
+        {
+          "op": "eq",
+          "path": "observation.provenanceKind",
+          "value": "test-transport-untrusted"
+        },
+        {
+          "op": "eq",
+          "path": "observation.inProcessEvidenceClaim",
+          "value": false
+        },
+        {
+          "op": "eq",
+          "path": "observation.actualCheckoutSha",
+          "value": null
+        },
+        {
+          "op": "nonemptyArray",
+          "path": "observation.globalProblems"
+        },
+        {
+          "op": "eq",
+          "path": "observation.ciStatus",
+          "value": "BLOCKED"
+        },
+        {
+          "op": "eq",
+          "path": "wrapper.executionComplete",
+          "value": true
+        },
+        {
+          "op": "eq",
+          "path": "wrapper.setupErrors",
+          "value": []
+        },
+        {
+          "op": "eq",
+          "path": "wrapper.membershipReadCount",
+          "value": 2
+        }
+      ],
+      "prospectiveBaselineExpectation": "FAIL",
+      "baselineMeaning": "The new membership-bookend observation is a prospective additional requirement: old unequal-tree source skips the second read, while old equal-tree returned mismatch lacks a global refusal. These are expected failures to verify in actual baseline execution, not previously measured defects or passing controls.",
+      "notes": "Target must still refuse globally after CI-only tree mismatch no longer supplies a global blocker. A later executable unit assertion should require the historical-identity-drift diagnostic itself, preventing a confounded fallback."
+    },
+    {
+      "caseId": "reader-26",
+      "requiredOutcome": "GLOBAL_REFUSAL",
+      "parentPredicates": [
+        {
+          "op": "eq",
+          "path": "observation.provenanceKind",
+          "value": "test-transport-untrusted"
+        },
+        {
+          "op": "eq",
+          "path": "observation.inProcessEvidenceClaim",
+          "value": false
+        },
+        {
+          "op": "eq",
+          "path": "observation.actualCheckoutSha",
+          "value": null
+        },
+        {
+          "op": "nonemptyArray",
+          "path": "observation.globalProblems"
+        },
+        {
+          "op": "eq",
+          "path": "observation.ciStatus",
+          "value": "BLOCKED"
+        },
+        {
+          "op": "eq",
+          "path": "wrapper.executionComplete",
+          "value": true
+        },
+        {
+          "op": "eq",
+          "path": "wrapper.setupErrors",
+          "value": []
+        },
+        {
+          "op": "eq",
+          "path": "wrapper.membershipReadCount",
+          "value": 2
+        }
+      ],
+      "prospectiveBaselineExpectation": "FAIL",
+      "baselineMeaning": "The new membership-bookend observation is a prospective additional requirement: old unequal-tree source skips the second read, while old equal-tree returned mismatch lacks a global refusal. These are expected failures to verify in actual baseline execution, not previously measured defects or passing controls.",
+      "notes": "Target must still refuse globally after CI-only tree mismatch no longer supplies a global blocker. A later executable unit assertion should require the historical-identity-drift diagnostic itself, preventing a confounded fallback."
+    },
+    {
+      "caseId": "reader-27",
+      "requiredOutcome": "GLOBAL_REFUSAL",
+      "parentPredicates": [
+        {
+          "op": "eq",
+          "path": "observation.provenanceKind",
+          "value": "test-transport-untrusted"
+        },
+        {
+          "op": "eq",
+          "path": "observation.inProcessEvidenceClaim",
+          "value": false
+        },
+        {
+          "op": "eq",
+          "path": "observation.actualCheckoutSha",
+          "value": null
+        },
+        {
+          "op": "nonemptyArray",
+          "path": "observation.globalProblems"
+        },
+        {
+          "op": "eq",
+          "path": "observation.ciStatus",
+          "value": "BLOCKED"
+        },
+        {
+          "op": "eq",
+          "path": "wrapper.executionComplete",
+          "value": true
+        },
+        {
+          "op": "eq",
+          "path": "wrapper.setupErrors",
+          "value": []
+        },
+        {
+          "op": "eq",
+          "path": "wrapper.membershipReadCount",
+          "value": 2
+        }
+      ],
+      "prospectiveBaselineExpectation": "FAIL",
+      "baselineMeaning": "The new membership-bookend observation is a prospective additional requirement: old unequal-tree source skips the second read, while old equal-tree returned mismatch lacks a global refusal. These are expected failures to verify in actual baseline execution, not previously measured defects or passing controls.",
+      "notes": "Target must still refuse globally after CI-only tree mismatch no longer supplies a global blocker. A later executable unit assertion should require the historical-identity-drift diagnostic itself, preventing a confounded fallback."
+    },
+    {
+      "caseId": "reader-28",
+      "requiredOutcome": "GLOBAL_REFUSAL",
+      "parentPredicates": [
+        {
+          "op": "eq",
+          "path": "observation.provenanceKind",
+          "value": "test-transport-untrusted"
+        },
+        {
+          "op": "eq",
+          "path": "observation.inProcessEvidenceClaim",
+          "value": false
+        },
+        {
+          "op": "eq",
+          "path": "observation.actualCheckoutSha",
+          "value": null
+        },
+        {
+          "op": "nonemptyArray",
+          "path": "observation.globalProblems"
+        },
+        {
+          "op": "eq",
+          "path": "observation.ciStatus",
+          "value": "BLOCKED"
+        },
+        {
+          "op": "eq",
+          "path": "wrapper.executionComplete",
+          "value": true
+        },
+        {
+          "op": "eq",
+          "path": "wrapper.setupErrors",
+          "value": []
+        },
+        {
+          "op": "eq",
+          "path": "wrapper.membershipReadCount",
+          "value": 2
+        }
+      ],
+      "prospectiveBaselineExpectation": "FAIL",
+      "baselineMeaning": "The new membership-bookend observation is a prospective additional requirement: old unequal-tree source skips the second read, while old equal-tree returned mismatch lacks a global refusal. These are expected failures to verify in actual baseline execution, not previously measured defects or passing controls.",
+      "notes": "Target must still refuse globally after CI-only tree mismatch no longer supplies a global blocker. A later executable unit assertion should require the historical-identity-drift diagnostic itself, preventing a confounded fallback."
+    },
+    {
+      "caseId": "reader-29",
+      "requiredOutcome": "GLOBAL_REFUSAL",
+      "parentPredicates": [
+        {
+          "op": "eq",
+          "path": "observation.provenanceKind",
+          "value": "test-transport-untrusted"
+        },
+        {
+          "op": "eq",
+          "path": "observation.inProcessEvidenceClaim",
+          "value": false
+        },
+        {
+          "op": "eq",
+          "path": "observation.actualCheckoutSha",
+          "value": null
+        },
+        {
+          "op": "nonemptyArray",
+          "path": "observation.globalProblems"
+        },
+        {
+          "op": "eq",
+          "path": "observation.ciStatus",
+          "value": "BLOCKED"
+        },
+        {
+          "op": "eq",
+          "path": "wrapper.executionComplete",
+          "value": true
+        },
+        {
+          "op": "eq",
+          "path": "wrapper.setupErrors",
+          "value": []
+        },
+        {
+          "op": "eq",
+          "path": "wrapper.membershipReadCount",
+          "value": 2
+        }
+      ],
+      "prospectiveBaselineExpectation": "FAIL",
+      "baselineMeaning": "The new membership-bookend observation is a prospective additional requirement: old unequal-tree source skips the second read, while old equal-tree returned mismatch lacks a global refusal. These are expected failures to verify in actual baseline execution, not previously measured defects or passing controls.",
+      "notes": null
+    },
+    {
+      "caseId": "reader-30",
+      "requiredOutcome": "GLOBAL_REFUSAL_WITH_MEMBERSHIP_BOOKEND",
+      "parentPredicates": [
+        {
+          "op": "eq",
+          "path": "observation.provenanceKind",
+          "value": "test-transport-untrusted"
+        },
+        {
+          "op": "eq",
+          "path": "observation.inProcessEvidenceClaim",
+          "value": false
+        },
+        {
+          "op": "eq",
+          "path": "observation.actualCheckoutSha",
+          "value": null
+        },
+        {
+          "op": "eq",
+          "path": "observation.ciStatus",
+          "value": "BLOCKED"
+        },
+        {
+          "op": "nonemptyArray",
+          "path": "observation.globalProblems"
+        },
+        {
+          "op": "contains",
+          "path": "observation.globalProblems",
+          "value": "Historical native commit association changed or could not be rechecked while collecting evidence"
+        },
+        {
+          "op": "eq",
+          "path": "wrapper.executionComplete",
+          "value": true
+        },
+        {
+          "op": "eq",
+          "path": "wrapper.setupErrors",
+          "value": []
+        },
+        {
+          "op": "eq",
+          "path": "wrapper.membershipReadCount",
+          "value": 2
+        }
+      ],
+      "prospectiveBaselineExpectation": "FAIL",
+      "baselineMeaning": "The new membership-bookend observation is a prospective additional requirement: old unequal-tree source skips the second read, while old equal-tree returned mismatch lacks a global refusal. These are expected failures to verify in actual baseline execution, not previously measured defects or passing controls.",
+      "notes": "Global final membership prerequisite is distinct from granting CI association. Unequal trees never receive historical_head_identity."
+    },
+    {
+      "caseId": "reader-31",
+      "requiredOutcome": "GLOBAL_REFUSAL_WITH_MEMBERSHIP_BOOKEND",
+      "parentPredicates": [
+        {
+          "op": "eq",
+          "path": "observation.provenanceKind",
+          "value": "test-transport-untrusted"
+        },
+        {
+          "op": "eq",
+          "path": "observation.inProcessEvidenceClaim",
+          "value": false
+        },
+        {
+          "op": "eq",
+          "path": "observation.actualCheckoutSha",
+          "value": null
+        },
+        {
+          "op": "eq",
+          "path": "observation.ciStatus",
+          "value": "BLOCKED"
+        },
+        {
+          "op": "nonemptyArray",
+          "path": "observation.globalProblems"
+        },
+        {
+          "op": "contains",
+          "path": "observation.globalProblems",
+          "value": "Historical native commit association changed or could not be rechecked while collecting evidence"
+        },
+        {
+          "op": "eq",
+          "path": "wrapper.executionComplete",
+          "value": true
+        },
+        {
+          "op": "eq",
+          "path": "wrapper.setupErrors",
+          "value": []
+        },
+        {
+          "op": "eq",
+          "path": "wrapper.membershipReadCount",
+          "value": 2
+        }
+      ],
+      "prospectiveBaselineExpectation": "FAIL",
+      "baselineMeaning": "The new membership-bookend observation is a prospective additional requirement: old unequal-tree source skips the second read, while old equal-tree returned mismatch lacks a global refusal. These are expected failures to verify in actual baseline execution, not previously measured defects or passing controls.",
+      "notes": "Global final membership prerequisite is distinct from granting CI association. Unequal trees never receive historical_head_identity."
+    },
+    {
+      "caseId": "reader-32",
+      "requiredOutcome": "GLOBAL_REFUSAL_WITH_MEMBERSHIP_BOOKEND",
+      "parentPredicates": [
+        {
+          "op": "eq",
+          "path": "observation.provenanceKind",
+          "value": "test-transport-untrusted"
+        },
+        {
+          "op": "eq",
+          "path": "observation.inProcessEvidenceClaim",
+          "value": false
+        },
+        {
+          "op": "eq",
+          "path": "observation.actualCheckoutSha",
+          "value": null
+        },
+        {
+          "op": "eq",
+          "path": "observation.ciStatus",
+          "value": "BLOCKED"
+        },
+        {
+          "op": "nonemptyArray",
+          "path": "observation.globalProblems"
+        },
+        {
+          "op": "contains",
+          "path": "observation.globalProblems",
+          "value": "Historical native commit association changed or could not be rechecked while collecting evidence"
+        },
+        {
+          "op": "eq",
+          "path": "wrapper.executionComplete",
+          "value": true
+        },
+        {
+          "op": "eq",
+          "path": "wrapper.setupErrors",
+          "value": []
+        },
+        {
+          "op": "eq",
+          "path": "wrapper.membershipReadCount",
+          "value": 2
+        }
+      ],
+      "prospectiveBaselineExpectation": "FAIL",
+      "baselineMeaning": "The new membership-bookend observation is a prospective additional requirement: old unequal-tree source skips the second read, while old equal-tree returned mismatch lacks a global refusal. These are expected failures to verify in actual baseline execution, not previously measured defects or passing controls.",
+      "notes": "Global final membership prerequisite is distinct from granting CI association. Unequal trees never receive historical_head_identity."
+    },
+    {
+      "caseId": "reader-33",
+      "requiredOutcome": "GLOBAL_REFUSAL_WITH_MEMBERSHIP_BOOKEND",
+      "parentPredicates": [
+        {
+          "op": "eq",
+          "path": "observation.provenanceKind",
+          "value": "test-transport-untrusted"
+        },
+        {
+          "op": "eq",
+          "path": "observation.inProcessEvidenceClaim",
+          "value": false
+        },
+        {
+          "op": "eq",
+          "path": "observation.actualCheckoutSha",
+          "value": null
+        },
+        {
+          "op": "eq",
+          "path": "observation.ciStatus",
+          "value": "BLOCKED"
+        },
+        {
+          "op": "nonemptyArray",
+          "path": "observation.globalProblems"
+        },
+        {
+          "op": "eq",
+          "path": "wrapper.executionComplete",
+          "value": true
+        },
+        {
+          "op": "eq",
+          "path": "wrapper.setupErrors",
+          "value": []
+        },
+        {
+          "op": "eq",
+          "path": "wrapper.membershipReadCount",
+          "value": 2
+        },
+        {
+          "op": "contains",
+          "path": "observation.globalProblems",
+          "value": "current historical CI association: GitHub /commits/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/pulls returned 403"
+        }
+      ],
+      "prospectiveBaselineExpectation": "FAIL",
+      "baselineMeaning": "The new membership-bookend observation is a prospective additional requirement: old unequal-tree source skips the second read, while old equal-tree returned mismatch lacks a global refusal. These are expected failures to verify in actual baseline execution, not previously measured defects or passing controls.",
+      "notes": "Global final membership prerequisite is distinct from granting CI association. Unequal trees never receive historical_head_identity."
+    },
+    {
+      "caseId": "reader-34",
+      "requiredOutcome": "GLOBAL_REFUSAL_WITH_MEMBERSHIP_BOOKEND",
+      "parentPredicates": [
+        {
+          "op": "eq",
+          "path": "observation.provenanceKind",
+          "value": "test-transport-untrusted"
+        },
+        {
+          "op": "eq",
+          "path": "observation.inProcessEvidenceClaim",
+          "value": false
+        },
+        {
+          "op": "eq",
+          "path": "observation.actualCheckoutSha",
+          "value": null
+        },
+        {
+          "op": "eq",
+          "path": "observation.ciStatus",
+          "value": "BLOCKED"
+        },
+        {
+          "op": "nonemptyArray",
+          "path": "observation.globalProblems"
+        },
+        {
+          "op": "contains",
+          "path": "observation.globalProblems",
+          "value": "Historical native commit association changed or could not be rechecked while collecting evidence"
+        },
+        {
+          "op": "eq",
+          "path": "wrapper.executionComplete",
+          "value": true
+        },
+        {
+          "op": "eq",
+          "path": "wrapper.setupErrors",
+          "value": []
+        },
+        {
+          "op": "eq",
+          "path": "wrapper.membershipReadCount",
+          "value": 2
+        }
+      ],
+      "prospectiveBaselineExpectation": "FAIL",
+      "baselineMeaning": "The new membership-bookend observation is a prospective additional requirement: old unequal-tree source skips the second read, while old equal-tree returned mismatch lacks a global refusal. These are expected failures to verify in actual baseline execution, not previously measured defects or passing controls.",
+      "notes": "Global final membership prerequisite is distinct from granting CI association. Unequal trees never receive historical_head_identity."
+    },
+    {
+      "caseId": "reader-35",
+      "requiredOutcome": "GLOBAL_REFUSAL_WITH_MEMBERSHIP_BOOKEND",
+      "parentPredicates": [
+        {
+          "op": "eq",
+          "path": "observation.provenanceKind",
+          "value": "test-transport-untrusted"
+        },
+        {
+          "op": "eq",
+          "path": "observation.inProcessEvidenceClaim",
+          "value": false
+        },
+        {
+          "op": "eq",
+          "path": "observation.actualCheckoutSha",
+          "value": null
+        },
+        {
+          "op": "eq",
+          "path": "observation.ciStatus",
+          "value": "BLOCKED"
+        },
+        {
+          "op": "nonemptyArray",
+          "path": "observation.globalProblems"
+        },
+        {
+          "op": "contains",
+          "path": "observation.globalProblems",
+          "value": "Historical native commit association changed or could not be rechecked while collecting evidence"
+        },
+        {
+          "op": "eq",
+          "path": "wrapper.executionComplete",
+          "value": true
+        },
+        {
+          "op": "eq",
+          "path": "wrapper.setupErrors",
+          "value": []
+        },
+        {
+          "op": "eq",
+          "path": "wrapper.membershipReadCount",
+          "value": 2
+        }
+      ],
+      "prospectiveBaselineExpectation": "FAIL",
+      "baselineMeaning": "The new membership-bookend observation is a prospective additional requirement: old unequal-tree source skips the second read, while old equal-tree returned mismatch lacks a global refusal. These are expected failures to verify in actual baseline execution, not previously measured defects or passing controls.",
+      "notes": "Global final membership prerequisite is distinct from granting CI association. Unequal trees never receive historical_head_identity."
+    },
+    {
+      "caseId": "reader-36",
+      "requiredOutcome": "GLOBAL_REFUSAL_WITH_MEMBERSHIP_BOOKEND",
+      "parentPredicates": [
+        {
+          "op": "eq",
+          "path": "observation.provenanceKind",
+          "value": "test-transport-untrusted"
+        },
+        {
+          "op": "eq",
+          "path": "observation.inProcessEvidenceClaim",
+          "value": false
+        },
+        {
+          "op": "eq",
+          "path": "observation.actualCheckoutSha",
+          "value": null
+        },
+        {
+          "op": "eq",
+          "path": "observation.ciStatus",
+          "value": "BLOCKED"
+        },
+        {
+          "op": "nonemptyArray",
+          "path": "observation.globalProblems"
+        },
+        {
+          "op": "contains",
+          "path": "observation.globalProblems",
+          "value": "Historical native commit association changed or could not be rechecked while collecting evidence"
+        },
+        {
+          "op": "eq",
+          "path": "wrapper.executionComplete",
+          "value": true
+        },
+        {
+          "op": "eq",
+          "path": "wrapper.setupErrors",
+          "value": []
+        },
+        {
+          "op": "eq",
+          "path": "wrapper.membershipReadCount",
+          "value": 2
+        }
+      ],
+      "prospectiveBaselineExpectation": "FAIL",
+      "baselineMeaning": "The new membership-bookend observation is a prospective additional requirement: old unequal-tree source skips the second read, while old equal-tree returned mismatch lacks a global refusal. These are expected failures to verify in actual baseline execution, not previously measured defects or passing controls.",
+      "notes": "Global final membership prerequisite is distinct from granting CI association. Unequal trees never receive historical_head_identity."
+    },
+    {
+      "caseId": "reader-37",
+      "requiredOutcome": "GLOBAL_REFUSAL_WITH_MEMBERSHIP_BOOKEND",
+      "parentPredicates": [
+        {
+          "op": "eq",
+          "path": "observation.provenanceKind",
+          "value": "test-transport-untrusted"
+        },
+        {
+          "op": "eq",
+          "path": "observation.inProcessEvidenceClaim",
+          "value": false
+        },
+        {
+          "op": "eq",
+          "path": "observation.actualCheckoutSha",
+          "value": null
+        },
+        {
+          "op": "eq",
+          "path": "observation.ciStatus",
+          "value": "BLOCKED"
+        },
+        {
+          "op": "nonemptyArray",
+          "path": "observation.globalProblems"
+        },
+        {
+          "op": "contains",
+          "path": "observation.globalProblems",
+          "value": "Historical native commit association changed or could not be rechecked while collecting evidence"
+        },
+        {
+          "op": "eq",
+          "path": "wrapper.executionComplete",
+          "value": true
+        },
+        {
+          "op": "eq",
+          "path": "wrapper.setupErrors",
+          "value": []
+        },
+        {
+          "op": "eq",
+          "path": "wrapper.membershipReadCount",
+          "value": 2
+        }
+      ],
+      "prospectiveBaselineExpectation": "FAIL",
+      "baselineMeaning": "The new membership-bookend observation is a prospective additional requirement: old unequal-tree source skips the second read, while old equal-tree returned mismatch lacks a global refusal. These are expected failures to verify in actual baseline execution, not previously measured defects or passing controls.",
+      "notes": "Global final membership prerequisite is distinct from granting CI association. Unequal trees never receive historical_head_identity."
+    },
+    {
+      "caseId": "reader-38",
+      "requiredOutcome": "GLOBAL_REFUSAL_WITH_MEMBERSHIP_BOOKEND",
+      "parentPredicates": [
+        {
+          "op": "eq",
+          "path": "observation.provenanceKind",
+          "value": "test-transport-untrusted"
+        },
+        {
+          "op": "eq",
+          "path": "observation.inProcessEvidenceClaim",
+          "value": false
+        },
+        {
+          "op": "eq",
+          "path": "observation.actualCheckoutSha",
+          "value": null
+        },
+        {
+          "op": "eq",
+          "path": "observation.ciStatus",
+          "value": "BLOCKED"
+        },
+        {
+          "op": "nonemptyArray",
+          "path": "observation.globalProblems"
+        },
+        {
+          "op": "contains",
+          "path": "observation.globalProblems",
+          "value": "Historical native commit association changed or could not be rechecked while collecting evidence"
+        },
+        {
+          "op": "eq",
+          "path": "wrapper.executionComplete",
+          "value": true
+        },
+        {
+          "op": "eq",
+          "path": "wrapper.setupErrors",
+          "value": []
+        },
+        {
+          "op": "eq",
+          "path": "wrapper.membershipReadCount",
+          "value": 2
+        }
+      ],
+      "prospectiveBaselineExpectation": "FAIL",
+      "baselineMeaning": "The new membership-bookend observation is a prospective additional requirement: old unequal-tree source skips the second read, while old equal-tree returned mismatch lacks a global refusal. These are expected failures to verify in actual baseline execution, not previously measured defects or passing controls.",
+      "notes": "Global final membership prerequisite is distinct from granting CI association. Unequal trees never receive historical_head_identity."
+    },
+    {
+      "caseId": "reader-39",
+      "requiredOutcome": "GLOBAL_REFUSAL_WITH_MEMBERSHIP_BOOKEND",
+      "parentPredicates": [
+        {
+          "op": "eq",
+          "path": "observation.provenanceKind",
+          "value": "test-transport-untrusted"
+        },
+        {
+          "op": "eq",
+          "path": "observation.inProcessEvidenceClaim",
+          "value": false
+        },
+        {
+          "op": "eq",
+          "path": "observation.actualCheckoutSha",
+          "value": null
+        },
+        {
+          "op": "eq",
+          "path": "observation.ciStatus",
+          "value": "BLOCKED"
+        },
+        {
+          "op": "nonemptyArray",
+          "path": "observation.globalProblems"
+        },
+        {
+          "op": "eq",
+          "path": "wrapper.executionComplete",
+          "value": true
+        },
+        {
+          "op": "eq",
+          "path": "wrapper.setupErrors",
+          "value": []
+        },
+        {
+          "op": "eq",
+          "path": "wrapper.membershipReadCount",
+          "value": 2
+        },
+        {
+          "op": "contains",
+          "path": "observation.globalProblems",
+          "value": "current historical CI association: GitHub /commits/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/pulls returned 403"
+        }
+      ],
+      "prospectiveBaselineExpectation": "PASS_CONTROL",
+      "baselineMeaning": "Old equal-tree HTTP/read failure already performs the second read and reports a global capture error. Preserve that blocking behavior without requiring a newly invented diagnostic.",
+      "notes": "Global final membership prerequisite is distinct from granting CI association. Unequal trees never receive historical_head_identity."
+    }
+  ],
+  "extraRequiredControls": [
+    {
+      "id": "proof-ci-only",
+      "level": "existing-proof-test-boundary",
+      "requirement": "Real collected offline snapshot with valid unequal trees reaches receipt/native source reads via distinct injected proof transport; sole remaining validation problem is test-transport provenance. Never label fixture VERIFIED."
+    },
+    {
+      "id": "proof-global",
+      "level": "existing-proof-test-boundary",
+      "requirement": "Any known nonempty global problem from reader fixtures prevents proof artifact GETs, even with a valid proof fixture. Count requests; do not accept a generic final BLOCKED without proving no fetch."
+    },
+    {
+      "id": "proof-untrusted-import",
+      "level": "existing-proof-test-boundary",
+      "requirement": "Imported or lookalike JSON, stale snapshot and injected transport cannot mint isGithubEvidence/isCollectedProof authority."
+    },
+    {
+      "id": "proof-marker",
+      "level": "existing-proof-test-boundary",
+      "requirement": "Invalid/mismatched initial marker blocks before proof fetch; marker/head/main/run drift discovered at final proof bookends blocks final acceptance."
+    },
+    {
+      "id": "proof-integrity",
+      "level": "existing-proof-test-boundary",
+      "requirement": "Retain wrong digest/size/name/run/attempt/workflow/ref/source, missing/expired artifact, canonical-source/pin drift and unsuccessful source execution refusals."
+    },
+    {
+      "id": "cli-ci-blocked",
+      "level": "actual-cli-composition-unit",
+      "requirement": "With composed proof VERIFIED, independent review and owner authorization, github.ci.status BLOCKED still yields overall BLOCKED/currentCodeVerified=false. Use actual main() composition; do not mirror its boolean in a new helper."
+    },
+    {
+      "id": "cli-review-owner",
+      "level": "actual-cli-composition-unit",
+      "requirement": "Missing required independent review or owner authorization each blocks overall acceptance with all other composed seams passing."
+    },
+    {
+      "id": "cli-historical",
+      "level": "actual-cli-composition-unit",
+      "requirement": "HISTORICAL_ONLY never certifies current code, even if its old proof is corroborated."
+    },
+    {
+      "id": "mixed-diagnostic",
+      "level": "reader-targeted-unit",
+      "requirement": "Each reader20\u201328 target case must include Historical merged PR identity changed while collecting evidence explicitly; one mismatch-only case globalProblems=[] prevents unrelated global faults from masking the test."
+    },
+    {
+      "id": "proof-late-membership-global",
+      "level": "existing-proof-test-boundary",
+      "requirement": "Each late missing/ambiguous/wrong/malformed/failed membership reader snapshot has a nonempty global prerequisite failure and prevents proof artifact reads. Require independently observed exact second membership read, not a coincidental global blocker."
+    },
+    {
+      "id": "wrapper-unmapped-is-setup",
+      "level": "trusted-wrapper-unit",
+      "requirement": "If candidate catches an unmapped fake-fetch exception and returns plausible global refusal, sticky trusted-wrapper setup failure still forces incomplete/nonzero collection and excludes behavioral RED/GREEN."
+    }
+  ],
+  "operators": {
+    "eq": "exact JSON value equality, array order retained",
+    "contains": "exact string is an array member",
+    "nonemptyArray": "actual bounded array contains at least one global refusal; dedicated mixed-diagnostic unit must verify the specific historical guard"
+  },
+  "knownControlLimit": "Original unequal-tree global refusal can mask final-drift causes in baseline controls. It must not be credited as independent drift detection. On target, reader01 proves the same valid unequal-tree setup has no global refusal; mixed faults must then independently restore a global refusal and its exact historical diagnostic. V2 exact read-count and setup-status predicates are target assertions; old unequal-tree controls skip the bookend. Equal-tree late returned membership mismatch is an explicitly stricter new requirement, not preserved old behavior.",
+  "extendsV1Sha256": "847f463d29032153e4bc2765495c884acf0852358fddfb5d052c53cab554ba76",
+  "additionalProspectiveBaselineRedCases": [
+    "reader-19",
+    "reader-20",
+    "reader-21",
+    "reader-22",
+    "reader-23",
+    "reader-24",
+    "reader-25",
+    "reader-26",
+    "reader-27",
+    "reader-28",
+    "reader-29",
+    "reader-30",
+    "reader-31",
+    "reader-32",
+    "reader-33",
+    "reader-34",
+    "reader-35",
+    "reader-36",
+    "reader-37",
+    "reader-38"
+  ],
+  "prospectiveBaselineFailureCaseIds": [
+    "reader-01",
+    "reader-19",
+    "reader-20",
+    "reader-21",
+    "reader-22",
+    "reader-23",
+    "reader-24",
+    "reader-25",
+    "reader-26",
+    "reader-27",
+    "reader-28",
+    "reader-29",
+    "reader-30",
+    "reader-31",
+    "reader-32",
+    "reader-33",
+    "reader-34",
+    "reader-35",
+    "reader-36",
+    "reader-37",
+    "reader-38"
+  ],
+  "baselinePredictionNote": "All predictions are frozen before any source execution. Additional failed case IDs arise from newly required membership read-count/global-bookend predicates, not 21 independent defects. Retain any discrepancy as a fixture/setup or expectation-design finding before changing source; never tune from private holdout."
+}

@@ -25,12 +25,15 @@ describe('proof completion PR association',()=>{
 
 describe('same-issue explicit revision association', () => {
   it('resolves only the exact current artifact/marker pair and retains key/status', async () => {
-    expect(await resolveWorkflowRun({ runId: 8, token: 'read-token', fetchImpl: api('1048-v2', sha, 2, '1048-v2') })).toEqual({ resolved: true, prNumber: 2995, headSha: sha, contractKey: '1048-v2', executionStatus: 'CURRENT' });
+    expect(await resolveWorkflowRun({ runId: 8, token: 'read-token', fetchImpl: api('1048-v3', sha, 2, '1048-v3') })).toEqual({ resolved: true, prNumber: 2995, headSha: sha, contractKey: '1048-v3', executionStatus: 'CURRENT' });
   });
-  it.each([['1048-v2', '1048'], ['1048', '1048-v2'], ['1048-v2', 'latest'], ['1048-v2', '1048-v3']])('never substitutes marker %s with artifact revision %s', async (marker, artifactKey) => {
+  it('retains v2 as historical rather than silently selecting its successor', async () => {
+    expect(await resolveWorkflowRun({ runId: 8, token: 'read-token', fetchImpl: api('1048-v2', sha, 2, '1048-v2') })).toEqual({ resolved: true, prNumber: 2995, headSha: sha, contractKey: '1048-v2', executionStatus: 'HISTORICAL_ONLY' });
+  });
+  it.each([['1048-v3', '1048'], ['1048', '1048-v3'], ['1048-v3', 'latest'], ['1048-v3', '1048-v4']])('never substitutes marker %s with artifact revision %s', async (marker, artifactKey) => {
     expect((await resolveWorkflowRun({ runId: 8, token: 'read-token', fetchImpl: api(marker, sha, 2, artifactKey) })).resolved).toBe(false);
   });
-  it.each(['', '1048-v2 -->\n<!-- engineering-contract: 1048-v2', '1048-v2 -->\n<!-- engineering-contract: 1048', 'latest'])('does not associate ambiguous/unknown marker %s', async marker => {
-    expect((await resolveWorkflowRun({ runId: 8, token: 'read-token', fetchImpl: api(marker, sha, 2, '1048-v2') })).resolved).toBe(false);
+  it.each(['', '1048-v3 -->\n<!-- engineering-contract: 1048-v3', '1048-v3 -->\n<!-- engineering-contract: 1048', 'latest'])('does not associate ambiguous/unknown marker %s', async marker => {
+    expect((await resolveWorkflowRun({ runId: 8, token: 'read-token', fetchImpl: api(marker, sha, 2, '1048-v3') })).resolved).toBe(false);
   });
 });
