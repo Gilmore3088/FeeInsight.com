@@ -4,6 +4,8 @@ import { Unzip, UnzipInflate } from 'fflate';
 import { assessProofBundle, contractDigest, validateContract } from './contract.mjs';
 import { isGithubEvidence } from './github.mjs';
 import { resolveContractRevision, parseContractMarker } from './contract-registry.mjs';
+import { parseStrictJson } from './strict-json.mjs';
+import { validateReaderBatchSet, PILOT as CI_DOMAIN_PILOT } from './ci-domain-pilot.mjs';
 
 const NATIVE_FETCH = globalThis.fetch;
 const collected = new WeakSet();
@@ -29,6 +31,7 @@ const artifactExpiry = (run, artifact) => Math.min(at(run?.created_at) + 90 * DA
 const HISTORICAL_CONTRACT_DIGESTS = Object.freeze({
   '1048': '433742496a19144f88c326faadae79562540f85a99cf9ed3201089f3db98349b',
   '2285': 'e7b47a13b62ba06fe75b77480f2dc68f4d53dcf1820f499a4e2a18791a6d9cc5',
+  '1048-v2': '2103495497477cbb2fa6cd55dfb500d769e1bb4a07b9cae800d912238c43c40d',
 });
 
 /** Workflow IDs survive edits. Only reviewed immutable bytes can originate proof for a revision. */
@@ -118,7 +121,7 @@ export function validateRevisionContract(revision, contract, contractRaw) {
   }
   if (typeof contractRaw !== 'string') errors.push('Exact frozen contract bytes required');
   else {
-    try { if (!same(JSON.parse(contractRaw), contract)) errors.push('Frozen contract bytes differ from supplied declaration'); }
+    try { if (!same(parseStrictJson(contractRaw), contract)) errors.push('Frozen contract bytes differ from supplied declaration'); }
     catch { errors.push('Frozen contract bytes are not valid JSON'); }
     if (registered?.executionStatus === 'HISTORICAL_ONLY' && hash(contractRaw) !== HISTORICAL_CONTRACT_DIGESTS[registered.key]) errors.push('Historical contract raw identity changed');
   }
@@ -162,7 +165,7 @@ function readReceipt(archive) {
   unzip.register(UnzipInflate);
   for (let offset = 0; offset < archive.length; offset += 1024) unzip.push(archive.subarray(offset, offset + 1024), offset + 1024 >= archive.length);
   if (count !== 1 || !complete) throw new Error('Complete receipt.json unavailable in artifact');
-  return JSON.parse(Buffer.concat(chunks, length).toString('utf8'));
+  return parseStrictJson(Buffer.concat(chunks, length));
 }
 
 export const isCollectedProof = value => value != null && collected.has(value);
@@ -221,7 +224,7 @@ export async function collectProofEvidence({ github, contract, contractRaw, cont
   const get = async path => {
     const response = await request(base + path);
     if (!response.ok) throw new Error(`GitHub ${path.split('?')[0]} returned ${response.status}`);
-    return JSON.parse((await bytes(response, JSON_LIMIT)).toString('utf8'));
+    return parseStrictJson(await bytes(response, JSON_LIMIT), { maxStringLength: JSON_LIMIT });
   };
   const nativeTrees = new Map();
   const content = async (path, ref) => {
@@ -307,6 +310,28 @@ export async function collectProofEvidence({ github, contract, contractRaw, cont
     if (!Number.isFinite(at(receipt.started_at)) || !Number.isFinite(at(receipt.completed_at))
       || at(receipt.started_at) < started - 60000 || at(receipt.completed_at) < at(receipt.started_at)
       || at(receipt.completed_at) > updated + 60000 || at(receipt.completed_at) > now.getTime()) throw new Error('Proof receipt execution timestamps invalid');
+    if (revision.adapter === 'engineering.ci-domains.v1') {
+      const known = new Set(['schema_version', 'contract_key', 'contract_id', 'authority', 'base_sha', 'head_sha', 'contract_sha256',
+        'execution_files', 'source_scope', 'runtime', 'started_at', 'completed_at', 'duration_ms', 'provenance', 'reader_batches',
+        'assessment', 'pairs', 'review_status', 'production_status']);
+      if (Object.keys(receipt).some(key => !known.has(key))) throw new Error('Unknown or forged reader receipt authority field');
+      if (receipt.authority !== undefined && !same(receipt.authority, CI_DOMAIN_PILOT.authority)
+        || receipt.review_status !== undefined && receipt.review_status !== 'INDEPENDENT_REVIEW_NOT_ENFORCED'
+        || receipt.production_status !== undefined && receipt.production_status !== 'PRODUCTION_UNVERIFIED') throw new Error('Forged reader receipt authority claim');
+      const pending = [receipt];
+      while (pending.length) {
+        const item = pending.pop();
+        if (!item || typeof item !== 'object') continue;
+        for (const [key, value] of Object.entries(item)) {
+          if (['currentCodeVerified', 'registered'].includes(key) && value !== false) throw new Error('Forged reader receipt self-certification');
+          if (value && typeof value === 'object') pending.push(value);
+        }
+      }
+      validateReaderBatchSet(receipt.reader_batches, { baseSha: contract.base_sha, headSha, executionFiles: contract.execution_files });
+      if (receipt.runtime?.image !== receipt.reader_batches.sources[0].batches[0].manifest.image) throw new Error('Reader receipt runtime differs from batch image identity');
+      // This authenticates receipt structure and native source bindings. Complete
+      // raw archive replay remains a separate audit; a receipt-only read is not replay.
+    }
     const behavior = assessProofBundle(contract, receipt, headSha, contractDigest(contractRaw));
     if (behavior.status !== 'STRUCTURALLY_VALID_UNTRUSTED') problems.push(...behavior.problems);
     if (receipt.pairs.some(pair => pair.red.execution_exit_code !== 0 || pair.green.execution_exit_code !== 0)) problems.push('Source execution failed; infrastructure failure cannot establish behavioral RED or GREEN');
@@ -332,7 +357,7 @@ export async function collectProofEvidence({ github, contract, contractRaw, cont
     const packageJson = await content('package.json', run.head_sha), currentPackage = run.head_sha === branch.sha ? packageJson : await content('package.json', branch.sha);
     if (revision.executionStatus === 'CURRENT' && hash(packageJson) !== hash(currentPackage)) problems.push('Proof package configuration changed on current default branch');
     const runtimePath = contract.execution_files.find(file => file.path.endsWith('/runtime.json'))?.path;
-    if (!runtimePath || receipt.runtime?.image !== JSON.parse((await content(runtimePath, run.head_sha)).toString('utf8')).image) problems.push('Proof runtime image identity mismatch');
+    if (!runtimePath || receipt.runtime?.image !== parseStrictJson((await content(runtimePath, run.head_sha)).toString('utf8')).image) problems.push('Proof runtime image identity mismatch');
     const current = await get(`/pulls/${prNumber}`), latestBranch = await get('/commits/main'), latestRun = await get(`/actions/runs/${run.id}`);
     if (current.head?.sha !== headSha) problems.push('Pull request head changed while collecting proof');
     if (parseContractMarker(current.body).key !== revision.key) problems.push('Pull request contract revision changed while collecting proof');

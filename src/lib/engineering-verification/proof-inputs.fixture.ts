@@ -20,6 +20,16 @@ export const CURRENT_PROOF_INPUTS = [
   'src/lib/engineering-verification/policy-pilot.mjs',
   'src/lib/engineering-verification/policy-v2-pilot.mjs',
   'src/lib/engineering-verification/child.mjs',
+  'src/lib/engineering-verification/ci-domain-pilot.mjs',
+  'src/lib/engineering-verification/ci-domain-probe.mjs',
+  'src/lib/engineering-verification/ci-domain-collection.mjs',
+  'src/lib/engineering-verification/strict-json.mjs',
+  'src/lib/engineering-verification/__fixtures__/ci-domain-stimulus-v2.json',
+  'src/lib/engineering-verification/__fixtures__/ci-domain-expectations-v2.json',
+  'docs/project/acceptance/engineering/design-v1/prd-v1.md',
+  'docs/project/acceptance/engineering/design-v1/technical-design-v1.md',
+  'docs/project/acceptance/engineering/program.json',
+  'src/lib/agents/hoovie/AGENTS.md',
   'src/lib/engineering-verification/loader.mjs',
   'src/lib/engineering-verification/policy.json',
   'src/lib/engineering-verification/runtime.json',
@@ -38,6 +48,7 @@ export const FORBIDDEN_PROOF_INPUTS = [
   'src/lib/engineering-verification/.gitattributes', 'src/lib/engineering-verification/__fixtures__/.gitattributes',
   'vendor/.gitattributes', 'vendor/baseline-browser-mapping/.gitattributes',
 ].sort();
+export const HISTORICAL_V2_PROOF_SOURCE = 'baf057d9e87f7f1c48306eb0ad2ef4e60dea787f';
 export const HISTORICAL_PROOF_SOURCE = 'd28d77a4da9d2fb6edc73d8c264e42a7e380ae77';
 export function completeProofFiles(files: Record<string, string>) {
   for (const path of CURRENT_PROOF_INPUTS) files[path] ??= 'Synthetic closed input: ' + path;

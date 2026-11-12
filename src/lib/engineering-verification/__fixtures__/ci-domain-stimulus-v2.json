@@ -1,0 +1,1303 @@
+{
+  "schemaVersion": 2,
+  "kind": "PUBLIC_FINITE_OFFLINE_API_STIMULUS_ONLY_WITH_MEMBERSHIP_BOOKENDS",
+  "createdAt": "2026-11-11T22:09:45.077250+00:00",
+  "baselineSource": {
+    "commit": "baf057d9e87f7f1c48306eb0ad2ef4e60dea787f",
+    "path": "src/lib/engineering-verification/github.mjs",
+    "sha256": "87a9210baf62c30dab3e3b83863a6b9399cafd6159755b239bbc80ffdd0e996d",
+    "export": "collectGithubEvidence"
+  },
+  "call": {
+    "repository": "fixture-owner/fixture-repo",
+    "prNumber": 1,
+    "token": "literal-noncredential-fixture-token",
+    "requiredChecks": [
+      "app-tests"
+    ],
+    "includeDeployments": false,
+    "now": "2026-11-11T12:00:00Z",
+    "fetchImpl": "DISTINCT_OFFLINE_FAKE_FUNCTION"
+  },
+  "routeBase": [
+    {
+      "method": "GET",
+      "url": "https://api.github.com/repos/fixture-owner/fixture-repo",
+      "response": {
+        "status": 200,
+        "json": {
+          "id": 42,
+          "full_name": "fixture-owner/fixture-repo",
+          "default_branch": "main"
+        }
+      },
+      "repeat": "same"
+    },
+    {
+      "method": "GET",
+      "url": "https://api.github.com/repos/fixture-owner/fixture-repo/pulls/1",
+      "response": {
+        "status": 200,
+        "json": {
+          "number": 1,
+          "state": "closed",
+          "merged": true,
+          "merged_at": "2026-11-11T11:00:00Z",
+          "merge_commit_sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "base": {
+            "sha": "dddddddddddddddddddddddddddddddddddddddd",
+            "ref": "main",
+            "repo": {
+              "id": 42,
+              "full_name": "fixture-owner/fixture-repo",
+              "default_branch": "main"
+            }
+          },
+          "head": {
+            "sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "ref": "codex/fixture-ci-domains",
+            "repo": {
+              "id": 42,
+              "full_name": "fixture-owner/fixture-repo",
+              "default_branch": "main"
+            }
+          },
+          "body": "<!-- engineering-contract: 1048-v2 -->",
+          "user": {
+            "id": 501,
+            "login": "fixture-builder",
+            "type": "User"
+          },
+          "mergeable": null,
+          "html_url": "https://github.com/fixture-owner/fixture-repo/pull/1"
+        }
+      },
+      "repeat": "same"
+    },
+    {
+      "method": "GET",
+      "url": "https://api.github.com/repos/fixture-owner/fixture-repo/pulls/1/files?per_page=100&page=1",
+      "response": {
+        "status": 200,
+        "json": [
+          {
+            "filename": "src/lib/engineering-verification/github.mjs",
+            "status": "modified"
+          }
+        ]
+      },
+      "repeat": "same"
+    },
+    {
+      "method": "GET",
+      "url": "https://api.github.com/repos/fixture-owner/fixture-repo/pulls/1/reviews?per_page=100&page=1",
+      "response": {
+        "status": 200,
+        "json": []
+      },
+      "repeat": "same"
+    },
+    {
+      "method": "GET",
+      "url": "https://api.github.com/repos/fixture-owner/fixture-repo/issues/1/comments?per_page=100&page=1",
+      "response": {
+        "status": 200,
+        "json": []
+      },
+      "repeat": "same"
+    },
+    {
+      "method": "GET",
+      "url": "https://api.github.com/repos/fixture-owner/fixture-repo/commits/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/check-runs?filter=latest&per_page=100&page=1",
+      "response": {
+        "status": 200,
+        "json": {
+          "check_runs": [
+            {
+              "id": 8,
+              "name": "app-tests",
+              "head_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "status": "completed",
+              "conclusion": "success",
+              "check_suite": {
+                "id": 11
+              },
+              "app": {
+                "id": 15368,
+                "slug": "github-actions"
+              },
+              "details_url": "https://github.com/fixture-owner/fixture-repo/actions/runs/9/job/10"
+            }
+          ]
+        }
+      },
+      "repeat": "same"
+    },
+    {
+      "method": "GET",
+      "url": "https://api.github.com/repos/fixture-owner/fixture-repo/actions/workflows/test.yml",
+      "response": {
+        "status": 200,
+        "json": {
+          "id": 7,
+          "path": ".github/workflows/test.yml"
+        }
+      },
+      "repeat": "same"
+    },
+    {
+      "method": "GET",
+      "url": "https://api.github.com/repos/fixture-owner/fixture-repo/actions/workflows/7/runs?head_sha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&per_page=100&page=1",
+      "response": {
+        "status": 200,
+        "json": {
+          "workflow_runs": [
+            {
+              "id": 9,
+              "workflow_id": 7,
+              "event": "pull_request",
+              "head_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "head_branch": "codex/fixture-ci-domains",
+              "path": ".github/workflows/test.yml",
+              "repository": {
+                "id": 42,
+                "full_name": "fixture-owner/fixture-repo",
+                "default_branch": "main"
+              },
+              "head_repository": {
+                "id": 42,
+                "full_name": "fixture-owner/fixture-repo",
+                "default_branch": "main"
+              },
+              "run_attempt": 1,
+              "check_suite_id": 11,
+              "status": "completed",
+              "conclusion": "success",
+              "created_at": "2026-11-11T10:00:00Z",
+              "updated_at": "2026-11-11T10:03:00Z",
+              "pull_requests": []
+            }
+          ]
+        }
+      },
+      "repeat": "same"
+    },
+    {
+      "method": "GET",
+      "url": "https://api.github.com/repos/fixture-owner/fixture-repo/commits/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/pulls?per_page=100&page=1",
+      "response": {
+        "status": 200,
+        "json": [
+          {
+            "number": 1,
+            "state": "closed",
+            "merged": true,
+            "merged_at": "2026-11-11T11:00:00Z",
+            "merge_commit_sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "base": {
+              "sha": "dddddddddddddddddddddddddddddddddddddddd",
+              "ref": "main",
+              "repo": {
+                "id": 42,
+                "full_name": "fixture-owner/fixture-repo",
+                "default_branch": "main"
+              }
+            },
+            "head": {
+              "sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "ref": "codex/fixture-ci-domains",
+              "repo": {
+                "id": 42,
+                "full_name": "fixture-owner/fixture-repo",
+                "default_branch": "main"
+              }
+            },
+            "body": "<!-- engineering-contract: 1048-v2 -->",
+            "user": {
+              "id": 501,
+              "login": "fixture-builder",
+              "type": "User"
+            },
+            "mergeable": null,
+            "html_url": "https://github.com/fixture-owner/fixture-repo/pull/1"
+          }
+        ]
+      },
+      "repeat": "same"
+    },
+    {
+      "method": "GET",
+      "url": "https://api.github.com/repos/fixture-owner/fixture-repo/git/commits/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "response": {
+        "status": 200,
+        "json": {
+          "sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "tree": {
+            "sha": "1111111111111111111111111111111111111111"
+          }
+        }
+      },
+      "repeat": "same"
+    },
+    {
+      "method": "GET",
+      "url": "https://api.github.com/repos/fixture-owner/fixture-repo/git/commits/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "response": {
+        "status": 200,
+        "json": {
+          "sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "tree": {
+            "sha": "2222222222222222222222222222222222222222"
+          }
+        }
+      },
+      "repeat": "same"
+    },
+    {
+      "method": "GET",
+      "url": "https://api.github.com/repos/fixture-owner/fixture-repo/commits/main",
+      "response": {
+        "status": 200,
+        "json": {
+          "sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        }
+      },
+      "repeat": "same"
+    },
+    {
+      "method": "GET",
+      "url": "https://api.github.com/repos/fixture-owner/fixture-repo/contents/.github/workflows/test.yml?ref=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "response": {
+        "status": 200,
+        "json": {
+          "encoding": "base64",
+          "content": "Zml4ZWQgc3ludGhldGljIHdvcmtmbG93IGJ5dGVzOyBub3QgYSBkZXBsb3lhYmxlIHdvcmtmbG93"
+        }
+      },
+      "repeat": "same"
+    },
+    {
+      "method": "GET",
+      "url": "https://api.github.com/repos/fixture-owner/fixture-repo/contents/.github/workflows/test.yml?ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "response": {
+        "status": 200,
+        "json": {
+          "encoding": "base64",
+          "content": "Zml4ZWQgc3ludGhldGljIHdvcmtmbG93IGJ5dGVzOyBub3QgYSBkZXBsb3lhYmxlIHdvcmtmbG93"
+        }
+      },
+      "repeat": "same"
+    },
+    {
+      "method": "GET",
+      "url": "https://api.github.com/repos/fixture-owner/fixture-repo/actions/runs/9/attempts/1/jobs?per_page=100&page=1",
+      "response": {
+        "status": 200,
+        "json": {
+          "jobs": [
+            {
+              "id": 10,
+              "run_id": 9,
+              "run_attempt": 1,
+              "head_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "name": "app-tests",
+              "status": "completed",
+              "conclusion": "success",
+              "completed_at": "2026-11-11T10:02:00Z",
+              "html_url": "https://github.com/fixture-owner/fixture-repo/actions/runs/9/job/10"
+            }
+          ]
+        }
+      },
+      "repeat": "same"
+    },
+    {
+      "method": "GET",
+      "url": "https://api.github.com/repos/fixture-owner/fixture-repo/actions/runs/9/artifacts?per_page=100&page=1",
+      "response": {
+        "status": 200,
+        "json": {
+          "artifacts": []
+        }
+      },
+      "repeat": "same"
+    },
+    {
+      "method": "GET",
+      "url": "https://api.github.com/repos/fixture-owner/fixture-repo/actions/runs/9",
+      "response": {
+        "status": 200,
+        "json": {
+          "id": 9,
+          "workflow_id": 7,
+          "event": "pull_request",
+          "head_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "head_branch": "codex/fixture-ci-domains",
+          "path": ".github/workflows/test.yml",
+          "repository": {
+            "id": 42,
+            "full_name": "fixture-owner/fixture-repo",
+            "default_branch": "main"
+          },
+          "head_repository": {
+            "id": 42,
+            "full_name": "fixture-owner/fixture-repo",
+            "default_branch": "main"
+          },
+          "run_attempt": 1,
+          "check_suite_id": 11,
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-11-11T10:00:00Z",
+          "updated_at": "2026-11-11T10:03:00Z",
+          "pull_requests": []
+        }
+      },
+      "repeat": "same"
+    },
+    {
+      "method": "POST",
+      "url": "https://api.github.com/graphql",
+      "requestJson": {
+        "query": "query($owner:String!,$name:String!,$number:Int!,$cursor:String){repository(owner:$owner,name:$name){pullRequest(number:$number){reviewThreads(first:100,after:$cursor){nodes{id isResolved isOutdated path line} pageInfo{hasNextPage endCursor}}}}}",
+        "variables": {
+          "owner": "fixture-owner",
+          "name": "fixture-repo",
+          "number": 1,
+          "cursor": null
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "repository": {
+              "pullRequest": {
+                "reviewThreads": {
+                  "nodes": [],
+                  "pageInfo": {
+                    "hasNextPage": false
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "repeat": "same"
+    }
+  ],
+  "mutationSemantics": "Deep-copy every base response independently per case and per route read, then apply matching all/read-index mutations; numeric jsonPath segments are array indexes. responseRead=2 mutates final PR read only. No object aliasing between PR, association, run and repository responses. Unexpected method/URL/body or >128requests per case is collection SETUP/BLOCKED, never expected behavioral RED. Repeated known routes use identical response until explicit mutation. The v2 observer additionally records sticky harness setup status and actual membershipReadCount. Intentional replaceResponse HTTP errors remain mapped API stimuli. A missing mapping cannot be downgraded to a behavioral refusal.",
+  "cases": [
+    {
+      "id": "reader-01",
+      "name": "Valid unequal native trees with otherwise complete identity",
+      "mutations": []
+    },
+    {
+      "id": "reader-02",
+      "name": "Equal-tree historical fallback remains accepted",
+      "mutations": [
+        {
+          "routeUrl": "https://api.github.com/repos/fixture-owner/fixture-repo/git/commits/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "responseRead": "all",
+          "jsonPath": "tree.sha",
+          "set": "1111111111111111111111111111111111111111"
+        }
+      ]
+    },
+    {
+      "id": "reader-03",
+      "name": "Direct native PR association remains accepted",
+      "mutations": [
+        {
+          "routeUrl": "https://api.github.com/repos/fixture-owner/fixture-repo/actions/workflows/7/runs?head_sha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&per_page=100&page=1",
+          "responseRead": "all",
+          "jsonPath": "workflow_runs.0.pull_requests",
+          "set": [
+            {
+              "number": 1
+            }
+          ]
+        },
+        {
+          "routeUrl": "https://api.github.com/repos/fixture-owner/fixture-repo/actions/runs/9",
+          "responseRead": "all",
+          "jsonPath": "pull_requests",
+          "set": [
+            {
+              "number": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "reader-04",
+      "name": "Wrong initial PR number",
+      "mutations": [
+        {
+          "routeUrl": "https://api.github.com/repos/fixture-owner/fixture-repo/pulls/1",
+          "responseRead": "all",
+          "jsonPath": "number",
+          "set": 2
+        }
+      ]
+    },
+    {
+      "id": "reader-05",
+      "name": "Missing initial merge SHA",
+      "mutations": [
+        {
+          "routeUrl": "https://api.github.com/repos/fixture-owner/fixture-repo/pulls/1",
+          "responseRead": "all",
+          "jsonPath": "merge_commit_sha",
+          "set": null
+        }
+      ]
+    },
+    {
+      "id": "reader-06",
+      "name": "Missing initial base SHA",
+      "mutations": [
+        {
+          "routeUrl": "https://api.github.com/repos/fixture-owner/fixture-repo/pulls/1",
+          "responseRead": "all",
+          "jsonPath": "base.sha",
+          "set": null
+        }
+      ]
+    },
+    {
+      "id": "reader-07",
+      "name": "Foreign initial head repository",
+      "mutations": [
+        {
+          "routeUrl": "https://api.github.com/repos/fixture-owner/fixture-repo/pulls/1",
+          "responseRead": "all",
+          "jsonPath": "head.repo.full_name",
+          "set": "foreign-owner/foreign-repo"
+        }
+      ]
+    },
+    {
+      "id": "reader-08",
+      "name": "Invalid native repository ID",
+      "mutations": [
+        {
+          "routeUrl": "https://api.github.com/repos/fixture-owner/fixture-repo",
+          "responseRead": "all",
+          "jsonPath": "id",
+          "set": 0
+        }
+      ]
+    },
+    {
+      "id": "reader-09",
+      "name": "Invalid initial head ref",
+      "mutations": [
+        {
+          "routeUrl": "https://api.github.com/repos/fixture-owner/fixture-repo/pulls/1",
+          "responseRead": "all",
+          "jsonPath": "head.ref",
+          "set": "bad ref"
+        }
+      ]
+    },
+    {
+      "id": "reader-10",
+      "name": "Wrong initial base ref",
+      "mutations": [
+        {
+          "routeUrl": "https://api.github.com/repos/fixture-owner/fixture-repo/pulls/1",
+          "responseRead": "all",
+          "jsonPath": "base.ref",
+          "set": "other"
+        }
+      ]
+    },
+    {
+      "id": "reader-11",
+      "name": "Native head commit SHA mismatches requested identity",
+      "mutations": [
+        {
+          "routeUrl": "https://api.github.com/repos/fixture-owner/fixture-repo/git/commits/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "responseRead": "all",
+          "jsonPath": "sha",
+          "set": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        }
+      ]
+    },
+    {
+      "id": "reader-12",
+      "name": "Native merge commit SHA mismatches requested identity",
+      "mutations": [
+        {
+          "routeUrl": "https://api.github.com/repos/fixture-owner/fixture-repo/git/commits/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "responseRead": "all",
+          "jsonPath": "sha",
+          "set": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        }
+      ]
+    },
+    {
+      "id": "reader-13",
+      "name": "Missing native head tree digest",
+      "mutations": [
+        {
+          "routeUrl": "https://api.github.com/repos/fixture-owner/fixture-repo/git/commits/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "responseRead": "all",
+          "jsonPath": "tree",
+          "set": {}
+        }
+      ]
+    },
+    {
+      "id": "reader-14",
+      "name": "Missing native merge tree digest",
+      "mutations": [
+        {
+          "routeUrl": "https://api.github.com/repos/fixture-owner/fixture-repo/git/commits/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "responseRead": "all",
+          "jsonPath": "tree",
+          "set": {}
+        }
+      ]
+    },
+    {
+      "id": "reader-15",
+      "name": "Native commit lookup HTTP403",
+      "mutations": [
+        {
+          "routeUrl": "https://api.github.com/repos/fixture-owner/fixture-repo/git/commits/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "responseRead": "all",
+          "replaceResponse": {
+            "status": 403,
+            "json": {
+              "message": "synthetic denied"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "reader-16",
+      "name": "Absent native commit-to-PR membership",
+      "mutations": [
+        {
+          "routeUrl": "https://api.github.com/repos/fixture-owner/fixture-repo/commits/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/pulls?per_page=100&page=1",
+          "responseRead": "all",
+          "replaceResponse": {
+            "status": 200,
+            "json": []
+          }
+        }
+      ]
+    },
+    {
+      "id": "reader-17",
+      "name": "Ambiguous native commit-to-PR membership",
+      "mutations": [
+        {
+          "routeUrl": "https://api.github.com/repos/fixture-owner/fixture-repo/commits/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/pulls?per_page=100&page=1",
+          "responseRead": "all",
+          "replaceResponse": {
+            "status": 200,
+            "json": [
+              {
+                "number": 1,
+                "state": "closed",
+                "merged": true,
+                "merged_at": "2026-11-11T11:00:00Z",
+                "merge_commit_sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                "base": {
+                  "sha": "dddddddddddddddddddddddddddddddddddddddd",
+                  "ref": "main",
+                  "repo": {
+                    "id": 42,
+                    "full_name": "fixture-owner/fixture-repo",
+                    "default_branch": "main"
+                  }
+                },
+                "head": {
+                  "sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                  "ref": "codex/fixture-ci-domains",
+                  "repo": {
+                    "id": 42,
+                    "full_name": "fixture-owner/fixture-repo",
+                    "default_branch": "main"
+                  }
+                },
+                "body": "<!-- engineering-contract: 1048-v2 -->",
+                "user": {
+                  "id": 501,
+                  "login": "fixture-builder",
+                  "type": "User"
+                },
+                "mergeable": null,
+                "html_url": "https://github.com/fixture-owner/fixture-repo/pull/1"
+              },
+              {
+                "number": 2,
+                "state": "closed",
+                "merged": true,
+                "merged_at": "2026-11-11T11:00:00Z",
+                "merge_commit_sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                "base": {
+                  "sha": "dddddddddddddddddddddddddddddddddddddddd",
+                  "ref": "main",
+                  "repo": {
+                    "id": 42,
+                    "full_name": "fixture-owner/fixture-repo",
+                    "default_branch": "main"
+                  }
+                },
+                "head": {
+                  "sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                  "ref": "codex/fixture-ci-domains",
+                  "repo": {
+                    "id": 42,
+                    "full_name": "fixture-owner/fixture-repo",
+                    "default_branch": "main"
+                  }
+                },
+                "body": "<!-- engineering-contract: 1048-v2 -->",
+                "user": {
+                  "id": 501,
+                  "login": "fixture-builder",
+                  "type": "User"
+                },
+                "mergeable": null,
+                "html_url": "https://github.com/fixture-owner/fixture-repo/pull/1"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "reader-18",
+      "name": "Wrong native commit-to-PR membership",
+      "mutations": [
+        {
+          "routeUrl": "https://api.github.com/repos/fixture-owner/fixture-repo/commits/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/pulls?per_page=100&page=1",
+          "responseRead": "all",
+          "replaceResponse": {
+            "status": 200,
+            "json": [
+              {
+                "number": 2,
+                "state": "closed",
+                "merged": true,
+                "merged_at": "2026-11-11T11:00:00Z",
+                "merge_commit_sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                "base": {
+                  "sha": "dddddddddddddddddddddddddddddddddddddddd",
+                  "ref": "main",
+                  "repo": {
+                    "id": 42,
+                    "full_name": "fixture-owner/fixture-repo",
+                    "default_branch": "main"
+                  }
+                },
+                "head": {
+                  "sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                  "ref": "codex/fixture-ci-domains",
+                  "repo": {
+                    "id": 42,
+                    "full_name": "fixture-owner/fixture-repo",
+                    "default_branch": "main"
+                  }
+                },
+                "body": "<!-- engineering-contract: 1048-v2 -->",
+                "user": {
+                  "id": 501,
+                  "login": "fixture-builder",
+                  "type": "User"
+                },
+                "mergeable": null,
+                "html_url": "https://github.com/fixture-owner/fixture-repo/pull/1"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "reader-19",
+      "name": "Valid unequal trees plus final head movement",
+      "mutations": [
+        {
+          "routeUrl": "https://api.github.com/repos/fixture-owner/fixture-repo/pulls/1",
+          "responseRead": 2,
+          "jsonPath": "head.sha",
+          "set": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        }
+      ]
+    },
+    {
+      "id": "reader-20",
+      "name": "Valid unequal trees plus final reopen drift",
+      "mutations": [
+        {
+          "routeUrl": "https://api.github.com/repos/fixture-owner/fixture-repo/pulls/1",
+          "responseRead": 2,
+          "jsonPath": "state",
+          "set": "open"
+        }
+      ]
+    },
+    {
+      "id": "reader-21",
+      "name": "Valid unequal trees plus final merged flag drift",
+      "mutations": [
+        {
+          "routeUrl": "https://api.github.com/repos/fixture-owner/fixture-repo/pulls/1",
+          "responseRead": 2,
+          "jsonPath": "merged",
+          "set": false
+        }
+      ]
+    },
+    {
+      "id": "reader-22",
+      "name": "Valid unequal trees plus final merge SHA drift",
+      "mutations": [
+        {
+          "routeUrl": "https://api.github.com/repos/fixture-owner/fixture-repo/pulls/1",
+          "responseRead": 2,
+          "jsonPath": "merge_commit_sha",
+          "set": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        }
+      ]
+    },
+    {
+      "id": "reader-23",
+      "name": "Valid unequal trees plus final merge timestamp drift",
+      "mutations": [
+        {
+          "routeUrl": "https://api.github.com/repos/fixture-owner/fixture-repo/pulls/1",
+          "responseRead": 2,
+          "jsonPath": "merged_at",
+          "set": "2026-11-11T11:01:00Z"
+        }
+      ]
+    },
+    {
+      "id": "reader-24",
+      "name": "Valid unequal trees plus final head ref drift",
+      "mutations": [
+        {
+          "routeUrl": "https://api.github.com/repos/fixture-owner/fixture-repo/pulls/1",
+          "responseRead": 2,
+          "jsonPath": "head.ref",
+          "set": "codex/changed"
+        }
+      ]
+    },
+    {
+      "id": "reader-25",
+      "name": "Valid unequal trees plus final base SHA drift",
+      "mutations": [
+        {
+          "routeUrl": "https://api.github.com/repos/fixture-owner/fixture-repo/pulls/1",
+          "responseRead": 2,
+          "jsonPath": "base.sha",
+          "set": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        }
+      ]
+    },
+    {
+      "id": "reader-26",
+      "name": "Valid unequal trees plus final base ref drift",
+      "mutations": [
+        {
+          "routeUrl": "https://api.github.com/repos/fixture-owner/fixture-repo/pulls/1",
+          "responseRead": 2,
+          "jsonPath": "base.ref",
+          "set": "other"
+        }
+      ]
+    },
+    {
+      "id": "reader-27",
+      "name": "Valid unequal trees plus final head repository drift",
+      "mutations": [
+        {
+          "routeUrl": "https://api.github.com/repos/fixture-owner/fixture-repo/pulls/1",
+          "responseRead": 2,
+          "jsonPath": "head.repo.id",
+          "set": 43
+        }
+      ]
+    },
+    {
+      "id": "reader-28",
+      "name": "Valid unequal trees plus final base repository drift",
+      "mutations": [
+        {
+          "routeUrl": "https://api.github.com/repos/fixture-owner/fixture-repo/pulls/1",
+          "responseRead": 2,
+          "jsonPath": "base.repo.id",
+          "set": 43
+        }
+      ]
+    },
+    {
+      "id": "reader-29",
+      "name": "Valid unequal trees plus final PR read HTTP403",
+      "mutations": [
+        {
+          "routeUrl": "https://api.github.com/repos/fixture-owner/fixture-repo/pulls/1",
+          "responseRead": 2,
+          "replaceResponse": {
+            "status": 403,
+            "json": {
+              "message": "synthetic denied"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "reader-30",
+      "name": "Valid unequal trees plus late missing membership",
+      "mutations": [
+        {
+          "routeUrl": "https://api.github.com/repos/fixture-owner/fixture-repo/commits/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/pulls?per_page=100&page=1",
+          "responseRead": 2,
+          "replaceResponse": {
+            "status": 200,
+            "json": []
+          }
+        }
+      ]
+    },
+    {
+      "id": "reader-31",
+      "name": "Valid unequal trees plus late ambiguous membership",
+      "mutations": [
+        {
+          "routeUrl": "https://api.github.com/repos/fixture-owner/fixture-repo/commits/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/pulls?per_page=100&page=1",
+          "responseRead": 2,
+          "replaceResponse": {
+            "status": 200,
+            "json": [
+              {
+                "number": 1,
+                "state": "closed",
+                "merged": true,
+                "merged_at": "2026-11-11T11:00:00Z",
+                "merge_commit_sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                "base": {
+                  "sha": "dddddddddddddddddddddddddddddddddddddddd",
+                  "ref": "main",
+                  "repo": {
+                    "id": 42,
+                    "full_name": "fixture-owner/fixture-repo",
+                    "default_branch": "main"
+                  }
+                },
+                "head": {
+                  "sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                  "ref": "codex/fixture-ci-domains",
+                  "repo": {
+                    "id": 42,
+                    "full_name": "fixture-owner/fixture-repo",
+                    "default_branch": "main"
+                  }
+                },
+                "body": "<!-- engineering-contract: 1048-v2 -->",
+                "user": {
+                  "id": 501,
+                  "login": "fixture-builder",
+                  "type": "User"
+                },
+                "mergeable": null,
+                "html_url": "https://github.com/fixture-owner/fixture-repo/pull/1"
+              },
+              {
+                "number": 2,
+                "state": "closed",
+                "merged": true,
+                "merged_at": "2026-11-11T11:00:00Z",
+                "merge_commit_sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                "base": {
+                  "sha": "dddddddddddddddddddddddddddddddddddddddd",
+                  "ref": "main",
+                  "repo": {
+                    "id": 42,
+                    "full_name": "fixture-owner/fixture-repo",
+                    "default_branch": "main"
+                  }
+                },
+                "head": {
+                  "sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                  "ref": "codex/fixture-ci-domains",
+                  "repo": {
+                    "id": 42,
+                    "full_name": "fixture-owner/fixture-repo",
+                    "default_branch": "main"
+                  }
+                },
+                "body": "<!-- engineering-contract: 1048-v2 -->",
+                "user": {
+                  "id": 501,
+                  "login": "fixture-builder",
+                  "type": "User"
+                },
+                "mergeable": null,
+                "html_url": "https://github.com/fixture-owner/fixture-repo/pull/1"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "reader-32",
+      "name": "Valid unequal trees plus late wrong PR membership",
+      "mutations": [
+        {
+          "routeUrl": "https://api.github.com/repos/fixture-owner/fixture-repo/commits/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/pulls?per_page=100&page=1",
+          "responseRead": 2,
+          "replaceResponse": {
+            "status": 200,
+            "json": [
+              {
+                "number": 2,
+                "state": "closed",
+                "merged": true,
+                "merged_at": "2026-11-11T11:00:00Z",
+                "merge_commit_sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                "base": {
+                  "sha": "dddddddddddddddddddddddddddddddddddddddd",
+                  "ref": "main",
+                  "repo": {
+                    "id": 42,
+                    "full_name": "fixture-owner/fixture-repo",
+                    "default_branch": "main"
+                  }
+                },
+                "head": {
+                  "sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                  "ref": "codex/fixture-ci-domains",
+                  "repo": {
+                    "id": 42,
+                    "full_name": "fixture-owner/fixture-repo",
+                    "default_branch": "main"
+                  }
+                },
+                "body": "<!-- engineering-contract: 1048-v2 -->",
+                "user": {
+                  "id": 501,
+                  "login": "fixture-builder",
+                  "type": "User"
+                },
+                "mergeable": null,
+                "html_url": "https://github.com/fixture-owner/fixture-repo/pull/1"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "reader-33",
+      "name": "Valid unequal trees plus late HTTP403 membership read failure",
+      "mutations": [
+        {
+          "routeUrl": "https://api.github.com/repos/fixture-owner/fixture-repo/commits/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/pulls?per_page=100&page=1",
+          "responseRead": 2,
+          "replaceResponse": {
+            "status": 403,
+            "json": {
+              "message": "synthetic denied"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "reader-34",
+      "name": "Valid unequal trees plus late malformed membership API collection",
+      "mutations": [
+        {
+          "routeUrl": "https://api.github.com/repos/fixture-owner/fixture-repo/commits/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/pulls?per_page=100&page=1",
+          "responseRead": 2,
+          "replaceResponse": {
+            "status": 200,
+            "json": {
+              "unexpected": "not an array"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "reader-35",
+      "name": "Valid unequal trees plus late wrong native association identity",
+      "mutations": [
+        {
+          "routeUrl": "https://api.github.com/repos/fixture-owner/fixture-repo/commits/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/pulls?per_page=100&page=1",
+          "responseRead": 2,
+          "replaceResponse": {
+            "status": 200,
+            "json": [
+              {
+                "number": 1,
+                "state": "closed",
+                "merged": true,
+                "merged_at": "2026-11-11T11:00:00Z",
+                "merge_commit_sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                "base": {
+                  "sha": "dddddddddddddddddddddddddddddddddddddddd",
+                  "ref": "main",
+                  "repo": {
+                    "id": 42,
+                    "full_name": "fixture-owner/fixture-repo",
+                    "default_branch": "main"
+                  }
+                },
+                "head": {
+                  "sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                  "ref": "codex/fixture-ci-domains",
+                  "repo": {
+                    "id": 43,
+                    "full_name": "fixture-owner/fixture-repo",
+                    "default_branch": "main"
+                  }
+                },
+                "body": "<!-- engineering-contract: 1048-v2 -->",
+                "user": {
+                  "id": 501,
+                  "login": "fixture-builder",
+                  "type": "User"
+                },
+                "mergeable": null,
+                "html_url": "https://github.com/fixture-owner/fixture-repo/pull/1"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "reader-36",
+      "name": "Equal trees plus late missing membership",
+      "mutations": [
+        {
+          "routeUrl": "https://api.github.com/repos/fixture-owner/fixture-repo/git/commits/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "responseRead": "all",
+          "jsonPath": "tree.sha",
+          "set": "1111111111111111111111111111111111111111"
+        },
+        {
+          "routeUrl": "https://api.github.com/repos/fixture-owner/fixture-repo/commits/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/pulls?per_page=100&page=1",
+          "responseRead": 2,
+          "replaceResponse": {
+            "status": 200,
+            "json": []
+          }
+        }
+      ]
+    },
+    {
+      "id": "reader-37",
+      "name": "Equal trees plus late ambiguous membership",
+      "mutations": [
+        {
+          "routeUrl": "https://api.github.com/repos/fixture-owner/fixture-repo/git/commits/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "responseRead": "all",
+          "jsonPath": "tree.sha",
+          "set": "1111111111111111111111111111111111111111"
+        },
+        {
+          "routeUrl": "https://api.github.com/repos/fixture-owner/fixture-repo/commits/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/pulls?per_page=100&page=1",
+          "responseRead": 2,
+          "replaceResponse": {
+            "status": 200,
+            "json": [
+              {
+                "number": 1,
+                "state": "closed",
+                "merged": true,
+                "merged_at": "2026-11-11T11:00:00Z",
+                "merge_commit_sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                "base": {
+                  "sha": "dddddddddddddddddddddddddddddddddddddddd",
+                  "ref": "main",
+                  "repo": {
+                    "id": 42,
+                    "full_name": "fixture-owner/fixture-repo",
+                    "default_branch": "main"
+                  }
+                },
+                "head": {
+                  "sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                  "ref": "codex/fixture-ci-domains",
+                  "repo": {
+                    "id": 42,
+                    "full_name": "fixture-owner/fixture-repo",
+                    "default_branch": "main"
+                  }
+                },
+                "body": "<!-- engineering-contract: 1048-v2 -->",
+                "user": {
+                  "id": 501,
+                  "login": "fixture-builder",
+                  "type": "User"
+                },
+                "mergeable": null,
+                "html_url": "https://github.com/fixture-owner/fixture-repo/pull/1"
+              },
+              {
+                "number": 2,
+                "state": "closed",
+                "merged": true,
+                "merged_at": "2026-11-11T11:00:00Z",
+                "merge_commit_sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                "base": {
+                  "sha": "dddddddddddddddddddddddddddddddddddddddd",
+                  "ref": "main",
+                  "repo": {
+                    "id": 42,
+                    "full_name": "fixture-owner/fixture-repo",
+                    "default_branch": "main"
+                  }
+                },
+                "head": {
+                  "sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                  "ref": "codex/fixture-ci-domains",
+                  "repo": {
+                    "id": 42,
+                    "full_name": "fixture-owner/fixture-repo",
+                    "default_branch": "main"
+                  }
+                },
+                "body": "<!-- engineering-contract: 1048-v2 -->",
+                "user": {
+                  "id": 501,
+                  "login": "fixture-builder",
+                  "type": "User"
+                },
+                "mergeable": null,
+                "html_url": "https://github.com/fixture-owner/fixture-repo/pull/1"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "reader-38",
+      "name": "Equal trees plus late wrong PR membership",
+      "mutations": [
+        {
+          "routeUrl": "https://api.github.com/repos/fixture-owner/fixture-repo/git/commits/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "responseRead": "all",
+          "jsonPath": "tree.sha",
+          "set": "1111111111111111111111111111111111111111"
+        },
+        {
+          "routeUrl": "https://api.github.com/repos/fixture-owner/fixture-repo/commits/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/pulls?per_page=100&page=1",
+          "responseRead": 2,
+          "replaceResponse": {
+            "status": 200,
+            "json": [
+              {
+                "number": 2,
+                "state": "closed",
+                "merged": true,
+                "merged_at": "2026-11-11T11:00:00Z",
+                "merge_commit_sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                "base": {
+                  "sha": "dddddddddddddddddddddddddddddddddddddddd",
+                  "ref": "main",
+                  "repo": {
+                    "id": 42,
+                    "full_name": "fixture-owner/fixture-repo",
+                    "default_branch": "main"
+                  }
+                },
+                "head": {
+                  "sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                  "ref": "codex/fixture-ci-domains",
+                  "repo": {
+                    "id": 42,
+                    "full_name": "fixture-owner/fixture-repo",
+                    "default_branch": "main"
+                  }
+                },
+                "body": "<!-- engineering-contract: 1048-v2 -->",
+                "user": {
+                  "id": 501,
+                  "login": "fixture-builder",
+                  "type": "User"
+                },
+                "mergeable": null,
+                "html_url": "https://github.com/fixture-owner/fixture-repo/pull/1"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "reader-39",
+      "name": "Equal trees plus late HTTP403 membership read failure",
+      "mutations": [
+        {
+          "routeUrl": "https://api.github.com/repos/fixture-owner/fixture-repo/git/commits/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "responseRead": "all",
+          "jsonPath": "tree.sha",
+          "set": "1111111111111111111111111111111111111111"
+        },
+        {
+          "routeUrl": "https://api.github.com/repos/fixture-owner/fixture-repo/commits/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/pulls?per_page=100&page=1",
+          "responseRead": 2,
+          "replaceResponse": {
+            "status": 403,
+            "json": {
+              "message": "synthetic denied"
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "wrapperSafety": [
+    "Parent writes only expanded call/routes/mutations to child stdin; no expected outcomes, hashes or parent assertion inventory mounted.",
+    "Keep global fetch as a separate denying function; never alias it with passed fake fetchImpl. Import actual candidate github.mjs and pass the distinct finite offline function.",
+    "Fake API accepts only exact GET route URLs and exact GraphQL POST body above, with the literal noncredential Authorization value. No real token or network is available.",
+    "Only credentialless, network-none container may execute immutable subject source; do not run source adapter on the host. Existing runtime bounds remain unchanged.",
+    "Return raw observation fields and request inventory only, not PASS/FAIL or child assertions.",
+    "Parent always treats child values and test-transport output as untrusted; imported JSON never acquires process-local WeakSet authenticity.",
+    "No private holdout, production data, database, browser, provider, external service or canonical workflow proof executes in this fixture.",
+    "Every unmapped method/URL/query, GraphQL body/header mismatch, invalid route stimulus, unplanned transport throw or per-case request overflow sets a sticky trusted-wrapper setup error outside candidate catch control. Even if candidate catches the fake-fetch throw and returns globalProblems, wrapper must emit executionComplete=false and a nonzero execution status; parent classifies SETUP/BLOCKED before behavioral predicates.",
+    "Mapped intentional HTTP403 fixtures are expected input observations, not unmapped requests or wrapper failures. No network fallback exists.",
+    "Track actual membership endpoint reads independently of snapshot output. The new valid-unequal context requires exactly two reads; direct native PR association requires zero. No historicalIdentity fallback success may be inferred from this counter."
+  ],
+  "outputSchema": {
+    "schemaVersion": 1,
+    "caseId": "finite id",
+    "observation": {
+      "provenanceKind": "snapshot.provenance.kind",
+      "inProcessEvidenceClaim": "actual exported isGithubEvidence(snapshot) value, still untrusted externally",
+      "globalProblems": "snapshot.problems",
+      "ciStatus": "snapshot.ci.status",
+      "ciProblems": "snapshot.ci.problems",
+      "ciAssociation": "snapshot.ci.association",
+      "actualCheckoutSha": "snapshot.ci.actualCheckoutSha"
+    },
+    "requests": "bounded actual method/URL/read-index observations; no literal token value in output",
+    "wrapper": {
+      "executionComplete": "false on any sticky setup error",
+      "setupErrors": "bounded trusted-wrapper error observations, never cleared by candidate code",
+      "requestCount": "actual finite call count <=128 per case",
+      "membershipReadCount": "actual count for exact frozen commits/head/pulls URL",
+      "requests": "bounded actual method/URL/read-index observations; no token values"
+    }
+  },
+  "extendsV1Sha256": "fa717fc508f9586579ed1014320326f6bb039c24d23db9e7a6857a26c4daf7b0"
+}

@@ -2,13 +2,14 @@
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { CURRENT_PROOF_INPUTS, FORBIDDEN_PROOF_INPUTS, HISTORICAL_PROOF_SOURCE } from './proof-inputs.fixture';
+import { CURRENT_PROOF_INPUTS, FORBIDDEN_PROOF_INPUTS, HISTORICAL_PROOF_SOURCE, HISTORICAL_V2_PROOF_SOURCE } from './proof-inputs.fixture';
 import { CONTRACT_REVISIONS, parseContractMarker, resolveContractRevision } from './contract-registry.mjs';
 
 const accepted = [
   { key: '1048', path: 'docs/project/acceptance/engineering/1048.json', contractId: 'EV-FOUNDATION-1048', issueNumber: 1048, executionStatus: 'HISTORICAL_ONLY', adapter: 'engineering.policy.v1', historicalWorkflowSha256: '07f2b3c1cd35f9ba91f61da3c14c11fea75ccd3d5b50b9db61ffe5b75f66dfb3', requiredProofInputs: [], forbiddenProofInputs: [], historicalTrustedSourceRefs: [HISTORICAL_PROOF_SOURCE] },
   { key: '2285', path: 'docs/project/acceptance/engineering/2285.json', contractId: 'EV-KNOX-2285', issueNumber: 2285, executionStatus: 'HISTORICAL_ONLY', adapter: 'knox.free-specialists.v1', historicalWorkflowSha256: '07f2b3c1cd35f9ba91f61da3c14c11fea75ccd3d5b50b9db61ffe5b75f66dfb3', requiredProofInputs: [], forbiddenProofInputs: [], historicalTrustedSourceRefs: [HISTORICAL_PROOF_SOURCE] },
-  { key: '1048-v2', path: 'docs/project/acceptance/engineering/1048-v2.json', contractId: 'EV-FOUNDATION-1048-V2', issueNumber: 1048, executionStatus: 'CURRENT', adapter: 'engineering.policy.v2', historicalWorkflowSha256: null, requiredProofInputs: [...CURRENT_PROOF_INPUTS], forbiddenProofInputs: [...FORBIDDEN_PROOF_INPUTS], historicalTrustedSourceRefs: [] },
+  { key: '1048-v2', path: 'docs/project/acceptance/engineering/1048-v2.json', contractId: 'EV-FOUNDATION-1048-V2', issueNumber: 1048, executionStatus: 'HISTORICAL_ONLY', adapter: 'engineering.policy.v2', historicalWorkflowSha256: '02c17ecbd29b154cd667f868a7beed2b59ba70ec6ce3274face95c82be45f60a', requiredProofInputs: [], forbiddenProofInputs: [], historicalTrustedSourceRefs: [HISTORICAL_V2_PROOF_SOURCE] },
+  { key: '1048-v3', path: 'docs/project/acceptance/engineering/1048-v3.json', contractId: 'EV-FOUNDATION-1048-V3', issueNumber: 1048, executionStatus: 'CURRENT', adapter: 'engineering.ci-domains.v1', historicalWorkflowSha256: null, requiredProofInputs: [...CURRENT_PROOF_INPUTS], forbiddenProofInputs: [...FORBIDDEN_PROOF_INPUTS], historicalTrustedSourceRefs: [] },
 ];
 
 describe('accepted contract revision selection', () => {
@@ -18,7 +19,7 @@ describe('accepted contract revision selection', () => {
     expect(Object.isFrozen(actual)).toBe(true);
   });
   it('exposes one immutable unambiguous registry without an issue-number winner', () => {
-    expect(CONTRACT_REVISIONS.map(row => row.key).sort()).toEqual(['1048', '1048-v2', '2285']);
+    expect(CONTRACT_REVISIONS.map(row => row.key).sort()).toEqual(['1048', '1048-v2', '1048-v3', '2285']);
     expect(new Set(CONTRACT_REVISIONS.map(row => row.key)).size).toBe(CONTRACT_REVISIONS.length);
     expect(Object.isFrozen(CONTRACT_REVISIONS)).toBe(true);
     for (const row of CONTRACT_REVISIONS) {
@@ -27,12 +28,13 @@ describe('accepted contract revision selection', () => {
     }
   });
   it('allows current execution only through its explicit accepted revision key', () => {
-    expect(resolveContractRevision('1048-v2', { requireRunnable: true })).toEqual(accepted[2]);
+    expect(resolveContractRevision('1048-v3', { requireRunnable: true })).toEqual(accepted[3]);
     expect(() => resolveContractRevision('1048', { requireRunnable: true })).toThrow();
     expect(() => resolveContractRevision('2285', { requireRunnable: true })).toThrow();
+    expect(() => resolveContractRevision('1048-v2', { requireRunnable: true })).toThrow();
   });
   it('does not treat the same logical issue as the same contract revision', () => {
-    const old = resolveContractRevision('1048'), current = resolveContractRevision('1048-v2');
+    const old = resolveContractRevision('1048'), current = resolveContractRevision('1048-v3');
     expect(old.issueNumber).toBe(current.issueNumber);
     expect(old.contractId).not.toBe(current.contractId);
     expect(old.path).not.toBe(current.path);
@@ -84,6 +86,7 @@ describe('immutable original pilot bytes', () => {
   it.each([
     ['1048', '433742496a19144f88c326faadae79562540f85a99cf9ed3201089f3db98349b'],
     ['2285', 'e7b47a13b62ba06fe75b77480f2dc68f4d53dcf1820f499a4e2a18791a6d9cc5'],
+    ['1048-v2', '2103495497477cbb2fa6cd55dfb500d769e1bb4a07b9cae800d912238c43c40d'],
   ])('retains the exact historical %s raw digest', (key, digest) => {
     const bytes = readFileSync(`docs/project/acceptance/engineering/${key}.json`);
     expect(createHash('sha256').update(bytes).digest('hex')).toBe(digest);

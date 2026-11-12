@@ -1,17 +1,20 @@
 // @vitest-environment node
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { CURRENT_PROOF_INPUTS, FORBIDDEN_PROOF_INPUTS, HISTORICAL_PROOF_SOURCE, completeProofFiles } from './proof-inputs.fixture';
+import { CURRENT_PROOF_INPUTS, FORBIDDEN_PROOF_INPUTS, HISTORICAL_PROOF_SOURCE, HISTORICAL_V2_PROOF_SOURCE, completeProofFiles } from './proof-inputs.fixture';
 import { createHash } from 'node:crypto';
 import { strToU8, zipSync } from 'fflate';
 import { nativeTreeResponse, nativeBlobSha } from './native-tree.fixture';
-import { collectGithubEvidence } from './github.mjs';
+import { collectGithubEvidence, isGithubEvidence } from './github.mjs';
 import { contractDigest } from './contract.mjs';
+import { syntheticBatchEvidence } from './ci-domain-collection.fixture';
+import { BATCHES, BASELINE_SOURCE_SHA256 } from './ci-domain-pilot.mjs';
+import { READER_IMAGE } from './ci-domain-collection.mjs';
 import { assessCollectedProof, collectProofEvidence, isCollectedProof } from './proof.mjs';
 
 const HEAD = 'a'.repeat(40), BASE = 'b'.repeat(40), ORCHESTRATOR = 'c'.repeat(40);
 const NOW = new Date('2026-11-06T12:05:00Z');
-const HASH = 'd'.repeat(64), WORKFLOW_PATH = '.github/workflows/engineering-verification.yml';
+const WORKFLOW_PATH = '.github/workflows/engineering-verification.yml';
 const hash = (bytes: Uint8Array | string) => createHash('sha256').update(bytes).digest('hex');
 
 function fixture(workflowFreeze: 'valid' | 'missing' | 'wrong' = 'valid') {
@@ -21,13 +24,18 @@ function fixture(workflowFreeze: 'valid' | 'missing' | 'wrong' = 'valid') {
     'src/lib/engineering-verification/pilot.mjs': 'trusted assertions',
     'src/lib/engineering-verification/pilot.test.ts': 'trusted tests',
     'src/lib/engineering-verification/__fixtures__/knox-2285.json': 'synthetic source',
-    'src/lib/engineering-verification/runtime.json': '{"image":"node@sha256:' + HASH + '"}',
+    'src/lib/engineering-verification/runtime.json': JSON.stringify({ image: READER_IMAGE }),
     'package-lock.json': '{"trusted":"dependencies"}',
     'package.json': '{"name":"trusted-verification-toolchain"}',
   };
   completeProofFiles(files);
+  // Literal control bytes only; this test never imports or executes reader source.
+  for (const name of ['github.mjs', 'child.mjs', 'ci-domain-probe.mjs', 'ci-domain-collection.mjs', 'strict-json.mjs',
+    '__fixtures__/ci-domain-stimulus-v2.json', '__fixtures__/ci-domain-expectations-v2.json']) {
+    files['src/lib/engineering-verification/' + name] = readFileSync(new URL('./' + name, import.meta.url), 'utf8');
+  }
   const contract = {
-    schema_version: '1.1', contract_id: 'EV-FOUNDATION-1048-V2', issue: '#1048', risk_tier: 'R2', base_sha: BASE,
+    schema_version: '1.1', contract_id: 'EV-FOUNDATION-1048-V3', issue: '#1048', risk_tier: 'R2', base_sha: BASE,
     scope: ['src/lib/agents/knox/**'], required_skills: ['tdd', 'adversarial-document-testing', 'error-to-test'],
     production_boundary: 'NO_PROD_MUTATION', human_approval_required: false,
     execution_files: CURRENT_PROOF_INPUTS.filter(path => workflowFreeze !== 'missing' || path !== WORKFLOW_PATH).map(path => ({ path, sha256: workflowFreeze === 'wrong' && path === WORKFLOW_PATH ? '0'.repeat(64) : hash(files[path]) })),
@@ -38,24 +46,44 @@ function fixture(workflowFreeze: 'valid' | 'missing' | 'wrong' = 'valid') {
       failure_signature: 'own price', assertion_ids: ['own-price'], baseline_failure_assertion_ids: ['own-price'], baseline_expectation: 'FAIL' }],
   };
   const contractRaw = JSON.stringify(contract), req = contract.requirements[0];
-  files['docs/project/acceptance/engineering/1048-v2.json'] = contractRaw;
+  files['docs/project/acceptance/engineering/1048-v3.json'] = contractRaw;
   const common = { requirement_id: req.id, test_id: req.test_id, command: 'trusted parent', artifact_url: 'https://github.com/o/r/actions/runs/101',
     execution_exit_code: 0,
     test_sha256: req.test_sha256, fixture_sha256: req.fixture_sha256, adapter_sha256: req.adapter_sha256,
     execution_sha256: contractDigest(JSON.stringify(contract.execution_files)), contract_sha256: contractDigest(contractRaw) };
+  const batchArtifacts: Record<string, Uint8Array> = {};
+  const reader_batches = { schemaVersion: 1, adapter: 'engineering.ci-domains.v1', sources: ['red', 'green'].map(label => {
+    const sourceRef = label === 'red' ? BASE : HEAD;
+    return { label, sourceRef, batches: BATCHES.map(batch => {
+      const directory = label + '-' + batch.id;
+      const sample = syntheticBatchEvidence({ sourceRef, batchId: batch.id, caseIds: [...batch.caseIds],
+        sourceSha256: label === 'red' ? BASELINE_SOURCE_SHA256 : hash(files['src/lib/engineering-verification/github.mjs']) });
+      for (const [path, bytes] of Object.entries(sample.artifacts)) batchArtifacts[directory + '/' + path] = bytes;
+      return { directory, receiptSha256: hash(sample.artifacts['receipt.json']), receiptBytes: sample.artifacts['receipt.json'].length, manifest: sample.manifest };
+    }) };
+  }) };
   const receipt = {
-    schema_version: '1.0', contract_key: '1048-v2', contract_id: contract.contract_id, base_sha: BASE, head_sha: HEAD, contract_sha256: contractDigest(contractRaw), execution_files: contract.execution_files,
+    schema_version: '1.0', contract_key: '1048-v3', contract_id: contract.contract_id, base_sha: BASE, head_sha: HEAD, contract_sha256: contractDigest(contractRaw), execution_files: contract.execution_files,
     started_at: '2026-11-06T12:00:10Z', completed_at: '2026-11-06T12:01:00Z',
-    runtime: { image: 'node@sha256:' + HASH, dependency_lock_sha256: hash(files['package-lock.json']) },
+    runtime: { image: READER_IMAGE, dependency_lock_sha256: hash(files['package-lock.json']) },
     provenance: { claimed_origin: 'GITHUB_ACTIONS_UNCORROBORATED', workflow_sha: ORCHESTRATOR, run_id: '101', run_attempt: '2' },
+    reader_batches,
     pairs: [{ red: { ...common, base_sha: BASE, exit_code: 1, status: 'FAILED', failure_kind: 'ASSERTION_FAILURE', assertions: [{ id: 'own-price', status: 'FAILED' }] },
       green: { ...common, head_sha: HEAD, exit_code: 0, status: 'PASSED', failure_kind: 'NONE', assertions: [{ id: 'own-price', status: 'PASSED' }] } }],
   };
-  const archive = () => zipSync({ 'receipt.json': strToU8(JSON.stringify(receipt)), 'summary.md': strToU8('Untrusted claimed status: VERIFIED') }, { mtime: new Date('2026-11-06T12:01:00Z') });
+  let archivedReceipt = '', archivedBytes: ReturnType<typeof zipSync>;
+  const archive = () => {
+    const serialized = JSON.stringify(receipt);
+    if (serialized !== archivedReceipt) {
+      archivedReceipt = serialized;
+      archivedBytes = zipSync({ ...batchArtifacts, 'receipt.json': strToU8(serialized), 'summary.md': strToU8('Untrusted claimed status: VERIFIED') }, { mtime: new Date('2026-11-06T12:01:00Z') });
+    }
+    return archivedBytes;
+  };
   const run = { id: 101, workflow_id: 33, run_attempt: 2, head_branch: 'main', head_sha: ORCHESTRATOR, event: 'workflow_dispatch', status: 'completed', conclusion: 'success',
     path: WORKFLOW_PATH, repository: { id: 17, full_name: 'o/r' }, head_repository: { id: 17, full_name: 'o/r' },
     html_url: 'https://github.com/o/r/actions/runs/101', created_at: '2026-11-06T11:00:00Z', run_started_at: '2026-11-06T12:00:00Z', updated_at: '2026-11-06T12:02:00Z' };
-  const artifact = () => ({ id: 88, name: 'engineering-verification-1-' + HEAD + '-1048-v2-attempt-2', expired: false, digest: 'sha256:' + hash(archive()), size_in_bytes: archive().length,
+  const artifact = () => ({ id: 88, name: 'engineering-verification-1-' + HEAD + '-1048-v3-attempt-2', expired: false, digest: 'sha256:' + hash(archive()), size_in_bytes: archive().length,
     created_at: '2026-11-06T12:01:10Z', expires_at: '2027-02-04T12:01:10Z', workflow_run: { id: 101, repository_id: 17, head_repository_id: 17, head_branch: 'main', head_sha: ORCHESTRATOR } });
   const overrides: Record<string, unknown> = {};
   const fetchImpl = async (input: string | URL | Request, options: RequestInit = {}) => {
@@ -74,7 +102,7 @@ function fixture(workflowFreeze: 'valid' | 'missing' | 'wrong' = 'valid') {
     }
     const routes: Record<string, unknown> = {
       '': { id: 17, full_name: 'o/r', default_branch: 'main' }, '/commits/main': { sha: ORCHESTRATOR },
-      '/pulls/1': { head: { sha: HEAD }, body: '<!-- engineering-contract: 1048-v2 -->' },
+      '/pulls/1': { head: { sha: HEAD }, body: '<!-- engineering-contract: 1048-v3 -->' },
       '/actions/workflows/engineering-verification.yml': { id: 33, path: WORKFLOW_PATH, state: 'active' },
       '/actions/workflows/33/runs': { workflow_runs: [run] }, '/actions/runs/101/attempts/2': run, '/actions/runs/101': run,
       '/actions/runs/101/attempts/2/jobs': { jobs: [{ id: 201, run_id: 101, run_attempt: 2, name: 'historical-proof', head_sha: ORCHESTRATOR, status: 'completed', conclusion: 'success' }] },
@@ -86,7 +114,7 @@ function fixture(workflowFreeze: 'valid' | 'missing' | 'wrong' = 'valid') {
 }
 
 /** All injected snapshots retain their provenance blocker; no test can mint authority. */
-async function githubSnapshot(marker = '<!-- engineering-contract: 1048-v2 -->') {
+async function githubSnapshot(marker = '<!-- engineering-contract: 1048-v3 -->') {
   const fetchImpl = async (input: string | URL | Request) => {
     const url = new URL(String(input)), path = url.pathname.replace('/repos/o/r', '');
     if (url.pathname === '/graphql') return Response.json({ data: { repository: { pullRequest: { reviewThreads: { nodes: [], pageInfo: { hasNextPage: false } } } } } });
@@ -101,6 +129,152 @@ async function githubSnapshot(marker = '<!-- engineering-contract: 1048-v2 -->')
   };
   return collectGithubEvidence({ repository: 'o/r', prNumber: 1, token: 'secret', now: NOW, fetchImpl });
 }
+
+/** Finite synthetic history exercises the real reader, without native provenance. */
+async function historicalGithubSnapshot(options: {
+  equalTrees?: boolean;
+  initialMembershipMissing?: boolean;
+  lateMembership?: 'missing' | 'ambiguous' | 'wrong-identity' | 'malformed' | 'unavailable';
+  latePrChanged?: boolean;
+} = {}) {
+  const repo = { id: 17, full_name: 'o/r' }, mergeSha = 'e'.repeat(40), treeSha = 'f'.repeat(40);
+  const pr = { number: 1, state: 'closed', merged: true, merged_at: '2026-11-06T12:03:00Z', merge_commit_sha: mergeSha,
+    body: '<!-- engineering-contract: 1048-v3 -->', base: { sha: BASE, ref: 'main', repo },
+    head: { sha: HEAD, ref: 'unit-history', repo }, user: { id: 1, login: 'builder' },
+    mergeable: null, html_url: 'https://github.com/o/r/pull/1' };
+  const run = { id: 9, workflow_id: 7, event: 'pull_request', head_sha: HEAD, head_branch: pr.head.ref,
+    path: '.github/workflows/test.yml', repository: repo, head_repository: repo, run_attempt: 1, check_suite_id: 42,
+    status: 'completed', conclusion: 'success', created_at: '2026-11-06T11:00:00Z', updated_at: '2026-11-06T12:02:00Z', pull_requests: [] };
+  const job = { id: 10, run_id: 9, run_attempt: 1, head_sha: HEAD, name: 'app-tests', status: 'completed', conclusion: 'success',
+    completed_at: '2026-11-06T12:01:00Z', html_url: 'https://github.com/o/r/actions/runs/9/job/10' };
+  const values: Record<string, unknown> = {
+    '': { ...repo, default_branch: 'main' }, '/commits/main': { sha: ORCHESTRATOR },
+    '/contents/.github/workflows/test.yml': { encoding: 'base64', content: btoa('finite CI workflow') },
+    '/pulls/1': pr, '/pulls/1/files': [{ filename: 'src/lib/a.ts', status: 'modified' }], '/pulls/1/reviews': [], '/issues/1/comments': [],
+    [`/commits/${HEAD}/check-runs`]: { check_runs: [{ ...job, check_suite: { id: 42 }, app: { id: 15368, slug: 'github-actions' }, details_url: job.html_url }] },
+    '/actions/workflows/test.yml': { id: 7, path: '.github/workflows/test.yml' }, '/actions/workflows/7/runs': { workflow_runs: [run] },
+    '/actions/runs/9': run, '/actions/runs/9/attempts/1/jobs': { jobs: [job] }, '/actions/runs/9/artifacts': { artifacts: [] },
+    [`/commits/${HEAD}/pulls`]: [pr], [`/git/commits/${HEAD}`]: { sha: HEAD, tree: { sha: treeSha } },
+    [`/git/commits/${mergeSha}`]: { sha: mergeSha, tree: { sha: options.equalTrees ? treeSha : mergeSha } },
+  };
+  let membershipReads = 0, prReads = 0;
+  const unexpectedRequests: string[] = [];
+  const fetchImpl: typeof fetch = async (input, init) => {
+    const url = new URL(String(input));
+    if (url.origin === 'https://api.github.com' && url.pathname === '/graphql' && init?.method === 'POST') {
+      return Response.json({ data: { repository: { pullRequest: { reviewThreads: { nodes: [], pageInfo: { hasNextPage: false } } } } } });
+    }
+    const path = url.pathname.replace('/repos/o/r', '');
+    if (url.origin !== 'https://api.github.com' || !url.pathname.startsWith('/repos/o/r') || init?.method !== 'GET' || !(path in values)) {
+      unexpectedRequests.push(String(input));
+      throw new Error('Unmapped synthetic proof-boundary request');
+    }
+    if (path === `/commits/${HEAD}/pulls`) {
+      membershipReads++;
+      if (options.initialMembershipMissing) return Response.json([]);
+      if (membershipReads === 2) {
+        if (options.lateMembership === 'missing') return Response.json([]);
+        if (options.lateMembership === 'ambiguous') return Response.json([pr, { ...pr, number: 2 }]);
+        if (options.lateMembership === 'wrong-identity') return Response.json([{ ...pr, head: { ...pr.head, ref: 'changed-ref' } }]);
+        if (options.lateMembership === 'malformed') return Response.json({ unavailable: true });
+        if (options.lateMembership === 'unavailable') return new Response('', { status: 403 });
+      }
+    }
+    if (path === '/pulls/1' && ++prReads === 2 && options.latePrChanged) return Response.json({ ...pr, merged: false });
+    return Response.json(values[path]);
+  };
+  const github = await collectGithubEvidence({ repository: 'o/r', prNumber: 1, token: 'secret', now: NOW,
+    requiredChecks: ['app-tests'], includeDeployments: false, fetchImpl });
+  return { github, membershipReads, unexpectedRequests };
+}
+
+describe('independent proof inspection with blocked historical CI', () => {
+  it('reads the independent proof receipt and native sources after only valid unequal CI trees fail', async () => {
+    const { github, membershipReads, unexpectedRequests } = await historicalGithubSnapshot();
+    expect(unexpectedRequests).toEqual([]);
+    expect(membershipReads).toBe(2);
+    expect(github.problems).toEqual([]);
+    expect(github.ci).toMatchObject({ status: 'BLOCKED', association: null, actualCheckoutSha: null });
+    expect(github.ci.problems).toContain('Native head and merge commit trees are not identical');
+    expect(isGithubEvidence(github)).toBe(false);
+    const f = fixture(), fetchImpl = vi.fn(f.fetchImpl);
+    const result = await collectProofEvidence({ github, ...f, fetchImpl, token: 'secret', now: NOW });
+    expect(result.receipt?.head_sha).toBe(HEAD);
+    const paths = fetchImpl.mock.calls.map(([input]) => new URL(String(input)).pathname);
+    expect(paths).toContain('/repos/o/r/actions/artifacts/88/zip');
+    expect(paths.some(path => path.includes('/git/trees/'))).toBe(true);
+    expect(paths).toContain('/repos/o/r/contents/src/lib/engineering-verification/runner.mjs');
+    expect(result.validation.problems).toEqual(['GitHub snapshot provenance is not authenticated in this process']);
+    expect(result).toMatchObject({ status: 'BLOCKED', currentCodeVerified: false });
+    expect(isCollectedProof(result)).toBe(false);
+  });
+  it.each([
+    ['initial membership missing', { initialMembershipMissing: true }],
+    ['late merged PR identity', { latePrChanged: true }],
+  ] as const)('does not start proof reads after globally invalid %s', async (_kind, changes) => {
+    const { github, unexpectedRequests } = await historicalGithubSnapshot(changes);
+    expect(unexpectedRequests).toEqual([]);
+    expect(github.problems.length).toBeGreaterThan(0);
+    const f = fixture(), fetchImpl = vi.fn(f.fetchImpl);
+    const result = await collectProofEvidence({ github, ...f, fetchImpl, token: 'secret', now: NOW });
+    expect(result.validation.problems).toEqual(expect.arrayContaining(github.problems));
+    expect(result.receipt).toBeNull();
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(result.currentCodeVerified).toBe(false);
+  });
+  it.each([false, true])('keeps late native membership globally required before proof reads (equal trees: %s)', async equalTrees => {
+    for (const lateMembership of ['missing', 'ambiguous', 'wrong-identity', 'malformed', 'unavailable'] as const) {
+      const { github, membershipReads, unexpectedRequests } = await historicalGithubSnapshot({ equalTrees, lateMembership });
+      expect(unexpectedRequests).toEqual([]);
+      expect(membershipReads).toBe(2);
+      expect(github.ci.status).toBe('BLOCKED');
+      expect(github.problems.join(' ')).toMatch(/historical.*association/i);
+      const f = fixture(), fetchImpl = vi.fn(f.fetchImpl);
+      const result = await collectProofEvidence({ github, ...f, fetchImpl, token: 'secret', now: NOW });
+      expect(result.receipt).toBeNull();
+      expect(result.validation.problems).toEqual(expect.arrayContaining(github.problems));
+      expect(fetchImpl).not.toHaveBeenCalled();
+      expect(result.currentCodeVerified).toBe(false);
+    }
+  });
+  it('never upgrades imported lookalike JSON to GitHub or proof authority', async () => {
+    const { github } = await historicalGithubSnapshot();
+    const imported = JSON.parse(JSON.stringify(github));
+    imported.provenance.kind = 'authenticated-github-api';
+    expect(isGithubEvidence(imported)).toBe(false);
+    const result = await collectProofEvidence({ github: imported, ...fixture(), token: 'secret', now: NOW });
+    expect(result.receipt?.head_sha).toBe(HEAD);
+    expect(result.validation.problems).toEqual(['GitHub snapshot provenance is not authenticated in this process']);
+    expect(isCollectedProof(result)).toBe(false);
+    expect(result.currentCodeVerified).toBe(false);
+  });
+  it.each([
+    ['stale', new Date(NOW.getTime() - 15 * 60000 - 1).toISOString()],
+    ['future', new Date(NOW.getTime() + 1).toISOString()],
+    ['missing', undefined],
+  ])('keeps %s snapshot time blocking before proof reads after CI-only refusal', async (_kind, observedAt) => {
+    const { github } = await historicalGithubSnapshot();
+    const f = fixture(), fetchImpl = vi.fn(f.fetchImpl);
+    const result = await collectProofEvidence({ github: { ...github, observedAt }, ...f, fetchImpl, token: 'secret', now: NOW });
+    expect(result.validation.problems).toContain('GitHub snapshot is stale or missing observation time');
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(result.receipt).toBeNull();
+    expect(isCollectedProof(result)).toBe(false);
+  });
+  it('still blocks final proof default-branch drift after CI-only refusal allowed artifact inspection', async () => {
+    const { github } = await historicalGithubSnapshot();
+    const f = fixture(); let mainReads = 0;
+    const fetchImpl: typeof fetch = async (input, init) => {
+      if (new URL(String(input)).pathname === '/repos/o/r/commits/main' && ++mainReads === 2) return Response.json({ sha: '9'.repeat(40) });
+      return f.fetchImpl(input, init);
+    };
+    const result = await collectProofEvidence({ github, ...f, fetchImpl, token: 'secret', now: NOW });
+    expect(mainReads).toBe(2);
+    expect(result.receipt?.head_sha).toBe(HEAD);
+    expect(result.validation.problems).toContain('Trusted default branch changed while collecting proof');
+    expect(result.currentCodeVerified).toBe(false);
+  });
+});
 
 describe('trusted GitHub proof artifact collection', () => {
   afterEach(() => vi.unstubAllGlobals());
@@ -130,12 +304,12 @@ describe('trusted GitHub proof artifact collection', () => {
     f.overrides['/actions/workflows/33/runs'] = { workflow_runs: [{ ...f.run, id: 202 }, f.run] };
     f.overrides['/actions/runs/202/artifacts'] = { artifacts: [{ ...f.artifact(), id: 99, name: `engineering-verification-1-${HEAD}-1048-attempt-2` }] };
     const result = await collectProofEvidence({ github: await githubSnapshot(), ...f, token: 'secret', now: NOW });
-    expect(result.receipt?.contract_id).toBe('EV-FOUNDATION-1048-V2');
+    expect(result.receipt?.contract_id).toBe('EV-FOUNDATION-1048-V3');
     expect(result.validation.problems).toEqual(['GitHub snapshot provenance is not authenticated in this process']);
   });
   it('keeps rerun artifacts separate and cannot reuse an earlier attempt receipt', async () => {
     const f = fixture();
-    const prior = { ...f.artifact(), id: 87, name: `engineering-verification-1-${HEAD}-1048-v2-attempt-1` };
+    const prior = { ...f.artifact(), id: 87, name: `engineering-verification-1-${HEAD}-1048-v3-attempt-1` };
     f.overrides['/actions/runs/101/artifacts'] = { artifacts: [prior, f.artifact()] };
     const current = await collectProofEvidence({ github: await githubSnapshot(), ...f, token: 'secret', now: NOW });
     expect(current.receipt?.head_sha).toBe(HEAD);
@@ -208,7 +382,7 @@ describe('trusted GitHub proof artifact collection', () => {
       (f: ReturnType<typeof fixture>) => { f.receipt.pairs[0].red.execution_exit_code = 1; },
       (f: ReturnType<typeof fixture>) => { f.overrides['/pulls/1'] = { head: { sha: BASE } }; },
       (f: ReturnType<typeof fixture>) => { f.files['src/lib/engineering-verification/runner.mjs'] = 'changed trusted source'; },
-      (f: ReturnType<typeof fixture>) => { delete f.files['docs/project/acceptance/engineering/1048-v2.json']; },
+      (f: ReturnType<typeof fixture>) => { delete f.files['docs/project/acceptance/engineering/1048-v3.json']; },
       (f: ReturnType<typeof fixture>) => { f.overrides['/actions/runs/101'] = { ...f.run, run_attempt: 3 }; },
       (f: ReturnType<typeof fixture>) => { f.overrides['/actions/runs/101/artifacts'] = { artifacts: [] }; },
     ];
@@ -263,6 +437,33 @@ describe('trusted GitHub proof artifact collection', () => {
       expect(result.receipt).toBeNull();
     }
   });
+  it.each([
+    ['literal duplicate', '"schema_version":"1.0",'],
+    ['escaped duplicate', '"\\u0073chema_version":"1.0",'],
+    ['positive nonfinite', '"duration_ms":1e999,'],
+    ['negative nonfinite', '"duration_ms":-1e999,'],
+  ])('rejects %s in the actual downloaded receipt parser', async (_kind, prefix) => {
+    const f = fixture(), raw = '{' + prefix + JSON.stringify(f.receipt).slice(1);
+    const archive = zipSync({ 'receipt.json': strToU8(raw) });
+    f.overrides['/actions/artifacts/88'] = { ...f.artifact(), size_in_bytes: archive.length, digest: 'sha256:' + hash(archive) };
+    const fetchImpl: typeof fetch = async (input, init) => new URL(String(input)).pathname.endsWith('/88/zip') ? new Response(archive) : f.fetchImpl(input, init);
+    const result = await collectProofEvidence({ github: await githubSnapshot(), ...f, fetchImpl, token: 'secret', now: NOW });
+    expect(result.receipt).toBeNull();
+    expect(result.validation.problems.join(' ')).toMatch(/duplicate|finite/i);
+    expect(result.currentCodeVerified).toBe(false);
+  });
+  it.each(['missing-batch', 'duplicate-batch', 'cross-source', 'authority', 'cleanup'])('requires actual complete %s receipt metadata even if pair assertions claim success', async mode => {
+    const f = fixture();
+    if (mode === 'missing-batch') f.receipt.reader_batches.sources[0].batches.pop();
+    if (mode === 'duplicate-batch') f.receipt.reader_batches.sources[0].batches[1] = structuredClone(f.receipt.reader_batches.sources[0].batches[0]);
+    if (mode === 'cross-source') f.receipt.reader_batches.sources[0].sourceRef = HEAD;
+    if (mode === 'authority') Object.assign(f.receipt, { currentCodeVerified: true });
+    if (mode === 'cleanup') Object.assign(f.receipt.reader_batches.sources[0].batches[0].manifest, { cleanupVerified: false });
+    const result = await collectProofEvidence({ github: await githubSnapshot(), ...f, token: 'secret', now: NOW });
+    expect(result.receipt).not.toBeNull();
+    expect(result.validation.problems.filter(problem => !problem.includes('provenance')).join(' ')).toMatch(/batch|authority|native/i);
+    expect(result.currentCodeVerified).toBe(false);
+  });
 });
 
 
@@ -274,7 +475,7 @@ describe('proof explicit revision and canonical native identity', () => {
     expect(result.currentCodeVerified).toBe(false);
     expect(fetchImpl).not.toHaveBeenCalled();
   });
-  it.each(['', 'engineering-contract: 1048-v2', '<!-- engineering-contract: 1048-v2 -->\n<!-- engineering-contract: 1048 -->'])('rejects absent/malformed/mixed markers before artifact reads: %s', async marker => {
+  it.each(['', 'engineering-contract: 1048-v3', '<!-- engineering-contract: 1048-v3 -->\n<!-- engineering-contract: 1048 -->'])('rejects absent/malformed/mixed markers before artifact reads: %s', async marker => {
     const f = fixture(), fetchImpl = vi.fn(f.fetchImpl);
     const result = await collectProofEvidence({ github: await githubSnapshot(marker), ...f, fetchImpl, token: 'secret', now: NOW });
     expect(result.receipt).toBeNull();
@@ -292,7 +493,7 @@ describe('proof explicit revision and canonical native identity', () => {
     const f = fixture();
     const fetchImpl: typeof fetch = async (input, init) => {
       const response = await f.fetchImpl(input, init);
-      if (new URL(String(input)).pathname.endsWith('/1048-v2.json')) return Response.json({ ...await response.json(), sha: 'f'.repeat(40) });
+      if (new URL(String(input)).pathname.endsWith('/1048-v3.json')) return Response.json({ ...await response.json(), sha: 'f'.repeat(40) });
       return response;
     };
     const result = await collectProofEvidence({ github: await githubSnapshot(), ...f, fetchImpl, token: 'secret', now: NOW });
@@ -303,11 +504,11 @@ describe('proof explicit revision and canonical native identity', () => {
     const f = fixture(), contractReads: string[] = [];
     const fetchImpl: typeof fetch = async (input, init) => {
       const path = new URL(String(input)).pathname;
-      if (path.endsWith('/contents/docs/project/acceptance/engineering/1048-v2.json')) contractReads.push(path);
+      if (path.endsWith('/contents/docs/project/acceptance/engineering/1048-v3.json')) contractReads.push(path);
       const response = await f.fetchImpl(input, init);
       if (path.includes('/git/trees/')) {
         const body = await response.json();
-        for (const row of body.tree) if (row.path === '1048-v2.json') row.mode = '120000';
+        for (const row of body.tree) if (row.path === '1048-v3.json') row.mode = '120000';
         return Response.json(body);
       }
       return response;
@@ -322,9 +523,9 @@ describe('proof explicit revision and canonical native identity', () => {
 describe('final same-head proof marker freshness', () => {
   it.each([
     ['same-issue historical revision', '<!-- engineering-contract: 1048 -->'],
-    ['unknown revision', '<!-- engineering-contract: 1048-v3 -->'],
-    ['duplicate marker', '<!-- engineering-contract: 1048-v2 -->\n<!-- engineering-contract: 1048-v2 -->'],
-    ['malformed marker', '<!-- engineering-contract: 1048-v2'],
+    ['unknown revision', '<!-- engineering-contract: 1048-v4 -->'],
+    ['duplicate marker', '<!-- engineering-contract: 1048-v3 -->\n<!-- engineering-contract: 1048-v3 -->'],
+    ['malformed marker', '<!-- engineering-contract: 1048-v3'],
     ['missing marker', ''],
   ])('adds a real validation blocker when the final PR body has %s', async (_kind, body) => {
     const f = fixture();
@@ -354,13 +555,13 @@ describe('CURRENT reviewed workflow source binding', () => {
 });
 
 /** Exact old declaration; all API/source bodies below remain explicitly synthetic and untrusted. */
-function legacyCollectorFixture(sourceRef = HISTORICAL_PROOF_SOURCE, attemptSourceRef = sourceRef) {
-  const f = fixture(), contractRaw = readFileSync(new URL('../../../docs/project/acceptance/engineering/1048.json', import.meta.url), 'utf8');
+function legacyCollectorFixture(sourceRef = HISTORICAL_PROOF_SOURCE, attemptSourceRef = sourceRef, key = '1048') {
+  const f = fixture(), contractRaw = readFileSync(new URL('../../../docs/project/acceptance/engineering/' + key + '.json', import.meta.url), 'utf8');
   const contract = JSON.parse(contractRaw) as typeof f.contract;
-  const contractPath = 'docs/project/acceptance/engineering/1048.json';
+  const contractPath = 'docs/project/acceptance/engineering/' + key + '.json';
   f.files[contractPath] = contractRaw;
   f.run.head_sha = sourceRef;
-  const receipt = { ...f.receipt, contract_key: '1048', contract_id: contract.contract_id, base_sha: contract.base_sha,
+  const receipt = { ...f.receipt, contract_key: key, contract_id: contract.contract_id, base_sha: contract.base_sha,
     contract_sha256: hash(contractRaw), execution_files: contract.execution_files,
     provenance: { ...f.receipt.provenance, workflow_sha: sourceRef },
     pairs: contract.requirements.map(req => {
@@ -372,14 +573,14 @@ function legacyCollectorFixture(sourceRef = HISTORICAL_PROOF_SOURCE, attemptSour
         green: { ...common, head_sha: HEAD, exit_code: 0, status: 'PASSED', failure_kind: 'NONE', assertions: req.assertion_ids.map(id => ({ id, status: 'PASSED' })) } };
     }) };
   const archive = zipSync({ 'receipt.json': strToU8(JSON.stringify(receipt)) });
-  const artifact = { ...f.artifact(), name: `engineering-verification-1-${HEAD}-1048-attempt-2`, digest: 'sha256:' + hash(archive), size_in_bytes: archive.length,
+  const artifact = { ...f.artifact(), name: `engineering-verification-1-${HEAD}-${key}-attempt-2`, digest: 'sha256:' + hash(archive), size_in_bytes: archive.length,
     workflow_run: { ...f.artifact().workflow_run, head_sha: sourceRef } };
   const fetchImpl: typeof fetch = async (input, init) => {
     const path = new URL(String(input)).pathname.replace('/repos/o/r', '');
     if (path === '/actions/artifacts/88/zip') return new Response(archive);
     if (path === '/actions/artifacts/88') return Response.json(artifact);
     if (path === '/actions/runs/101/artifacts') return Response.json({ artifacts: [artifact] });
-    if (path === '/pulls/1') return Response.json({ head: { sha: HEAD }, body: '<!-- engineering-contract: 1048 -->' });
+    if (path === '/pulls/1') return Response.json({ head: { sha: HEAD }, body: '<!-- engineering-contract: ' + key + ' -->' });
     if (path === '/actions/runs/101/attempts/2') return Response.json({ ...f.run, head_sha: attemptSourceRef });
     if (path === '/actions/runs/101/attempts/2/jobs') {
       const body = await (await f.fetchImpl(input, init)).json();
@@ -390,6 +591,21 @@ function legacyCollectorFixture(sourceRef = HISTORICAL_PROOF_SOURCE, attemptSour
   return { contract, contractRaw, fetchImpl };
 }
 describe('permanent HISTORICAL_ONLY origin regressions', () => {
+  it('preserves exact historical v2 bytes and its distinct Baf origin without granting current code authority', async () => {
+    const f = legacyCollectorFixture(HISTORICAL_V2_PROOF_SOURCE, HISTORICAL_V2_PROOF_SOURCE, '1048-v2');
+    expect(hash(f.contractRaw)).toBe('2103495497477cbb2fa6cd55dfb500d769e1bb4a07b9cae800d912238c43c40d');
+    const result = await collectProofEvidence({ github: await githubSnapshot('<!-- engineering-contract: 1048-v2 -->'), ...f, token: 'secret', now: NOW });
+    expect(result.validation.problems).toContain('Proof workflow differs from the revision-authorized frozen workflow digest');
+    expect(result.currentCodeVerified).toBe(false);
+    expect(isCollectedProof(result)).toBe(false);
+  });
+  it('rejects a v2 receipt using the original d28 source allowlist', async () => {
+    const f = legacyCollectorFixture(HISTORICAL_PROOF_SOURCE, HISTORICAL_PROOF_SOURCE, '1048-v2');
+    const result = await collectProofEvidence({ github: await githubSnapshot('<!-- engineering-contract: 1048-v2 -->'), ...f, token: 'secret', now: NOW });
+    expect(result.validation.problems.join(' ')).toContain('Historical proof source commit is not explicitly approved');
+    expect(result.currentCodeVerified).toBe(false);
+  });
+
   it('requires the reviewed legacy workflow digest even when other synthetic source checks also block', async () => {
     const f = legacyCollectorFixture();
     const result = await collectProofEvidence({ github: await githubSnapshot('<!-- engineering-contract: 1048 -->'), ...f, token: 'secret', now: NOW });
