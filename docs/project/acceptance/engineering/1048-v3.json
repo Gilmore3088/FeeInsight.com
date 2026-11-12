@@ -63,7 +63,7 @@
     },
     {
       "path": "src/lib/engineering-verification/ci-domain-collection.mjs",
-      "sha256": "7374285bc11ecc51f6ec5aad1cc7f45bad1ddd22fc5e4533bfcf2c413913f27c"
+      "sha256": "303d49a27db27436e0582784267082cb043e136ced0204266db5e9ce2dfff1d8"
     },
     {
       "path": "src/lib/engineering-verification/ci-domain-pilot.mjs",

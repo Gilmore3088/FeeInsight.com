@@ -10,8 +10,8 @@ const ROOT = new URL('./', import.meta.url);
 const SOURCE = 'src/lib/engineering-verification/github.mjs';
 const OWNER = 'org.feeinsight.verification.owner', KIND = 'org.feeinsight.verification.kind', CASE = 'org.feeinsight.verification.case';
 
-export function syntheticNativeFixture(seed = 'literal-test-fixture', batchId = 'reader-01-32') {
-  const id = sha(seed), token = sha('owner:' + seed);
+export function syntheticNativeFixture(seed = 'literal-test-fixture', batchId = 'reader-01-32', nativeContainerId?: string) {
+  const id = nativeContainerId ?? sha(seed), token = sha('owner:' + seed);
   const uuid = (text: string) => text.slice(0, 8) + '-' + text.slice(8, 12) + '-' + text.slice(12, 16) + '-' + text.slice(16, 20) + '-' + text.slice(20, 32);
   const identity = { containerId: id, name: 'verification-reader-' + uuid(sha('name:' + seed)), owner: uuid(token), batchId };
   const harness = '/synthetic-owned-' + id.slice(0, 16) + '/owned-harness';
@@ -56,6 +56,7 @@ export interface SyntheticBatchOptions {
   sourceRef?: string; sourceSha256?: string; batchId?: string; caseIds?: string[];
   childSha256?: string; collectionSha256?: string; parserSha256?: string;
   sourceBytes?: Buffer; outputBytes?: Buffer; seed?: string;
+  nativeContainerId?: string; stopArgument?: string; stopStdoutBytes?: Buffer;
 }
 
 export function syntheticBatchEvidence(options: SyntheticBatchOptions = {}) {
@@ -68,7 +69,7 @@ export function syntheticBatchEvidence(options: SyntheticBatchOptions = {}) {
   let source = options.sourceBytes ?? readFileSync(new URL('github.mjs', ROOT));
   if (!options.sourceBytes && options.sourceSha256 === '87a9210baf62c30dab3e3b83863a6b9399cafd6159755b239bbc80ffdd0e996d') source = oldLiteralReader(source);
   const sourceSha256 = options.sourceSha256 ?? sha(source), blob = createHash('sha1').update('blob ' + source.length + '\0').update(source).digest('hex');
-  const f = syntheticNativeFixture(options.seed ?? sourceRef + ':' + batchId, batchId);
+  const f = syntheticNativeFixture(options.seed ?? sourceRef + ':' + batchId, batchId, options.nativeContainerId);
   const request = { adapter: 'engineering.ci-domains.v1', cases: caseIds.map(id => ({ id, text: JSON.stringify({ caseId: id }) })) };
   const output = options.outputBytes ?? bytes({ schema_version: 1, cases: caseIds.map(caseId => ({ schemaVersion: 1, caseId,
     observation: { provenanceKind: 'test-transport-untrusted', inProcessEvidenceClaim: false, globalProblems: [], ciStatus: 'BLOCKED',
@@ -101,7 +102,7 @@ export function syntheticBatchEvidence(options: SyntheticBatchOptions = {}) {
     ['inspect-postexit', native, bytes([exited])],
     ['cleanup-owned-discovery', ['docker', 'container', 'ls', '--all', '--no-trunc', '--filter', 'label=' + OWNER + '=' + f.identity.owner, '--filter', 'name=^/' + f.identity.name + '$', '--format', '{{.ID}}'], Buffer.from(f.identity.containerId + '\n')],
     ['cleanup-owner-inspect', native, bytes([exited])],
-    ['stop', ['docker', 'stop', '--time=1', f.identity.containerId], Buffer.from(f.identity.containerId + '\n')],
+    ['stop', ['docker', 'stop', options.stopArgument ?? '--timeout=1', f.identity.containerId], options.stopStdoutBytes ?? Buffer.from(f.identity.containerId + '\n')],
     ['cleanup-remove-owner-inspect', native, bytes([exited])],
     ['remove', ['docker', 'rm', '--force', f.identity.containerId], Buffer.from(f.identity.containerId + '\n')],
     ['absence-name', ['docker', 'container', 'ls', '--all', '--no-trunc', '--filter', 'name=^/' + f.identity.name + '$', '--format', '{{.ID}} {{.Names}}'], Buffer.alloc(0)],

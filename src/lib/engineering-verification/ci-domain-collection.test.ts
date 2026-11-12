@@ -100,6 +100,7 @@ describe('owned cleanup never broadens discovery or deletes a foreign resource',
     expect(discovery).toContain('name=^/' + f.identity.name + '$');
     expect(capture.mock.calls.map(([label]) => label)).toEqual(['cleanup-owned-discovery', 'cleanup-owner-inspect', 'stop',
       'cleanup-remove-owner-inspect', 'remove', 'absence-name', 'absence-owner', 'absence-id']);
+    expect(capture.mock.calls.find(([label]) => label === 'stop')![1]).toEqual(['docker', 'stop', '--timeout=1', f.identity.containerId]);
     for (const [label, argv] of capture.mock.calls) if (['stop', 'remove'].includes(label)) expect(argv.at(-1)).toBe(f.identity.containerId);
   });
   it('recovers a partially-created owned ID without assuming name-only ownership', async () => {
@@ -161,6 +162,27 @@ describe('complete raw records remain data, never authored behavioral verdicts',
     const f = syntheticBatchEvidence({ sourceRef: 'baf057d9e87f7f1c48306eb0ad2ef4e60dea787f', sourceSha256: '87a9210baf62c30dab3e3b83863a6b9399cafd6159755b239bbc80ffdd0e996d' });
     expect(sha(f.artifacts['subject-git-bytes.stdout.bin'])).toBe(f.manifest.source.sha256);
     expect(() => validateBatchManifest(f.manifest)).not.toThrow();
+  });
+  it('refuses the exact retained first-attempt warning bytes despite coherent modern command metadata', () => {
+    // Inert literal bytes from formal-reviewed-01/red-reader-01-32/stop.stdout.bin;
+    // no original receipt or output is changed, repaired, or replayed as acceptance.
+    const containerId = '3e4f042ea36ab0a82255291dd6af45a592329d4eab784eb3bf15c22633aba3be';
+    const retained = Buffer.from('Flag --time has been deprecated, use --timeout instead\n3e4f042ea36ab0a82255291dd6af45a592329d4eab784eb3bf15c22633aba3be\n');
+    expect(retained.length).toBe(120);
+    expect(sha(retained)).toBe('8709c7e38073a32649872882300070fae168d08080473e2e856ae8ab34a1f1f1');
+    const f = syntheticBatchEvidence({ nativeContainerId: containerId, stopStdoutBytes: retained });
+    expect(f.artifacts['stop.stdout.bin']).toEqual(retained);
+    expect(f.manifest.processes.find(row => row.label === 'stop')!.argv).toEqual(['docker', 'stop', '--timeout=1', containerId]);
+    expect(() => validateBatchManifest(f.manifest)).toThrow('Native status or exact-absence output identity mismatch');
+  });
+  it('admits literal --timeout=1 with ID-only stdout and refuses legacy argv without accepting repaired output', () => {
+    const current = syntheticBatchEvidence();
+    expect(current.manifest.processes.find(row => row.label === 'stop')!.argv).toEqual(['docker', 'stop', '--timeout=1', current.manifest.nativeContainer.id]);
+    expect(current.artifacts['stop.stdout.bin']).toEqual(Buffer.from(current.manifest.nativeContainer.id + '\n'));
+    expect(current.artifacts['stop.stdout.bin'].length).toBe(65);
+    expect(() => validateBatchManifest(current.manifest)).not.toThrow();
+    const legacy = syntheticBatchEvidence({ stopArgument: '--time=1' });
+    expect(() => validateBatchManifest(legacy.manifest)).toThrow('Native command identity mismatch');
   });
   it.each([
     ['extra authority', (v: Record<string, unknown>) => { v.currentCodeVerified = true; }],

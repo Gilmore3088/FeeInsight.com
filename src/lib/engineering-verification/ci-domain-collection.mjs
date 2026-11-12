@@ -370,7 +370,7 @@ export async function cleanupOwnedContainer(capture, identity, allocated) {
         const native = oneNative(await run('cleanup-owner-inspect', ['docker', 'container', 'inspect', found], 131072));
         if (!ownedNativeContainer(native, { ...identity, containerId: found })) throw new Error('Cleanup native identity is not owned');
         containerId = found;
-        for (const [label, argv] of [['stop', ['docker', 'stop', '--time=1', containerId]], ['remove', ['docker', 'rm', '--force', containerId]]]) {
+        for (const [label, argv] of [['stop', ['docker', 'stop', '--timeout=1', containerId]], ['remove', ['docker', 'rm', '--force', containerId]]]) {
           try {
             if (label === 'remove') {
               const current = oneNative(await run('cleanup-remove-owner-inspect', ['docker', 'container', 'inspect', containerId], 131072));
@@ -647,7 +647,7 @@ export function validateBatchManifest(value, expected = {}) {
     wait: ['docker', 'wait', id], 'inspect-postexit': ['docker', 'container', 'inspect', id],
     'cleanup-owned-discovery': ['docker', 'container', 'ls', '--all', '--no-trunc', '--filter', 'label=' + OWNER + '=' + owner,
       '--filter', 'name=^/' + name + '$', '--format', '{{.ID}}'],
-    'cleanup-owner-inspect': ['docker', 'container', 'inspect', id], stop: ['docker', 'stop', '--time=1', id],
+    'cleanup-owner-inspect': ['docker', 'container', 'inspect', id], stop: ['docker', 'stop', '--timeout=1', id],
     'cleanup-remove-owner-inspect': ['docker', 'container', 'inspect', id], remove: ['docker', 'rm', '--force', id],
     'absence-name': ['docker', 'container', 'ls', '--all', '--no-trunc', '--filter', 'name=^/' + name + '$', '--format', '{{.ID}} {{.Names}}'],
     'absence-owner': ['docker', 'container', 'ls', '--all', '--no-trunc', '--filter', 'label=' + OWNER + '=' + owner, '--format', '{{.ID}}'],
