@@ -1,10 +1,10 @@
 /**
- * Regenerated in the background (ISR) at most hourly (#1811); publishing, editing or
+ * Regenerated in the background (ISR) at most once a day (#1811); publishing, editing or
  * unpublishing an article from admin revalidates it at once. The page reads no session,
  * cookies or search params. Views are counted from the browser (view-count.tsx), since the
  * server render no longer runs once per reader.
  */
-export const revalidate = 3600;
+export const revalidate = 86400;
 
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";

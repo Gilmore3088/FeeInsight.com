@@ -8,7 +8,7 @@
  * for a free national or district report (`?report=national|district#request`) still reaches
  * the free form, shown only then (free-report-request.tsx).
  *
- * Regenerated in the background (ISR) at most hourly (#1811): the page reads no session and no
+ * Regenerated in the background (ISR) at most once a day (#1811): the page reads no session and no
  * search params. A render whose sample read failed is cached for a minute instead.
  */
 
@@ -27,7 +27,7 @@ import { ReportPreview } from "./report-preview";
 import { SamplePosition } from "./sample-position";
 import { SERIF, sampleExhibit } from "./report-view";
 
-export const revalidate = 3600;
+export const revalidate = 86400;
 
 export const metadata: Metadata = {
   title: `${REPORT_OFFER.name} for Banks and Credit Unions`,

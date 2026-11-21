@@ -5,7 +5,7 @@ import { recordArticleView } from "./actions";
 
 /**
  * Counts one view of the article from the browser. The page is cached (ISR), so the server
- * render runs about once an hour, not once per reader, and cannot count views itself.
+ * render runs about once a day, not once per reader, and cannot count views itself.
  */
 export function ArticleViewCount({ slug }: { slug: string }) {
   useEffect(() => {

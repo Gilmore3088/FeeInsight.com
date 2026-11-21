@@ -3,7 +3,7 @@
  * /fees/city/<state>/<city>?area=metro; the address in the browser keeps the query string, and
  * the canonical stays the city page (generateMetadata is shared).
  */
-export const revalidate = 3600;
+export const revalidate = 86400;
 
 import { CityReport } from "../city-report";
 

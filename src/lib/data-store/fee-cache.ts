@@ -31,7 +31,7 @@ export async function getCachedFeeCategorySummaries(): Promise<FeeCategorySummar
  * Invalidate the cached national summaries. Called after a Hamilton publish writes new
  * rows, so readers see fresh benchmarks without waiting out the ceiling.
  *
- * The other public aggregate reads (public-read-cache.ts) are left to their hour-long
+ * The other public aggregate reads (public-read-cache.ts) are left to their day-long
  * ceiling: the pipeline publishes every few minutes, and expiring them on each publish
  * re-ran a dozen catalog-wide aggregates (the state directory alone takes over a
  * minute on a busy database) as soon as visitors arrived. Paths that remove published
@@ -57,7 +57,7 @@ export function invalidatePublicReadCache(): boolean {
 function revalidateQuietly(tag: string): boolean {
   try {
     // Next 16 requires a cache-life profile. "max" is the broadest bucket, so it
-    // certainly covers these entries' hour-long lifetime.
+    // certainly covers these entries' day-long lifetime.
     revalidateTag(tag, "max");
     return true;
   } catch {

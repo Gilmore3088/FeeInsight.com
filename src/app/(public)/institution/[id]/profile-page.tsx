@@ -426,7 +426,7 @@ export async function InstitutionProfile({ id, focusFeeCategory }: { id: string;
   const medianPlaces = places.length > 1 ? `${places.slice(0, -1).join(", ")} and ${places[places.length - 1]}` : places.join("");
   const scheduleAll = Boolean(focusFeeCategory) || sparse;
 
-  // A render with a failed read is cached for a minute, not an hour, so a database blip never
+  // A render with a failed read is cached for a minute, not a day, so a database blip never
   // pins a profile with missing sections (#1572).
   if (budget.failed()) await shortenPageLife();
 

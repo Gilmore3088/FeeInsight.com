@@ -229,7 +229,7 @@ export async function InstitutionsDirectory({ params }: { params: DirectoryParam
     results.rows.length > 0
       ? await budget.optional(getInstitutionHeadlineCoverageCached(results.rows.map((row) => row.id)), "headline coverage", null)
       : null;
-  // A render with a failed optional read is cached for a minute, not an hour (#1572). An empty
+  // A render with a failed optional read is cached for a minute, not a day (#1572). An empty
   // opening list is treated the same: the largest institutions are never really none.
   if (budget.failed() || !stats.complete || (!isSearch && results.rows.length === 0)) await shortenPageLife();
 

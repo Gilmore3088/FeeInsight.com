@@ -1,10 +1,10 @@
 /**
- * Regenerated in the background (ISR) at most hourly, and sooner when a takedown
+ * Regenerated in the background (ISR) at most once a day, and sooner when a takedown
  * invalidates the public read cache its reads carry (#1811). The page reads no session,
  * cookies or search params; the header's signed-in parts are client islands. A render
  * with a failed read is cached for a minute instead (`shortenPageLife`, as the homepage).
  */
-export const revalidate = 3600;
+export const revalidate = 86400;
 
 import type { Metadata } from "next";
 import Link from "next/link";
@@ -95,7 +95,7 @@ export default async function ResearchHubPage() {
   // come from one shared snapshot, so they match the homepage and fee index. The page
   // prerenders at build time, so every read is optional with an honest fallback under one
   // deadline (findings/2026-10-19-required-read-fails-build.md): a slow or failed read hides
-  // or labels its part as unavailable, and that render is cached for a minute, not an hour.
+  // or labels its part as unavailable, and that render is cached for a minute, not a day.
   const budget = createReadBudget(RESEARCH_READ_BUDGET_MS, "Research hub");
   const [{ summary, categories: summaries }, coverage, articles, nationalIndex, districtIndexes, sampleLive, indicators] = await Promise.all([
     budget.optional(getPublicSnapshot(), "public snapshot", UNAVAILABLE_SNAPSHOT),

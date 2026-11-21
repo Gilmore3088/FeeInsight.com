@@ -57,7 +57,7 @@ export async function NationalReport({ user }: { user: User | null }) {
     ),
   ]);
 
-  // A render with a failed read is cached for a minute, not an hour, so the next render reads it again.
+  // A render with a failed read is cached for a minute, not a day, so the next render reads it again.
   if (overdraftRead.failed || cpiRead.failed || !summary.complete) await shortenPageLife();
   const overdraftDetail = overdraftRead.value;
   const cpi = cpiRead.value;

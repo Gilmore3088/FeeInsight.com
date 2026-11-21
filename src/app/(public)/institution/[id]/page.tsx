@@ -2,10 +2,10 @@ import type { Metadata } from "next";
 import { InstitutionProfile, institutionProfileMetadata } from "./profile-page";
 
 /**
- * Cached (ISR) and generated on demand: each profile renders at most once an hour, not on
+ * Cached (ISR) and generated on demand: each profile renders at most once a day, not on
  * every request (#1811). `?fee=` requests are rewritten by the proxy to ./fee/[fee].
  */
-export const revalidate = 3600;
+export const revalidate = 86400;
 export const dynamicParams = true;
 
 export function generateStaticParams(): { id: string }[] {

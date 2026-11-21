@@ -71,7 +71,7 @@ export async function CityReport({ state, city, area }: { state: string; city: s
 
   // A failed market read throws to the error boundary rather than answering 404: a cached
   // 404 would hide the city for an hour. A failed state read hides the state comparison and
-  // keeps the page for a minute, not an hour.
+  // keeps the page for a minute, not a day.
   const [market, stateRead, nationalIndex] = await Promise.all([
     getCityMarketCached(cityName, stateCode, area),
     softRead(getStateFeeIndexesCached(stateCode), null),

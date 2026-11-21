@@ -1,12 +1,12 @@
 /**
- * Regenerated in the background (ISR) at most hourly, and sooner when a takedown
+ * Regenerated in the background (ISR) at most once a day, and sooner when a takedown
  * invalidates the public read cache its reads carry (#1811). The page reads no session,
  * cookies or search params; the header's signed-in parts are client islands. A render
  * with a failed read is cached for a minute instead (`shortenPageLife`, as the homepage).
  * During `next build` its reads get 15 s (`readOnRequest`) before it renders as such a render:
  * a busy database held its build-time reads past Next's 60-second page limit (#1048).
  */
-export const revalidate = 3600;
+export const revalidate = 86400;
 
 import type { Metadata } from "next";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";

@@ -19,7 +19,7 @@ import { TrackLink } from "@/components/track-link";
 import { PAGE_CRUMBS, PAGE_H1, PAGE_HEADER } from "@/components/public/page-header";
 import { DEMO_REQUEST_NAV, PRO_PLANS_NAV } from "@/components/nav-items";
 
-export const revalidate = 3600;
+export const revalidate = 86400;
 
 // Static params: return empty — pages generated on first visit, cached via ISR
 export async function generateStaticParams() {

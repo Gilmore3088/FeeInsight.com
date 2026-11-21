@@ -112,7 +112,7 @@ describe("public health response", () => {
     }
     expect(callsFor("SELECT 1")).toHaveLength(2);
     expect(callsFor("COUNT(*)")).toHaveLength(1);
-    expect(mocks.registrations.find(({ key }) => key.includes("health-live-fee-count"))?.options).toEqual({ revalidate: 3600, tags: ["public-fee-reads"] });
+    expect(mocks.registrations.find(({ key }) => key.includes("health-live-fee-count"))?.options).toEqual({ revalidate: 86400, tags: ["public-fee-reads"] });
     expect(mocks.rateLimited).toHaveBeenCalledWith(expect.objectContaining({ routeId: "api.health", authRequirement: "public", rateLimitBucket: "health" }), "fixture");
     expect(mocks.audit).toHaveBeenCalledTimes(2);
     expect(mocks.audit).toHaveBeenLastCalledWith(expect.objectContaining({ statusCode: 200, outcome: "success" }));
