@@ -3,6 +3,18 @@
 Newest first. Each entry: date, what was decided, who, why, and what it means for the work.
 Seeded 2026-10-05 from the project's working memory; earlier decisions were not recorded here.
 
+## 2026-11-21
+
+**Public pages refresh at most once a day.** James, 2026-11-21 20:25 UTC, on a decision card in the
+Vercel cost thread ("How quickly should newly published fees appear on public pages?"), chose
+"Within 24 hours" over 6 hours and keeping hourly. The cached public pages (`export const revalidate`)
+and the public read cache ceiling (`PUBLIC_READ_CEILING_SECONDS`) move from one hour to 86,400
+seconds, so a newly published fee can take up to a day to show on public pages. Takedowns and
+corrections still clear the public cache at once (`invalidatePublicReadCache`). Reason: each expiry
+re-rendered and re-wrote every visited page to Vercel's cache, a driver of the ~$100/week bill;
+takedowns cleared the cache in only 16 of the 168 hours to Nov 21, so the hourly ceiling was the
+main rewrite cadence.
+
 ## 2026-11-07
 
 **Build a blind second reader into the pipeline.** James, 2026-11-07 04:30 UTC, answering the

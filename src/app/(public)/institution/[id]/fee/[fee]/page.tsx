@@ -8,7 +8,7 @@ import { focusCategoryFrom, InstitutionProfile, institutionProfileMetadata } fro
  * plain profile (#1811); the address in the browser keeps `?fee=`, and the canonical is the
  * plain profile. Only taxonomy categories are rewritten; any other value here is a 404.
  */
-export const revalidate = 21600;
+export const revalidate = 86400;
 export const dynamicParams = true;
 
 export function generateStaticParams(): { fee: string }[] {

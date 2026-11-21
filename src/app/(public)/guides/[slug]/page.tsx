@@ -13,7 +13,7 @@
  * summaries, and publishing a guide from admin revalidates this path. The interval below
  * is a backstop, not the mechanism.
  */
-export const revalidate = 21600;
+export const revalidate = 86400;
 export const dynamicParams = true;
 
 import type { Metadata } from "next";
