@@ -130,7 +130,7 @@ export async function DistrictReport({ id, user }: { id: string; user: User | nu
   const showFullDistrict = canAccessFullDistrict(user);
 
   // Every read is served from the public cache between publishes. A render where one of
-  // them failed is cached for a minute, not an hour, so the next render reads it again.
+  // them failed is cached for a minute, not a day, so the next render reads it again.
   const [indexesRead, nationalIndex, beigeHeadline, beigeSections, summary, hubRead] = await Promise.all([
     softRead(getDistrictFeeIndexesCached(districtId), EMPTY_INDEXES),
     getPublicNationalIndex(),

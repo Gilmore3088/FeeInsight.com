@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 /**
- * /guides is cached for an hour. When the guides read fails it serves the seed list, and that
+ * /guides is cached for a day. When the guides read fails it serves the seed list, and that
  * render must be cached for a minute (shortenPageLife), not the hour, so the next render reads
  * the database again (#1811).
  */

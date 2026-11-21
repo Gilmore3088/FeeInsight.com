@@ -57,7 +57,7 @@ export function invalidatePublicReadCache(): boolean {
 function revalidateQuietly(tag: string): boolean {
   try {
     // Next 16 requires a cache-life profile. "max" is the broadest bucket, so it
-    // certainly covers these entries' hour-long lifetime.
+    // certainly covers these entries' day-long lifetime.
     revalidateTag(tag, "max");
     return true;
   } catch {

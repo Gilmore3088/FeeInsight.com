@@ -133,7 +133,7 @@ describe("institution page with a database that never answers (#1919)", () => {
   it("renders straight away when every read answers", async () => {
     const node = await InstitutionProfilePage(props(String(id)));
     expect(node).toBeTruthy();
-    // A clean render keeps the page's hour in the cache.
+    // A clean render keeps the page's day in the cache.
     expect(shortenPageLife).not.toHaveBeenCalled();
   });
 
@@ -162,7 +162,7 @@ describe("institution page with a database that never answers (#1919)", () => {
     const node = await page;
     const ids = collect(node).map((element) => (element.props as { id?: string }).id);
     expect(ids).not.toContain("record-heading");
-    // A render with a section missing is cached for a minute, not an hour (#1572).
+    // A render with a section missing is cached for a minute, not a day (#1572).
     expect(shortenPageLife).toHaveBeenCalled();
   });
 

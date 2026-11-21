@@ -146,7 +146,7 @@ export async function StateReport({ code, user }: { code: string; user: User | n
   const showFullDistrict = canAccessFullDistrict(user);
 
   // Every read is served from the public cache between publishes. A render where one of
-  // them failed is cached for a minute, not an hour, so the next render reads it again.
+  // them failed is cached for a minute, not a day, so the next render reads it again.
   const district = STATE_TO_DISTRICT[stateCode];
   const [summary, indexesRead, nationalIndex, districtRead, sampleRead, marketRead, hubRead, beigeHeadline, beigeSections, coverageSoft, peerSetsRead] = await Promise.all([
     getPublicStatsSummary(),
