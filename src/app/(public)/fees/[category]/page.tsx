@@ -24,8 +24,8 @@ import { getFeeCategoryDetailCached, getNationalRateStatsCached } from "@/lib/da
 import { formatRatePercent, percentFeeAllowed } from "@/lib/percent-fees";
 import { benchmarkBasis, getPublicFeeTypes, getPublicSnapshot } from "@/lib/public-stats";
 import { MIN_INSTITUTIONS_FOR_MEDIAN } from "@/lib/data-store/maturity";
-import { summarizeFees, summarizeFeesBy } from "@/lib/data-store/fee-stats";
-import type { FeeCategorySummary, FeeInstance } from "@/lib/data-store/fees";
+import type { CategoryFeeSummary } from "@/lib/data-store/category-fee-summary";
+import type { FeeCategorySummary } from "@/lib/data-store/fees";
 import { sampleReportAvailable } from "@/lib/custom-report/sample-report";
 import { SAMPLE_REPORT_HREF } from "@/app/landing-shared";
 import {
@@ -61,11 +61,9 @@ const STATES_SHOWN = 12;
  * same institutions. The shared snapshot is a separate cache entry that can be built at
  * another moment; it still supplies what this read lacks (the $0 count, the audience mark).
  */
-function pageSummary(category: string, fees: FeeInstance[], snapshotRow: FeeCategorySummary | null): FeeCategorySummary | null {
-  const rows = fees.filter((f) => f.source_document_id !== null).map((f) => ({ ...f, fee_category: category }));
-  if (rows.length === 0) return snapshotRow;
-  const all = summarizeFees(rows);
-  const byCharter = summarizeFeesBy(rows, (r) => (r.charter_type === "bank" || r.charter_type === "credit_union" ? r.charter_type : null));
+function pageSummary(category: string, computed: CategoryFeeSummary | null, snapshotRow: FeeCategorySummary | null): FeeCategorySummary | null {
+  if (!computed) return snapshotRow;
+  const { all } = computed;
   return {
     fee_category: category,
     institution_count: all.institution_count,
@@ -79,8 +77,8 @@ function pageSummary(category: string, fees: FeeInstance[], snapshotRow: FeeCate
     p25_amount: all.p25_amount,
     p75_amount: all.p75_amount,
     zero_count: snapshotRow?.zero_count ?? 0,
-    bank_median_amount: byCharter.get("bank")?.median_amount ?? null,
-    cu_median_amount: byCharter.get("credit_union")?.median_amount ?? null,
+    bank_median_amount: computed.bank_median_amount,
+    cu_median_amount: computed.cu_median_amount,
     unstated_audience_institution_count: snapshotRow?.unstated_audience_institution_count ?? 0,
   };
 }
@@ -149,7 +147,7 @@ export default async function FeeCategoryPage({ params }: PageProps) {
 
   // Same statistics contract as the fee index, research hub and homepage (one value per
   // institution); every figure on this page is read from the one category read (pageSummary).
-  const national = pageSummary(category, detail.fees, snapshot.categories.find((c) => c.fee_category === category) ?? null);
+  const national = pageSummary(category, detail.fee_summary, snapshot.categories.find((c) => c.fee_category === category) ?? null);
   const band = nationalBand(national);
   const refreshedOn = snapshot.summary.refreshedOn;
   const institutionValues = detail.institution_values ?? [];

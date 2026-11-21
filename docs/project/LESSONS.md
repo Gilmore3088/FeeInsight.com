@@ -670,6 +670,8 @@ Every finding in `findings/`, grouped by where the problem was, newest first in 
 - 2026-10-09 — When an agent writes a link into a draft, check that the route exists on main. — [finding](findings/2026-10-09-outreach-snapshot-links-404.md) — Guard: `src/lib/agents/growth/norman.test.ts`
 - 2026-10-09 — An outgoing side effect needs its own record in Postgres; don't rely on a provider's read API that needs broader credentials than sending. — [finding](findings/2026-10-09-no-sent-email-log.md) — Guard: `src/lib/email/resend.test.ts` (+1 more)
 
+- 2026-11-21 — A cached read is only cached if its entry fits under Next's 2 MB limit: the /fees category detail (safe deposit box ~4.5 MB, seven more categories over 2 MB) and the explorer rows (safe deposit box ~3.1 MB) were refused and re-read on every request; the detail entry now carries the page's computed figures and the explorer rows are stored packed. — [finding](findings/2026-11-21-oversized-public-cache-entries.md) — Guard: `src/lib/data-store/index-rows-pack.test.ts`, `src/lib/data-store/category-fee-summary.test.ts`
+
 ### CI, tests, tooling and PR workflow
 
 - 2026-11-08 — Route financial and access owners from actual source responsibility; select a frozen explicit revision and preserve historical proof separately from current authority. — [finding](findings/2026-11-08-financial-risk-contract-revisions.md) — Guards: `src/lib/engineering-verification/financial-routing.test.ts`, `src/lib/engineering-verification/contract-registry.test.ts`.

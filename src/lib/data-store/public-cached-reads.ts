@@ -8,7 +8,9 @@ import { getStateLocalEconomy } from "./local-economy";
 import { getDataFreshness, getFeesByInstitution, getPublicInstitutionById, getPublicStats, getStats } from "./core";
 import { ATM_EXAMPLE, buildAtmTwoFeeExample } from "@/lib/guides/atm-example";
 import { getDistrictMetrics } from "./dashboard";
-import { getCheapestAndMostExpensive, getFeeCategoryDetail, getIndexRows } from "./fees";
+import { getCheapestAndMostExpensive, getFeeCategoryDetail, getIndexRows, type IndexRow } from "./fees";
+import { categoryFeeSummary } from "./category-fee-summary";
+import { packIndexRows, unpackIndexRows } from "./index-rows-pack";
 import { getFeeEvidence } from "./fee-evidence";
 import { getDailyCapScope, getOverdraftComplaintThemes } from "./overdraft-policies";
 import { getAtmNetworkMentions } from "./atm-networks";
@@ -106,14 +108,36 @@ export const getCheckExampleInputsCached = cachedPublicRead("check-example-input
 export const getStatsCached = cachedPublicRead("collection-stats", getStats);
 // A failed read returns zeros; never cache those.
 export const getPublicStatsCached = cachedPublicRead("public-stats", getPublicStats, (s) => s.total_observations === 0);
+/**
+ * A category's detail for public pages: breakdowns, change events and one value per
+ * institution, with the page's national figures computed from the rows (categoryFeeSummary)
+ * in place of the rows themselves. With every row the entry passed Next's 2 MB cache limit
+ * for the largest categories (safe deposit box about 6 MB, overdraft over 2 MB on Nov 21
+ * 2026), so it was never stored and every /fees/[category] request re-read the catalog.
+ */
+// v2: entries carry institution_points; older entries without them are not reused.
+// v3: fee rows replaced by fee_summary and fee_count.
 export const getFeeCategoryDetailCached = cachedPublicRead(
-  // v2: entries carry institution_points; older entries without them are not reused.
-  "fee-category-detail-v2",
-  getFeeCategoryDetail,
-  (detail) => detail.fees.length === 0,
+  "fee-category-detail-v3",
+  async (category: string) => {
+    const { fees, ...detail } = await getFeeCategoryDetail(category);
+    return { ...detail, fee_count: fees.length, fee_summary: categoryFeeSummary(category, fees) };
+  },
+  (detail) => detail.fee_count === 0,
 );
-// The Bank Fee Index explorer's rows: numbers only, so the largest category stays well under 2 MB.
-export const getIndexRowsCached = cachedPublicRead("index-rows-v2", getIndexRows);
+/**
+ * The Bank Fee Index explorer's rows, stored packed (index-rows-pack.ts): as objects, safe
+ * deposit box's rows passed the 2 MB cache limit and were re-read on every request.
+ */
+// v3: packed entries.
+const getPackedIndexRowsCached = cachedPublicRead(
+  "index-rows-v3",
+  async (category: string) => packIndexRows(await getIndexRows(category)),
+  (packed) => packed.rows.length === 0,
+);
+export async function getIndexRowsCached(category: string): Promise<IndexRow[]> {
+  return unpackIndexRows(await getPackedIndexRowsCached(category));
+}
 /** Fee evidence for one page of listed rows, as entries (a Map does not survive the cache). */
 export const getFeeEvidenceEntriesCached = cachedPublicRead("fee-evidence-v2", async (ids: number[]) => [
   ...(await getFeeEvidence(ids)).entries(),
