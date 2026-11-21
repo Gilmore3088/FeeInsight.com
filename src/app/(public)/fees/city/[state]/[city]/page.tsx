@@ -1,10 +1,10 @@
 /**
- * Regenerated in the background (ISR) at most hourly, and sooner when a takedown invalidates
+ * Regenerated in the background (ISR) at most every six hours, and sooner when a takedown invalidates
  * the public read cache its reads carry (#1811). The page reads no session, cookies or search
  * params: ?area=metro is served by metro/page.tsx (the proxy rewrites it), and the table's
  * ?fee= and ?sort= are read in the browser.
  */
-export const revalidate = 3600;
+export const revalidate = 21600;
 
 import { CityReport } from "./city-report";
 

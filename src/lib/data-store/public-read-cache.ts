@@ -22,7 +22,13 @@ import { createLanes, recomputeLaneCount } from "./recompute-lanes";
 
 export const PUBLIC_READ_CACHE_TAG = "public-fee-reads";
 
-const PUBLIC_READ_CEILING_SECONDS = 3600;
+/**
+ * Six hours (was one). Publishes leave these entries to the ceiling, and every page built from them
+ * (the public pages' own `revalidate`, kept equal) is re-rendered and re-written to Vercel's cache
+ * each time it expires, so the hourly ceiling re-wrote every visited page at least hourly. Takedowns
+ * and corrections still clear the tag at once (invalidatePublicReadCache).
+ */
+const PUBLIC_READ_CEILING_SECONDS = 21600;
 
 class UncacheableResult<R> extends Error {
   constructor(readonly value: R) {

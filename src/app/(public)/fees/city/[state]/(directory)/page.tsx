@@ -1,10 +1,10 @@
 /**
- * Regenerated in the background (ISR) at most hourly, and sooner when a takedown invalidates
+ * Regenerated in the background (ISR) at most every six hours, and sooner when a takedown invalidates
  * the public read cache its read carries (#1811). The page reads no session, cookies or search
  * params; the explorer reads `?city=` in the browser. A render whose city list came back empty
  * is cached for a minute instead (`shortenPageLife`, as the homepage), so a failed read is retried.
  */
-export const revalidate = 3600;
+export const revalidate = 21600;
 
 import type { Metadata } from "next";
 import Link from "next/link";

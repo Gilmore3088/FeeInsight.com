@@ -1,11 +1,11 @@
 /**
- * Regenerated in the background (ISR) at most hourly, and sooner when a takedown invalidates
+ * Regenerated in the background (ISR) at most every six hours, and sooner when a takedown invalidates
  * the public read cache its reads carry. During `next build` its reads get 15 s
  * (`readOnRequest`): a busy database held its build-time reads past Next's 60-second page limit
  * (#1048). A render with a failed read, a late build read included, is cached for a minute
  * (`shortenPageLife`), so the first request after a deploy brings back the live figures.
  */
-export const revalidate = 3600;
+export const revalidate = 21600;
 
 import type { Metadata } from "next";
 import {

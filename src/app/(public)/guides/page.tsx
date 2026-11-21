@@ -1,5 +1,5 @@
 /**
- * Regenerated in the background (ISR) at most hourly, like the guide pages themselves
+ * Regenerated in the background (ISR) at most every six hours, like the guide pages themselves
  * (#1811). Publishing a guide from admin revalidates this path, and a takedown
  * invalidates the public read cache the medians come from.
  *
@@ -8,10 +8,10 @@
  * blip could not bake an index with no medians for the whole interval. The homepage's
  * guard covers that now (#1572): the snapshot is never cached while a read failed, and a
  * render with a failed read (the snapshot, or the guides read that falls back to the seed
- * list) is cached for one minute instead of an hour (`shortenPageLife`), so the next render
+ * list) is cached for one minute instead of six hours (`shortenPageLife`), so the next render
  * reads the database again.
  */
-export const revalidate = 3600;
+export const revalidate = 21600;
 
 import type { Metadata } from "next";
 import { ProLock } from "@/components/public/pro-lock";
@@ -215,7 +215,7 @@ export default async function GuidesIndexPage() {
     getPublicSnapshot(),
     loadGuidesWithSource(),
   ]);
-  // A render with a failed snapshot or guides read is cached for a minute, not an hour (see the
+  // A render with a failed snapshot or guides read is cached for a minute, not six hours (see the
   // note at the top); a failed guides read serves the seed list (#1811).
   if (!summary.complete || allSummaries.length === 0 || guideRead.readFailed) await shortenPageLife();
   const consumerGuides = guideRead.guides.filter((g) => g.audience === "consumer");
