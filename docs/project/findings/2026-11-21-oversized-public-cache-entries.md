@@ -22,5 +22,7 @@ for the empty rule. The explorer rows are stored packed (`index-rows-pack.ts`: e
 rows as number tuples) and unpacked to the identical rows on read. Tests prove both give back what
 the page computed before and keep an 8,150-row category under 1 MB.
 
+**Guard:** `src/lib/data-store/index-rows-pack.test.ts` (an 8,150-row category packs under 1 MB and round-trips exactly), `src/lib/data-store/category-fee-summary.test.ts` (the cached figures equal the page's previous computation).
+
 **Not proven:** the CPU share this explains, until the Vercel logs show the 2 MB message has
 stopped and function duration for `/fees` falls after deploy.
