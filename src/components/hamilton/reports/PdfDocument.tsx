@@ -410,17 +410,17 @@ function PdfExhibit({ exhibit, number }: { exhibit: ReportExhibit; number: numbe
     index === exhibit.columns.length - 1 && exhibit.id === "local_market" ? [base, styles.wideCell]
       : index > 0 && index < exhibit.columns.length - 1 && kinds[index] === "text" ? [base, styles.proseCell] : [base];
   return (
-    <View style={styles.exhibit} wrap={false}>
-      <Text style={styles.exhibitNumber}>Exhibit {number}</Text>
+    <View style={styles.exhibit}>
+      <Text style={styles.exhibitNumber} minPresenceAhead={72}>Exhibit {number}</Text>
       <Text style={styles.exhibitTitle}>{exhibit.title}</Text>
       <Text style={styles.exhibitSubtitle}>{exhibit.subtitle}</Text>
-      <View style={styles.tableHeader}>
+      <View style={styles.tableHeader} wrap={false} minPresenceAhead={24}>
         {exhibit.columns.map((column, i) => (
           <Text key={i} style={cellStyle(i, styles.tableHeadCell)}>{column}</Text>
         ))}
       </View>
       {exhibit.rows.map((row, r) => (
-        <View key={r} style={styles.tableRow}>
+        <View key={r} style={styles.tableRow} wrap={false}>
           {row.map((cell, c) => (
             <Text key={c} style={cellStyle(c, styles.tableCell)}>{cell}</Text>
           ))}
