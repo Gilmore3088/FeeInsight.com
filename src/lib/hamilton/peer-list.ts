@@ -212,7 +212,12 @@ export function validatePeerListContinuation(value: unknown): PeerListContinuati
 }
 
 export function peerListReferencesUnchanged(rows: PeerListRow[], prior: PeerListContinuation): boolean {
-  return JSON.stringify(peerListRowReferences(rows)) === JSON.stringify(prior.originRows);
+  const referenceKeys = ["institutionId", "recordId", "reportDate", "source"] as const;
+  return rows.length === prior.originRows.length && rows.every((row, index) => {
+    const reference = prior.originRows[index];
+    return Object.keys(reference).length === referenceKeys.length &&
+      referenceKeys.every(key => Object.hasOwn(reference, key) && row[key] === reference[key]);
+  });
 }
 
 /** Recognized list-relative questions must not fall through to a different fee group. */

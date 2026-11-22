@@ -19,7 +19,7 @@ import { HAMILTON_VERSION } from "@/lib/hamilton/voice";
 import { withConversationContext } from "@/lib/hamilton/conversation-context";
 import {
   clarificationInputError, composerMode, conversationReducer, currentTurn, decisionForQuestion, earlierTurns, emptyConversation,
-  resetConversation, serializeConversationState, unreadableReplyMessage,
+  isConversationId, resetConversation, serializeConversationState, unreadableReplyMessage,
   type ActivePeerSet, type ConversationAction, type HamiltonConversationState,
 } from "@/lib/hamilton/conversation-state";
 import { matchFeeCategory } from "@/lib/hamilton/workspace/ask";
@@ -49,6 +49,32 @@ import { proseFeeName } from "@/lib/hamilton/workspace/names";
 import { applyNarrativeBinding, boundFallbackLead, readNarrativeBinding, readSentNarrativeBinding, withoutOmitted } from "@/lib/hamilton/written-answer-binding";
 
 type MessagePart = { type: string; text?: string; output?: unknown };
+
+type ConversationSave = { snapshot: HamiltonConversationState; localRevision: number };
+type ConversationSaveQueue = {
+  epoch: number;
+  expectedRoute: string | null;
+  id: string | null;
+  acknowledgedRevision: number;
+  wireRevision: number;
+  pending: ConversationSave | null;
+  inFlightRevision: number | null;
+  running: Promise<void> | null;
+};
+
+function conversationRoute(): string | null {
+  return typeof window === "undefined" ? null : `${window.location.pathname}${window.location.search}`;
+}
+
+function conversationSaveQueue(epoch: number, state: HamiltonConversationState): ConversationSaveQueue {
+  return { epoch, expectedRoute: conversationRoute(), id: state.conversationId, acknowledgedRevision: state.revision, wireRevision: state.revision,
+    pending: null, inFlightRevision: null, running: null };
+}
+
+// Event handlers can enqueue a newer snapshot while an allocation or record is awaited.
+function pendingConversationSave(queue: ConversationSaveQueue): ConversationSave | null {
+  return queue.pending;
+}
 
 /** The reply's text parts as one text, one space between sentences from separate parts. */
 function extractTextFromMessage(message: { parts?: Array<{ type: string; text?: string }> }): string {
@@ -413,6 +439,9 @@ function AnalyzeConversationWorkspace({
   const convRef = useRef(conv);
   // The revision the screen opened at; opening a conversation or saved answer stores nothing.
   const openedRevision = useRef(conv.revision);
+  const conversationEpoch = useRef(0);
+  const conversationSaves = useRef(conversationSaveQueue(0, conv));
+  const [conversationSaveStatus, setConversationSaveStatus] = useState<"idle" | "saving" | "failed">("idle");
   const apply = useCallback((action: ConversationAction) => {
     const next = conversationReducer(convRef.current, action);
     if (next !== convRef.current) {
@@ -420,7 +449,7 @@ function AnalyzeConversationWorkspace({
       setConv(next);
     }
     return next;
-  }, []);
+  }, [setConv]);
   // The composer's reply to Hamilton's pending question, sent once per seq.
   const [clarificationReply, setClarificationReply] = useState<{ value: string; seq: number } | null>(null);
   const [composerError, setComposerError] = useState<string | null>(null);
@@ -522,8 +551,11 @@ function AnalyzeConversationWorkspace({
   // Unmounted conversations cannot send a late fallback or update a newer view.
   useEffect(() => {
     active.current = true;
+    conversationSaves.current.expectedRoute ??= conversationRoute();
     return () => {
       active.current = false;
+      // A later mount/setup cannot make an earlier asynchronous save live again.
+      conversationSaves.current = { ...conversationSaves.current, pending: null, inFlightRevision: null, running: null };
       stop();
     };
   }, [stop]);
@@ -557,6 +589,112 @@ function AnalyzeConversationWorkspace({
     [sendMessage, readOnlyReason],
   );
 
+  // Allocation stays private until an immutable snapshot is acknowledged. One writer drains
+  // this epoch's newest pending state; retries never regenerate an answer or allocate another ID.
+  const persistConversation = useCallback(async (): Promise<string | null> => {
+    if (!active.current || !startConversationAction || !recordConversationAction || readOnlyReason) return null;
+    const queue = conversationSaves.current;
+    const live = () => active.current && conversationSaves.current === queue && queue.epoch === conversationEpoch.current
+      && queue.expectedRoute !== null && queue.expectedRoute === conversationRoute();
+    if (!live()) return null;
+    const state = convRef.current;
+    if (currentTurn(state)?.status !== "answered") return null;
+    const wantedRevision = state.revision;
+    if (wantedRevision <= queue.acknowledgedRevision) return state.conversationId;
+    let snapshot: HamiltonConversationState;
+    try {
+      // serializeConversationState bounds turns but deliberately shares nested immutable values.
+      // Copy them here so an in-flight wire payload cannot change with a later answer.
+      snapshot = JSON.parse(JSON.stringify(serializeConversationState(state))) as HamiltonConversationState;
+    } catch {
+      setConversationSaveStatus("failed");
+      return null;
+    }
+    if (queue.inFlightRevision !== wantedRevision && (!queue.pending || queue.pending.localRevision < wantedRevision)) {
+      queue.pending = { snapshot, localRevision: wantedRevision };
+    }
+    setConversationSaveStatus("saving");
+    while (live() && (queue.running || queue.pending)) {
+      if (!queue.running) {
+        const running = (async () => {
+          while (live() && queue.pending) {
+            let intended = queue.pending;
+            queue.pending = null;
+            queue.inFlightRevision = intended.localRevision;
+            if (!queue.id) {
+              const allocated = await startConversationAction().catch(() => null);
+              if (!live()) return;
+              if (!allocated || !("id" in allocated) || !isConversationId(allocated.id)) {
+                queue.pending = null;
+                setConversationSaveStatus("failed");
+                return;
+              }
+              queue.id = allocated.id;
+              // Changes while allocation was pending need only the latest captured snapshot.
+              const coalesced = pendingConversationSave(queue);
+              if (coalesced && coalesced.localRevision > intended.localRevision) {
+                intended = coalesced;
+                queue.pending = null;
+                queue.inFlightRevision = intended.localRevision;
+              }
+            }
+            // A false acknowledgement may follow a committed insert and failed metadata update.
+            // A retry uses a newer wire revision, independently of the screen's content revision.
+            const wireRevision = Math.max(intended.localRevision, queue.wireRevision + 1);
+            if (!Number.isInteger(wireRevision) || wireRevision > 1_000_000) {
+              queue.pending = null;
+              setConversationSaveStatus("failed");
+              return;
+            }
+            queue.wireRevision = wireRevision;
+            const result = await recordConversationAction(queue.id, { ...intended.snapshot,
+              conversationId: queue.id, revision: wireRevision }).catch(() => null);
+            if (!live()) return;
+            if (result?.ok) {
+              const before = convRef.current;
+              const writtenIsCurrent = before.revision === intended.localRevision;
+              const published = apply({ type: "stored", conversationId: queue.id });
+              queue.acknowledgedRevision = Math.max(queue.acknowledgedRevision,
+                writtenIsCurrent ? published.revision : intended.localRevision);
+              // `stored` bumps the reducer revision. Absorb only that metadata bump, never a
+              // newer answer, into its pending snapshot or acknowledged local revision.
+              const pending = pendingConversationSave(queue);
+              if (pending?.localRevision === before.revision && published !== before) {
+                queue.pending = { localRevision: published.revision,
+                  snapshot: { ...pending.snapshot, conversationId: queue.id, revision: published.revision } };
+              }
+              if (queue.pending && queue.pending.localRevision <= queue.acknowledgedRevision) queue.pending = null;
+              if (!before.conversationId) {
+                try {
+                  const url = new URL(window.location.href);
+                  if (url.pathname === "/pro/analyze") {
+                    for (const key of ["q", "send", "analysis", "from_brief"]) url.searchParams.delete(key);
+                    url.searchParams.set("conversation", queue.id);
+                    window.history.replaceState(window.history.state, "", url.toString());
+                    queue.expectedRoute = conversationRoute();
+                  }
+                } catch {
+                  // The acknowledged history is durable even if the browser refuses the address update.
+                }
+              }
+            } else if (!queue.pending) setConversationSaveStatus("failed");
+            queue.inFlightRevision = null;
+          }
+        })().catch(() => {
+          if (live()) { queue.pending = null; setConversationSaveStatus("failed"); }
+        }).finally(() => {
+          queue.inFlightRevision = null;
+          if (queue.running === running) queue.running = null;
+        });
+        queue.running = running;
+      }
+      await queue.running;
+    }
+    if (!live()) return null;
+    if (queue.acknowledgedRevision >= convRef.current.revision) setConversationSaveStatus("idle");
+    return queue.acknowledgedRevision >= wantedRevision ? queue.id : null;
+  }, [apply, readOnlyReason, recordConversationAction, startConversationAction]);
+
   const ask = useCallback(
     (question: string) => {
       // Model-written "Ask next" follow-ups get the Ask box's own 500-character limit (#1357).
@@ -570,7 +708,18 @@ function AnalyzeConversationWorkspace({
         const turn = currentTurn(apply({ type: "ask", question: trimmed, route: "market_brief", previousLead: currentLeadRef.current }));
         if (turn) apply({ type: "answered", turnId: turn.id, route: "market_brief" });
         const href = marketBriefHref(trimmed, institutionId);
-        void persistConversation().then((id) => window.location.assign(id ? `${href}&${new URLSearchParams({ conversation: id })}` : href));
+        const epoch = conversationEpoch.current;
+        const queue = conversationSaves.current;
+        const nonce = convRef.current.nonce;
+        void persistConversation().then((id) => {
+          const current = convRef.current;
+          if (!id || !turn || !active.current || epoch !== conversationEpoch.current || conversationSaves.current !== queue
+            || current.nonce !== nonce || currentTurn(current)?.id !== turn.id || currentTurn(current)?.route !== "market_brief") return;
+          if (queue.expectedRoute !== conversationRoute()) return;
+          const destination = new URL(href, window.location.origin);
+          destination.searchParams.set("conversation", id);
+          window.location.assign(destination.href);
+        });
         return;
       }
       const pendingSince = askPendingSince.current;
@@ -600,9 +749,8 @@ function AnalyzeConversationWorkspace({
       if (window.innerWidth < 640) textareaRef.current?.blur();
       window.scrollTo({ top: 0, behavior: "smooth" });
     },
-    // persistConversation is declared below and only read when a brief opens.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [clearError, isLoading, engineBusy, readOnlyReason, setMessages, institutionId, selectedInstitution?.name, apply],
+    [clearError, isLoading, engineBusy, readOnlyReason, setMessages, institutionId, selectedInstitution?.name, apply, persistConversation,
+      setComposerError, setStartedAt, setStoryLead, setEngineRows, setHeldLine, setParsedResponse, setAnswerIdentity, setFigureCheck, setBinding, setAskedQuestion, setInput],
   );
 
   /** Starts over: no earlier answers, no carried context, the start screen. */
@@ -614,8 +762,20 @@ function AnalyzeConversationWorkspace({
     convRef.current = resetConversation(convRef.current);
     setConv(convRef.current);
     conversationEpoch.current += 1;
-    storing.current = null;
+    const expectedRoute = conversationSaves.current.expectedRoute;
+    const resetSaves = conversationSaveQueue(conversationEpoch.current, convRef.current);
+    resetSaves.expectedRoute = expectedRoute;
+    conversationSaves.current = resetSaves;
+    setConversationSaveStatus("idle");
     openedRevision.current = -1;
+    try {
+      if (expectedRoute === conversationRoute()) {
+        const url = new URL(window.location.href);
+        for (const key of ["conversation", "q", "send", "analysis", "from_brief"]) url.searchParams.delete(key);
+        window.history.replaceState(window.history.state, "", url.toString());
+        resetSaves.expectedRoute = conversationRoute();
+      }
+    } catch { /* The in-memory reset remains effective when the address cannot be changed. */ }
     setClarificationReply(null);
     setComposerError(null);
     lastPromptRef.current = "";
@@ -632,40 +792,8 @@ function AnalyzeConversationWorkspace({
     setInput("");
     window.scrollTo({ top: 0, behavior: "smooth" });
     textareaRef.current?.focus();
-  }, [clearError, isLoading, setMessages, stop]);
-
-  // The conversation is stored once its first answer arrives (hamilton_conversations), then one
-  // snapshot per change, so a reload, back/forward visit or reopened answer resumes it. Storing
-  // never blocks an answer; a "New conversation" during a store drops that store's ID.
-  const conversationEpoch = useRef(0);
-  const storing = useRef<Promise<string | null> | null>(null);
-  const persistConversation = useCallback(async (): Promise<string | null> => {
-    if (!startConversationAction || !recordConversationAction || readOnlyReason) return null;
-    const epoch = conversationEpoch.current;
-    let id = convRef.current.conversationId;
-    if (!id) {
-      storing.current ??= startConversationAction().then((r) => ("id" in r ? r.id : null)).catch(() => null);
-      const started = storing.current;
-      id = await started;
-      if (!id) {
-        if (storing.current === started) storing.current = null;
-        return null;
-      }
-      if (!active.current || epoch !== conversationEpoch.current) return null;
-      apply({ type: "stored", conversationId: id });
-      try {
-        const url = new URL(window.location.href);
-        for (const key of ["q", "send", "analysis", "from_brief"]) url.searchParams.delete(key);
-        url.searchParams.set("conversation", id);
-        window.history.replaceState(window.history.state, "", url.toString());
-      } catch {
-        // The address is a convenience; the conversation is stored either way.
-      }
-    }
-    if (epoch !== conversationEpoch.current) return null;
-    const result = await recordConversationAction(id, serializeConversationState(convRef.current)).catch(() => null);
-    return result?.ok ? id : null;
-  }, [apply, readOnlyReason, recordConversationAction, startConversationAction]);
+  }, [clearError, isLoading, setMessages, stop, setConv, setConversationSaveStatus, setClarificationReply, setComposerError,
+    setEngineBusy, setEngineRows, setAskedQuestion, setHeldLine, setParsedResponse, setBinding, setAnswerIdentity, setStoryLead, setConversation, setInput]);
 
   // Store each settled turn shortly after it changes (several changes land together).
   const current = currentTurn(conv);
@@ -720,11 +848,14 @@ function AnalyzeConversationWorkspace({
   const autoSent = useRef(false);
   useEffect(() => {
     if (autoSend && initialQuestion && !initialAnalysis && !autoSent.current) {
+      const queue = conversationSaves.current;
+      if (queue.expectedRoute !== conversationRoute()) return;
       autoSent.current = true;
       // Drop send=1 from the address so a reload doesn't ask (and pay) again.
       const url = new URL(window.location.href);
       url.searchParams.delete("send");
       window.history.replaceState(null, "", url.toString());
+      queue.expectedRoute = conversationRoute();
       ask(initialQuestion);
     }
   }, [autoSend, initialQuestion, initialAnalysis, ask]);
@@ -893,6 +1024,18 @@ function AnalyzeConversationWorkspace({
     },
   ];
 
+  const conversationSaveNotice = conversationSaveStatus === "saving" ? (
+    <p role="status" className="text-sm">Saving conversation…</p>
+  ) : conversationSaveStatus === "failed" ? (
+    <div role="alert" className="flex flex-wrap items-center gap-3 text-sm">
+      <p>We couldn’t finish saving this conversation. Your answers are still here.</p>
+      <button type="button" onClick={() => void persistConversation()}
+        className="min-h-11 rounded-md border border-[var(--fi-control-border)] bg-white px-3 font-medium text-[var(--fi-ink)] underline">
+        Retry saving conversation
+      </button>
+    </div>
+  ) : null;
+
   // The ask box sits in the page, never over it: under the heading before the first question,
   // and after the answer once there is one, so it never covers a line of the answer.
   const askBox = readOnlyReason ? null : starting ? (
@@ -924,6 +1067,7 @@ function AnalyzeConversationWorkspace({
           {isLoading || engineBusy ? <Loader2 aria-hidden className="h-4 w-4 animate-spin" /> : <ArrowRight aria-hidden className="h-4 w-4" />}
         </button>
       </div>
+      {conversationSaveNotice}
     </form>
   ) : (
     <form
@@ -982,6 +1126,7 @@ function AnalyzeConversationWorkspace({
           Ask something else instead
         </button>
       ) : null}
+      {conversationSaveNotice}
     </form>
   );
 
