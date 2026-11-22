@@ -1,0 +1,1073 @@
+{
+  "schemaVersion": 1,
+  "kind": "INDEPENDENT_CANDIDATE_ACCEPTANCE_DESIGN_NOT_EXECUTED",
+  "sourceHead": "a97eda6373e3dff7d50f88a61c3e9f45a2967c3f",
+  "author": "evidence_builder independent test-design lane",
+  "privateHoldoutRead": false,
+  "builderProposedLabelsRead": false,
+  "originalSpecClarification": "Engineering UAT-07 is malicious document instruction, not browser acceptance. Browser basis is FR-20 plus Hamilton H07-AC2; UAT-09 supplies mixed-scope composition.",
+  "viewports": [
+    {
+      "width": 1440,
+      "height": 900
+    },
+    {
+      "width": 390,
+      "height": 844
+    }
+  ],
+  "requirements": [
+    {
+      "id": "BA-R01",
+      "basis": [
+        "FR-20",
+        "TD4 UI",
+        "H07-AC2"
+      ],
+      "behavior": "Complete actual reports, research and board-brief journeys at both widths with separate diagnostic evidence."
+    },
+    {
+      "id": "BA-R02",
+      "basis": [
+        "FR-08",
+        "FR-18",
+        "SEC-06"
+      ],
+      "behavior": "Never infer client action settlement or persisted effects solely from transport, navigation or authored UI success."
+    },
+    {
+      "id": "BA-R03",
+      "basis": [
+        "Hamilton skill route",
+        "AGENTS saved artifact metadata",
+        "H05-AC4"
+      ],
+      "behavior": "Bind each actual saved artifact and export to exact actor/institution/action identity and independent fixture truth."
+    },
+    {
+      "id": "BA-R04",
+      "basis": [
+        "FR-06",
+        "FR-21",
+        "SEC-08"
+      ],
+      "behavior": "Fail closed on stale/replayed/mismatched/missing provenance and required skips."
+    },
+    {
+      "id": "BA-R05",
+      "basis": [
+        "SEC-02",
+        "SEC-06",
+        "FR-12"
+      ],
+      "behavior": "Keep capture passive/private and execution isolated, with production permissions separate."
+    },
+    {
+      "id": "BA-R06",
+      "basis": [
+        "FR-19",
+        "TD10.1",
+        "M5"
+      ],
+      "behavior": "Report exact measured populations; before/after, recurrence and false-block rate remain unmeasured until evidence exists."
+    }
+  ],
+  "cases": [
+    {
+      "id": "J01",
+      "group": "product",
+      "name": "Full report-builder journey at both widths",
+      "given": "Run the actual signed-in report builder separately at 1440x900 and 390x844 using the frozen CCB fixture. Select Board summary, include What to resolve first, move it first, choose Committee layout, export, then choose Committee fee review.",
+      "expected": {
+        "widths": [
+          1440,
+          390
+        ],
+        "required": [
+          "actual controls used",
+          "5 of 7 sections after selection",
+          "selected section first",
+          "completed PDF download with parsed content and section order from independent fixture truth",
+          "institution 323 retained",
+          "screenshots",
+          "no page-level horizontal overflow",
+          "console/page/HTTP/request inventories assessed"
+        ],
+        "effectKind": "download; no database report insertion is required for report_builder",
+        "eligibility": "Candidate local synthetic acceptance only; never native approval or production verification"
+      },
+      "source": [
+        "reports-journey.pw.ts",
+        "report-pdf/route.ts report_builder branch",
+        "PRD FR-20",
+        "PRD FR-18",
+        "PRD SEC-06",
+        "TD sections4,5,12"
+      ],
+      "baselineFeasibility": "Existing actual run at f3d79 has both callbacks passed but strict runner failed; retained result is blocked, not full acceptance",
+      "status": "NOT_RUN"
+    },
+    {
+      "id": "J02",
+      "group": "product",
+      "name": "Full research journey at both widths",
+      "given": "At EACH width start with the $9B HOME baseline, ask ten similarly sized credit unions, refine Only Florida, compare NSF and foreign-transaction fees, save research, close/reopen and reauthenticate.",
+      "expected": {
+        "widths": [
+          1440,
+          390
+        ],
+        "homeInstitutionId": 9701001,
+        "assetsUsd": 9000000000,
+        "minAssetsUsd": 4500000000,
+        "maxAssetsUsd": 18000000000,
+        "filingDate": "2026-06-30",
+        "initialPeerCount": 10,
+        "totalMatchingPeers": 12,
+        "initialSortedPeerIds": [
+          9701002,
+          9701003,
+          9701004,
+          9701005,
+          9701006,
+          9701007,
+          9701008,
+          9701009,
+          9701010,
+          9701011
+        ],
+        "floridaSortedPeerIds": [
+          9701002,
+          9701003,
+          9701004,
+          9701005,
+          9701006,
+          9701007,
+          9701008
+        ],
+        "required": [
+          "full action chain at each width; a resized final page does not replace full phone execution",
+          "saved native snapshot subject and exact peer/source membership",
+          "source dates and units",
+          "same artifact reopened in a fresh same-user context",
+          "one composer",
+          "screenshots and no horizontal overflow"
+        ]
+      },
+      "source": [
+        "fixtures.ts",
+        "research-journey.pw.ts",
+        "peer-list-snapshots.ts",
+        "hamilton-peer-list.ts",
+        "H02-AC1/AC3/AC4",
+        "H06-AC3",
+        "H07-AC2",
+        "PRD FR-20",
+        "PRD FR-18",
+        "PRD SEC-06",
+        "TD sections4,5,12"
+      ],
+      "baselineFeasibility": "Actual research callback passed but strict capture failed; full phone chain and native save binding remain unproved",
+      "status": "NOT_RUN"
+    },
+    {
+      "id": "J03",
+      "group": "product",
+      "name": "Board brief creates and edits a persisted artifact",
+      "given": "At each width use HOME, test NSF price32, add the Test finding, ask overdraft, add Ask finding, ask NSF, build brief, set a test-owned title/note, save, then download the saved report.",
+      "expected": {
+        "widths": [
+          1440,
+          390
+        ],
+        "testedNsf": 32,
+        "homePublishedNsf": 27,
+        "required": [
+          "same returned artifact ID read independently from hamilton_reports under numeric fixture user and HOME institution",
+          "report_type board_brief and generated status",
+          "source analysis and added findings retained",
+          "Ask and Test findings remain distinct",
+          "saved title/note and evidence flags equal intended inputs",
+          "PDF parsed identity, title, note, 32 tested and 27 current fee, dates, sources and limitations",
+          "no substitution of live data or an unrelated row"
+        ]
+      },
+      "source": [
+        "board-brief-journey.pw.ts",
+        "fixtures.ts",
+        "board-actions.ts",
+        "pro-tables.ts",
+        "BoardBriefEditor.tsx",
+        "PRD Hamilton routing",
+        "PRD FR-20",
+        "PRD FR-18",
+        "PRD SEC-06",
+        "TD sections4,5,12"
+      ],
+      "baselineFeasibility": "Requires authorized isolated loopback fixture DB/browser later; no new run is performed for this design",
+      "status": "NOT_RUN"
+    },
+    {
+      "id": "J04",
+      "group": "product",
+      "name": "Desktop-created report survives a new phone session and changed selected institution",
+      "given": "Create J03 at1440. Reauthenticate same user in fresh390 context, select Indian River9701002, then open the exact saved report artifact.",
+      "expected": {
+        "required": [
+          "same native report ID",
+          "original HOME institution9701001",
+          "same saved title/note/findings/evidence policy and source context",
+          "no recalculation against selected Indian River",
+          "fresh screenshot and completed client action/read"
+        ],
+        "notSufficient": [
+          "same title alone",
+          "copied DOM",
+          "URL report_id alone"
+        ]
+      },
+      "source": [
+        "board-brief-journey.pw.ts",
+        "pro-tables.ts",
+        "BoardBriefEditor.tsx",
+        "AGENTS Hamilton artifact context"
+      ],
+      "baselineFeasibility": "Existing board journey has this control but latest selected 3-fail/1-skip run did not execute the board journey",
+      "status": "NOT_RUN"
+    },
+    {
+      "id": "J05",
+      "group": "product",
+      "name": "Saved fee answer PDF and reopen are the same saved institution",
+      "given": "At both widths ask the HOME NSF question, bind returned analysis, download its PDF, then reopen the exact analysis while9701015 is selected.",
+      "expected": {
+        "homeNsf": 27,
+        "required": [
+          "saved analysis native user/institution identity",
+          "complete parsed PDF from that analysis",
+          "HOME remains research subject",
+          "other selected institution not relabeled as saved subject",
+          "rate/stale/missing distinctions preserved"
+        ]
+      },
+      "source": [
+        "research-journey.pw.ts H01-AC3/H05-AC4",
+        "saved-analysis-record.ts",
+        "report-pdf/route.ts analysis branch"
+      ],
+      "baselineFeasibility": "Latest selected run serially skipped this case; skip is NOT_TESTED and cannot count as acceptance",
+      "status": "NOT_RUN"
+    },
+    {
+      "id": "J06",
+      "group": "product",
+      "name": "Fee truth is independently fixed",
+      "given": "Use the seven Florida peers and the fixed fixture fee lines, not current rendered output, saved JSON, generated PDF or candidate calculations as expected values.",
+      "expected": {
+        "zeroNsf": {
+          "institutionId": 9701003,
+          "amount": 0
+        },
+        "staleNsf": {
+          "institutionId": 9701004,
+          "amount": 25,
+          "publishedAt": "2024-05-01T00:00:00Z"
+        },
+        "missingNsfInstitutionIds": [
+          9701005,
+          9701008
+        ],
+        "foreignRate": {
+          "institutionId": 9701002,
+          "percent": 1
+        },
+        "required": [
+          "0 is stated0, never missing",
+          "missing is never0",
+          "1percent is never1dollar",
+          "stale source visibly stale",
+          "independently enumerate the eligible cohort before freezing any median/count expectation"
+        ]
+      },
+      "source": [
+        "fixtures.ts NAMED_FEES",
+        "H06-AC3",
+        "PRD SEC-06",
+        "TD Hamilton numeric reproducibility"
+      ],
+      "baselineFeasibility": "Existing fixture truth is sufficient for these literals; report median and denominator still need an independently frozen eligible-cohort calculation",
+      "status": "NOT_RUN"
+    },
+    {
+      "id": "J07",
+      "group": "product",
+      "name": "Fresh fixture ownership restores the expected financial baseline",
+      "given": "Run command-center/CCB fixture usage before research in a disposable fixture DB, then start research from its owned baseline.",
+      "expected": {
+        "required": [
+          "HOME dated financial record remains9B USD before research",
+          "range4.5B to18B",
+          "ten original peers and Florida seven unchanged",
+          "fixture cleanup targets only owned fixture resources"
+        ],
+        "rejected": [
+          "changing the expected range to a polluted output",
+          "deleting shared or production rows"
+        ]
+      },
+      "source": [
+        "research-journey.pw.ts beforeAll",
+        "fixtures.ts",
+        "command-center-journey.pw.ts",
+        "PRD SEC-06"
+      ],
+      "baselineFeasibility": "Earlier retained fixture-pollution incident is historical evidence; a fresh native regression requires later authorized local execution",
+      "status": "NOT_RUN"
+    },
+    {
+      "id": "J08",
+      "group": "product",
+      "name": "Denied user and anonymous access do not produce a saved effect",
+      "given": "Try another account saved research/report/analysis and anonymous/nonpremium save or PDF access, with known pre-action fixture state.",
+      "expected": {
+        "required": [
+          "appropriate denial or user-scoped not-found",
+          "no foreign content exposed",
+          "no unrelated artifact insertion/update",
+          "no provider call"
+        ],
+        "notSufficient": [
+          "HTTP200 streamed shell",
+          "redirect to login without proving no effect"
+        ]
+      },
+      "source": [
+        "research-journey.pw.ts H01-AC4",
+        "ask/route.ts",
+        "board-actions.ts",
+        "saved-analysis-record.ts",
+        "report-pdf/route.ts",
+        "AGENTS numeric users.id scoping"
+      ],
+      "baselineFeasibility": "Existing route/unit controls may be GREEN already; do not label them new behavioral RED without execution",
+      "status": "NOT_RUN"
+    },
+    {
+      "id": "J09",
+      "group": "product",
+      "name": "Full matrix has no hidden serial skip",
+      "given": "One required predecessor fails, causing another logical journey or viewport to skip; or a filtered test selection runs only the easiest journey.",
+      "expected": {
+        "acceptance": "BLOCKED/NOT_TESTED",
+        "required": [
+          "enumerate every required logical journey and viewport",
+          "distinguish callback result, Playwright result, protocol, application settlement, persisted effect and export",
+          "report exact observed assertion totals; no predicted count"
+        ],
+        "forbidden": [
+          "3 callbacks passed => full product acceptance",
+          "0 assertions => passed"
+        ]
+      },
+      "source": [
+        "latest browser-product-aggregate.json",
+        "PRD FR-06/FR-18",
+        "TD unknown states"
+      ],
+      "baselineFeasibility": "Existing real3failed/1skipped run is a retained incomplete run, not an all-matrix baseline success",
+      "status": "NOT_RUN"
+    },
+    {
+      "id": "C01",
+      "group": "correlation",
+      "name": "Concurrent same-URL POST requests cannot borrow completion",
+      "given": "In one document issue two distinct native POST requests at the same route; only one reaches EOF/app completion and the other is canceled or still open.",
+      "expected": {
+        "required": [
+          "distinct generated request and action-attempt identities",
+          "completion/effect belongs only to exact matched request"
+        ],
+        "canceledAttempt": {
+          "transport": "canceled",
+          "actionSettlement": "unknown",
+          "acceptance": "BLOCKED"
+        }
+      },
+      "source": [
+        "browser-protocol.mjs exact native request/session maps",
+        "PRD FR-08/FR-18"
+      ],
+      "baselineFeasibility": "Existing protocol transport negative control can run unchanged; new action binding needs an importable fail-closed implementation seam",
+      "status": "NOT_RUN"
+    },
+    {
+      "id": "C02",
+      "group": "correlation",
+      "name": "Same URL in separate sessions/documents is not a match",
+      "given": "Reuse a raw native request ID/URL across contexts, sessions, frames or loaders; finish only one scope.",
+      "expected": {
+        "required": [
+          "scope includes exact registered context/session/frame/document and redirect hop",
+          "no cross-scope action/effect borrowing"
+        ]
+      },
+      "source": [
+        "browser-protocol.mjs",
+        "browser-protocol.test.ts existing correlation cases"
+      ],
+      "baselineFeasibility": "Existing regression control, not evidence of new action capability",
+      "status": "NOT_RUN"
+    },
+    {
+      "id": "C03",
+      "group": "correlation",
+      "name": "Redirect receipt is a transition, never original EOF",
+      "given": "A POST/GET redirects and the destination completes in a new request hop.",
+      "expected": {
+        "original": {
+          "terminal": "redirect",
+          "transport": "unknown"
+        },
+        "required": [
+          "distinct successor identity",
+          "rooted unique redirect chain",
+          "no fulfilled original action inferred from destination"
+        ]
+      },
+      "source": [
+        "browser-protocol.mjs redirect handling",
+        "TD unknown states"
+      ],
+      "baselineFeasibility": "Existing transport control; app redirect completion must be proven separately",
+      "status": "NOT_RUN"
+    },
+    {
+      "id": "C04",
+      "group": "correlation",
+      "name": "HTTP200 before body completion is insufficient",
+      "given": "Observe successful response headers but no loadingFinished and no application result.",
+      "expected": {
+        "transport": "unknown",
+        "actionSettlement": "unknown",
+        "effect": "unknown",
+        "acceptance": "BLOCKED"
+      },
+      "source": [
+        "browser-protocol.mjs",
+        "latest missing_terminal receipts",
+        "PRD FR-18"
+      ],
+      "baselineFeasibility": "Existing missing-EOF transport behavior is GREEN; action/effect positive capability is absent",
+      "status": "NOT_RUN"
+    },
+    {
+      "id": "C05",
+      "group": "correlation",
+      "name": "Successful EOF is not application settlement",
+      "given": "POST reaches loadingFinished with200/RSC orJSON but the client action result is rejected, malformed, unconsumed or never resolved.",
+      "expected": {
+        "transport": "finished",
+        "actionSettlement": "unknown_or_failed",
+        "effect": "independently_assessed",
+        "acceptance": "BLOCKED"
+      },
+      "source": [
+        "BoardBriefEditor.tsx save await",
+        "PeerListView.tsx saveResearch await/json",
+        "browser-protocol.d.mts actionSettlement unknown"
+      ],
+      "baselineFeasibility": "New action-semantic reducer requires baseline stub; missing export is setup, not RED",
+      "status": "NOT_RUN"
+    },
+    {
+      "id": "C06",
+      "group": "correlation",
+      "name": "Canceled POST stays unsettled after same-document navigation",
+      "given": "A nextAction POST returns200 then aborts; history/router navigation changes the route in the same document and UI displays a destination.",
+      "expected": {
+        "transport": "canceled",
+        "actionSettlement": "unknown",
+        "acceptance": "BLOCKED",
+        "required": [
+          "preserve cancellation",
+          "same_document is not main-frame load",
+          "no success from newer DOM/status/URL"
+        ]
+      },
+      "source": [
+        "browser-protocol.d.mts navigation kinds",
+        "browser-evidence.mjs everyPOSTabort guard",
+        "latest canceled loginPOST"
+      ],
+      "baselineFeasibility": "Existing policy negative remains unchanged; no cancellation exception authorized",
+      "status": "NOT_RUN"
+    },
+    {
+      "id": "C07",
+      "group": "correlation",
+      "name": "Full document load also does not fulfill an old POST",
+      "given": "A canceled POST is followed by an unrelated document response200 and load.",
+      "expected": {
+        "transport": "canceled",
+        "actionSettlement": "unknown",
+        "acceptance": "BLOCKED"
+      },
+      "source": [
+        "browser-protocol.test.ts canceledPOST control",
+        "browser-evidence.mjs"
+      ],
+      "baselineFeasibility": "Existing regression control",
+      "status": "NOT_RUN"
+    },
+    {
+      "id": "C08",
+      "group": "correlation",
+      "name": "Same-document canceled RSC GET cannot borrow a full-navigation exception",
+      "given": "RSC GET aborts during SPA navigation; routerPrefetch may be true or false, response may be200, and a newer visible page appears.",
+      "expected": {
+        "required": [
+          "preserve exact metadata and same-document kind",
+          "ordinary RSC fetch is not relabeled prefetch",
+          "do not fabricate main-frame load",
+          "strictv1 remains blocked unless its complete existing predicate actually holds"
+        ],
+        "newPolicyAuthority": "NONE"
+      },
+      "source": [
+        "browser-evidence.mjs strict classifier",
+        "browser-protocol.mjs Page.navigatedWithinDocument",
+        "latest retained canceled RSC groups"
+      ],
+      "baselineFeasibility": "Genuine actual strict false-block hypothesis exists; no authorized new classifier success expectation exists yet",
+      "status": "NOT_RUN"
+    },
+    {
+      "id": "C09",
+      "group": "correlation",
+      "name": "Event-order ties cannot be repaired by wall-clock guesses",
+      "given": "Request/response/terminal/action/navigation events share one clock tick or callbacks arrive out of order.",
+      "expected": {
+        "required": [
+          "strict monotonic event ordinals in one scoped trace",
+          "reject reversed/duplicate/gapped lifecycle where producer cannot generate it",
+          "no cross-system ID or timestamp ordering without native relation"
+        ]
+      },
+      "source": [
+        "browser-protocol.mjs ordinal schema",
+        "PRD observability"
+      ],
+      "baselineFeasibility": "Existing transport replay controls plus future action-ordering extension",
+      "status": "NOT_RUN"
+    },
+    {
+      "id": "C10",
+      "group": "correlation",
+      "name": "Late observer and lost/malformed/truncated sessions remain incomplete",
+      "given": "Capture attaches after action start, sees unknown protocol version, loses session or misses terminal data; or replay has unknown/contradictory events.",
+      "expected": {
+        "acceptance": "BLOCKED",
+        "required": [
+          "explicit incomplete reason",
+          "unknown target coverage retained",
+          "no retrospective positive completion"
+        ]
+      },
+      "source": [
+        "browser-protocol.mjs",
+        "evidence.ts setup and cleanup",
+        "PRD FR-18"
+      ],
+      "baselineFeasibility": "Existing observer failures are controls; future action extension must preserve them",
+      "status": "NOT_RUN"
+    },
+    {
+      "id": "C11",
+      "group": "correlation",
+      "name": "Client-visible failure is not hidden by completed transport",
+      "given": "HTTP400/409/500 or a200 structured application error reaches EOF.",
+      "expected": {
+        "transport": "finished",
+        "actionSettlement": "failed",
+        "effect": "no_claim_without_native_read",
+        "acceptance": "BLOCKED"
+      },
+      "source": [
+        "ask/route.ts save409",
+        "board-actions.ts successfalse",
+        "PRD FR-18"
+      ],
+      "baselineFeasibility": "Native local fault fixture later; no server/provider execution now",
+      "status": "NOT_RUN"
+    },
+    {
+      "id": "C12",
+      "group": "correlation",
+      "name": "Unmapped route remains unbound",
+      "given": "A POST is only [unmapped] in retained protocol metadata; several candidate API actions share that class.",
+      "expected": {
+        "required": [
+          "do not reconstruct discarded route/action/body identity",
+          "do not assign old unmapped request to Ask/PDF by URL proximity",
+          "future allowlist additions reviewed explicitly"
+        ],
+        "actionSettlement": "unknown"
+      },
+      "source": [
+        "evidence.ts PROTOCOL_ROUTES",
+        "latest capture1/2/3 unmappedPOSTs"
+      ],
+      "baselineFeasibility": "Retained metadata demonstrates limitation; cannot recover missing provenance from existing artifacts",
+      "status": "NOT_RUN"
+    },
+    {
+      "id": "E01",
+      "group": "effect",
+      "name": "A real fixture save requires a bound native read-back",
+      "given": "After an identified action attempt yields its native artifact identifier, independently read the existing semantic table through a separate authorized fixture connection and reopen via authenticated product route.",
+      "expected": {
+        "required": [
+          "same returned artifact ID, fixture numeric user, original institution and expected saved values",
+          "native row visible after save",
+          "action-to-artifact binding remains scoped to same attempt",
+          "generated evidence alias binds comparisons without retaining raw private identifiers"
+        ],
+        "positive": "local fixture effect confirmed only"
+      },
+      "source": [
+        "board-actions.ts RETURNING/saveHamiltonReport",
+        "hamilton-analyses.ts INSERT/UPDATE RETURNING",
+        "peer-list-snapshots.ts",
+        "AGENTS Hamilton persistence"
+      ],
+      "baselineFeasibility": "Needs later authorized isolated DB execution; caller-written success flag is never enough",
+      "status": "NOT_RUN"
+    },
+    {
+      "id": "E02",
+      "group": "effect",
+      "name": "Preexisting matching row is not proof of a new save",
+      "given": "Before action starts insert/retain a row with the same title and expected-looking content; new action never settles.",
+      "expected": {
+        "effect": "unbound",
+        "acceptance": "BLOCKED",
+        "rejected": [
+          "row-count positive",
+          "latest row by title",
+          "same text in UI",
+          "old report URL"
+        ]
+      },
+      "source": [
+        "PRD FR-08",
+        "pro-tables.ts nativeUUID",
+        "TD stable evidence relations"
+      ],
+      "baselineFeasibility": "Pure new effect-join seam can provide behavioral RED once importable, before builder logic",
+      "status": "NOT_RUN"
+    },
+    {
+      "id": "E03",
+      "group": "effect",
+      "name": "Replay of earlier successful action result is stale",
+      "given": "Attempt2 receives or is handed attempt1 result/receipt on the same route/head; attempt2 has no native completion/effect association.",
+      "expected": {
+        "actionSettlement": "unknown",
+        "effect": "unbound",
+        "acceptance": "BLOCKED"
+      },
+      "source": [
+        "PRD FR-21/SEC-08",
+        "PeerListView.tsx keyed list identity"
+      ],
+      "baselineFeasibility": "New action reducer behavioral RED after fail-closed stub, not a missingmodule RED",
+      "status": "NOT_RUN"
+    },
+    {
+      "id": "E04",
+      "group": "effect",
+      "name": "Wrong artifact cannot satisfy effect",
+      "given": "Correct-looking saved title or PDF belongs to a different returnedUUID, user, institution, research turn or artifact type.",
+      "expected": {
+        "effect": "mismatch",
+        "acceptance": "BLOCKED",
+        "required": [
+          "compare exact identity and independently frozen truth, not text similarity"
+        ]
+      },
+      "source": [
+        "saved-analysis-record.ts",
+        "pro-tables.ts",
+        "report-pdf/route.ts",
+        "AGENTS Hamilton identity"
+      ],
+      "baselineFeasibility": "Local isolated negative fixture later; source semantics already require user scoping",
+      "status": "NOT_RUN"
+    },
+    {
+      "id": "E05",
+      "group": "effect",
+      "name": "Rolled-back/uncommitted write is not persisted",
+      "given": "Application or mocked result says success but a fresh independent connection cannot observe the row/update after transaction resolution.",
+      "expected": {
+        "effect": "not_confirmed",
+        "acceptance": "BLOCKED"
+      },
+      "source": [
+        "hamilton-analyses.ts withTransaction",
+        "PRD FR-08/FR-18"
+      ],
+      "baselineFeasibility": "New integration effect control, not executed",
+      "status": "NOT_RUN"
+    },
+    {
+      "id": "E06",
+      "group": "effect",
+      "name": "Unrelated later save cannot repair a missing effect",
+      "given": "ActionA has no confirmed result; actionB later writes the same institution/title or updates the same report.",
+      "expected": {
+        "required": [
+          "later B evidence remains B",
+          "A not completed by nearest/latest row matching"
+        ],
+        "acceptanceForA": "BLOCKED"
+      },
+      "source": [
+        "PRD stable test/evidence identity",
+        "hamilton-analyses.ts duplicate request semantics"
+      ],
+      "baselineFeasibility": "Future action/effect reducer, importable baseline required",
+      "status": "NOT_RUN"
+    },
+    {
+      "id": "E07",
+      "group": "effect",
+      "name": "Legitimate idempotent analysis update is allowed without inventing a new row",
+      "given": "Two same-user/institution full-request-equal analyses finish within the existing120second dedup window and the native save returns the sameID.",
+      "expected": {
+        "required": [
+          "bind each actual action result",
+          "verify actual expected content and user/institution/request identity",
+          "do not require exactly1 new row for an idempotent save",
+          "different prior turns are not the same request"
+        ],
+        "acceptance": "eligible_if_all_other_evidence_complete"
+      },
+      "source": [
+        "hamilton-analyses.ts DUPLICATE_SAVE_WINDOW_SECONDS and request_hash"
+      ],
+      "baselineFeasibility": "Existing product semantics positive; new effect assessor must not introduce count-only false block",
+      "status": "NOT_RUN"
+    },
+    {
+      "id": "E08",
+      "group": "effect",
+      "name": "Server effect after browser cancellation does not settle the client",
+      "given": "Exact native save is shown committed, but the corresponding browserPOST was canceled or its app Promise result is absent.",
+      "expected": {
+        "transport": "canceled_or_unknown",
+        "actionSettlement": "unknown",
+        "effect": "may_be_independently_confirmed",
+        "acceptance": "BLOCKED",
+        "required": [
+          "report committed effect and unsettled client separately"
+        ]
+      },
+      "source": [
+        "browser-protocol.d.mts",
+        "board-actions.ts native writes",
+        "PRD unknown states"
+      ],
+      "baselineFeasibility": "New dimensional acceptance case; no policy relaxation",
+      "status": "NOT_RUN"
+    },
+    {
+      "id": "E09",
+      "group": "effect",
+      "name": "Browser settles but promised artifact is absent",
+      "given": "Exact action returns a success result and responseEOF, but native row is absent or still has old values.",
+      "expected": {
+        "actionSettlement": "fulfilled",
+        "effect": "not_confirmed",
+        "acceptance": "BLOCKED"
+      },
+      "source": [
+        "PRD FR-08",
+        "board-actions.ts",
+        "peer-list-snapshots.ts"
+      ],
+      "baselineFeasibility": "New effect-assessor behavioral RED after importable stub",
+      "status": "NOT_RUN"
+    },
+    {
+      "id": "E10",
+      "group": "effect",
+      "name": "Snapshot content is fixed server data rather than supplied browser narrative",
+      "given": "Tamper expectedPeerList/source references or change the underlying dated selection between display and save.",
+      "expected": {
+        "required": [
+          "server recomputes original selection",
+          "409/no saved snapshot if mismatch",
+          "no substitute cohort",
+          "explicit failure with original client state recoverable"
+        ],
+        "effect": "no_confirmed_save"
+      },
+      "source": [
+        "ask/route.ts",
+        "peer-list-snapshots.ts matchesFreshPeerSnapshot"
+      ],
+      "baselineFeasibility": "Existing route behavior likely already covered; native browser execution later, not claimed new RED",
+      "status": "NOT_RUN"
+    },
+    {
+      "id": "E11",
+      "group": "effect",
+      "name": "UI state alone cannot establish saved effect",
+      "given": "Render Saved, report_id link, enabledDownload or success callback without its exact action and native persisted read.",
+      "expected": {
+        "effect": "unknown",
+        "acceptance": "BLOCKED"
+      },
+      "source": [
+        "BoardBriefEditor.tsx saved state",
+        "PeerListView.tsx savedResearchId",
+        "PRD FR-08/FR-18"
+      ],
+      "baselineFeasibility": "New candidate assessor guard; existing generic capture only claims local diagnostics, not artifact authority",
+      "status": "NOT_RUN"
+    },
+    {
+      "id": "E12",
+      "group": "effect",
+      "name": "Export reads the exact saved artifact with independent truth",
+      "given": "Download for a saved report/analysis completes; parse PDF bytes and compare fixture identity/fee truth plus intended saved edits and source metadata.",
+      "expected": {
+        "required": [
+          "actual download complete",
+          "valid parseablePDF not only filename/%PDF prefix/minimumsize",
+          "same artifact as read-back",
+          "wrong-user/wrong-id content rejected",
+          "not merely PDF equals candidate saved JSON"
+        ],
+        "effectKind": "download_complete"
+      },
+      "source": [
+        "report-pdf/route.ts",
+        "board-brief-journey.pw.ts",
+        "H05-AC4",
+        "PRD Hamilton routing/SEC-06"
+      ],
+      "baselineFeasibility": "Current reports builder only checksfilename/status; stronger content checks can be added before product changes, but source-backed wrong-output baseline must be actually observed",
+      "status": "NOT_RUN"
+    },
+    {
+      "id": "E13",
+      "group": "effect",
+      "name": "Transient report-builder export has an honest effect type",
+      "given": "Export type report_builder reloads fixture selection and layout but intentionally does not save hamilton_reports.",
+      "expected": {
+        "required": [
+          "download and independent content check",
+          "explicitly no persisted report expected",
+          "do not fabricate a savedUUID or require a DB insert"
+        ],
+        "acceptance": "eligible_if_download_and_journey_evidence_complete"
+      },
+      "source": [
+        "report-pdf/route.ts report_builder branch"
+      ],
+      "baselineFeasibility": "Positive semantic control prevents universal save assumption",
+      "status": "NOT_RUN"
+    },
+    {
+      "id": "E14",
+      "group": "effect",
+      "name": "Caller-authored passing record cannot confer authority",
+      "given": "Supply serialized JSON with settlement fulfilled/effect verified, copied safe trace or fabricated native origin fields.",
+      "expected": {
+        "authority": "untrusted",
+        "acceptance": "BLOCKED_for_authoritative_effect_claim",
+        "required": [
+          "native acquisition or trusted test producer context retained",
+          "offline imported JSON descriptive only"
+        ]
+      },
+      "source": [
+        "PRD FR-08/SEC-06",
+        "browser-protocol local provenance"
+      ],
+      "baselineFeasibility": "New authority-boundary negative; local test transports cannot mint native production authority",
+      "status": "NOT_RUN"
+    },
+    {
+      "id": "E15",
+      "group": "effect",
+      "name": "Stale source/build/policy/test identity invalidates current evidence",
+      "given": "Replay otherwise matching save/download evidence from another head/build, fixture, test case, viewport, policy revision or action attempt.",
+      "expected": {
+        "acceptance": "BLOCKED",
+        "required": [
+          "exact current approved identities",
+          "keep original historical record visible",
+          "no nearest-source substitution"
+        ]
+      },
+      "source": [
+        "PRD FR-06/FR-21/SEC-08",
+        "evidence.ts build identity"
+      ],
+      "baselineFeasibility": "Existing build negative controls plus new action/effect identity fields",
+      "status": "NOT_RUN"
+    },
+    {
+      "id": "P01",
+      "group": "privacy",
+      "name": "Raw canaries never enter retained protocol/action metadata",
+      "given": "Place unique canaries in auth/cookie/arbitraryheaders/Next-Action value/request bodies/raw IDs/URLpath/query/fragment/redirect/error and applicationresult metadata.",
+      "expected": {
+        "required": [
+          "only allowlisted enum/boolean/routetemplate and generated local IDs",
+          "no raw value or stable hash of private values",
+          "build/contract source hashes stay in separate identity envelope",
+          "existing protocol schema not silently widened"
+        ]
+      },
+      "source": [
+        "browser-protocol.mjs safe schema",
+        "browser-protocol.test.ts canaries",
+        "PRD SEC-02/SEC-05"
+      ],
+      "baselineFeasibility": "Existing protocol controls plus future action/effect projection test; no app body/credentials retained",
+      "status": "NOT_RUN"
+    },
+    {
+      "id": "P02",
+      "group": "privacy",
+      "name": "Replay cannot smuggle private fields or authority",
+      "given": "Inject unrecognized keys, giant identifiers, prototype-like kinds, contradictoryterminal flags or fake producer status into safe event replay.",
+      "expected": {
+        "acceptance": "BLOCKED",
+        "required": [
+          "bounded retained output",
+          "no throw containing private value",
+          "no privacy leakage",
+          "no complete forged lifecycle"
+        ]
+      },
+      "source": [
+        "browser-protocol.test.ts hardened replay cases",
+        "PRD FR-18"
+      ],
+      "baselineFeasibility": "Existing permanent controls must remain GREEN",
+      "status": "NOT_RUN"
+    },
+    {
+      "id": "P03",
+      "group": "privacy",
+      "name": "Observer leaves requests and app outcomes unchanged",
+      "given": "With the same deterministic local action fixture, compare observed and control runs.",
+      "expected": {
+        "required": [
+          "same server request method/route/order classes and app result/effect",
+          "no fetch wrapping, body draining, interception, cache disabling, request retries or synthetic navigation to obtain success",
+          "no timing/performance claim from this check"
+        ]
+      },
+      "source": [
+        "browser-protocol.mjs passive adapter",
+        "PRD no duplicate execution/CIcost"
+      ],
+      "baselineFeasibility": "Actual minimal native protocol control harness exists historically; product noninterference still needs targeted future native run",
+      "status": "NOT_RUN"
+    },
+    {
+      "id": "P04",
+      "group": "privacy",
+      "name": "Observed target scope stays explicit",
+      "given": "A single Page CDP session is registered while a popup, worker or OOPIF does work outside it.",
+      "expected": {
+        "required": [
+          "registered_cdp_sessions only",
+          "unobservedTargets unknown",
+          "capture each required new phone/context explicitly or block required missing scope",
+          "no full browser/context/network coverage claim"
+        ]
+      },
+      "source": [
+        "browser-protocol.d.mts completenessScope",
+        "evidence.ts newCDPSession"
+      ],
+      "baselineFeasibility": "Existing scope control plus fulljourney target inventory",
+      "status": "NOT_RUN"
+    },
+    {
+      "id": "P05",
+      "group": "privacy",
+      "name": "Attachment/cleanup failure preserves original journey outcome",
+      "given": "Force capture attach or detach failure with a private canary; independently fail or pass the app journey.",
+      "expected": {
+        "required": [
+          "fixed safe failure reason",
+          "original journey error preserved",
+          "no success from missing protocol artifact",
+          "cleanup best effort",
+          "disabled capture makes no CDP calls"
+        ]
+      },
+      "source": [
+        "evidence.ts",
+        "evidence.test.ts"
+      ],
+      "baselineFeasibility": "Existing producer controls remain GREEN; not a new product success",
+      "status": "NOT_RUN"
+    },
+    {
+      "id": "P06",
+      "group": "privacy",
+      "name": "Local fixture execution has no provider or production side effect",
+      "given": "Run later only with a fresh owned loopback database and environment-whitelisted browser/server, provider credentials absent and fixture provider stop enforced.",
+      "expected": {
+        "required": [
+          "native local DB/build identity recorded",
+          "provider use checked against run baseline",
+          "no production connection, key read, replay, live agent, permission or paid-provider activation",
+          "resource ownership and cleanup receipt"
+        ],
+        "currentAuthorization": "DESIGN_ONLY_NO_EXECUTION"
+      },
+      "source": [
+        "serve.mjs",
+        "fixtures.ts",
+        "AGENTS protected boundaries",
+        "PRD FR-12/SEC-02/SEC-07"
+      ],
+      "baselineFeasibility": "No DB/browser/provider action authorized in this design task",
+      "status": "NOT_RUN"
+    },
+    {
+      "id": "M01",
+      "group": "reporting",
+      "name": "M5 metrics remain unknown without independent observations",
+      "given": "Only this targeted local matrix has results; no controlled before/after/recurrence population exists.",
+      "expected": {
+        "ciOverhead": "NOT_MEASURED",
+        "recurrence": "NOT_MEASURED",
+        "falseBlockRate": "NOT_MEASURED",
+        "productionOutcome": "UNVERIFIED",
+        "required": [
+          "preserve actual3failed/1skip denominator",
+          "do not call one repaired run a rate",
+          "no duplicate full suites merely for receipt count"
+        ]
+      },
+      "source": [
+        "PRD FR-19",
+        "TD10.1/M5",
+        "latest product aggregate"
+      ],
+      "baselineFeasibility": "Design/rate definition only; no invented measured improvement",
+      "status": "NOT_RUN"
+    }
+  ]
+}

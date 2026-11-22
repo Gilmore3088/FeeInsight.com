@@ -1,0 +1,25 @@
+import type { CdpSession, ProtocolCapture, ProtocolCaptureOptions, ProtocolIdentityKey, ProtocolTransport } from './browser-protocol.mjs';
+export type BrowserActionOperation = 'save-peer-research' | 'save-analysis' | 'save-board-brief';
+export type BrowserActionEffect = 'peer-research' | 'analysis' | 'board-brief';
+export type BrowserActionSpec = { operation: BrowserActionOperation; sessionKey: ProtocolIdentityKey; request: { method: 'POST'; routeTemplate: string; protocol: 'json' | 'next-action' }; effectKind: BrowserActionEffect };
+export type BrowserArtifactId = string | number;
+export type BrowserActionUiResult = { artifactId: BrowserArtifactId; success: boolean };
+export type BrowserActionPersistence = { artifactId: BrowserArtifactId; beforeExists: boolean; afterExists: boolean; ownerMatches: boolean; institutionMatches: boolean; semanticMatches: boolean; semanticSha256?: string };
+export type BrowserActionReopen = { artifactId: BrowserArtifactId; authenticatedActorMatches: boolean; artifactSubjectMatches: boolean; shellSubjectMatches: boolean; semanticMatches: boolean; freshContext: boolean; wrongUserDenied: boolean };
+export type BrowserActionEvent = Readonly<{ ordinal: number; kind: string; [key: string]: unknown }>;
+export type BrowserAction = Readonly<{ actionId: string; operation: BrowserActionOperation; effectKind: BrowserActionEffect; artifactRef: string | null; requestId: string | null; association: 'exactly_one' | 'unknown'; transport: ProtocolTransport; actionSettlement: 'observed' | 'unknown'; persistedEffect: 'observed' | 'unknown'; reopen: 'observed' | 'unknown'; complete: boolean; beginOrdinal: number; uiOrdinal: number | null; persistenceOrdinal: number | null; reopenOrdinal: number | null; semanticSha256: string | null; incompleteReasons: readonly string[] }>;
+export type BrowserActionsCapture = Readonly<{ schemaVersion: 1; authority: 'LOCAL_UNTRUSTED'; status: 'BLOCKED' | 'LOCAL_ACTIONS_UNTRUSTED'; complete: boolean; closed: boolean; truncated: boolean; events: readonly BrowserActionEvent[]; actions: readonly BrowserAction[]; protocol: ProtocolCapture; incompleteReasons: readonly string[] }>;
+export type BrowserActionsOptions = ProtocolCaptureOptions & { maxActions?: number };
+export type BrowserActionsController = {
+  registerSession(sessionKey: ProtocolIdentityKey, options: { contextKey: ProtocolIdentityKey }): void;
+  ingest(sessionKey: ProtocolIdentityKey, eventName: string, payload: unknown): void;
+  sessionLost(sessionKey: ProtocolIdentityKey): void;
+  beginAction(spec: BrowserActionSpec): string | null;
+  observeUiResult(actionId: string | null, result: BrowserActionUiResult): void;
+  observePersistence(actionId: string | null, witness: BrowserActionPersistence): void;
+  observeReopen(actionId: string | null, witness: BrowserActionReopen): void;
+  snapshot(): BrowserActionsCapture;
+  finish(): BrowserActionsCapture;
+};
+export function createBrowserActionsCapture(options: BrowserActionsOptions): BrowserActionsController;
+export function attachBrowserActionsObserver(session: CdpSession, capture: BrowserActionsController, options: { sessionKey: ProtocolIdentityKey; contextKey: ProtocolIdentityKey }): Promise<{ stop(): Promise<void> }>;

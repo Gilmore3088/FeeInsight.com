@@ -1,5 +1,6 @@
 import { normalizeCanonicalInstitutionId, hrefWithInstitutionContext } from "./context-link";
 import { decodeLandingResearch, encodeLandingResearch, type LandingResearchHandoff } from "./landing-research-handoff";
+import { isSavedPeerResearchPath } from "./artifact-context";
 
 /** Navigation intent only; each destination still authenticates and resolves its evidence. */
 export interface HamiltonNavigationSelection {
@@ -15,11 +16,12 @@ const SUBJECT_PATHS = new Set(["/pro", "/pro/analyze", "/pro/research", "/pro/in
 const ARTIFACT_PARAMS = ["analysis", "report_id", "report", "scenario_id", "scenario"];
 
 export function isHamiltonSubjectPath(pathname: string): boolean {
-  return SUBJECT_PATHS.has(pathname);
+  return SUBJECT_PATHS.has(pathname) || isSavedPeerResearchPath(pathname);
 }
 
 export function hamiltonNavigationSelection(pathname: string, params: URLSearchParams): HamiltonNavigationSelection {
   const empty = { institutionId: null, research: null, artifact: false, invalid: false };
+  if (isSavedPeerResearchPath(pathname)) return { ...empty, artifact: true };
   if (!isHamiltonSubjectPath(pathname)) return empty;
   if (ARTIFACT_PARAMS.some((key) => params.get(key)?.trim())) return { ...empty, artifact: true };
   if (params.has("research")) {

@@ -15,7 +15,7 @@ import { SearchModal } from "@/components/public/search-modal";
 import { SessionChromeProvider, type SessionChrome } from "@/components/use-session-chrome";
 import { hamiltonNavigationSelection, isHamiltonSubjectPath } from "@/lib/hamilton/navigation-context";
 import { normalizeCanonicalInstitutionId } from "@/lib/hamilton/context-link";
-import { loadHamiltonNavigationInstitution } from "@/lib/hamilton/navigation-institution-action";
+import { loadHamiltonArtifactNavigationInstitution, loadHamiltonNavigationInstitution } from "@/lib/hamilton/navigation-institution-action";
 import { HamiltonNavigationProvider } from "./hamilton-navigation-context";
 import { institutionFacts } from "@/lib/hamilton/institution-facts";
 
@@ -90,6 +90,7 @@ export function HamiltonShell({
   const seedId = normalizeCanonicalInstitutionId(selectedInstitutionId);
   const canResolveLive = isHamiltonSubjectPath(pathname) && !selection.artifact && !selection.invalid
     && (!selection.research || selection.research.scope.kind === "local");
+  const canResolveArtifact = selection.artifact && !selection.invalid;
   const seededInstitution = canUseSeed && !selection.invalid && seedId && institutionContext.name
     && (selection.artifact || !selection.institutionId || selection.institutionId === seedId)
     ? { id: seedId, name: institutionContext.name, facts: institutionFacts({ stateCode: institutionContext.stateCode, charterType: institutionContext.type, segment: institutionContext.assetTier }) } : null;
@@ -97,13 +98,16 @@ export function HamiltonShell({
   const candidateId = selection.institutionId;
   const seededName = seededInstitution?.name;
   useEffect(() => {
-    if (!canResolveLive || seededName) return;
+    if ((!canResolveLive && !canResolveArtifact) || seededName) return;
     let active = true;
-    loadHamiltonNavigationInstitution(candidateId).then((institution) => {
+    const identity = canResolveArtifact
+      ? loadHamiltonArtifactNavigationInstitution(pathname, search)
+      : loadHamiltonNavigationInstitution(candidateId);
+    identity.then((institution) => {
       if (active) setResolved({ requestKey, institution });
     }).catch(() => { if (active) setResolved({ requestKey, institution: null }); });
     return () => { active = false; };
-  }, [candidateId, requestKey, seededName, canResolveLive]);
+  }, [candidateId, requestKey, seededName, canResolveLive, canResolveArtifact, pathname, search]);
   const currentInstitution = seededInstitution ?? (resolved?.requestKey === requestKey
     && (!candidateId || resolved.institution?.id === candidateId) ? resolved.institution : null);
   const navigation = {
@@ -111,7 +115,7 @@ export function HamiltonShell({
     // An explicit URL is navigation intent, not a confirmed identity. Preserve it
     // while metadata loads so the destination resolves B rather than default A.
     institutionId: currentInstitution?.id ?? (selection.artifact ? null : selection.institutionId),
-    unresolved: canResolveLive && !currentInstitution,
+    unresolved: (canResolveLive || canResolveArtifact) && !currentInstitution,
   };
   // Only a confirmed subject is named; loading, unavailable and invalid states show no label,
   // never the home institution and never an internal state as if it were a name.
