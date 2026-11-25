@@ -186,7 +186,7 @@ export async function CityReport({ state, city, area }: { state: string; city: s
             url: `${SITE_URL}${cityHref}`,
             spatialCoverage: { "@type": "Place", name: `${cityName}, ${stateName}` },
             creator: { "@type": "Organization", name: SITE_NAME, url: SITE_URL },
-            isPartOf: { "@type": "Dataset", name: "Bank Fee Index" },
+            isPartOf: `${SITE_URL}/fees`,
             variableMeasured: fees.filter((f) => f.median != null).map((f) => `${f.label} median`),
           }).replace(/</g, "\\u003c"),
         }}

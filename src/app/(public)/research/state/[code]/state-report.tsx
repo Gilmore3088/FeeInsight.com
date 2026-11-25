@@ -720,7 +720,7 @@ export async function StateReport({ code, user }: { code: string; user: User | n
             spatialCoverage: { "@type": "Place", name: `${stateName}, United States` },
             dateModified: asOf && !Number.isNaN(Date.parse(asOf)) ? new Date(asOf).toISOString() : undefined,
             creator: { "@type": "Organization", name: SITE_NAME, url: SITE_URL },
-            isPartOf: { "@type": "Dataset", name: "Bank Fee Index" },
+            isPartOf: `${SITE_URL}/fees`,
             variableMeasured: shown.filter((f) => f.median != null).map((f) => `${f.name} median`),
           }).replace(/</g, "\\u003c"),
         }}
