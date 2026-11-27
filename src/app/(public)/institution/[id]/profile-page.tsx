@@ -32,7 +32,7 @@ import { PRODUCT_NAME, SITE_NAME } from "@/lib/constants";
 import { sampleReportAvailable } from "@/lib/custom-report/sample-report";
 import { buildPublicInstitutionProfileLinks } from "@/lib/institution-profile-links";
 import { formatAbsoluteDate } from "@/lib/public-stats";
-import { formatCompactDollars } from "@/lib/format";
+import { formatCompactDollars, formatFeeAmount } from "@/lib/format";
 import { getCharterLabel, getSegmentLabel, holdingCompanyName, placeName } from "./enum-labels";
 import { FeeFocusScroll } from "./fee-focus-scroll";
 import {
@@ -56,6 +56,7 @@ import { cohortLabel, ExecutiveOverview } from "./executive-overview";
 import { FinancialPerformanceSection } from "./financial-performance-section";
 import { MIN_VERIFIED_FEES_FOR_OFFER } from "./profile-copy";
 import {
+  buildFocusFeeTitle,
   buildProfileTitle,
   getPublicInstitutionForPage,
   getRateFeesForPage,
@@ -125,7 +126,7 @@ const LINK = "font-medium text-ink underline decoration-border underline-offset-
 /** Schedule rows shown before "Show all". */
 const SCHEDULE_ROWS = 5;
 
-export async function institutionProfileMetadata(id: string): Promise<Metadata> {
+export async function institutionProfileMetadata(id: string, focusFeeCategory?: string): Promise<Metadata> {
   const instId = parseInt(id, 10);
   // notFound() here, before the page streams, so a missing institution answers 404, not 200.
   if (Number.isNaN(instId)) notFound();
@@ -156,6 +157,13 @@ export async function institutionProfileMetadata(id: string): Promise<Metadata> 
     return v.low === v.high ? v.amount : category === "overdraft" ? v.high : null;
   };
   const headline = { overdraft: valueOf("overdraft"), nsf: valueOf("nsf"), monthly: valueOf("monthly_maintenance") };
+  // The focused fee's own price: one price, or its published range ("$7.95 to $8.95").
+  const focusPrice = (category: string) => {
+    const v = pickHeadlineValues(verifiedFees, [category])[0];
+    if (!v) return null;
+    if (v.low === v.high || category === "overdraft") return formatFeeAmount(category === "overdraft" ? v.high : v.amount);
+    return `${formatFeeAmount(v.low)} to ${formatFeeAmount(v.high)}`;
+  };
   const city = placeName(inst.city);
   const place = [city, inst.state_code].filter(Boolean).join(", ");
   const stateName = inst.state_code ? STATE_NAMES[inst.state_code] : null;
@@ -167,7 +175,9 @@ export async function institutionProfileMetadata(id: string): Promise<Metadata> 
     // the index.
     robots: verifiedFees.length < MIN_VERIFIED_FEES_FOR_OFFER ? { index: false, follow: true } : undefined,
     alternates: { canonical: `/institution/${instId}` },
-    title: buildProfileTitle(inst.institution_name, headline),
+    title: focusFeeCategory
+      ? buildFocusFeeTitle(inst.institution_name, getDisplayName(focusFeeCategory), focusPrice(focusFeeCategory))
+      : buildProfileTitle(inst.institution_name, headline),
     description: `${inst.institution_name}${place ? `, a ${kind} based in ${place}` : ""}: ${
       verifiedFees.length > 0 ? `${verifiedFees.length} published fees` : "published fees"
     } from its own fee schedule, each beside the ${stateName ? `${stateName}, ` : ""}Fed district and U.S. medians from ${SITE_NAME}.`,

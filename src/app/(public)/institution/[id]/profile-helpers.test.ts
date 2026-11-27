@@ -8,7 +8,7 @@ import {
   normalizeFinancial,
   selectFinancialsByQuarter,
 } from "./financial-units";
-import { buildLocationParts, buildProfileTitle, pickHeadlineFees, pickHeadlineValues, PROFILE_TITLE_MAX } from "./profile-data";
+import { buildFocusFeeTitle, buildLocationParts, buildProfileTitle, pickHeadlineFees, pickHeadlineValues, PROFILE_TITLE_MAX } from "./profile-data";
 import type { ExtractedFee } from "@/lib/data-store/types";
 
 const ncuaRecord = {
@@ -347,4 +347,25 @@ it("headlines a stated consumer price over an unknown one, and never a business 
   // Unknown is treated as personal when nothing better is stated (#1058); business never is.
   expect(pickHeadlineFees([{ ...row, fee_audience: "unknown" }]).nsf).toBe(30);
   expect(pickHeadlineFees([{ ...row, fee_audience: "business" }]).nsf).toBeNull();
+});
+
+describe("buildFocusFeeTitle", () => {
+  const year = new Date().getFullYear();
+  it("should_name_the_focused_fee_and_its_range_not_overdraft", () => {
+    expect(buildFocusFeeTitle("Test Bank", "Wire Transfer", "$15 to $25")).toBe(`Test Bank Wire Transfer Fee: $15 to $25 (${year})`);
+  });
+
+  it("should_keep_the_year_when_it_fits", () => {
+    expect(buildFocusFeeTitle("Test Bank", "Overdraft (OD)", "$35")).toBe(`Test Bank Overdraft Fee: $35 (${year})`);
+  });
+
+  it("should_drop_the_price_before_cutting_the_fee_name", () => {
+    const title = buildFocusFeeTitle("Capital City Bank", "Monthly Maintenance", "$7.95 to $8.95");
+    expect(title).toBe("Capital City Bank Monthly Maintenance Fee");
+    expect(title.length).toBeLessThanOrEqual(PROFILE_TITLE_MAX);
+  });
+
+  it("should_not_double_the_word_fee", () => {
+    expect(buildFocusFeeTitle("Test Bank", "Paper Statement Fee", null)).toBe(`Test Bank Paper Statement Fee (${year})`);
+  });
 });
