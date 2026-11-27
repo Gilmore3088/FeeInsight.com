@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Check } from "lucide-react";
 import { PeerSetPicker, type PeerSetOption } from "@/components/public/peer-set-picker";
 import { carryExplorerState, PEER_EXPLORER_STATE_EVENT } from "@/lib/peer-explorer";
+import { keepFeeFocus, useProfileFeeFocus } from "./fee-focus-scroll";
 import { followPeerSetLink } from "./peer-reveal";
 
 /** The explorer's fee and view once the visitor changes them, so a set link carries both. */
@@ -28,7 +29,10 @@ function useExplorerState(): { fee: string; view: string } | null {
  */
 export function PeerSetLinks({ label, current, options }: { label: string; current: string; options: PeerSetOption[] }) {
   const state = useExplorerState();
-  const linked = state ? options.map((option) => ({ ...option, href: carryExplorerState(option.href, state) })) : options;
+  const category = useProfileFeeFocus();
+  const linked = state || category ? options.map((option) => ({
+    ...option, href: keepFeeFocus(state ? carryExplorerState(option.href, state) : option.href, category),
+  })) : options;
   return <PeerSetPicker label={label} current={current} options={linked} />;
 }
 
@@ -40,7 +44,8 @@ export function PeerSetLinks({ label, current, options }: { label: string; curre
 export function PeerSetFilterToggle({ label, pressed, href }: { label: string; pressed: boolean; href: string }) {
   const state = useExplorerState();
   const router = useRouter();
-  const target = state ? carryExplorerState(href, state) : href;
+  const category = useProfileFeeFocus();
+  const target = keepFeeFocus(state ? carryExplorerState(href, state) : href, category);
   return (
     <button
       type="button"

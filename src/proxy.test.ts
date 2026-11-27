@@ -17,16 +17,22 @@ function request(
 }
 
 describe("proxy", () => {
-  it("serves a profile's ?fee= view from its own cached path, keeping the address (#1811)", () => {
-    const response = proxy(request("https://feeinsight.com/institution/82?fee=overdraft"));
-    expect(response.headers.get("x-middleware-rewrite")).toBe("https://feeinsight.com/institution/82/fee/overdraft?fee=overdraft");
-
-    // An unknown fee is no focus: the plain cached profile answers.
-    for (const url of ["https://feeinsight.com/institution/82?fee=nope", "https://feeinsight.com/institution/82?utm_source=x"]) {
-      const plain = proxy(request(url));
-      expect(plain.headers.get("x-middleware-rewrite")).toBeNull();
-      expect(plain.headers.get("x-middleware-next")).toBe("1");
+  it("serves every fee focus from the same cached profile, keeping the address", () => {
+    for (const fee of ["overdraft", "nsf", "nope"]) {
+      const response = proxy(request(`https://feeinsight.com/institution/82?fee=${fee}&peers=state`));
+      expect(response.headers.get("x-middleware-rewrite")).toBeNull();
+      expect(response.headers.get("x-middleware-next")).toBe("1");
     }
+  });
+
+  it("redirects legacy fee-focus paths without losing other query parameters", () => {
+    const response = proxy(request("https://feeinsight.com/institution/82/fee/overdraft?peers=state&fee=nsf"));
+    expect(response.status).toBe(307);
+    const target = new URL(response.headers.get("location")!);
+    expect(target.pathname).toBe("/institution/82");
+    expect(target.searchParams.get("fee")).toBe("overdraft");
+    expect(target.searchParams.get("peers")).toBe("state");
+    expect(proxy(request(target.toString())).headers.get("x-middleware-next")).toBe("1");
   });
 
   it("serves a filtered directory per request and the plain directory from cache (#1811)", () => {

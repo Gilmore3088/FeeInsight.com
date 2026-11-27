@@ -9,19 +9,8 @@ const FEE_CATEGORIES = new Set<string>(Object.values(FEE_FAMILIES).flat());
 /** The directory's filters; any one of them makes the view per request. */
 const DIRECTORY_FILTER_KEYS = ["q", "state", "charter", "page", "fee"];
 
-/**
- * The cached route that serves a public address whose query string changes the page (#1811).
- * The profile and the directory are cached (ISR), and a cached page cannot read its query
- * string, so the variants live at their own paths: /institution/82?fee=nsf is served by
- * /institution/82/fee/nsf (also cached) and a filtered directory by /institutions/results.
- * The address in the browser keeps its query string. Null when no rewrite applies.
- */
+/** The directory's filtered view stays separate from the public cached directory. */
 export function cachedVariantPath(pathname: string, search: URLSearchParams): string | null {
-  const profile = /^\/institution\/(\d+)$/.exec(pathname);
-  if (profile) {
-    const fee = search.get("fee");
-    return fee && FEE_CATEGORIES.has(fee) ? `/institution/${profile[1]}/fee/${fee}` : null;
-  }
   // `fees` counts only as "1", the one value the page reads, so `?fees=x` stays on the cached page.
   if (pathname === "/institutions" && (DIRECTORY_FILTER_KEYS.some((key) => search.get(key)) || search.get("fees") === "1")) {
     return "/institutions/results";
@@ -115,6 +104,15 @@ export function proxy(request: NextRequest) {
       loginUrl.searchParams.set("from", `${pathname}${request.nextUrl.search}`);
       return NextResponse.redirect(loginUrl);
     }
+  }
+
+  // Retire old full-profile cache keys without dropping existing external links.
+  const legacyFee = /^\/institution\/(\d+)\/fee\/([^/]+)$/.exec(pathname);
+  if (legacyFee && FEE_CATEGORIES.has(legacyFee[2])) {
+    const url = request.nextUrl.clone();
+    url.pathname = `/institution/${legacyFee[1]}`;
+    url.searchParams.set("fee", legacyFee[2]);
+    return NextResponse.redirect(url);
   }
 
   // Cached pages' per-request and query-string routes (#1811, see viewer-variant.ts).

@@ -39,3 +39,10 @@
   --fi-chart-grid: #263a55;
   --fi-chart-axis: #5d6f87;
 }
+
+/* Fee focus is a browser enhancement of the one cached institution profile. */
+[data-profile-fee-focus] {
+  scroll-margin-top: 6rem;
+  border-inline-start: 2px solid var(--color-brick);
+  background-color: color-mix(in srgb, var(--color-brick) 4%, transparent);
+}
