@@ -8,6 +8,7 @@
  */
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { flushSync } from "react-dom";
+import { useProfileFeeFocus } from "./fee-focus-scroll";
 
 /** The category a `#fee-<category>` hash names, or null for any other or malformed hash. */
 export function feeHashCategory(hash: string): string | null {
@@ -40,19 +41,28 @@ export interface FeeAudienceTab {
 
 export function FeeAudienceTabs({ tabs, initial }: { tabs: FeeAudienceTab[]; initial: FeeAudienceTab["key"] }) {
   const [active, setActive] = useState(tabs.some((t) => t.key === initial) ? initial : tabs[0]?.key);
+  const focus = useProfileFeeFocus();
   const buttons = useRef<(HTMLButtonElement | null)[]>([]);
   const panels = useRef<Partial<Record<FeeAudienceTab["key"], HTMLDivElement | null>>>({});
 
   useEffect(() => {
+    if (!focus) return;
+    const target = tabs.find(({ key }) =>
+      Array.from(panels.current[key]?.querySelectorAll<HTMLElement>("[data-fee-category]") ?? [])
+        .some((row) => row.dataset.feeCategory === focus));
+    if (target) setActive(target.key);
+  }, [focus, tabs]);
+
+  useEffect(() => {
     const onHash = () => {
       const lists = (key: FeeAudienceTab["key"], category: string) =>
-        Boolean(panels.current[key]?.querySelector(`[data-fee-anchor="${CSS.escape(category)}"]`));
+        Boolean(panels.current[key]?.querySelector(`[data-fee-category="${CSS.escape(category)}"]`));
       const target = tabForHash(window.location.hash, active, lists, tabs.map((tab) => tab.key));
       if (!target) return;
       const category = feeHashCategory(window.location.hash)!;
       // Show the tab now, so the row below is displayed before we scroll to it.
       flushSync(() => setActive(target));
-      const anchors = panels.current[target]?.querySelectorAll<HTMLElement>(`[data-fee-anchor="${CSS.escape(category)}"]`);
+      const anchors = panels.current[target]?.querySelectorAll<HTMLElement>(`[data-fee-category="${CSS.escape(category)}"]`);
       // Scroll to the copy that is actually displayed (table or phone list).
       Array.from(anchors ?? []).find((el) => el.offsetParent !== null)?.scrollIntoView({ block: "start" });
     };

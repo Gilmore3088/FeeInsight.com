@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useProfileFeeFocus } from "./fee-focus-scroll";
 
 /**
  * Wraps a list whose rows past the first few carry the `group-data-[all=true]/fees` classes:
@@ -26,9 +27,39 @@ export function ShowAll({
   tabbed?: boolean;
   children: React.ReactNode;
 }) {
-  const [all, setAll] = useState(initialAll || total <= shown);
+  const [expanded, setAll] = useState(initialAll || total <= shown);
+  const category = useProfileFeeFocus();
+  const list = useRef<HTMLDivElement>(null);
+  const all = expanded || category !== null;
+  useEffect(() => {
+    if (!category || !list.current) return;
+    const rows = Array.from(list.current.querySelectorAll<HTMLElement>("[data-fee-category]"))
+      .filter((row) => row.dataset.feeCategory === category);
+    for (const row of rows) row.setAttribute("data-profile-fee-focus", "");
+    let anchor: HTMLElement | undefined;
+    // Read layout after ShowAll exposes the full list and audience tabs finish selecting.
+    const tryFocus = () => {
+      if (anchor) return;
+      anchor = rows.find((row) => row.getClientRects().length !== 0);
+      if (!anchor) return;
+      observer.disconnect();
+      anchor.id = `fee-${category}`;
+      const hash = window.location.hash;
+      if (!hash || hash === `#fee-${category}`) anchor.scrollIntoView({ block: "start", behavior: "auto" });
+    };
+    // Business-only rows may not be visible until the audience-tab effect commits.
+    const observer = new MutationObserver(tryFocus);
+    observer.observe(list.current, { subtree: true, attributes: true, attributeFilter: ["hidden"] });
+    const frame = requestAnimationFrame(tryFocus);
+    return () => {
+      observer.disconnect();
+      cancelAnimationFrame(frame);
+      if (anchor?.id === `fee-${category}`) anchor.removeAttribute("id");
+      for (const row of rows) row.removeAttribute("data-profile-fee-focus");
+    };
+  }, [category]);
   return (
-    <div data-all={all} className="group/fees">
+    <div ref={list} data-all={all} className="group/fees">
       {children}
       {(!all || aside) && (
         <div className="mt-4 flex flex-wrap items-center justify-between gap-x-6 gap-y-2">

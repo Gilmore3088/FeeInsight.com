@@ -34,7 +34,7 @@ import { buildPublicInstitutionProfileLinks } from "@/lib/institution-profile-li
 import { formatAbsoluteDate } from "@/lib/public-stats";
 import { formatCompactDollars } from "@/lib/format";
 import { getCharterLabel, getSegmentLabel, holdingCompanyName, placeName } from "./enum-labels";
-import { FeeFocusScroll } from "./fee-focus-scroll";
+import { ProfileFeeFocus } from "./fee-focus-scroll";
 import {
   FeeScheduleTable,
   groupFeesByFamily,
@@ -90,22 +90,13 @@ import {
 } from "./profile-view";
 
 /**
- * The institution profile, shared by /institution/[id] and its `?fee=` variant
- * (/institution/[id]/fee/[fee], which the proxy rewrites `?fee=` requests to).
- *
- * Both routes are cached (ISR, #1811): a crawler walking hundreds of profiles used to run
- * every read below per request and exhausted the database connections. So nothing here
- * reads the session or the query string; the page is the same for every visitor, and the
+ * One cached institution profile per ID. Fee focus, session, and peer filters are read
+ * by client islands so neither query parameters nor authenticated data enter the cache. The
  * signed-in, Pro and alert parts are client islands (viewer-islands.tsx) that ask per
  * request after hydration. Pro data is read only there, so it never enters the cached HTML.
  */
 
 const TAXONOMY = new Set(Object.values(FEE_FAMILIES).flat());
-
-/** The `?fee=` focus, validated against the taxonomy: an unknown value is no focus. */
-export function focusCategoryFrom(value: string | undefined): string | null {
-  return value && TAXONOMY.has(value) ? value : null;
-}
 
 /** Plain labels for every taxonomy category, for the alert control's own wording. */
 const CATEGORY_LABELS: Record<string, string> = Object.fromEntries(
@@ -180,7 +171,7 @@ export async function institutionProfileMetadata(id: string): Promise<Metadata> 
   };
 }
 
-export async function InstitutionProfile({ id, focusFeeCategory }: { id: string; focusFeeCategory: string | null }) {
+export async function InstitutionProfile({ id }: { id: string }) {
   const instId = parseInt(id, 10);
   if (Number.isNaN(instId)) notFound();
 
@@ -424,14 +415,14 @@ export async function InstitutionProfile({ id, focusFeeCategory }: { id: string;
   );
   const places = [stateName, districtName ? `the ${districtName} district` : null, "the U.S."].filter((p): p is string => Boolean(p));
   const medianPlaces = places.length > 1 ? `${places.slice(0, -1).join(", ")} and ${places[places.length - 1]}` : places.join("");
-  const scheduleAll = Boolean(focusFeeCategory) || sparse;
+  const scheduleAll = sparse;
 
   // A render with a failed read is cached for a minute, not a day, so a database blip never
   // pins a profile with missing sections (#1572).
   if (budget.failed()) await shortenPageLife();
 
   return (
-    <>
+    <ProfileFeeFocus>
       <BreadcrumbJsonLd
         items={[
           { name: "Home", href: "/" },
@@ -584,7 +575,7 @@ export async function InstitutionProfile({ id, focusFeeCategory }: { id: string;
               <PeerExplorerSection
                 sets={peerSets}
                 set={peerExplorerSet}
-                hrefFor={peerSetHrefs(instId, focusFeeCategory)}
+                hrefFor={peerSetHrefs(instId, null)}
                 initial={{}}
               />
             </PeerExplorerIsland>
@@ -627,11 +618,9 @@ export async function InstitutionProfile({ id, focusFeeCategory }: { id: string;
                   }
                 >
                   <div className="overflow-hidden rounded-2xl border border-border bg-surface-0">
-                    {focusFeeCategory && <FeeFocusScroll category={focusFeeCategory} />}
                     <FeeScheduleTable
                       fees={displayFees}
                       disclosureUrl={inst.fee_schedule_url}
-                      focusCategory={focusFeeCategory}
                       benchmarks={feeBenchmarks}
                       limit={scheduleAll ? Number.POSITIVE_INFINITY : SCHEDULE_ROWS}
                     />
@@ -686,7 +675,6 @@ export async function InstitutionProfile({ id, focusFeeCategory }: { id: string;
           <FeeAlertIsland
             institutionId={instId}
             institutionName={inst.institution_name}
-            focusCategory={focusFeeCategory}
             categoryLabels={CATEGORY_LABELS}
             mode={sparse ? "verify" : "alerts"}
           />
@@ -718,6 +706,6 @@ export async function InstitutionProfile({ id, focusFeeCategory }: { id: string;
         stateCode={inst.state_code}
         dateModified={inst.latest_source_collected_at ?? null}
       />
-    </>
+    </ProfileFeeFocus>
   );
 }

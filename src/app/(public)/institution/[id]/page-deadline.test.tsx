@@ -107,7 +107,7 @@ let id = 1000;
 
 /** The cached page's whole render (page.tsx only hands the id to it). */
 const InstitutionProfilePage = async (p: ReturnType<typeof props>) =>
-  InstitutionProfile({ id: (await p.params).id, focusFeeCategory: null });
+  InstitutionProfile({ id: (await p.params).id });
 
 beforeEach(() => {
   vi.useFakeTimers();
