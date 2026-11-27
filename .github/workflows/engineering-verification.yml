@@ -11,7 +11,7 @@ on:
         description: "Explicit runnable contract revision; registration is not approval"
         required: true
         type: choice
-        options: ["1048-v2"]
+        options: ["1048-v3"]
 permissions:
   contents: read
   pull-requests: read

@@ -6,6 +6,7 @@ export function classifyExecution(result: { status: number | null; stdout: strin
 };
 /** CURRENT canonical input closure, regular-file hashes and required override absences; never native acceptance. */
 export function frozenIdentities(root: string, contract: unknown): Record<string, string>;
+export function prepareReaderOutputDirectory(repositoryRoot: string, outputDirectory: string): string;
 export function runPilot(options: {
   repositoryRoot: string;
   headSha: string;
@@ -14,4 +15,5 @@ export function runPilot(options: {
   /** Deprecated exact-key alias; when both are supplied their values must agree. */
   contractNumber?: string;
   artifactUrl?: string;
-}): { assessment: { status: string; problems: string[] }; head_sha: string; duration_ms: number; contract_key?: string };
+}): { assessment: { status: string; problems: string[] }; head_sha: string; duration_ms: number; contract_key?: string }
+  | Promise<{ assessment: { status: string; problems: string[] }; head_sha: string; duration_ms: number; contract_key?: string }>;

@@ -19,8 +19,8 @@ reports the rest (#2058). Other PRs write "none".
 ## Verification
 - Commands run and their results (`npm run guard:legacy`, tests, typecheck, lint).
 - What was not tested.
-- Frozen engineering contract: exactly one `<!-- engineering-contract: CONTRACT_REVISION_KEY -->` marker and raw contract hash. Replace the placeholder with an explicit registered revision, such as `1048-v2`; the issue number does not select its latest revision.
-- Current runnable proof is separate from historical evidence. The preserved `1048` and `2285` revisions cannot verify current code after their execution chain changes; registration alone is not acceptance or owner authorization.
+- Frozen engineering contract: exactly one `<!-- engineering-contract: CONTRACT_REVISION_KEY -->` marker and raw contract hash. Replace the placeholder with an explicit registered revision, such as `1048-v3`; the issue number does not select its latest revision.
+- Current runnable proof is separate from historical evidence. The preserved `1048`, `2285` and `1048-v2` revisions cannot verify current code after their execution chain changes; registration alone is not acceptance or owner authorization.
 - Actual changed-path risk, independent test designer, source authority and requirement coverage.
 - Baseline assertion failure and exact-head GREEN: authenticated workflow/artifact links, or explicit BLOCKED.
 - Exact-head reviewer and finding dispositions; owner sign-off is recorded separately.

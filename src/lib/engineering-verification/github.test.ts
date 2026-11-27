@@ -80,6 +80,24 @@ describe('native historical merged-head CI association', () => {
     expect(isGithubEvidence(snapshot)).toBe(false);
     expect(isGithubEvidence(JSON.parse(JSON.stringify(snapshot)))).toBe(false);
   });
+  it('keeps valid unequal trees in CI diagnostics while rechecking independent historical prerequisites', async () => {
+    const original = historicalApi({ [`/git/commits/${historicalMerge}`]: { sha: historicalMerge, tree: { sha: 'b'.repeat(40) } } });
+    let membershipReads = 0, prReads = 0;
+    const snapshot = await collectHistorical(async (input, options) => {
+      const path = new URL(String(input)).pathname;
+      if (path.endsWith(`/commits/${historicalHead}/pulls`)) membershipReads++;
+      if (path.endsWith('/pulls/2995')) prReads++;
+      return original(input, options);
+    });
+    expect(snapshot.problems).toEqual([]);
+    expect(snapshot.ci.status).toBe('BLOCKED');
+    expect(snapshot.ci.problems).toContain('Native head and merge commit trees are not identical');
+    expect(snapshot.ci.association).toBeNull();
+    expect(snapshot.ci.actualCheckoutSha).toBeNull();
+    expect(membershipReads).toBe(2);
+    expect(prReads).toBe(2);
+    expect(isGithubEvidence(snapshot)).toBe(false);
+  });
   it('never treats an open or closed-unmerged PR as historical authority', async () => {
     for (const changes of [{ state: 'open' }, { merged: false }, { merged_at: null }, { merge_commit_sha: null }]) {
       expect((await collectHistorical(historicalApi({ '/pulls/2995': { ...historicalPr, ...changes } }))).ci.status).toBe('BLOCKED');
@@ -98,7 +116,9 @@ describe('native historical merged-head CI association', () => {
     [{ ...historicalPr, merge_commit_sha: 'b'.repeat(40) }],
     [{ ...historicalPr, head: { ...historicalPr.head, repo: { ...historicalRepo, full_name: 'other/repository' } } }],
   ].map(association => ({ association })))('rejects absent, counter-PR, ambiguous or mismatched native commit associations', async ({ association }) => {
-    expect((await collectHistorical(historicalApi({ [`/commits/${historicalHead}/pulls`]: association }))).ci.status).toBe('BLOCKED');
+    const snapshot = await collectHistorical(historicalApi({ [`/commits/${historicalHead}/pulls`]: association }));
+    expect(snapshot.ci.status).toBe('BLOCKED');
+    expect(snapshot.problems).toContain('historical CI association: Native commit-to-PR association is missing, ambiguous or mismatched');
   });
   it.each([
     { sha: historicalMerge, tree: { sha: 'b'.repeat(40) } },
@@ -106,6 +126,20 @@ describe('native historical merged-head CI association', () => {
     { sha: historicalMerge, tree: {} },
   ])('rejects missing/different immutable merge trees or commit identity', async commit => {
     expect((await collectHistorical(historicalApi({ [`/git/commits/${historicalMerge}`]: commit }))).ci.status).toBe('BLOCKED');
+  });
+  it.each([
+    { path: historicalHead, commit: { sha: 'b'.repeat(40), tree: { sha: historicalTree } } },
+    { path: historicalMerge, commit: { sha: 'b'.repeat(40), tree: { sha: historicalTree } } },
+    { path: historicalHead, commit: { sha: historicalHead, tree: {} } },
+    { path: historicalMerge, commit: { sha: historicalMerge, tree: {} } },
+    { path: historicalHead, commit: { sha: historicalHead, tree: { sha: 'malformed' } } },
+    { path: historicalMerge, commit: { sha: historicalMerge, tree: { sha: 'malformed' } } },
+  ])('keeps invalid immutable identity or tree shape globally blocking: $path $commit', async ({ path, commit }) => {
+    const snapshot = await collectHistorical(historicalApi({ [`/git/commits/${path}`]: commit }));
+    expect(snapshot.problems).toContain('historical CI association: Native head and merge commit trees are missing or not identical');
+    expect(snapshot.ci.status).toBe('BLOCKED');
+    expect(snapshot.ci.association).toBeNull();
+    expect(snapshot.ci.problems).not.toContain('Native head and merge commit trees are not identical');
   });
   it.each([
     { repository: { ...historicalRepo, full_name: 'other/repository' } }, { repository: { ...historicalRepo, id: 1 } },
@@ -133,7 +167,66 @@ describe('native historical merged-head CI association', () => {
     const original = historicalApi(); let reads = 0;
     const snapshot = await collectHistorical(async (input, options) => new URL(String(input)).pathname.endsWith(`/commits/${historicalHead}/pulls`) && ++reads > 1 ? Response.json([historicalPr, { ...historicalPr, number: 2996 }]) : original(input, options));
     expect(snapshot.ci.status).toBe('BLOCKED');
-    expect(snapshot.ci.problems).toContain('Historical native commit association changed while collecting evidence');
+    expect(snapshot.ci.problems).toContain('Historical native commit association changed or could not be rechecked while collecting evidence');
+    expect(snapshot.problems).toContain('Historical native commit association changed or could not be rechecked while collecting evidence');
+  });
+  it.each([
+    { name: 'head', changes: { head: { ...historicalPr.head, sha: 'b'.repeat(40) } } },
+    { name: 'state', changes: { state: 'open' } },
+    { name: 'merged flag', changes: { merged: false } },
+    { name: 'merge SHA', changes: { merge_commit_sha: 'b'.repeat(40) } },
+    { name: 'merge time', changes: { merged_at: '2026-11-08T04:22:18Z' } },
+    { name: 'head ref', changes: { head: { ...historicalPr.head, ref: 'changed-branch' } } },
+    { name: 'base SHA', changes: { base: { ...historicalPr.base, sha: 'b'.repeat(40) } } },
+    { name: 'base ref', changes: { base: { ...historicalPr.base, ref: 'changed-branch' } } },
+    { name: 'head repository', changes: { head: { ...historicalPr.head, repo: { ...historicalRepo, id: 1 } } } },
+    { name: 'base repository', changes: { base: { ...historicalPr.base, repo: { ...historicalRepo, id: 1 } } } },
+  ])('keeps the final merged PR $name globally blocking after unequal trees', async ({ changes }) => {
+    const original = historicalApi({ [`/git/commits/${historicalMerge}`]: { sha: historicalMerge, tree: { sha: 'b'.repeat(40) } } });
+    let prReads = 0, membershipReads = 0;
+    const snapshot = await collectHistorical(async (input, options) => {
+      const path = new URL(String(input)).pathname;
+      if (path.endsWith(`/commits/${historicalHead}/pulls`)) membershipReads++;
+      if (path.endsWith('/pulls/2995') && ++prReads === 2) return Response.json({ ...historicalPr, ...changes });
+      return original(input, options);
+    });
+    expect(prReads).toBe(2);
+    expect(membershipReads).toBe(2);
+    expect(snapshot.problems).toContain('Historical merged PR identity changed while collecting evidence');
+    expect(snapshot.ci.problems).toContain('Native head and merge commit trees are not identical');
+    expect(snapshot.ci.status).toBe('BLOCKED');
+    expect(snapshot.ci.association).toBeNull();
+  });
+  it.each(['unequal', 'invalid'] as const)('keeps the final PR read failure global when trees are %s', async mode => {
+    const original = historicalApi({ [`/git/commits/${historicalMerge}`]: { sha: historicalMerge, tree: { sha: mode === 'unequal' ? 'b'.repeat(40) : 'invalid' } } });
+    let prReads = 0;
+    const snapshot = await collectHistorical(async (input, options) => new URL(String(input)).pathname.endsWith('/pulls/2995') && ++prReads === 2
+      ? Response.json({ message: 'denied' }, { status: 403 }) : original(input, options));
+    expect(prReads).toBe(2);
+    expect(snapshot.problems).toContain('current pull request identity: GitHub /pulls/2995 returned 403');
+    expect(snapshot.problems).toContain('Historical merged PR identity changed while collecting evidence');
+    expect(snapshot.ci.status).toBe('BLOCKED');
+  });
+  it.each(['unequal', 'equal'] as const)('rechecks membership globally with %s trees for every late missing, ambiguous, wrong, malformed or failed read', async mode => {
+    const cases = [
+      { name: 'missing', json: [] },
+      { name: 'ambiguous', json: [historicalPr, { ...historicalPr, number: 2996 }] },
+      { name: 'wrong PR', json: [{ ...historicalPr, number: 2996 }] },
+      { name: 'wrong repository', json: [{ ...historicalPr, head: { ...historicalPr.head, repo: { ...historicalRepo, id: 1 } } }] },
+      { name: 'malformed', json: { unexpected: 'not a collection' } },
+      { name: 'failed', json: { message: 'denied' }, status: 403 },
+    ];
+    for (const late of cases) {
+      const original = historicalApi({ [`/git/commits/${historicalMerge}`]: { sha: historicalMerge, tree: { sha: mode === 'equal' ? historicalTree : 'b'.repeat(40) } } });
+      let membershipReads = 0;
+      const snapshot = await collectHistorical(async (input, options) => new URL(String(input)).pathname.endsWith(`/commits/${historicalHead}/pulls`) && ++membershipReads === 2
+        ? Response.json(late.json, { status: late.status ?? 200 }) : original(input, options));
+      expect(membershipReads, late.name).toBe(2);
+      expect(snapshot.problems, late.name).toContain('Historical native commit association changed or could not be rechecked while collecting evidence');
+      expect(snapshot.ci.status, late.name).toBe('BLOCKED');
+      if (mode === 'unequal') expect(snapshot.ci.association, late.name).toBeNull();
+      if (late.status) expect(snapshot.problems, late.name).toContain(`current historical CI association: GitHub /commits/${historicalHead}/pulls returned 403`);
+    }
   });
   it('rechecks merged PR identity before finalization', async () => {
     for (const changes of [{ state: 'open' }, { merged: false }, { merge_commit_sha: 'b'.repeat(40) }, { head: { ...historicalPr.head, ref: 'changed-branch' } }]) {

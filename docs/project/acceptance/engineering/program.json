@@ -22,7 +22,8 @@
         "docs/project/acceptance/engineering/2285.json",
         "docs/project/acceptance/engineering/1048.json",
         "src/lib/engineering-verification/contract-registry.mjs",
-        "docs/project/acceptance/engineering/1048-v2.json"
+        "docs/project/acceptance/engineering/1048-v2.json",
+        "docs/project/acceptance/engineering/1048-v3.json"
       ],
       "tests": [
         "src/lib/engineering-verification/contract.test.ts",
@@ -54,7 +55,13 @@
         "src/lib/engineering-verification/pilot.mjs",
         "src/lib/engineering-verification/policy-pilot.mjs",
         "src/lib/engineering-verification/policy-v2-pilot.mjs",
-        "src/lib/engineering-verification/__fixtures__/policy-v2.json"
+        "src/lib/engineering-verification/__fixtures__/policy-v2.json",
+        "src/lib/engineering-verification/ci-domain-pilot.mjs",
+        "src/lib/engineering-verification/ci-domain-probe.mjs",
+        "src/lib/engineering-verification/ci-domain-collection.mjs",
+        "src/lib/engineering-verification/strict-json.mjs",
+        "src/lib/engineering-verification/__fixtures__/ci-domain-stimulus-v2.json",
+        "src/lib/engineering-verification/__fixtures__/ci-domain-expectations-v2.json"
       ],
       "tests": [
         "src/lib/engineering-verification/runner.test.ts",
@@ -62,12 +69,18 @@
         "src/lib/engineering-verification/policy-pilot.test.ts",
         "src/lib/engineering-verification/policy-v2-pilot.test.ts",
         "src/lib/engineering-verification/runner-revisions.test.ts",
-        "src/lib/engineering-verification/preparer-closure.test.ts"
+        "src/lib/engineering-verification/preparer-closure.test.ts",
+        "src/lib/engineering-verification/ci-domain-pilot.test.ts",
+        "src/lib/engineering-verification/ci-domain-probe.test.ts",
+        "src/lib/engineering-verification/ci-domain-collection.test.ts",
+        "src/lib/engineering-verification/strict-json.test.ts"
       ]
     },
     "proof": {
       "implementation": [
-        "src/lib/engineering-verification/proof.mjs"
+        "src/lib/engineering-verification/proof.mjs",
+        "src/lib/engineering-verification/ci-domain-pilot.mjs",
+        "src/lib/engineering-verification/strict-json.mjs"
       ],
       "tests": [
         "src/lib/engineering-verification/proof.test.ts",

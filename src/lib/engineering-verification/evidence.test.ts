@@ -83,9 +83,10 @@ describe('authenticated deployment to runtime observation', () => {
     githubObservedAt?: Date; runtimeObservedAt?: Date; deploymentAt?: string;
     mutateRuntime?: (data: ReturnType<typeof runtime>) => void;
     requiredExecution?: typeof requiredExecution; echoedRequiredExecution?: typeof requiredExecution | null;
+    omitNativeIdentity?: boolean;
   };
-  async function collected({ wrongDeployment = false, wrongMerge = false, environment = 'production', deploymentEnvironment = environment, statusEnvironment = deploymentEnvironment, runtimeEnvironment = environment, newerWrongDeployment = false, githubObservedAt = now, runtimeObservedAt = now, deploymentAt = '2026-11-01T23:00:00Z', mutateRuntime, requiredExecution: executionPolicy = requiredExecution, echoedRequiredExecution }: CollectionOptions = {}) {
-    const deployedSha = 'd'.repeat(40);
+  async function collected({ wrongDeployment = false, wrongMerge = false, environment = 'production', deploymentEnvironment = environment, statusEnvironment = deploymentEnvironment, runtimeEnvironment = environment, newerWrongDeployment = false, githubObservedAt = now, runtimeObservedAt = now, deploymentAt = '2026-11-01T23:00:00Z', mutateRuntime, requiredExecution: executionPolicy = requiredExecution, echoedRequiredExecution, omitNativeIdentity = false }: CollectionOptions = {}) {
+    const deployedSha = 'd'.repeat(40), nativeRepo = { id: 17, full_name: 'o/r' };
     const observationPolicy = { ...policy, requiredExecution: executionPolicy, deployedSha, environment };
     const data = runtime();
     data.atlas.forEach(row => { row.execution.deployedSha = deployedSha; row.execution.environment = runtimeEnvironment; });
@@ -96,8 +97,8 @@ describe('authenticated deployment to runtime observation', () => {
     const since = deploymentAt, until = now.toISOString();
     const request = { deployedSha, since, until, changeKeys: policy.replayChangeKeys, requiredExecution: echoedRequiredExecution === undefined ? executionPolicy : echoedRequiredExecution };
     const values: Record<string, unknown> = {
-      '': { default_branch: 'main' }, '/commits/main': { sha: 'c'.repeat(40) }, '/contents/.github/workflows/test.yml': { encoding: 'base64', content: btoa('trusted workflow') },
-      '/pulls/1': { number: 1, head: { sha }, user: { login: 'builder', id: 1 }, state: 'closed', merged: true, merge_commit_sha: wrongMerge ? 'e'.repeat(40) : deployedSha, merged_at: '2026-11-01T00:00:00Z' },
+      '': { ...nativeRepo, default_branch: 'main' }, '/commits/main': { sha: 'c'.repeat(40) }, '/contents/.github/workflows/test.yml': { encoding: 'base64', content: btoa('trusted workflow') },
+      '/pulls/1': { number: 1, head: { sha, ref: 'unit-deployment', ...(omitNativeIdentity ? {} : { repo: nativeRepo }) }, base: { sha: 'b'.repeat(40), ref: 'main', repo: nativeRepo }, user: { login: 'builder', id: 1 }, state: 'closed', merged: true, merge_commit_sha: wrongMerge ? 'e'.repeat(40) : deployedSha, merged_at: '2026-11-01T00:00:00Z' },
       '/pulls/1/files': [], '/pulls/1/reviews': [], '/issues/1/comments': [],
       [`/commits/${sha}/check-runs`]: { check_runs: [] }, '/actions/workflows/test.yml': { id: 7, path: '.github/workflows/test.yml' }, '/actions/workflows/7/runs': { workflow_runs: [] },
       '/deployments': [{ id: 10, sha: wrongDeployment ? 'e'.repeat(40) : deployedSha, environment: deploymentEnvironment, created_at: new Date(Date.parse(deploymentAt) - 3600000).toISOString() }, ...(newerWrongDeployment ? [{ id: 12, sha: 'e'.repeat(40), environment: 'Production', created_at: '2026-11-08T00:00:00Z' }] : [])],
@@ -120,6 +121,11 @@ describe('authenticated deployment to runtime observation', () => {
     expect(assessOperationalEvidence(evidence, observationPolicy, { github, now }).status).toBe('PRODUCTION_VERIFIED');
     expect(assessOperationalEvidence(JSON.parse(JSON.stringify(evidence)), observationPolicy, { github, now }).status).toBe('PRODUCTION_UNVERIFIED');
     expect(JSON.stringify(evidence)).not.toContain('session=private');
+  });
+  it('keeps missing native merged-PR identity globally blocking operational acceptance', async () => {
+    const { github, evidence, observationPolicy } = await collected({ omitNativeIdentity: true });
+    expect(github.problems).toContain('Historical merged PR identity changed while collecting evidence');
+    expect(assessOperationalEvidence(evidence, observationPolicy, { github, now }).status).toBe('PRODUCTION_UNVERIFIED');
   });
   it('does not substitute completed Atlas measurement for the required owning-agent execution and affected scope', async () => {
     const { github, evidence, observationPolicy } = await collected({ mutateRuntime: data => { data.owningExecutions = []; } });

@@ -5,7 +5,7 @@ import { assertNativeContractPath, validateRevisionContract, expectedWorkflowDig
 import { resolveContractRevision } from './contract-registry.mjs';
 import { nativeBlobSha, nativeTreeResponse } from './native-tree.fixture';
 
-const REF = 'a'.repeat(40), revision = resolveContractRevision('1048-v2');
+const REF = 'a'.repeat(40), revision = resolveContractRevision('1048-v3');
 const files = { [revision.path]: '{"fixture":"contract metadata only"}' };
 function graph(change?: (value: Record<string, unknown>, path: string) => void) {
   return vi.fn(async (path: string) => {
@@ -57,19 +57,19 @@ describe('canonical immutable native contract path', () => {
   it('resolves only the registered path even if a caller adds a path override, and rejects unknown revision/ref before reads', async () => {
     const get = graph();
     expect(await assertNativeContractPath({ ...revision, path: '../outside-canary' }, REF, get)).toBe(nativeBlobSha(files[revision.path]));
-    for (const key of ['latest', '../1048-v2', '1048-v2.json']) await expect(assertNativeContractPath({ key }, REF, vi.fn())).rejects.toThrow();
+    for (const key of ['latest', '../1048-v3', '1048-v3.json']) await expect(assertNativeContractPath({ key }, REF, vi.fn())).rejects.toThrow();
     const untouched = vi.fn();
     await expect(assertNativeContractPath(revision, '../outside-canary', untouched)).rejects.toThrow();
     expect(untouched).not.toHaveBeenCalled();
   });
 });
 describe('accepted revision preserves original declared identity', () => {
-  for (const key of ['1048', '2285']) it(`retains exact ${key} raw identity but rejects whitespace-only rewrite and same-issue substitution`, () => {
+  for (const key of ['1048', '2285', '1048-v2']) it(`retains exact ${key} raw identity but rejects whitespace-only rewrite and same-issue substitution`, () => {
     const legacy = resolveContractRevision(key), raw = readFileSync(new URL('../../../' + legacy.path, import.meta.url), 'utf8');
     const contract = JSON.parse(raw);
     expect(validateRevisionContract(legacy, contract, raw)).toEqual({ ok: true, errors: [] });
     expect(validateRevisionContract(legacy, contract, raw + '\n').ok).toBe(false);
-    expect(validateRevisionContract(resolveContractRevision('1048-v2'), contract, raw).ok).toBe(false);
+    expect(validateRevisionContract(resolveContractRevision('1048-v3'), contract, raw).ok).toBe(false);
     expect(validateRevisionContract(legacy, { ...contract, issue: '#9999' }, raw).ok).toBe(false);
   });
 });
@@ -82,8 +82,14 @@ describe('reviewed proof workflow origin pin', () => {
     expect(expectedWorkflowDigest(legacy, {})).toBe(pin);
     expect(expectedWorkflowDigest({ ...legacy, historicalWorkflowSha256: '0'.repeat(64), executionStatus: 'CURRENT' }, { execution_files: [{ path, sha256: '1'.repeat(64) }] })).toBe(pin);
   });
+  it('keeps v2 original workflow and Baf source distinct from original d28 history', async () => {
+    const legacy = resolveContractRevision('1048-v2');
+    expect(expectedWorkflowDigest(legacy, {})).toBe('02c17ecbd29b154cd667f868a7beed2b59ba70ec6ce3274face95c82be45f60a');
+    expect(legacy.historicalTrustedSourceRefs).toEqual(['baf057d9e87f7f1c48306eb0ad2ef4e60dea787f']);
+    expect(() => resolveContractRevision('1048-v2', { requireRunnable: true })).toThrow(/historical/i);
+  });
   it('uses the current reviewed contract entry instead of caller-declared historical authority', () => {
-    const current = resolveContractRevision('1048-v2');
+    const current = resolveContractRevision('1048-v3');
     expect(expectedWorkflowDigest({ ...current, historicalWorkflowSha256: pin, executionStatus: 'HISTORICAL_ONLY' }, { execution_files: [{ path, sha256: 'a'.repeat(64) }] })).toBe('a'.repeat(64));
   });
   it.each([
@@ -94,6 +100,6 @@ describe('reviewed proof workflow origin pin', () => {
     { execution_files: [{ path, sha256: ['a'.repeat(64)] }] },
     { execution_files: [{ path, sha256: 'not-a-digest' }] },
   ])('rejects missing, ambiguous or non-string CURRENT workflow authority %j', contract => {
-    expect(() => expectedWorkflowDigest(resolveContractRevision('1048-v2'), contract)).toThrow();
+    expect(() => expectedWorkflowDigest(resolveContractRevision('1048-v3'), contract)).toThrow();
   });
 });

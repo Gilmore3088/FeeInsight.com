@@ -1,0 +1,293 @@
+{
+  "schema_version": "1.1",
+  "contract_id": "EV-FOUNDATION-1048-V3",
+  "issue": "#1048",
+  "risk_tier": "R3",
+  "base_sha": "baf057d9e87f7f1c48306eb0ad2ef4e60dea787f",
+  "execution_files": [
+    {
+      "path": ".gitattributes",
+      "sha256": "6f8be4f7dc0f90e7a988d21085d6fa9b947092500429203fdbba2d3c5ef07935"
+    },
+    {
+      "path": ".github/workflows/engineering-verification.yml",
+      "sha256": "db732ae5a84b1450bcdb09221916cb84cc7b59fb344456a99fd891d844f74171"
+    },
+    {
+      "path": "docs/project/acceptance/engineering/design-v1/prd-v1.md",
+      "sha256": "6ec2ff3c9a5005dfd783cdfc94652148613cec77c493d712f228601da71f7dcc"
+    },
+    {
+      "path": "docs/project/acceptance/engineering/design-v1/technical-design-v1.md",
+      "sha256": "40acbb05266c300fc5dbb2b690d3fd89eb368310c3ccdeeb7580ccdf3c042c35"
+    },
+    {
+      "path": "docs/project/acceptance/engineering/program.json",
+      "sha256": "a8c1e3798a7f9bfb7f9f8f54b11babcb4e0caef47220f85ee239507063e8db70"
+    },
+    {
+      "path": "package-lock.json",
+      "sha256": "18b9c5a6dfecc82c6cec60ecdf26c27c072efd65f980eae94d960f3c429ec819"
+    },
+    {
+      "path": "package.json",
+      "sha256": "19845fd48614ba37c028dc001939342e54468c3b0e2c71840808b6e42b2a0920"
+    },
+    {
+      "path": "src/lib/agents/hoovie/AGENTS.md",
+      "sha256": "2a2e57613bf7eb027472b42311b64e1d591503fa613fc7e02bf376d675c64422"
+    },
+    {
+      "path": "src/lib/engineering-verification/__fixtures__/ci-domain-expectations-v2.json",
+      "sha256": "9a017645c7467ce56f9cea9e367e5fcd93693c7b673fb9f514aefba78a5da723"
+    },
+    {
+      "path": "src/lib/engineering-verification/__fixtures__/ci-domain-stimulus-v2.json",
+      "sha256": "c89dfc33d196fdbd002a36fd778c7daf921f0fa3e06b1de57f3415fec0a742f9"
+    },
+    {
+      "path": "src/lib/engineering-verification/__fixtures__/knox-2285.json",
+      "sha256": "457232128d20222e6826d415320c01ab723a2b0d83f578f996ffa660ce3c5225"
+    },
+    {
+      "path": "src/lib/engineering-verification/__fixtures__/policy-1048.json",
+      "sha256": "30d208d57556c25fd55fe02f9f3b780afe999c07425078bf4cc6e150a87ed4b1"
+    },
+    {
+      "path": "src/lib/engineering-verification/__fixtures__/policy-v2.json",
+      "sha256": "0cf8634e600f102896b02e12adab66e481bbb9706a3be5dca2490bea8f738989"
+    },
+    {
+      "path": "src/lib/engineering-verification/child.mjs",
+      "sha256": "7876c1163d6480f92b44683fb1353a41907fb0cb3a246c0bd536b5612cd32bc2"
+    },
+    {
+      "path": "src/lib/engineering-verification/ci-domain-collection.mjs",
+      "sha256": "303d49a27db27436e0582784267082cb043e136ced0204266db5e9ce2dfff1d8"
+    },
+    {
+      "path": "src/lib/engineering-verification/ci-domain-pilot.mjs",
+      "sha256": "9034196265ae1600aabce52ed7dacad4d715b7d0b2960511ac16f47dc6f078fb"
+    },
+    {
+      "path": "src/lib/engineering-verification/ci-domain-probe.mjs",
+      "sha256": "5956dece3930fdcddc048f533307b84495ded5997eba624c52b9614f57756640"
+    },
+    {
+      "path": "src/lib/engineering-verification/cli.mjs",
+      "sha256": "11a51cf5b6e130ff7f5cf34773596a31cee0b6f848e49394ae4abf223581c2e0"
+    },
+    {
+      "path": "src/lib/engineering-verification/contract-registry.mjs",
+      "sha256": "eca5bb68678afca9935a099038159856a9ef4e7275093bbbd95c762c65030b0a"
+    },
+    {
+      "path": "src/lib/engineering-verification/contract.mjs",
+      "sha256": "169d6b1eebd9cff59a579e7b6e7d5540c473bddacf74678fd50d1149b2a4523c"
+    },
+    {
+      "path": "src/lib/engineering-verification/events.mjs",
+      "sha256": "42d06b95ac8324d44bb62906d0b69df257aa102007a42f275ca92f9d552f4b4f"
+    },
+    {
+      "path": "src/lib/engineering-verification/evidence.mjs",
+      "sha256": "d3db3db34f1bb707819351390cba35cc53becc652796d179da103e0ffdfdf9bf"
+    },
+    {
+      "path": "src/lib/engineering-verification/github.mjs",
+      "sha256": "c8f38170161437f105d67f5b9b9c69871c5587ff03bed3b0db6c9013cfbe7e88"
+    },
+    {
+      "path": "src/lib/engineering-verification/loader.mjs",
+      "sha256": "93a9c271089e47092dff1b168cc60f79c5b39f39b048d64b0f9d54d9c1cb0ba5"
+    },
+    {
+      "path": "src/lib/engineering-verification/pilot.mjs",
+      "sha256": "9d0dda8b99705c31b0fc8c81160ad11cf26d7b47be9b25929df4f4563a7267d3"
+    },
+    {
+      "path": "src/lib/engineering-verification/policy-pilot.mjs",
+      "sha256": "e91c76facc740efda15ea99f18716ce6108d889d20df7e2d05ac7d093b1d19fd"
+    },
+    {
+      "path": "src/lib/engineering-verification/policy-v2-pilot.mjs",
+      "sha256": "59c38cb3374cd03e9846ea1de0634d5cda811927935e473148de06e85bc8dde3"
+    },
+    {
+      "path": "src/lib/engineering-verification/policy.json",
+      "sha256": "e5f78465e3362cceedabed6d5361790d054f8c3789f9c87fbd4b618f456ab1a0"
+    },
+    {
+      "path": "src/lib/engineering-verification/program.mjs",
+      "sha256": "c13ed7a739a99a5ecc528b9be71c53080a5261e0cbe43971462a7e4fc561059a"
+    },
+    {
+      "path": "src/lib/engineering-verification/proof.mjs",
+      "sha256": "e2ec860a3c4cd8534b43477b182c9c1f041e25bacb0bf3ae3491c9274f89e542"
+    },
+    {
+      "path": "src/lib/engineering-verification/runner.mjs",
+      "sha256": "5263e72f7add2a845124350ae927b2dcc0006bcd7a83e288980fb93752049289"
+    },
+    {
+      "path": "src/lib/engineering-verification/runtime.json",
+      "sha256": "10d1b652ad69c2d5ebedcdd33b85914f92c24ebbf428d2ad0aaf8ee0d0f160a2"
+    },
+    {
+      "path": "src/lib/engineering-verification/scope.mjs",
+      "sha256": "ff2f834266497d317a0fe9b680a3b0897088280798de984babd5617b7ec7f2a0"
+    },
+    {
+      "path": "src/lib/engineering-verification/scorecard.mjs",
+      "sha256": "777e00870105c083523b66b8e2efee8a17b8d7616b45540dbbb6f2709da72ab7"
+    },
+    {
+      "path": "src/lib/engineering-verification/strict-json.mjs",
+      "sha256": "514f04a16242ddfdd9e561693400481c5f8a70d9128955240d938c27b28b08c5"
+    },
+    {
+      "path": "vendor/baseline-browser-mapping/baseline-browser-mapping-2.9.19-process-error-backport.tgz",
+      "sha256": "b09d3f74192140f2de174eb5148d1ac372529565e184f5fafffb7ae898b74fd8"
+    }
+  ],
+  "scope": [
+    ".github/PULL_REQUEST_TEMPLATE.md",
+    ".github/workflows/engineering-verification.yml",
+    "docs/project/acceptance/engineering/1048-v3.json",
+    "docs/project/acceptance/engineering/README.md",
+    "docs/project/acceptance/engineering/activation-proposal.md",
+    "docs/project/acceptance/engineering/plan-validation.md",
+    "docs/project/acceptance/engineering/program.json",
+    "src/lib/engineering-verification/__fixtures__/ci-domain-expectations-v2.json",
+    "src/lib/engineering-verification/__fixtures__/ci-domain-stimulus-v2.json",
+    "src/lib/engineering-verification/child.d.mts",
+    "src/lib/engineering-verification/child.mjs",
+    "src/lib/engineering-verification/ci-domain-collection.d.mts",
+    "src/lib/engineering-verification/ci-domain-collection.fixture.ts",
+    "src/lib/engineering-verification/ci-domain-collection.mjs",
+    "src/lib/engineering-verification/ci-domain-collection.test.ts",
+    "src/lib/engineering-verification/ci-domain-pilot.d.mts",
+    "src/lib/engineering-verification/ci-domain-pilot.mjs",
+    "src/lib/engineering-verification/ci-domain-pilot.test.ts",
+    "src/lib/engineering-verification/ci-domain-probe.d.mts",
+    "src/lib/engineering-verification/ci-domain-probe.mjs",
+    "src/lib/engineering-verification/ci-domain-probe.test.ts",
+    "src/lib/engineering-verification/cli.mjs",
+    "src/lib/engineering-verification/cli.test.ts",
+    "src/lib/engineering-verification/contract-paths.test.ts",
+    "src/lib/engineering-verification/contract-registry.d.mts",
+    "src/lib/engineering-verification/contract-registry.mjs",
+    "src/lib/engineering-verification/contract-registry.test.ts",
+    "src/lib/engineering-verification/events.test.ts",
+    "src/lib/engineering-verification/evidence.test.ts",
+    "src/lib/engineering-verification/github.mjs",
+    "src/lib/engineering-verification/github.test.ts",
+    "src/lib/engineering-verification/preparer-closure.test.ts",
+    "src/lib/engineering-verification/proof-inputs.fixture.ts",
+    "src/lib/engineering-verification/proof.mjs",
+    "src/lib/engineering-verification/proof.test.ts",
+    "src/lib/engineering-verification/runner-revisions.test.ts",
+    "src/lib/engineering-verification/runner.d.mts",
+    "src/lib/engineering-verification/runner.mjs",
+    "src/lib/engineering-verification/scorecard.test.ts",
+    "src/lib/engineering-verification/strict-json.d.mts",
+    "src/lib/engineering-verification/strict-json.mjs",
+    "src/lib/engineering-verification/strict-json.test.ts",
+    "src/lib/engineering-verification/workflows.test.ts"
+  ],
+  "required_skills": [
+    "audit-data",
+    "buyer-journey-mapper",
+    "data-quality-audit",
+    "fee-evaluation",
+    "fee-taxonomy-regression",
+    "playwright-ux-simulator",
+    "report-reconciliation",
+    "supabase",
+    "supabase-postgres-best-practices",
+    "tdd",
+    "ux-ui-auditor"
+  ],
+  "requirements": [
+    {
+      "id": "EV-CI-PROOF-DOMAIN-SEPARATION",
+      "behavior": "Only positively validated unequal native trees block historical CI association without suppressing independent proof inspection. Initial identities and both final PR/membership bookends remain globally required; CI/proof/review/owner acceptance stays conjunctive.",
+      "authority": "Supplied Engineering Verification PRD FR-01/FR-04/FR-05/FR-06/FR-07/FR-08/FR-18 and SEC-02/SEC-04/SEC-06/SEC-08; technical design AT-01/AT-02/AT-03. Frozen independent public39-case oracle SHA2569a017645c7467ce56f9cea9e367e5fcd93693c7b673fb9f514aefba78a5da723. This bounded reader correction retains all50 program source requirements and pending external gates;21 expected failed baseline guards are not21 root causes.",
+      "test_id": "ci-proof-domain-reader",
+      "test_path": "src/lib/engineering-verification/ci-domain-pilot.test.ts",
+      "fixture_path": "src/lib/engineering-verification/__fixtures__/ci-domain-expectations-v2.json",
+      "adapter_path": "src/lib/engineering-verification/ci-domain-pilot.mjs",
+      "test_sha256": "3680643eeb5f7f97b5f124b7487641d39379cb38733eb8801e7fcabcd055ee82",
+      "fixture_sha256": "9a017645c7467ce56f9cea9e367e5fcd93693c7b673fb9f514aefba78a5da723",
+      "adapter_sha256": "9034196265ae1600aabce52ed7dacad4d715b7d0b2960511ac16f47dc6f078fb",
+      "baseline_expectation": "FAIL",
+      "baseline_failure_assertion_ids": [
+        "reader-01",
+        "reader-19",
+        "reader-20",
+        "reader-21",
+        "reader-22",
+        "reader-23",
+        "reader-24",
+        "reader-25",
+        "reader-26",
+        "reader-27",
+        "reader-28",
+        "reader-29",
+        "reader-30",
+        "reader-31",
+        "reader-32",
+        "reader-33",
+        "reader-34",
+        "reader-35",
+        "reader-36",
+        "reader-37",
+        "reader-38"
+      ],
+      "assertion_ids": [
+        "reader-01",
+        "reader-02",
+        "reader-03",
+        "reader-04",
+        "reader-05",
+        "reader-06",
+        "reader-07",
+        "reader-08",
+        "reader-09",
+        "reader-10",
+        "reader-11",
+        "reader-12",
+        "reader-13",
+        "reader-14",
+        "reader-15",
+        "reader-16",
+        "reader-17",
+        "reader-18",
+        "reader-19",
+        "reader-20",
+        "reader-21",
+        "reader-22",
+        "reader-23",
+        "reader-24",
+        "reader-25",
+        "reader-26",
+        "reader-27",
+        "reader-28",
+        "reader-29",
+        "reader-30",
+        "reader-31",
+        "reader-32",
+        "reader-33",
+        "reader-34",
+        "reader-35",
+        "reader-36",
+        "reader-37",
+        "reader-38",
+        "reader-39"
+      ],
+      "failure_signature": "CI/proof domain requirement differs: reader-01"
+    }
+  ],
+  "production_boundary": "NO_PROD_MUTATION",
+  "human_approval_required": true
+}

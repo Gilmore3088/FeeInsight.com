@@ -4,9 +4,13 @@ const HISTORICAL_SOURCE_REFS = Object.freeze(['d28d77a4da9d2fb6edc73d8c264e42a7e
 const REQUIRED_PROOF_INPUTS = Object.freeze([
   '.gitattributes', '.github/workflows/engineering-verification.yml', 'package.json', 'package-lock.json',
   ...['child', 'cli', 'contract-registry', 'contract', 'events', 'evidence', 'github', 'loader', 'pilot',
-    'policy-pilot', 'policy-v2-pilot', 'program', 'proof', 'runner', 'scope', 'scorecard']
+    'policy-pilot', 'policy-v2-pilot', 'program', 'proof', 'runner', 'scope', 'scorecard',
+    'ci-domain-pilot', 'ci-domain-probe', 'ci-domain-collection', 'strict-json']
     .map(name => 'src/lib/engineering-verification/' + name + '.mjs'),
-  ...['knox-2285', 'policy-1048', 'policy-v2'].map(name => 'src/lib/engineering-verification/__fixtures__/' + name + '.json'),
+  ...['knox-2285', 'policy-1048', 'policy-v2', 'ci-domain-stimulus-v2', 'ci-domain-expectations-v2'].map(name => 'src/lib/engineering-verification/__fixtures__/' + name + '.json'),
+  'docs/project/acceptance/engineering/design-v1/prd-v1.md',
+  'docs/project/acceptance/engineering/design-v1/technical-design-v1.md',
+  'docs/project/acceptance/engineering/program.json', 'src/lib/agents/hoovie/AGENTS.md',
   'src/lib/engineering-verification/policy.json', 'src/lib/engineering-verification/runtime.json',
   'vendor/baseline-browser-mapping/baseline-browser-mapping-2.9.19-process-error-backport.tgz',
 ].sort());
@@ -31,7 +35,12 @@ export const CONTRACT_REVISIONS = Object.freeze([
     historicalWorkflowSha256: '07f2b3c1cd35f9ba91f61da3c14c11fea75ccd3d5b50b9db61ffe5b75f66dfb3',
     requiredProofInputs: EMPTY, forbiddenProofInputs: EMPTY, historicalTrustedSourceRefs: HISTORICAL_SOURCE_REFS }),
   Object.freeze({ key: '1048-v2', path: 'docs/project/acceptance/engineering/1048-v2.json',
-    contractId: 'EV-FOUNDATION-1048-V2', issueNumber: 1048, executionStatus: 'CURRENT', adapter: 'engineering.policy.v2', historicalWorkflowSha256: null,
+    contractId: 'EV-FOUNDATION-1048-V2', issueNumber: 1048, executionStatus: 'HISTORICAL_ONLY', adapter: 'engineering.policy.v2',
+    historicalWorkflowSha256: '02c17ecbd29b154cd667f868a7beed2b59ba70ec6ce3274face95c82be45f60a',
+    requiredProofInputs: EMPTY, forbiddenProofInputs: EMPTY,
+    historicalTrustedSourceRefs: Object.freeze(['baf057d9e87f7f1c48306eb0ad2ef4e60dea787f']) }),
+  Object.freeze({ key: '1048-v3', path: 'docs/project/acceptance/engineering/1048-v3.json',
+    contractId: 'EV-FOUNDATION-1048-V3', issueNumber: 1048, executionStatus: 'CURRENT', adapter: 'engineering.ci-domains.v1', historicalWorkflowSha256: null,
     requiredProofInputs: REQUIRED_PROOF_INPUTS, forbiddenProofInputs: FORBIDDEN_PROOF_INPUTS, historicalTrustedSourceRefs: EMPTY }),
 ]);
 
